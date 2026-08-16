@@ -1,0 +1,3 @@
+# Cooperative cancellation via stdin control line, not OS signals
+
+Engine commands must be cancellable, but on Windows Electron's `child.kill()` is an unconditional TerminateProcess and SIGINT/SIGTERM emulation under Bun is unreliable — there is no cooperative OS signal to send, and SOX-107 forbids killing Git blindly. Since requests arrive via argv, stdin is idle, so the caller writes a single `cancel\n` control line; the Engine acknowledges with a structured event and exits cleanly with exit code 3. Hard-kill fallbacks and journal-boundary stop semantics are layered onto this same message by later mutation milestones.

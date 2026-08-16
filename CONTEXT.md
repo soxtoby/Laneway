@@ -1,0 +1,209 @@
+# Git Workbench
+
+Git Workbench is an opinionated standalone Git client for general developers. Its language centres on understanding and reshaping lines of work.
+
+## Language
+
+**Workbench**:
+The product as a whole: a standalone Git client with deliberate workflow opinions.
+_Avoid_: Git GUI, companion tool
+
+**V1**:
+The first supported Workbench release: a Windows product covering the settled local workflows and ordinary Git remote synchronization and publication. macOS and mainstream Linux are best-effort; hosted-provider and AI-assisted workflows are later releases.
+_Avoid_: MVP, technical preview
+
+**Repository Icon**:
+The visual identity of a repository in navigation: a user override, otherwise an inferred project icon, otherwise two initials.
+_Avoid_: App icon
+
+**Command Lens**:
+The global keyboard-first search and navigation surface. Selecting a branch locates it in the Branch Graph; the Command Lens never switches a worktree itself.
+_Avoid_: Command palette, branch switcher
+
+**Workspace Column**:
+A resizable view of an Active Stack ending at one branch. It may be branch-only, or worktree-backed with Working Changes; closing the view never removes its filesystem worktree.
+_Avoid_: Worktree column
+
+**Workspace State**:
+The persisted presentation of repositories and columns, including their order, size, focus, and diff layout. Workbench restores it after restart but always recomputes Git facts and rejects views whose pinned objects no longer exist.
+_Avoid_: Repository cache, persisted Git state
+
+**Worktree Backing**:
+Worktree Backing is the association between one filesystem worktree and one Workspace Column. Checking out from a branch-only column transfers it without moving columns; switching a worktree to a branch held elsewhere preserves and detaches the previous worktree, while undo restores both worktrees unless external changes make replay unsafe.
+_Avoid_: Switch column, replace column
+
+**Main Worktree**:
+Git's permanent repository worktree, unrelated to the Primary Branch. It may change branches, but Workbench never moves, removes, or cleans it; if its path disappears, the repository remains unavailable until the user locates it.
+_Avoid_: Primary Worktree
+
+**Worktree Home**:
+The globally configurable parent directory for newly created linked worktrees. By default, Workbench uses a `<repository>.worktrees` sibling of the Main Worktree and derives each initial directory name from its branch.
+_Avoid_: Worktree storage
+
+**Registered Worktree**:
+Any Main or linked worktree recorded by Git, regardless of which tool created it. Workbench discovers and surfaces every Registered Worktree automatically.
+_Avoid_: Managed worktree, external worktree
+
+**Locked Worktree**:
+A linked worktree protected by a Git worktree lock and its optional reason. Workbench blocks rename and removal until the user explicitly unlocks it.
+_Avoid_: Read-only worktree
+
+**Missing Worktree**:
+A registered linked worktree whose directory is unavailable at its recorded path while its per-worktree HEAD and index remain in Git's shared administrative data. Workbench never prunes it; the user may locate, repair, or forget it, while an external Git prune removes the entry and creates an undo boundary.
+_Avoid_: Deleted worktree, stale worktree
+
+**Worktree Removal**:
+An explicit operation that unregisters and deletes a linked worktree after offering to preserve its Working Changes and Worktree-only Commits, recursively stashing populated submodules where needed. Workbench privately retains all affected Git state for undo, while ignored files remain outside undo; preserved stashes remain Branch Markers until explicitly applied, unless undo reapplies them while recreating the worktree.
+_Avoid_: Close column, prune worktree
+
+**Worktree Rename**:
+An explicit change to a linked worktree directory's basename within its current parent, with its Git registration repaired as one Workbench Operation. Workbench does not relocate worktrees between parent directories, and renaming is unavailable when the worktree contains populated submodules.
+_Avoid_: Worktree label
+
+**Workbench Engine**:
+The headless CLI executable that owns Git access and Workbench operations. The Workbench invokes one process per command; people and agents may invoke the same commands directly.
+_Avoid_: Git service, daemon, utility process
+
+**Branch Graph**:
+A graph of visible lines of work whose edges place unmerged local branches relative to their target branches. Merged inactive branches are normally hidden; remote branches are normally limited to targets and configured name patterns; commits appear only when a branch is expanded.
+_Avoid_: Commit graph
+
+**Involved Branch**:
+A branch whose unique history contains a commit authored by any identity configured for the current developer. Involvement supports emphasis and filtering but does not determine default local-branch visibility.
+_Avoid_: My branch, owned branch
+
+**Base Branch**:
+The closest branch, inferred from repository topology, whose reachable history excludes the current branch's unique commits. Its difference from the current branch defines the commits shown for that branch and the base offered for stack synchronization. Equivalent refs at the same effective base are presentation aliases, not ambiguity.
+_Avoid_: Target branch, parent branch, integration branch
+
+**Primary Branch**:
+The repository's main line of development, inferred from the selected remote's default branch. It anchors the Branch Graph and breaks otherwise-equal Base Branch topology ties, but never supersedes a topologically closer base.
+_Avoid_: Main branch, master branch, default branch
+
+**Active Stack**:
+The ordered branch chain from an integration target through the branch shown in a Workspace Column. A worktree-backed column ends at that worktree's checked-out branch.
+_Avoid_: Active branch
+
+**Pull latest**:
+A repository-scoped fetch followed by local synchronization of every open Active Stack against frozen fetched Base Branch tips. Independent stacks may complete separately; it never publishes or touches unopened branches.
+_Avoid_: Git pull
+
+**Publish**:
+An explicit remote update for the focused Active Stack, excluding its Base Branch and unrelated stacks. Branches without upstream publish to same-named branches on the selected remote; the control identifies every destination and force-with-lease update before activation.
+_Avoid_: Push, push stack
+
+**Publish Receipt**:
+A durable record of intended and completed remote ref updates for one Publish, including a partial sequential outcome. It enables Resume and lease-guarded restoration; it is not an ordinary undo entry.
+_Avoid_: Publish undo, push log
+
+**Workbench Operation**:
+An immediate Git mutation recorded in a persistent undo/redo history. External repository changes may create a boundary beyond which replay is unsafe; files outside Git state, including ignored files, are outside undo.
+_Avoid_: Command, action
+
+**Branch Node**:
+One line of work combining its local and upstream tips while exposing their divergence; its expanded history contains commits unique to its Base Branch. Pull-request state appears as a marker, while a qualifying remote-only branch forms its own node.
+_Avoid_: Local branch node, remote branch node
+
+**Branch Marker**:
+Non-structural state attached to a branch in the graph, including pull-request state, ordinary stashes, and kept Historical Working Changes labelled with their historical base. Unassigned stashes are accessed outside the graph.
+_Avoid_: Branch node, decoration
+
+**Tag Node**:
+A tag occupying its commit's position as a history waypoint when that commit is not a branch head; it is never a Target Branch. A tag on a branch head is shown on that Branch Node.
+_Avoid_: Tag branch
+
+**Virtual Branch**:
+A default-named changes-only view representing a clean or dirty detached worktree head, created either by branch relocation or by explicitly opening a commit in a new worktree. Workbench keeps its column available but hides commit history until attached; before committing or switching away from unique state, Workbench creates a real local branch using a configurable name prefix and stashes any Working Changes.
+_Avoid_: Detached HEAD
+
+**Worktree-only Commit**:
+A commit reachable from a detached worktree's HEAD but from no branch or tag. Removing that worktree can leave the commit unreachable, so preserving removal first creates a branch for it.
+_Avoid_: Detached commit, orphan commit
+
+**History Trail**:
+A file-focused investigation expressed as evidence-linked File History Columns and Commit Diff Columns. It may continue through another file changed by a candidate commit, but never claims Git stores canonical cross-file provenance.
+_Avoid_: File log
+
+**File History Column**:
+A read-only auxiliary column anchored to one file and a pinned committed revision, optionally preceded by current Working Changes. It exposes the commits that changed the file and may continue a History Trail through evidence-linked files.
+_Avoid_: File log column, History Workspace Column
+
+**Commit Diff Column**:
+A read-only auxiliary column for inspecting one commit's complete diff without replacing its source column's selection.
+_Avoid_: Diff Workspace Column
+
+**Working Changes**:
+The uncommitted changes belonging to one worktree. Before checkout changes, Workbench stores them in an ordinary Git stash associated with the old branch and exposes that stash as a Branch Marker. When Worktree Backing transfers between open columns, the old column keeps them visible as Stashed Working Changes. Commit composition normally bypasses Git's index as a user-facing concept.
+_Avoid_: Staged changes, unstaged changes
+
+**Historical Edit**:
+An explicit temporary mode of a worktree-backed Workspace Column for editing from the snapshot of one commit unique to its focused Active Stack. The original column preserves its prior Working Changes and checks out the selected commit detached; normal commit-composition operations can move new Historical Working Changes to eligible commits, branches, or new-commit seams without ending the session. A clean session offers to return to the original branch; a dirty return offers to drop or bring the remaining Historical Working Changes, or cancel the return. A branch-only column must gain existing Worktree Backing before Historical Edit is available.
+_Avoid_: Virtual Branch, conflict-resolution checkout, rebase editor
+
+**Historical Working Changes**:
+Working Changes created from the detached snapshot in a Historical Edit. They stay with that historical context until commit composition moves them, the user drops them, or Return to Branch brings them onto the original branch. If that restoration conflicts and the user keeps them stashed, they become a branch-associated Branch Marker labelled with their historical base.
+_Avoid_: Replacement commit, original Working Changes
+
+**Working Changes Conflict**:
+A conflict produced when Stashed Working Changes cannot be restored cleanly onto the current committed tree. It uses the regular Conflict Resolution Column, but acceptance writes uncommitted Working Changes rather than a commit and never restacks descendants; the ordinary stash remains and publication stays blocked until the result is accepted or explicitly kept stashed.
+_Avoid_: Conflicted Commit, Unresolved Stack, stash pop failure
+
+**Unresolved Stack**:
+The checked-out result of a stack rewrite containing one or more Conflicted Commits. It remains locally usable and distinct from later branch updates, but Workbench blocks publication until every conflict is resolved.
+_Avoid_: Successful rebase, failed rebase
+
+**Conflicted Commit**:
+A commit in an Unresolved Stack that still contains unresolved content decisions. Accepting a resolution produced from temporary files rewrites that commit and restacks its descendants.
+_Avoid_: Failed commit, paused rebase
+
+**Conflict Resolution Column**:
+An auxiliary column opened beside a Workspace Column for one Conflicted Commit or Working Changes Conflict. It identifies the conflict sources and coordinates per-hunk, temporary-file, merge-tool, or AI resolution without replacing the checked-out stack or worktree.
+_Avoid_: Conflict modal, merge editor
+
+**Provider Overlay**:
+Optional hosted metadata and actions attached to local Git evidence. It refreshes explicitly and by polling, exposes cache freshness, and may be unavailable or unauthenticated without preventing local Workbench use.
+_Avoid_: Hosted source of truth
+
+**Provider Repository**:
+A repository identity on one hosted provider, connected to a local repository without replacing its Git remotes or refs.
+_Avoid_: Remote repository
+
+**Review**:
+A provider-hosted review of proposed changes, represented independently from the local branches and immutable patchset commits it references.
+_Avoid_: Pull-request branch
+
+**Review Comment**:
+A provider-hosted discussion item attached to a Review and its original diff context; it becomes outdated rather than silently moving when the patchset changes.
+_Avoid_: Code comment
+
+**Ticket Link**:
+A ticket association discovered from a stable textual reference or provider-native relationship, connecting the ticket to repository context without making it part of Git history.
+_Avoid_: Commit metadata
+
+**Agent Handoff**:
+The fire-and-forget transfer of one Review Comment and its immutable Review/diff context to the configured external agent app. Workbench neither tracks nor controls the result; when direct launch is unavailable it copies an inspectable prompt.
+_Avoid_: AI Run, tracked agent task
+
+**Copy Reference**:
+A portable textual reference to selected repository or provider context, using immutable Git identities and stable provider URLs where available. Copying creates no session and hands nothing off.
+_Avoid_: Agent Handoff
+
+**AI Provider**:
+The single application-wide prompt-and-response integration used for every in-product AI-assisted action.
+_Avoid_: Per-action agent
+
+**AI Run**:
+The Workbench-orchestrated execution record for a long-running in-product AI-assisted action. It retains progress, logs, and resumable Workbench state while the Workbench presents bounded problems and applicable repository instructions to the AI Provider, owns all Git operations, and enforces the action's fixed mutation boundary.
+_Avoid_: Agent Workspace, AI chat
+
+**Reshape Stack with AI**:
+An AI-assisted Workbench Operation that may split, squash, reorder, and reword commits in the focused Active Stack while preserving its final tree and branch membership. It reorganizes existing changes but does not author source changes. Workbench owns replay and feeds resulting Git conflicts through the same AI Run; unresolved failures remain an Unresolved Stack.
+_Avoid_: Restack, AI refactoring
+
+**Branch Comparison**:
+A snapshot diff between the tips of two selected branches. A branch's unique changes are inspected by expanding its commits.
+_Avoid_: Three-dot diff
+
+**Branch Comparison Column**:
+A read-only auxiliary column showing a Branch Comparison between two pinned branch tips. Unique commits remain part of the compared branch's Active Stack.
+_Avoid_: Comparison Workspace Column, Three-dot Diff Column
