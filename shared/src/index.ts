@@ -15,6 +15,12 @@ export const ErrorCodeSchema = z.enum([
     "engine.internal",
     "git.unavailable",
     "git.smoke-failed",
+    "operation.history-corrupt",
+    "operation.internal",
+    "operation.journal-corrupt",
+    "operation.locked",
+    "operation.precondition-failed",
+    "operation.recovery-blocked",
 ])
 
 export const ProgressEventSchema = z.object({
@@ -38,6 +44,72 @@ export const GitSmokeResultSchema = z.object({
     repositoryRoot: z.string(),
 })
 
+export const OperationSummarySchema = z.object({
+    id: z.string(),
+    timestamp: z.string(),
+    kind: z.string(),
+    summary: z.string(),
+    affectedRefs: z.array(z.string()),
+    affectedWorktrees: z.array(z.string()),
+})
+
+export const OperationAvailabilityReasonSchema = z.enum([
+    "empty",
+    "ref-changed",
+    "index-changed",
+    "worktree-changed",
+    "git-lockfile-present",
+    "precondition-failed",
+])
+
+export const OperationTransitionResultSchema = z.object({
+    type: z.literal("result"),
+    command: z.enum(["undo", "redo"]),
+    status: z.enum(["performed", "unavailable"]),
+    reason: OperationAvailabilityReasonSchema.optional(),
+    operation: OperationSummarySchema.optional(),
+})
+
+export const OperationHistoryEntrySchema = OperationSummarySchema.extend({
+    state: z.enum(["applied", "undone"]),
+    isNextUndo: z.boolean(),
+    isNextRedo: z.boolean(),
+})
+
+export const OperationAvailabilitySchema = z.object({
+    available: z.boolean(),
+    operationId: z.string().optional(),
+    reason: OperationAvailabilityReasonSchema.optional(),
+})
+
+export const OperationHistoryResultSchema = z.object({
+    type: z.literal("result"),
+    command: z.literal("history"),
+    position: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+    entries: z.array(OperationHistoryEntrySchema).max(10),
+    undo: OperationAvailabilitySchema,
+    redo: OperationAvailabilitySchema,
+})
+
+export const TestMutationResultSchema = z.object({
+    type: z.literal("result"),
+    command: z.literal("test-mutation"),
+    operation: OperationSummarySchema,
+})
+
+export const RecoveredExecutionSchema = z.object({
+    action: z.enum(["apply", "undo", "redo"]),
+    operation: OperationSummarySchema,
+})
+
+export const RecoveryResultSchema = z.object({
+    type: z.literal("result"),
+    command: z.literal("recover"),
+    status: z.enum(["clean", "recovered"]),
+    recovered: z.array(RecoveredExecutionSchema),
+})
+
 export const CancelledEventSchema = z.object({
     type: z.literal("cancelled"),
     command: z.string(),
@@ -55,6 +127,10 @@ export const EngineMessageSchema = z.union([
     ProgressEventSchema,
     EchoResultSchema,
     GitSmokeResultSchema,
+    OperationTransitionResultSchema,
+    OperationHistoryResultSchema,
+    TestMutationResultSchema,
+    RecoveryResultSchema,
     CancelledEventSchema,
     ErrorEventSchema,
 ])
@@ -63,6 +139,15 @@ export type ErrorCode = z.infer<typeof ErrorCodeSchema>
 export type ProgressEvent = z.infer<typeof ProgressEventSchema>
 export type EchoResult = z.infer<typeof EchoResultSchema>
 export type GitSmokeResult = z.infer<typeof GitSmokeResultSchema>
+export type OperationSummary = z.infer<typeof OperationSummarySchema>
+export type OperationAvailabilityReason = z.infer<typeof OperationAvailabilityReasonSchema>
+export type OperationTransitionResult = z.infer<typeof OperationTransitionResultSchema>
+export type OperationHistoryEntry = z.infer<typeof OperationHistoryEntrySchema>
+export type OperationAvailability = z.infer<typeof OperationAvailabilitySchema>
+export type OperationHistoryResult = z.infer<typeof OperationHistoryResultSchema>
+export type TestMutationResult = z.infer<typeof TestMutationResultSchema>
+export type RecoveredExecution = z.infer<typeof RecoveredExecutionSchema>
+export type RecoveryResult = z.infer<typeof RecoveryResultSchema>
 export type CancelledEvent = z.infer<typeof CancelledEventSchema>
 export type ErrorEvent = z.infer<typeof ErrorEventSchema>
 export type EngineMessage = z.infer<typeof EngineMessageSchema>

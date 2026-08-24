@@ -85,7 +85,7 @@ export function runEngineCommand(options: EngineCommandOptions) {
 
     const completion = new Promise<number>((resolveCompletion, rejectCompletion) => {
         child.once("error", rejectCompletion)
-        child.once("close", (code) => resolveCompletion(code ?? 1))
+        child.once("close", code => resolveCompletion(code ?? 1))
     })
 
     const result = (async (): Promise<EngineCommandResult> => {

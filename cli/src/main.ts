@@ -1,22 +1,32 @@
-import { type CancelledEvent, type EchoResult, ENGINE_VERSION, type ErrorEvent, ExitCode, type GitSmokeResult, type ProgressEvent } from "@git-workbench/shared"
+import { ENGINE_VERSION, type EngineMessage, type ErrorEvent, ExitCode } from "@git-workbench/shared"
 import { resolve } from "node:path"
+import { executeOperationCommand, type JournalPhase, OperationCancelledError, type OperationCommand, OperationRuntimeError } from "./operation-runtime.ts"
 
 const args = process.argv.slice(2)
 
-function write(
-    message: string | ProgressEvent | EchoResult | GitSmokeResult | CancelledEvent,
-    json: boolean,
-) {
+function write(message: string | EngineMessage, json: boolean) {
     if (json)
         console.log(JSON.stringify(message))
     else if (typeof message === "string")
         console.log(message)
     else if ("message" in message)
         console.log(message.message)
-    else {
+    else if (message.command == "git-smoke") {
         console.log(`System Git: ${message.gitVersion}`)
         console.log(`Repository: ${message.repositoryRoot}`)
-    }
+    } else if (message.command == "history") {
+        if (message.entries.length == 0)
+            console.log("No Workbench Operations.")
+        else {
+            for (const entry of message.entries)
+                console.log(`${entry.isNextUndo ? "undo" : entry.isNextRedo ? "redo" : entry.state} ${entry.id} ${entry.summary}`)
+        }
+    } else if (message.command == "undo" || message.command == "redo")
+        console.log(message.status == "performed" ? message.operation?.summary : `Nothing to ${message.command}.`)
+    else if (message.command == "test-mutation")
+        console.log(message.operation.summary)
+    else if (message.command == "recover")
+        console.log(message.status == "clean" ? "No recovery is required." : `Recovered ${message.recovered.length} operation(s).`)
 }
 
 function writeError(error: ErrorEvent, json: boolean) {
@@ -130,11 +140,14 @@ function monitorCancellation() {
     void readControls()
 
     return {
+        isCancelled() {
+            return cancelled
+        },
         async wait(delayMs: number) {
             if (cancelled)
                 return true
 
-            return new Promise<boolean>((resolveWait) => {
+            return new Promise<boolean>(resolveWait => {
                 const timer = setTimeout(() => {
                     notifyWaiter = undefined
                     resolveWait(false)
@@ -243,11 +256,118 @@ async function gitSmoke(json: boolean) {
     }
 }
 
+type ParsedOperationArguments =
+    | { ok: true; json: boolean; command: OperationCommand }
+    | { ok: false; json: boolean; error: ErrorEvent }
+
+function parseOperationArguments(command: OperationCommand["command"], commandArguments: string[]): ParsedOperationArguments {
+    const json = commandArguments.includes("--json")
+    const noWait = commandArguments.includes("--no-wait")
+    let value: string | undefined
+    let crashAfter: JournalPhase | undefined
+    let holdAfterIntentMs: number | undefined
+
+    for (let index = 0; index < commandArguments.length; index += 1) {
+        const argument = commandArguments[index]
+        if (argument == "--json" || argument == "--no-wait")
+            continue
+        if (command == "test-mutation" && argument == "--value") {
+            value = commandArguments[index + 1]
+            if (value == undefined)
+                break
+            index += 1
+            continue
+        }
+        if (command == "test-mutation" && argument == "--hold-after-intent-ms" && process.env.WORKBENCH_ENABLE_TEST_COMMANDS == "1") {
+            const value = commandArguments[index + 1]
+            const parsedValue = Number(value)
+            if (value == undefined || !/^\d+$/.test(value) || !Number.isSafeInteger(parsedValue))
+                return invalidOperationArgument(command, json, `Invalid hold duration "${value ?? ""}".`, "--hold-after-intent-ms")
+            holdAfterIntentMs = parsedValue
+            index += 1
+            continue
+        }
+        if (
+            (command == "test-mutation" || command == "undo" || command == "redo") && argument == "--crash-after"
+            && process.env.WORKBENCH_ENABLE_TEST_COMMANDS == "1"
+        ) {
+            const phase = commandArguments[index + 1]
+            const phases: JournalPhase[] = [
+                "intent",
+                "recovery-retained",
+                "preconditions-verified",
+                "refs-committed",
+                "history-committed",
+                "finalized",
+            ]
+            if (!phase || !phases.includes(phase as JournalPhase))
+                return invalidOperationArgument(command, json, `Invalid journal phase "${phase ?? ""}".`, "--crash-after")
+            crashAfter = phase as JournalPhase
+            index += 1
+            continue
+        }
+
+        return invalidOperationArgument(command, json, `Unknown option "${argument}" for ${command}.`, argument)
+    }
+
+    if (command == "test-mutation" && value == undefined)
+        return invalidOperationArgument(command, json, "A value is required for --value.", "--value")
+
+    return {
+        ok: true,
+        json,
+        command: command == "test-mutation"
+            ? { command, value: value!, noWait, crashAfter, holdAfterIntentMs }
+            : command == "undo" || command == "redo"
+            ? { command, noWait, crashAfter }
+            : { command, noWait },
+    }
+}
+
+function invalidOperationArgument(command: string, json: boolean, message: string, argument: string): ParsedOperationArguments {
+    return {
+        ok: false,
+        json,
+        error: {
+            type: "error",
+            code: "usage.invalid-argument",
+            message,
+            details: { command, argument },
+        },
+    }
+}
+
+async function runOperationCommand(command: OperationCommand["command"], commandArguments: string[]) {
+    const parsed = parseOperationArguments(command, commandArguments)
+    if (!parsed.ok) {
+        writeError(parsed.error, parsed.json)
+        return ExitCode.usage
+    }
+
+    const cancellation = monitorCancellation()
+    try {
+        write(await executeOperationCommand(parsed.command, process.cwd(), cancellation), parsed.json)
+        return ExitCode.ok
+    } catch (error) {
+        if (error instanceof OperationCancelledError) {
+            write({ type: "cancelled", command, message: error.message }, parsed.json)
+            return ExitCode.cancelled
+        }
+        const runtimeError = error instanceof OperationRuntimeError
+            ? error
+            : new OperationRuntimeError("operation.internal", error instanceof Error ? error.message : String(error))
+        writeError({ type: "error", code: runtimeError.code, message: runtimeError.message, details: runtimeError.details }, parsed.json)
+        return ExitCode.failure
+    } finally {
+        cancellation.dispose()
+    }
+}
+
 if (args.length == 1 && args[0] == "--version")
     console.log(`workbench-engine ${ENGINE_VERSION}`)
 else if (args[0] == "git-smoke") {
     const commandArguments = args.slice(1)
-    const invalidArgument = commandArguments.find((argument) => argument !== "--json")
+    const invalidArgument = commandArguments.find(argument => argument !== "--json")
     const json = commandArguments.includes("--json")
 
     if (invalidArgument) {
@@ -269,7 +389,11 @@ else if (args[0] == "git-smoke") {
     } else {
         process.exitCode = await echo(parsed.message, parsed.delayMs, parsed.json)
     }
-} else {
+} else if (args[0] == "undo" || args[0] == "redo" || args[0] == "history" || args[0] == "recover")
+    process.exitCode = await runOperationCommand(args[0], args.slice(1))
+else if (args[0] == "test-mutation" && process.env.WORKBENCH_ENABLE_TEST_COMMANDS == "1")
+    process.exitCode = await runOperationCommand("test-mutation", args.slice(1))
+else {
     const command = args[0] ?? ""
     writeError({
         type: "error",

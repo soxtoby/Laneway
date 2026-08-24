@@ -18,6 +18,7 @@
       "name": "@git-workbench/cli",
       "dependencies": {
         "@git-workbench/shared": "workspace:*",
+        "zod": "^4.4.3",
       },
     },
     "desktop": {

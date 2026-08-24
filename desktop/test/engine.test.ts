@@ -58,7 +58,7 @@ describe("Workbench Engine client", () => {
             enginePath,
             cwd: join(import.meta.dir, "../.."),
             args: ["echo", "From desktop", "--delay-ms", "0"],
-            onMessage: (message) => received.push(message),
+            onMessage: message => received.push(message),
         })
 
         const result = await run.result
@@ -77,22 +77,22 @@ describe("Workbench Engine client", () => {
         expect(() => parseEngineMessage("not json")).toThrow(
             "Workbench Engine returned malformed NDJSON: not json",
         )
-        expect(() => parseEngineMessage("{\"type\":\"result\",\"command\":\"other\"}")).toThrow(
-            "Workbench Engine returned malformed NDJSON: {\"type\":\"result\",\"command\":\"other\"}",
+        expect(() => parseEngineMessage('{"type":"result","command":"other"}')).toThrow(
+            'Workbench Engine returned malformed NDJSON: {"type":"result","command":"other"}',
         )
     })
 
     test("cancels the active Engine process cooperatively", async () => {
         let progressReceived: () => void
-        const firstProgress = new Promise<void>((resolveProgress) => {
+        const firstProgress = new Promise<void>(resolveProgress => {
             progressReceived = resolveProgress
         })
         const run = runEngineCommand({
             enginePath,
             cwd: join(import.meta.dir, "../.."),
             args: ["echo", "Cancelled", "--delay-ms", "1000"],
-            onMessage: (message) => {
-                if (message.type === "progress")
+            onMessage: message => {
+                if (message.type == "progress")
                     progressReceived()
             },
         })

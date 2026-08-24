@@ -66,7 +66,7 @@ function registerEngineHandlers() {
                 enginePath: engineStatus.path,
                 cwd: resolve(request.repositoryPath),
                 args: ["echo", request.message, "--delay-ms", "350"],
-                onMessage: (message) => {
+                onMessage: message => {
                     if (!sender.isDestroyed())
                         sender.send("engine:message", message)
                 },

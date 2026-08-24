@@ -97,8 +97,12 @@ A durable record of intended and completed remote ref updates for one Publish, i
 _Avoid_: Publish undo, push log
 
 **Workbench Operation**:
-An immediate Git mutation recorded in a persistent undo/redo history. External repository changes may create a boundary beyond which replay is unsafe; files outside Git state, including ignored files, are outside undo.
+An immediate Git mutation recorded in a persistent linear undo/redo history. Undo and redo are transitions through eligible operations, not new operations themselves; a new operation after undo makes the abandoned redo path unavailable. External repository changes may create a boundary beyond which replay is unsafe; files outside Git state, including ignored files, are outside undo.
 _Avoid_: Command, action
+
+**Operation History**:
+The repository-wide persistent linear record of Workbench Operations around the current undo/redo position, shared across linked worktrees. It is distinct from Git commit history and the recovery journal.
+_Avoid_: History, journal, reflog
 
 **Branch Node**:
 One line of work combining its local and upstream tips while exposing their divergence; its expanded history contains commits unique to its Base Branch. Pull-request state appears as a marker, while a qualifying remote-only branch forms its own node.

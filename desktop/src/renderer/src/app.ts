@@ -147,9 +147,7 @@ function appendTrace(message: EngineMessage) {
 
     index.textContent = String(traceIndex).padStart(2, "0")
     type.textContent = message.type
-    text.textContent = "message" in message
-        ? message.message
-        : `${message.gitVersion} at ${message.repositoryRoot}`
+    text.textContent = describeEngineMessage(message)
     body.append(type, text)
     item.append(index, body)
     item.dataset.type = message.type
@@ -172,6 +170,20 @@ function appendTrace(message: EngineMessage) {
     item.scrollIntoView({ block: "nearest" })
 }
 
+function describeEngineMessage(message: EngineMessage) {
+    if ("message" in message)
+        return message.message
+    if (message.command == "git-smoke")
+        return `${message.gitVersion} at ${message.repositoryRoot}`
+    if (message.command == "history")
+        return `${message.total} Workbench Operations`
+    if (message.command == "test-mutation")
+        return message.operation.summary
+    if (message.command == "recover")
+        return message.status == "clean" ? "No recovery required" : `Recovered ${message.recovered.length} operation(s)`
+    return message.operation?.summary ?? `Nothing to ${message.command}`
+}
+
 window.workbench.onEngineMessage(appendTrace)
 
 const status = await window.workbench.getEngineStatus()
@@ -192,7 +204,7 @@ if (status.state === "ready") {
     runButton.disabled = true
 }
 
-form.addEventListener("submit", async (event) => {
+form.addEventListener("submit", async event => {
     event.preventDefault()
     resetTrace()
     setRunning(true)

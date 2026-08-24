@@ -9,8 +9,11 @@
     "typescript": {
         "semiColons": "asi",
         "useBraces": "preferNone",
+        "quoteStyle": "preferDouble",
+        "singleBodyPosition": "nextLine",
         "exportDeclaration.forceSingleLine": true,
-        "importDeclaration.forceSingleLine": true
+        "importDeclaration.forceSingleLine": true,
+        "arrowFunction.useParentheses": "preferNone"
     },
     "excludes": [
         "**/node_modules/**",
