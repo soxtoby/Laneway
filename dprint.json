@@ -3,7 +3,15 @@
     "newLineKind": "lf",
     "useTabs": false,
     "indentWidth": 4,
-    "includes": ["**/*.{ts,js,json,jsonc,css,html}"],
+    "includes": [
+        "**/*.{ts,js,json,jsonc,css,html}"
+    ],
+    "typescript": {
+        "semiColons": "asi",
+        "useBraces": "preferNone",
+        "exportDeclaration.forceSingleLine": true,
+        "importDeclaration.forceSingleLine": true
+    },
     "excludes": [
         "**/node_modules/**",
         "bun.lock",

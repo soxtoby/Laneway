@@ -1,10 +1,9 @@
-import type { EngineMessage } from "@git-workbench/shared";
-import "./styles.css";
+import type { EngineMessage } from "@git-workbench/shared"
+import "./styles.css"
 
-const app = document.querySelector<HTMLDivElement>("#app");
-if (!app) {
-    throw new Error("Workbench root element was not found.");
-}
+const app = document.querySelector<HTMLDivElement>("#app")
+if (!app)
+    throw new Error("Workbench root element was not found.")
 
 app.innerHTML = `
   <main class="shell">
@@ -106,119 +105,119 @@ app.innerHTML = `
       <span>Engine runs out of process</span>
     </footer>
   </main>
-`;
+`
 
-const form = document.querySelector<HTMLFormElement>("#echo-form")!;
-const repositoryPath = document.querySelector<HTMLInputElement>("#repository-path")!;
-const echoMessage = document.querySelector<HTMLTextAreaElement>("#echo-message")!;
-const runButton = document.querySelector<HTMLButtonElement>("#run-button")!;
-const cancelButton = document.querySelector<HTMLButtonElement>("#cancel-button")!;
-const engineBadge = document.querySelector<HTMLDivElement>("#engine-badge")!;
-const engineSummary = document.querySelector<HTMLSpanElement>("#engine-summary")!;
-const enginePath = document.querySelector<HTMLElement>("#engine-path")!;
-const engineVersion = document.querySelector<HTMLElement>("#engine-version")!;
-const trace = document.querySelector<HTMLOListElement>("#trace")!;
-const progress = document.querySelector<HTMLProgressElement>("#progress")!;
-const result = document.querySelector<HTMLDivElement>("#result")!;
-const resultText = document.querySelector<HTMLElement>("#result-text")!;
+const form = document.querySelector<HTMLFormElement>("#echo-form")!
+const repositoryPath = document.querySelector<HTMLInputElement>("#repository-path")!
+const echoMessage = document.querySelector<HTMLTextAreaElement>("#echo-message")!
+const runButton = document.querySelector<HTMLButtonElement>("#run-button")!
+const cancelButton = document.querySelector<HTMLButtonElement>("#cancel-button")!
+const engineBadge = document.querySelector<HTMLDivElement>("#engine-badge")!
+const engineSummary = document.querySelector<HTMLSpanElement>("#engine-summary")!
+const enginePath = document.querySelector<HTMLElement>("#engine-path")!
+const engineVersion = document.querySelector<HTMLElement>("#engine-version")!
+const trace = document.querySelector<HTMLOListElement>("#trace")!
+const progress = document.querySelector<HTMLProgressElement>("#progress")!
+const result = document.querySelector<HTMLDivElement>("#result")!
+const resultText = document.querySelector<HTMLElement>("#result-text")!
 
-let traceIndex = 0;
+let traceIndex = 0
 
 function setRunning(running: boolean) {
-    runButton.disabled = running;
-    cancelButton.disabled = !running;
-    form.setAttribute("aria-busy", String(running));
+    runButton.disabled = running
+    cancelButton.disabled = !running
+    form.setAttribute("aria-busy", String(running))
 }
 
 function resetTrace() {
-    traceIndex = 0;
-    trace.replaceChildren();
-    progress.value = 0;
-    result.className = "result";
-    resultText.textContent = "Command in progress";
+    traceIndex = 0
+    trace.replaceChildren()
+    progress.value = 0
+    result.className = "result"
+    resultText.textContent = "Command in progress"
 }
 
 function appendTrace(message: EngineMessage) {
-    traceIndex += 1;
-    const item = document.createElement("li");
-    const index = document.createElement("span");
-    const body = document.createElement("div");
-    const type = document.createElement("small");
-    const text = document.createElement("p");
+    traceIndex += 1
+    const item = document.createElement("li")
+    const index = document.createElement("span")
+    const body = document.createElement("div")
+    const type = document.createElement("small")
+    const text = document.createElement("p")
 
-    index.textContent = String(traceIndex).padStart(2, "0");
-    type.textContent = message.type;
+    index.textContent = String(traceIndex).padStart(2, "0")
+    type.textContent = message.type
     text.textContent = "message" in message
         ? message.message
-        : `${message.gitVersion} at ${message.repositoryRoot}`;
-    body.append(type, text);
-    item.append(index, body);
-    item.dataset.type = message.type;
-    trace.append(item);
+        : `${message.gitVersion} at ${message.repositoryRoot}`
+    body.append(type, text)
+    item.append(index, body)
+    item.dataset.type = message.type
+    trace.append(item)
 
-    if (message.type === "progress") {
-        progress.value = message.completed / message.total;
-    } else if (message.type === "result") {
-        progress.value = 1;
-        result.classList.add("is-success");
-        resultText.textContent = message.command === "echo" ? message.message : "Command completed";
+    if (message.type === "progress")
+        progress.value = message.completed / message.total
+    else if (message.type === "result") {
+        progress.value = 1
+        result.classList.add("is-success")
+        resultText.textContent = message.command === "echo" ? message.message : "Command completed"
     } else if (message.type === "cancelled") {
-        result.classList.add("is-cancelled");
-        resultText.textContent = message.message;
+        result.classList.add("is-cancelled")
+        resultText.textContent = message.message
     } else {
-        result.classList.add("is-error");
-        resultText.textContent = `${message.code}: ${message.message}`;
+        result.classList.add("is-error")
+        resultText.textContent = `${message.code}: ${message.message}`
     }
 
-    item.scrollIntoView({ block: "nearest" });
+    item.scrollIntoView({ block: "nearest" })
 }
 
-window.workbench.onEngineMessage(appendTrace);
+window.workbench.onEngineMessage(appendTrace)
 
-const status = await window.workbench.getEngineStatus();
-repositoryPath.value = status.repositoryPath;
-enginePath.textContent = status.path;
-enginePath.title = status.path;
+const status = await window.workbench.getEngineStatus()
+repositoryPath.value = status.repositoryPath
+enginePath.textContent = status.path
+enginePath.title = status.path
 
 if (status.state === "ready") {
-    engineBadge.classList.add("is-ready");
-    engineSummary.textContent = `${status.name} ${status.version}`;
-    engineVersion.textContent = status.version;
+    engineBadge.classList.add("is-ready")
+    engineSummary.textContent = `${status.name} ${status.version}`
+    engineVersion.textContent = status.version
 } else {
-    engineBadge.classList.add("is-error");
-    engineSummary.textContent = "Engine unavailable";
-    engineVersion.textContent = "Unavailable";
-    result.classList.add("is-error");
-    resultText.textContent = status.error;
-    runButton.disabled = true;
+    engineBadge.classList.add("is-error")
+    engineSummary.textContent = "Engine unavailable"
+    engineVersion.textContent = "Unavailable"
+    result.classList.add("is-error")
+    resultText.textContent = status.error
+    runButton.disabled = true
 }
 
 form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    resetTrace();
-    setRunning(true);
+    event.preventDefault()
+    resetTrace()
+    setRunning(true)
 
     try {
-        const command = window.workbench.runEcho(echoMessage.value, repositoryPath.value);
-        const execution = await command;
+        const command = window.workbench.runEcho(echoMessage.value, repositoryPath.value)
+        const execution = await command
 
         if (execution.exitCode !== 0 && execution.exitCode !== 3) {
-            result.classList.add("is-error");
-            resultText.textContent = execution.diagnostics || `Engine exited ${execution.exitCode}.`;
+            result.classList.add("is-error")
+            resultText.textContent = execution.diagnostics || `Engine exited ${execution.exitCode}.`
         }
     } catch (error) {
-        result.classList.add("is-error");
-        resultText.textContent = error instanceof Error ? error.message : String(error);
+        result.classList.add("is-error")
+        resultText.textContent = error instanceof Error ? error.message : String(error)
     } finally {
-        setRunning(false);
+        setRunning(false)
     }
-});
+})
 
 cancelButton.addEventListener("click", async () => {
-    const cancelled = await window.workbench.cancel();
+    const cancelled = await window.workbench.cancel()
     if (cancelled) {
-        cancelButton.disabled = true;
-        result.classList.add("is-cancelled");
-        resultText.textContent = "Stopping...";
+        cancelButton.disabled = true
+        result.classList.add("is-cancelled")
+        resultText.textContent = "Stopping..."
     }
-});
+})
