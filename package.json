@@ -1,0 +1,32 @@
+{
+    "name": "git-workbench",
+    "private": true,
+    "type": "module",
+    "packageManager": "bun@1.4.0",
+    "workspaces": [
+        "shared",
+        "cli",
+        "desktop"
+    ],
+    "scripts": {
+        "build:engine": "bun build ./cli/src/main.ts --compile --outfile ./cli/bin/workbench-engine.exe",
+        "predev": "bun run build:engine",
+        "dev": "bun run --cwd desktop dev",
+        "build": "bun run build:engine && bun run --cwd desktop build",
+        "test": "bun run build:engine && bun test ./cli/test ./desktop/test",
+        "typecheck": "tsc --noEmit",
+        "lint": "eslint .",
+        "format": "dprint fmt --incremental=false",
+        "format:check": "dprint check --incremental=false",
+        "check": "bun run typecheck && bun run lint && bun run format:check && bun run test && bun run build"
+    },
+    "devDependencies": {
+        "@eslint/js": "^10.0.1",
+        "@types/bun": "^1.4.0",
+        "@types/node": "^26.2.0",
+        "dprint": "^0.56.1",
+        "eslint": "^10.9.0",
+        "typescript": "^6.0.0",
+        "typescript-eslint": "^8.67.0"
+    }
+}

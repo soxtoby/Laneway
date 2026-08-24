@@ -1,0 +1,553 @@
+:root {
+    color-scheme: dark;
+    font-family: "Bahnschrift", "Segoe UI Variable", sans-serif;
+    font-synthesis: none;
+    --ink: #171713;
+    --ink-raised: #20201b;
+    --paper: #ebe8db;
+    --muted: #98978d;
+    --line: #404039;
+    --acid: #c9f65a;
+    --orange: #ff7043;
+    --red: #ff5a55;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+    min-height: 100%;
+    margin: 0;
+}
+
+body {
+    color: var(--paper);
+    background-color: var(--ink);
+    background-image:
+        linear-gradient(rgb(235 232 219 / 4%) 1px, transparent 1px),
+        linear-gradient(90deg, rgb(235 232 219 / 4%) 1px, transparent 1px);
+    background-size: 32px 32px;
+}
+
+button,
+input,
+textarea {
+    font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+    outline: 3px solid var(--acid);
+    outline-offset: 3px;
+}
+
+.shell {
+    width: min(1440px, 100%);
+    min-height: 100vh;
+    margin: 0 auto;
+    padding: 24px 32px 18px;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: 24px;
+}
+
+.masthead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--line);
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.brand-mark {
+    width: 43px;
+    height: 43px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    align-items: end;
+    gap: 4px;
+    padding: 7px;
+    border: 1px solid var(--paper);
+}
+
+.brand-mark i {
+    display: block;
+    background: var(--acid);
+}
+
+.brand-mark i:nth-child(1) {
+    height: 38%;
+}
+
+.brand-mark i:nth-child(2) {
+    height: 100%;
+}
+
+.brand-mark i:nth-child(3) {
+    height: 67%;
+}
+
+.eyebrow {
+    margin: 0 0 5px;
+    color: var(--muted);
+    font: 600 0.67rem/1 "Cascadia Mono", monospace;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
+h1,
+h2,
+p {
+    margin-top: 0;
+}
+
+h1 {
+    margin-bottom: 0;
+    font-size: 1.55rem;
+    font-stretch: condensed;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+h2 {
+    margin-bottom: 12px;
+    font-size: clamp(1.7rem, 3vw, 2.65rem);
+    font-stretch: condensed;
+    font-weight: 520;
+    letter-spacing: -0.035em;
+    line-height: 1;
+}
+
+.engine-badge {
+    max-width: 48%;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 11px;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    font: 0.73rem/1.2 "Cascadia Mono", monospace;
+}
+
+.status-light {
+    width: 8px;
+    height: 8px;
+    flex: 0 0 auto;
+    background: var(--muted);
+}
+
+.engine-badge.is-ready {
+    color: var(--paper);
+}
+
+.engine-badge.is-ready .status-light {
+    background: var(--acid);
+    box-shadow: 0 0 14px rgb(201 246 90 / 45%);
+}
+
+.engine-badge.is-error .status-light {
+    background: var(--red);
+}
+
+.workspace {
+    display: grid;
+    grid-template-columns: minmax(350px, 0.9fr) minmax(390px, 1.1fr);
+    border: 1px solid var(--line);
+    background: rgb(23 23 19 / 92%);
+    box-shadow: 14px 14px 0 #0e0e0b;
+}
+
+.command-panel,
+.trace-panel {
+    min-width: 0;
+    padding: clamp(24px, 4vw, 48px);
+}
+
+.command-panel {
+    position: relative;
+    border-right: 1px solid var(--line);
+}
+
+.section-index {
+    position: absolute;
+    top: 25px;
+    right: 28px;
+    color: var(--line);
+    font: 700 4.8rem/1 "Cascadia Mono", monospace;
+    pointer-events: none;
+}
+
+.section-heading {
+    position: relative;
+    max-width: 500px;
+    margin-bottom: 32px;
+}
+
+.section-heading > p:last-child {
+    max-width: 46ch;
+    margin-bottom: 0;
+    color: var(--muted);
+    font-size: 0.92rem;
+    line-height: 1.5;
+}
+
+form {
+    display: grid;
+    gap: 12px;
+}
+
+label,
+dt,
+.result-label {
+    color: var(--muted);
+    font: 600 0.68rem/1 "Cascadia Mono", monospace;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+label:not(:first-child) {
+    margin-top: 9px;
+}
+
+.path-field {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: stretch;
+    border: 1px solid var(--line);
+    background: #10100d;
+}
+
+.path-field span {
+    display: grid;
+    place-items: center;
+    padding: 0 11px;
+    color: var(--acid);
+    border-right: 1px solid var(--line);
+    font: 0.7rem/1 "Cascadia Mono", monospace;
+}
+
+input,
+textarea {
+    width: 100%;
+    color: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 0;
+    background: #10100d;
+    font-family: "Cascadia Mono", monospace;
+    font-size: 0.82rem;
+}
+
+input {
+    min-width: 0;
+    padding: 12px;
+    border: 0;
+}
+
+textarea {
+    min-height: 82px;
+    padding: 13px;
+    resize: vertical;
+    line-height: 1.5;
+}
+
+.controls {
+    display: flex;
+    align-items: stretch;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+button {
+    min-height: 44px;
+    padding: 0 16px;
+    border-radius: 0;
+    cursor: pointer;
+    font-size: 0.76rem;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.38;
+}
+
+.run-button {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--ink);
+    border: 1px solid var(--acid);
+    background: var(--acid);
+}
+
+.run-button:not(:disabled):hover {
+    background: var(--paper);
+    border-color: var(--paper);
+}
+
+kbd {
+    padding: 3px 6px;
+    color: inherit;
+    border: 1px solid currentcolor;
+    font: 0.61rem/1 "Cascadia Mono", monospace;
+}
+
+.cancel-button {
+    color: var(--paper);
+    border: 1px solid var(--line);
+    background: transparent;
+}
+
+.cancel-button:not(:disabled):hover {
+    color: var(--ink);
+    border-color: var(--orange);
+    background: var(--orange);
+}
+
+.engine-detail {
+    margin: 32px 0 0;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+}
+
+.engine-detail div {
+    display: grid;
+    grid-template-columns: 90px minmax(0, 1fr);
+    gap: 12px;
+    padding: 6px 0;
+}
+
+.engine-detail dt,
+.engine-detail dd {
+    margin: 0;
+}
+
+.engine-detail dd {
+    overflow: hidden;
+    color: var(--paper);
+    font: 0.72rem/1.35 "Cascadia Mono", monospace;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.trace-panel {
+    display: flex;
+    flex-direction: column;
+    background: var(--ink-raised);
+}
+
+.trace-heading {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: 20px;
+}
+
+.trace-heading h2 {
+    margin-bottom: 20px;
+}
+
+.format-tag {
+    padding: 6px 8px;
+    color: var(--orange);
+    border: 1px solid var(--orange);
+    font: 0.62rem/1 "Cascadia Mono", monospace;
+    letter-spacing: 0.12em;
+}
+
+.progress-track {
+    width: 100%;
+    height: 3px;
+    margin-bottom: 25px;
+    border: 0;
+    border-radius: 0;
+    background: var(--line);
+    color: var(--acid);
+    accent-color: var(--acid);
+}
+
+.progress-track::-webkit-progress-bar {
+    background: var(--line);
+}
+
+.progress-track::-webkit-progress-value {
+    background: var(--acid);
+    transition: width 180ms ease-out;
+}
+
+.trace {
+    min-height: 230px;
+    max-height: 330px;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+    border-top: 1px solid var(--line);
+}
+
+.trace li {
+    display: grid;
+    grid-template-columns: 42px 1fr;
+    gap: 13px;
+    padding: 14px 4px;
+    border-bottom: 1px solid var(--line);
+    animation: trace-in 180ms ease-out both;
+}
+
+.trace li > span {
+    color: var(--muted);
+    font: 0.68rem/1.4 "Cascadia Mono", monospace;
+}
+
+.trace small {
+    display: block;
+    margin-bottom: 5px;
+    color: var(--acid);
+    font: 0.62rem/1 "Cascadia Mono", monospace;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.trace p {
+    margin: 0;
+    font: 0.78rem/1.45 "Cascadia Mono", monospace;
+}
+
+.trace li[data-type="cancelled"] small,
+.trace li[data-type="error"] small {
+    color: var(--orange);
+}
+
+.trace .empty-trace {
+    color: var(--muted);
+    font: 0.78rem/1.45 "Cascadia Mono", monospace;
+}
+
+.result {
+    margin-top: auto;
+    padding: 20px;
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--muted);
+    background: #171713;
+}
+
+.result strong {
+    display: block;
+    margin-top: 8px;
+    font-size: 1rem;
+    font-weight: 520;
+}
+
+.result.is-success {
+    border-left-color: var(--acid);
+}
+
+.result.is-cancelled {
+    border-left-color: var(--orange);
+}
+
+.result.is-error {
+    border-left-color: var(--red);
+}
+
+footer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--muted);
+    font: 0.62rem/1 "Cascadia Mono", monospace;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.footer-rule {
+    width: 36px;
+    height: 1px;
+    background: var(--line);
+}
+
+@keyframes trace-in {
+    from {
+        opacity: 0;
+        transform: translateY(5px);
+    }
+}
+
+@media (max-width: 900px) {
+    .shell {
+        padding: 18px;
+    }
+
+    .workspace {
+        grid-template-columns: 1fr;
+    }
+
+    .command-panel {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+    }
+
+    .trace {
+        max-height: 260px;
+    }
+}
+
+@media (max-width: 560px) {
+    .masthead {
+        align-items: flex-start;
+        gap: 16px;
+    }
+
+    .engine-badge {
+        max-width: 55%;
+    }
+
+    .command-panel,
+    .trace-panel {
+        padding: 22px;
+    }
+
+    .section-index {
+        display: none;
+    }
+
+    .controls {
+        flex-direction: column;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+    }
+}
+
+@media (forced-colors: active) {
+    .status-light,
+    .brand-mark i,
+    .progress-track::-webkit-progress-value {
+        background: Highlight;
+    }
+
+    .workspace {
+        box-shadow: none;
+    }
+}

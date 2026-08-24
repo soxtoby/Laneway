@@ -1,0 +1,20 @@
+{
+    "lineWidth": 160,
+    "newLineKind": "lf",
+    "useTabs": false,
+    "indentWidth": 4,
+    "includes": ["**/*.{ts,js,json,jsonc,css,html}"],
+    "excludes": [
+        "**/node_modules/**",
+        "bun.lock",
+        "cli/bin/**",
+        "desktop/out/**",
+        "prototype/**"
+    ],
+    "plugins": [
+        "npm:@dprint/typescript@0.96.1",
+        "npm:@dprint/json@0.23.0",
+        "npm:dprint-plugin-malva@0.16.0",
+        "npm:dprint-plugin-markup@0.27.3"
+    ]
+}

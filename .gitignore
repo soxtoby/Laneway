@@ -1,0 +1,5 @@
+node_modules/
+cli/bin/
+desktop/out/
+desktop/dist/
+*.log

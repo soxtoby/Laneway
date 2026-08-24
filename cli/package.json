@@ -1,0 +1,8 @@
+{
+    "name": "@git-workbench/cli",
+    "private": true,
+    "type": "module",
+    "dependencies": {
+        "@git-workbench/shared": "workspace:*"
+    }
+}
