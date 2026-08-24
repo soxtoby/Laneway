@@ -1,11 +1,12 @@
-import { defineConfig, externalizeDepsPlugin } from "electron-vite"
+import { defineConfig } from "electron-vite"
 
 export default defineConfig({
     main: {
-        plugins: [externalizeDepsPlugin({ exclude: ["@git-workbench/shared"] })],
+        build: {
+            externalizeDeps: { exclude: ["@git-workbench/shared"] },
+        },
     },
     preload: {
-        plugins: [externalizeDepsPlugin()],
         build: {
             rollupOptions: {
                 output: {
