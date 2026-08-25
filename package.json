@@ -12,6 +12,8 @@
         "build:engine": "bun build ./cli/src/main.ts --compile --outfile ./cli/bin/workbench-engine.exe",
         "predev": "bun run build:engine",
         "dev": "bun run --cwd desktop dev",
+        "predev:inspect": "bun run build:engine",
+        "dev:inspect": "bun run --cwd desktop dev:inspect",
         "build": "bun run build:engine && bun run --cwd desktop build",
         "test": "bun run build:engine && bun test ./cli/test ./desktop/test",
         "typecheck": "tsc --noEmit",

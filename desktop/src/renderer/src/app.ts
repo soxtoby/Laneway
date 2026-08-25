@@ -1,5 +1,4 @@
 import type { EngineMessage } from "@git-workbench/shared"
-import "./styles.css"
 
 const app = document.querySelector<HTMLDivElement>("#app")
 if (!app)
@@ -13,8 +12,8 @@ app.innerHTML = `
           <i></i><i></i><i></i>
         </span>
         <div>
-          <p class="eyebrow">Local Git instrument</p>
-          <h1>Workbench</h1>
+          <p class="eyebrow">Git Workbench</p>
+          <h1>Engine console</h1>
         </div>
       </div>
       <div class="engine-badge" id="engine-badge" role="status" aria-live="polite">
@@ -25,20 +24,16 @@ app.innerHTML = `
 
     <section class="workspace" aria-labelledby="command-heading">
       <div class="command-panel">
-        <div class="section-index" aria-hidden="true">01</div>
         <div class="section-heading">
-          <p class="eyebrow">Process-per-command test bench</p>
-          <h2 id="command-heading">Ask the Engine to echo</h2>
-          <p>
-            A harmless round trip through the same executable boundary used by every
-            future Workbench operation.
-          </p>
+          <p class="eyebrow">Command <span>01</span></p>
+          <h2 id="command-heading">Echo round trip</h2>
+          <p>Send a payload through the same Engine boundary used by Workbench operations.</p>
         </div>
 
         <form id="echo-form">
-          <label for="repository-path">Target repository</label>
+          <label for="repository-path">Repository path</label>
           <div class="path-field">
-            <span aria-hidden="true">cwd</span>
+            <span aria-hidden="true">CWD</span>
             <input id="repository-path" name="repositoryPath" spellcheck="false" required />
           </div>
 
@@ -71,8 +66,8 @@ app.innerHTML = `
       <div class="trace-panel">
         <div class="trace-heading">
           <div>
-            <p class="eyebrow">Structured output</p>
-            <h2>Engine trace</h2>
+            <p class="eyebrow">Live output</p>
+            <h2>Command trace</h2>
           </div>
           <span class="format-tag">NDJSON</span>
         </div>
@@ -102,7 +97,7 @@ app.innerHTML = `
     <footer>
       <span>Workbench GUI</span>
       <span class="footer-rule"></span>
-      <span>Engine runs out of process</span>
+      <span>Process per command</span>
     </footer>
   </main>
 `
