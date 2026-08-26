@@ -1,5 +1,6 @@
+import { GitError } from "@git-workbench/git"
+import { readSettings, SettingsError } from "@git-workbench/settings"
 import { ENGINE_VERSION, type EngineMessage, type ErrorEvent, ExitCode } from "@git-workbench/shared"
-import { resolve } from "node:path"
 import { executeOperationCommand, type JournalPhase, OperationCancelledError, type OperationCommand, OperationRuntimeError } from "./operation-runtime.ts"
 
 const args = process.argv.slice(2)
@@ -11,10 +12,7 @@ function write(message: string | EngineMessage, json: boolean) {
         console.log(message)
     else if ("message" in message)
         console.log(message.message)
-    else if (message.command == "git-smoke") {
-        console.log(`System Git: ${message.gitVersion}`)
-        console.log(`Repository: ${message.repositoryRoot}`)
-    } else if (message.command == "history") {
+    else if (message.command == "history") {
         if (message.entries.length == 0)
             console.log("No Workbench Operations.")
         else {
@@ -210,60 +208,15 @@ async function echo(message: string, delayMs: number, json: boolean) {
     }
 }
 
-async function runGit(...gitArgs: string[]) {
-    const child = Bun.spawn(["git", ...gitArgs], {
-        cwd: process.cwd(),
-        stderr: "pipe",
-        stdout: "pipe",
-    })
-    const [exitCode, stderr, stdout] = await Promise.all([
-        child.exited,
-        new Response(child.stderr).text(),
-        new Response(child.stdout).text(),
-    ])
-
-    return { exitCode, stderr: stderr.trim(), stdout: stdout.trim() }
-}
-
-async function gitSmoke(json: boolean) {
-    try {
-        const version = await runGit("--version")
-        if (version.exitCode != 0)
-            throw new Error(version.stderr || "Git did not report its version.")
-
-        const root = await runGit("rev-parse", "--show-toplevel")
-        if (root.exitCode !== 0) {
-            const message = root.stderr || "The current directory is not a Git repository."
-            writeError({
-                type: "error",
-                code: "git.smoke-failed",
-                message,
-            }, json)
-            return ExitCode.failure
-        }
-
-        write({
-            type: "result",
-            command: "git-smoke",
-            gitVersion: version.stdout,
-            repositoryRoot: resolve(root.stdout),
-        }, json)
-        return ExitCode.ok
-    } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        writeError({ type: "error", code: "git.unavailable", message }, json)
-        return ExitCode.failure
-    }
-}
-
 type ParsedOperationArguments =
-    | { ok: true; json: boolean; command: OperationCommand }
+    | { ok: true; json: boolean; gitPath?: string; command: OperationCommand }
     | { ok: false; json: boolean; error: ErrorEvent }
 
 function parseOperationArguments(command: OperationCommand["command"], commandArguments: string[]): ParsedOperationArguments {
     const json = commandArguments.includes("--json")
     const noWait = commandArguments.includes("--no-wait")
     let value: string | undefined
+    let gitPath: string | undefined
     let crashAfter: JournalPhase | undefined
     let holdAfterIntentMs: number | undefined
 
@@ -271,6 +224,13 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
         const argument = commandArguments[index]
         if (argument == "--json" || argument == "--no-wait")
             continue
+        if (argument == "--git-path") {
+            gitPath = commandArguments[index + 1]
+            if (!gitPath)
+                return invalidOperationArgument(command, json, "A path is required for --git-path.", "--git-path")
+            index += 1
+            continue
+        }
         if (command == "test-mutation" && argument == "--value") {
             value = commandArguments[index + 1]
             if (value == undefined)
@@ -316,6 +276,7 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
     return {
         ok: true,
         json,
+        gitPath,
         command: command == "test-mutation"
             ? { command, value: value!, noWait, crashAfter, holdAfterIntentMs }
             : command == "undo" || command == "redo"
@@ -346,12 +307,22 @@ async function runOperationCommand(command: OperationCommand["command"], command
 
     const cancellation = monitorCancellation()
     try {
-        write(await executeOperationCommand(parsed.command, process.cwd(), cancellation), parsed.json)
+        const settings = await readSettings(process.env.WORKBENCH_SETTINGS_PATH)
+        write(await executeOperationCommand(parsed.command, process.cwd(), cancellation, parsed.gitPath ?? settings.gitPath), parsed.json)
         return ExitCode.ok
     } catch (error) {
         if (error instanceof OperationCancelledError) {
             write({ type: "cancelled", command, message: error.message }, parsed.json)
             return ExitCode.cancelled
+        }
+        if (error instanceof GitError || error instanceof SettingsError) {
+            writeError({
+                type: "error",
+                code: error.code,
+                message: error.message,
+                details: error instanceof GitError ? error.details : { path: error.path },
+            }, parsed.json)
+            return ExitCode.failure
         }
         const runtimeError = error instanceof OperationRuntimeError
             ? error
@@ -365,23 +336,7 @@ async function runOperationCommand(command: OperationCommand["command"], command
 
 if (args.length == 1 && args[0] == "--version")
     console.log(`workbench-engine ${ENGINE_VERSION}`)
-else if (args[0] == "git-smoke") {
-    const commandArguments = args.slice(1)
-    const invalidArgument = commandArguments.find(argument => argument !== "--json")
-    const json = commandArguments.includes("--json")
-
-    if (invalidArgument) {
-        writeError({
-            type: "error",
-            code: "usage.invalid-argument",
-            message: `Unknown option "${invalidArgument}" for git-smoke.`,
-            details: { argument: invalidArgument },
-        }, json)
-        process.exitCode = ExitCode.usage
-    } else {
-        process.exitCode = await gitSmoke(json)
-    }
-} else if (args[0] == "echo") {
+else if (args[0] == "echo") {
     const parsed = parseEchoArguments(args.slice(1))
     if (!parsed.ok) {
         writeError(parsed.error, parsed.json)

@@ -61,7 +61,7 @@ An explicit change to a linked worktree directory's basename within its current 
 _Avoid_: Worktree label
 
 **Workbench Engine**:
-The headless CLI executable that owns Git access and Workbench operations. The Workbench invokes one process per command; people and agents may invoke the same commands directly.
+The headless CLI executable that performs coarse-grained, scriptable Workbench actions. The Workbench invokes one process per action; people and agents may invoke the same actions directly, while repository-entry mechanics need not be CLI commands.
 _Avoid_: Git service, daemon, utility process
 
 **Branch Graph**:

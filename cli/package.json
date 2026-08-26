@@ -3,6 +3,8 @@
     "private": true,
     "type": "module",
     "dependencies": {
+        "@git-workbench/git": "workspace:*",
+        "@git-workbench/settings": "workspace:*",
         "@git-workbench/shared": "workspace:*",
         "zod": "^4.4.3"
     }

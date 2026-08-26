@@ -5,10 +5,13 @@
     "main": "./out/main/index.js",
     "scripts": {
         "dev": "electron-vite dev",
+        "dev:browser": "vite ./src/renderer --host 127.0.0.1",
         "dev:inspect": "electron-vite dev --remoteDebuggingPort 9222",
         "build": "electron-vite build"
     },
     "dependencies": {
+        "@git-workbench/git": "workspace:*",
+        "@git-workbench/settings": "workspace:*",
         "@git-workbench/shared": "workspace:*"
     },
     "devDependencies": {

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { resolve } from "node:path"
 
 const enginePath = resolve(import.meta.dir, "../bin/workbench-engine.exe")
+const testSettingsPath = resolve(tmpdir(), `workbench-engine-tests-${process.pid}.json`)
 
 async function runEngineAt(
     cwd: string,
@@ -12,7 +13,7 @@ async function runEngineAt(
 ) {
     const child = Bun.spawn([enginePath, ...args], {
         cwd,
-        env: { ...process.env, ...environment },
+        env: { ...process.env, WORKBENCH_SETTINGS_PATH: testSettingsPath, ...environment },
         stderr: "pipe",
         stdout: "pipe",
     })
@@ -34,9 +35,9 @@ function runGitAt(cwd: string, ...args: string[]) {
     return Bun.spawnSync(["git", ...args], { cwd, stderr: "pipe", stdout: "pipe" })
 }
 
-async function createRepository() {
+async function createRepository(objectFormat: "sha1" | "sha256" = "sha1") {
     const repository = await mkdtemp(resolve(tmpdir(), "workbench-mutation-"))
-    expect(runGitAt(repository, "init", "--quiet").exitCode).toBe(0)
+    expect(runGitAt(repository, "init", "--quiet", `--object-format=${objectFormat}`).exitCode).toBe(0)
     expect(runGitAt(repository, "config", "user.name", "Workbench Test").exitCode).toBe(0)
     expect(runGitAt(repository, "config", "user.email", "workbench@example.invalid").exitCode).toBe(0)
     await writeFile(resolve(repository, "README.md"), "initial\n")
@@ -191,42 +192,6 @@ describe("Workbench Engine executable", () => {
         ])
     })
 
-    test("git-smoke reports system Git and the repository from cwd", async () => {
-        const repository = await mkdtemp(resolve(tmpdir(), "workbench-git-smoke-"))
-
-        try {
-            const init = Bun.spawnSync(["git", "init", "--quiet", repository])
-            expect(init.exitCode).toBe(0)
-
-            const result = await runEngineAt(repository, ["git-smoke", "--json"])
-            const messages = parseNdjson(result.stdout) as Array<Record<string, unknown>>
-
-            expect(result.exitCode).toBe(0)
-            expect(result.stderr).toBe("")
-            expect(messages).toHaveLength(1)
-            expect(messages[0]?.type).toBe("result")
-            expect(messages[0]?.command).toBe("git-smoke")
-            expect(messages[0]?.gitVersion).toMatch(/^git version \d+\.\d+\.\d+/)
-            expect(messages[0]?.repositoryRoot).toBe(repository)
-        } finally {
-            await rm(repository, { recursive: true, force: true })
-        }
-    })
-
-    test("git-smoke rejects unsupported arguments", async () => {
-        const result = await runEngine("git-smoke", "--write", "--json")
-
-        expect(result.exitCode).toBe(2)
-        expect(parseNdjson(result.stdout)).toEqual([
-            {
-                type: "error",
-                code: "usage.invalid-argument",
-                message: 'Unknown option "--write" for git-smoke.',
-                details: { argument: "--write" },
-            },
-        ])
-    })
-
     test("a Workbench Operation can be undone and redone by later Engine processes", async () => {
         const repository = await createRepository()
         const testEnvironment = { WORKBENCH_ENABLE_TEST_COMMANDS: "1" }
@@ -275,6 +240,25 @@ describe("Workbench Engine executable", () => {
                     isNextRedo: false,
                 }],
             })
+        } finally {
+            await rm(repository, { recursive: true, force: true })
+        }
+    })
+
+    test("a Workbench Operation supports SHA-256 and an ephemeral Git path", async () => {
+        const repository = await createRepository("sha256")
+        const gitPath = Bun.which("git")
+        expect(gitPath).toBeTruthy()
+
+        try {
+            const mutation = await runEngineAt(
+                repository,
+                ["test-mutation", "--value", "sha256", "--git-path", gitPath!, "--json"],
+                { WORKBENCH_ENABLE_TEST_COMMANDS: "1" },
+            )
+            expect(mutation.exitCode).toBe(0)
+            expect(runGitAt(repository, "rev-parse", "refs/workbench/test/fixture").stdout.toString().trim()).toHaveLength(64)
+            expect((await runEngineAt(repository, ["undo", "--git-path", gitPath!, "--json"])).exitCode).toBe(0)
         } finally {
             await rm(repository, { recursive: true, force: true })
         }

@@ -17,6 +17,8 @@
     "cli": {
       "name": "@git-workbench/cli",
       "dependencies": {
+        "@git-workbench/git": "workspace:*",
+        "@git-workbench/settings": "workspace:*",
         "@git-workbench/shared": "workspace:*",
         "zod": "^4.4.3",
       },
@@ -24,6 +26,8 @@
     "desktop": {
       "name": "@git-workbench/desktop",
       "dependencies": {
+        "@git-workbench/git": "workspace:*",
+        "@git-workbench/settings": "workspace:*",
         "@git-workbench/shared": "workspace:*",
       },
       "devDependencies": {
@@ -33,6 +37,12 @@
         "typescript": "^6.0.0",
         "vite": "^7.0.0",
       },
+    },
+    "git": {
+      "name": "@git-workbench/git",
+    },
+    "settings": {
+      "name": "@git-workbench/settings",
     },
     "shared": {
       "name": "@git-workbench/shared",
@@ -183,6 +193,10 @@
     "@git-workbench/cli": ["@git-workbench/cli@workspace:cli"],
 
     "@git-workbench/desktop": ["@git-workbench/desktop@workspace:desktop"],
+
+    "@git-workbench/git": ["@git-workbench/git@workspace:git"],
+
+    "@git-workbench/settings": ["@git-workbench/settings@workspace:settings"],
 
     "@git-workbench/shared": ["@git-workbench/shared@workspace:shared"],
 

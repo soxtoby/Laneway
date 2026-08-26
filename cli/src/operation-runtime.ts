@@ -1,3 +1,4 @@
+import { connectRepository, GitError, type RepositoryGit } from "@git-workbench/git"
 import { type OperationAvailability, type OperationAvailabilityReason, type OperationHistoryEntry, type OperationHistoryResult, type OperationSummary, OperationSummarySchema, type OperationTransitionResult, type RecoveredExecution, type RecoveryResult, type TestMutationResult } from "@git-workbench/shared"
 import { link, lstat, mkdir, open, readdir, readFile, readlink, rename, unlink } from "node:fs/promises"
 import { resolve } from "node:path"
@@ -6,17 +7,6 @@ import { z } from "zod"
 const fixtureRef = "refs/workbench/test/fixture"
 const journalFileName = "journal.jsonl"
 const historyFileName = "history.jsonl"
-
-interface GitResult {
-    exitCode: number
-    stderr: string
-    stdout: string
-}
-
-interface Repository {
-    commonDirectory: string
-    worktree: string
-}
 
 const RefChangeSchema = z.object({
     ref: z.string(),
@@ -136,9 +126,10 @@ export async function executeOperationCommand(
     command: OperationCommand,
     cwd: string,
     cancellation: CancellationSignal = neverCancelled,
+    gitPath?: string,
 ): Promise<OperationCommandResult> {
-    const repository = await discoverRepository(cwd)
-    const store = new OperationStore(repository.commonDirectory)
+    const repository = await connectRepository(cwd, gitPath)
+    const store = new OperationStore(repository.descriptor.commonDirectory)
 
     return store.withLock(command.noWait, cancellation, async () => {
         const runtime = new OperationRuntime(repository, store, cancellation)
@@ -161,30 +152,30 @@ export async function executeOperationCommand(
 
 class OperationRuntime {
     constructor(
-        private readonly repository: Repository,
+        private readonly repository: RepositoryGit,
         private readonly store: OperationStore,
         private readonly cancellation: CancellationSignal,
     ) {}
 
     async applyTestMutation(value: string, crashAfter?: JournalPhase, holdAfterIntentMs?: number): Promise<TestMutationResult> {
         const projection = await this.store.readHistory()
-        const before = await readRef(this.repository.worktree, fixtureRef)
-        const expectedGitLockfiles = await findGitLockfiles(this.repository.commonDirectory)
+        const before = await this.repository.resolveRef(fixtureRef)
+        const expectedGitLockfiles = await findGitLockfiles(this.repository.descriptor.commonDirectory)
         if (expectedGitLockfiles.length > 0)
             throw gitLockfileError(expectedGitLockfiles)
-        const after = await writeBlob(this.repository.worktree, value)
-        const worktree = await fingerprintWorktree(this.repository.worktree)
+        const after = await this.repository.hashObject(value)
+        const worktree = await fingerprintWorktree(this.repository, this.repository.descriptor.selectedWorktree)
         const operation = sealOperation({
             id: crypto.randomUUID(),
             timestamp: new Date().toISOString(),
             kind: "test.ref-update",
             summary: `Set the test fixture to ${value}`,
             affectedRefs: [fixtureRef],
-            affectedWorktrees: [this.repository.worktree],
-            gitCommonDirectory: this.repository.commonDirectory,
+            affectedWorktrees: [this.repository.descriptor.selectedWorktree],
+            gitCommonDirectory: this.repository.descriptor.commonDirectory,
             expectedGitLockfiles,
             refChanges: [{ ref: fixtureRef, before, after }],
-            worktreeChanges: [{ path: this.repository.worktree, before: worktree, after: worktree }],
+            worktreeChanges: [{ path: this.repository.descriptor.selectedWorktree, before: worktree, after: worktree }],
         })
         const abandoned = projection.operations.slice(projection.position)
 
@@ -248,7 +239,7 @@ class OperationRuntime {
             return { available: false, reason: "empty" }
 
         try {
-            await validatePreconditions(this.repository.worktree, operation, action)
+            await validatePreconditions(this.repository, operation, action)
             return { available: true, operationId: operation.id }
         } catch (error) {
             if (error instanceof OperationRuntimeError && error.code == "operation.precondition-failed")
@@ -294,13 +285,13 @@ class OperationRuntime {
         })
         crashIfRequested("intent", crashAfter)
         await this.cancelIfRequested(executionId, operation, action, holdAfterIntentMs)
-        await retainOperation(this.repository.worktree, operation)
+        await retainOperation(this.repository, operation)
         await this.store.appendJournalPhase(executionId, operation.id, action, "recovery-retained")
         crashIfRequested("recovery-retained", crashAfter)
         await this.cancelIfRequested(executionId, operation, action)
 
         try {
-            await validatePreconditions(this.repository.worktree, operation, action)
+            await validatePreconditions(this.repository, operation, action)
         } catch (error) {
             await this.abortBeforeCommit(executionId, operation, action)
             throw error
@@ -310,12 +301,12 @@ class OperationRuntime {
         await this.cancelIfRequested(executionId, operation, action)
 
         try {
-            await applyRefChanges(this.repository.worktree, transitionChanges(operation, action))
+            await applyRefChanges(this.repository, transitionChanges(operation, action))
         } catch (error) {
             await this.abortBeforeCommit(executionId, operation, action)
             throw error
         }
-        await validateOperationState(operation, action, "target")
+        await validateOperationState(this.repository, operation, action, "target")
         await this.store.appendJournalPhase(executionId, operation.id, action, "refs-committed")
         crashIfRequested("refs-committed", crashAfter)
 
@@ -324,7 +315,7 @@ class OperationRuntime {
         crashIfRequested("history-committed", crashAfter)
 
         for (const abandonedOperation of abandoned)
-            await releaseOperation(this.repository.worktree, abandonedOperation.id)
+            await releaseOperation(this.repository, abandonedOperation.id)
 
         await this.store.appendJournalPhase(executionId, operation.id, action, "finalized")
         crashIfRequested("finalized", crashAfter)
@@ -337,7 +328,7 @@ class OperationRuntime {
 
         await this.store.appendJournalPhase(executionId, operation.id, action, "cancelled")
         if (action == "apply")
-            await releaseOperation(this.repository.worktree, operation.id)
+            await releaseOperation(this.repository, operation.id)
         await this.store.appendJournalPhase(executionId, operation.id, action, "finalized")
         throw new OperationCancelledError("Cancellation acknowledged at a verified journal boundary.")
     }
@@ -345,7 +336,7 @@ class OperationRuntime {
     private async abortBeforeCommit(executionId: string, operation: StoredOperation, action: "apply" | "undo" | "redo") {
         await this.store.appendJournalPhase(executionId, operation.id, action, "aborted")
         if (action == "apply")
-            await releaseOperation(this.repository.worktree, operation.id)
+            await releaseOperation(this.repository, operation.id)
         await this.store.appendJournalPhase(executionId, operation.id, action, "finalized")
     }
 
@@ -353,16 +344,16 @@ class OperationRuntime {
         const { action, executionId, operation, operationId } = execution.intent
         if (execution.phases.has("cancelled") || execution.phases.has("aborted")) {
             if (action == "apply")
-                await releaseOperation(this.repository.worktree, operation.id)
+                await releaseOperation(this.repository, operation.id)
             await this.store.appendJournalPhase(executionId, operationId, action, "finalized")
             return false
         }
 
         const historyCommitted = await this.store.hasHistoryEvent(executionId)
         const refsCommitted = execution.phases.has("refs-committed") || historyCommitted
-        const targetMatches = await operationStateMatches(operation, action, "target")
+        const targetMatches = await operationStateMatches(this.repository, operation, action, "target")
 
-        await retainOperation(this.repository.worktree, operation)
+        await retainOperation(this.repository, operation)
         if (!execution.phases.has("recovery-retained"))
             await this.store.appendJournalPhase(executionId, operationId, action, "recovery-retained")
 
@@ -371,7 +362,7 @@ class OperationRuntime {
                 throw recoveryBlocked(operation, action, "The recorded target state no longer matches the repository.")
         } else if (!targetMatches) {
             try {
-                await validatePreconditions(this.repository.worktree, operation, action)
+                await validatePreconditions(this.repository, operation, action)
             } catch (error) {
                 if (error instanceof OperationRuntimeError && error.code == "operation.precondition-failed")
                     throw recoveryBlocked(operation, action, error.message, error.details)
@@ -379,7 +370,7 @@ class OperationRuntime {
             }
             if (!execution.phases.has("preconditions-verified"))
                 await this.store.appendJournalPhase(executionId, operationId, action, "preconditions-verified")
-            await applyRefChanges(this.repository.worktree, transitionChanges(operation, action))
+            await applyRefChanges(this.repository, transitionChanges(operation, action))
         }
 
         if (!execution.phases.has("refs-committed"))
@@ -390,7 +381,7 @@ class OperationRuntime {
             await this.store.appendJournalPhase(executionId, operationId, action, "history-committed")
 
         for (const abandonedOperationId of execution.intent.abandonedOperationIds ?? [])
-            await releaseOperation(this.repository.worktree, abandonedOperationId)
+            await releaseOperation(this.repository, abandonedOperationId)
         await this.store.appendJournalPhase(executionId, operationId, action, "finalized")
         return true
     }
@@ -611,9 +602,9 @@ function transitionChanges(operation: StoredOperation, action: "apply" | "undo" 
         : operation.refChanges
 }
 
-async function operationStateMatches(operation: StoredOperation, action: "apply" | "undo" | "redo", side: "source" | "target") {
+async function operationStateMatches(repository: RepositoryGit, operation: StoredOperation, action: "apply" | "undo" | "redo", side: "source" | "target") {
     try {
-        await validateOperationState(operation, action, side)
+        await validateOperationState(repository, operation, action, side)
         return true
     } catch (error) {
         if (error instanceof OperationRuntimeError && error.code == "operation.precondition-failed")
@@ -643,79 +634,34 @@ const neverCancelled: CancellationSignal = {
     },
 }
 
-async function discoverRepository(cwd: string): Promise<Repository> {
-    const [commonDirectory, worktree] = await Promise.all([
-        requireGit(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"),
-        requireGit(cwd, "rev-parse", "--path-format=absolute", "--show-toplevel"),
-    ])
-    return { commonDirectory: resolve(commonDirectory), worktree: resolve(worktree) }
-}
-
-async function writeBlob(cwd: string, value: string) {
-    return requireGit(cwd, ["hash-object", "-w", "--stdin"], value)
-}
-
-async function readRef(cwd: string, ref: string) {
-    const result = await runGit(cwd, ["rev-parse", "--verify", "--quiet", ref])
-    if (result.exitCode == 1)
-        return null
-    if (result.exitCode != 0)
-        throw gitFailure(result, `Could not read ${ref}.`)
-    return result.stdout.trim()
-}
-
-async function retainOperation(cwd: string, operation: StoredOperation) {
+async function retainOperation(repository: RepositoryGit, operation: StoredOperation) {
     for (const [index, change] of operation.refChanges.entries()) {
         if (change.before)
-            await updatePrivateRef(cwd, `refs/workbench/recovery/${operation.id}/before/${index}`, change.before)
+            await repository.updateRef(`refs/workbench/recovery/${operation.id}/before/${index}`, change.before)
         if (change.after)
-            await updatePrivateRef(cwd, `refs/workbench/recovery/${operation.id}/after/${index}`, change.after)
+            await repository.updateRef(`refs/workbench/recovery/${operation.id}/after/${index}`, change.after)
     }
 }
 
-async function releaseOperation(cwd: string, operationId: string) {
+async function releaseOperation(repository: RepositoryGit, operationId: string) {
     const prefix = `refs/workbench/recovery/${operationId}/`
-    const result = await runGit(cwd, ["for-each-ref", "--format=%(refname)", prefix])
-    if (result.exitCode != 0)
-        throw gitFailure(result, `Could not inspect recovery refs for ${operationId}.`)
-
-    const refs = result.stdout.split("\n").filter(Boolean)
-    for (const ref of refs) {
-        const deletion = await runGit(cwd, ["update-ref", "-d", ref])
-        if (deletion.exitCode != 0)
-            throw gitFailure(deletion, `Could not release recovery ref ${ref}.`)
-    }
+    for (const ref of await repository.listRefs(prefix))
+        await repository.updateRef(ref, null)
 }
 
-async function updatePrivateRef(cwd: string, ref: string, oid: string) {
-    const result = await runGit(cwd, ["update-ref", ref, oid])
-    if (result.exitCode != 0)
-        throw gitFailure(result, `Could not retain recovery ref ${ref}.`)
-}
-
-async function applyRefChanges(cwd: string, changes: RefChange[]) {
-    const oidLength = changes.flatMap(change => [change.before, change.after]).find(Boolean)?.length ?? 40
-    const zeroOid = "0".repeat(oidLength)
-    const commands = ["start"]
-    for (const change of changes) {
-        if (change.after)
-            commands.push(`update ${change.ref} ${change.after} ${change.before ?? zeroOid}`)
-        else if (change.before)
-            commands.push(`delete ${change.ref} ${change.before}`)
-    }
-    commands.push("prepare", "commit", "")
-
-    const result = await runGit(cwd, ["update-ref", "--stdin"], commands.join("\n"))
-    if (result.exitCode != 0) {
+async function applyRefChanges(repository: RepositoryGit, changes: RefChange[]) {
+    try {
+        await repository.updateRefs(changes)
+    } catch (error) {
         throw new OperationRuntimeError(
             "operation.precondition-failed",
             "Repository state changed before the Workbench Operation could be applied.",
-            { git: result.stderr },
+            error instanceof GitError ? error.details : undefined,
         )
     }
 }
 
-async function validatePreconditions(cwd: string, operation: StoredOperation, action: "apply" | "undo" | "redo") {
+async function validatePreconditions(repository: RepositoryGit, operation: StoredOperation, action: "apply" | "undo" | "redo") {
     const gitLockfiles = await findGitLockfiles(operation.gitCommonDirectory)
     if (!sameStrings(gitLockfiles, operation.expectedGitLockfiles))
         throw gitLockfileError(gitLockfiles)
@@ -723,7 +669,7 @@ async function validatePreconditions(cwd: string, operation: StoredOperation, ac
     const expectsAfter = action == "undo"
     for (const change of operation.refChanges) {
         const expected = expectsAfter ? change.after : change.before
-        const actual = await readRef(cwd, change.ref)
+        const actual = await repository.resolveRef(change.ref)
         if (actual !== expected) {
             throw new OperationRuntimeError(
                 "operation.precondition-failed",
@@ -735,7 +681,7 @@ async function validatePreconditions(cwd: string, operation: StoredOperation, ac
 
     for (const change of operation.worktreeChanges) {
         const expected = expectsAfter ? change.after : change.before
-        const actual = await fingerprintWorktree(change.path)
+        const actual = await fingerprintWorktree(repository, change.path)
         if (actual.index !== expected.index) {
             throw new OperationRuntimeError(
                 "operation.precondition-failed",
@@ -753,9 +699,9 @@ async function validatePreconditions(cwd: string, operation: StoredOperation, ac
     }
 }
 
-function validateOperationState(operation: StoredOperation, action: "apply" | "undo" | "redo", side: "source" | "target") {
+function validateOperationState(repository: RepositoryGit, operation: StoredOperation, action: "apply" | "undo" | "redo", side: "source" | "target") {
     const stateAction = side == "source" ? action : action == "undo" ? "redo" : "undo"
-    return validatePreconditions(operation.affectedWorktrees[0] ?? process.cwd(), operation, stateAction)
+    return validatePreconditions(repository, operation, stateAction)
 }
 
 async function findGitLockfiles(commonDirectory: string) {
@@ -798,18 +744,13 @@ function gitLockfileError(lockfiles: string[]) {
     )
 }
 
-async function fingerprintWorktree(worktree: string): Promise<WorktreeFingerprint> {
-    const [index, status, diff, untracked] = await Promise.all([
-        requireGitRaw(worktree, "ls-files", "--stage", "-v", "-z"),
-        requireGitRaw(worktree, "status", "--porcelain=v2", "-z", "--untracked-files=all", "--ignore-submodules=none"),
-        requireGitRaw(worktree, "diff", "--binary", "--no-ext-diff", "--no-textconv", "--ignore-submodules=none"),
-        requireGitRaw(worktree, "ls-files", "--others", "--exclude-standard", "-z"),
-    ])
+async function fingerprintWorktree(repository: RepositoryGit, worktree: string): Promise<WorktreeFingerprint> {
+    const { diff, index, status, untracked } = await repository.readWorktreeState(worktree)
     const worktreeHasher = new Bun.CryptoHasher("sha256")
     hashPart(worktreeHasher, "status", status)
     hashPart(worktreeHasher, "diff", diff)
 
-    for (const path of untracked.split("\0").filter(Boolean)) {
+    for (const path of untracked) {
         const absolutePath = resolve(worktree, path)
         const metadata = await lstat(absolutePath)
         hashPart(worktreeHasher, "untracked-path", path)
@@ -832,50 +773,6 @@ function hashPart(hasher: Bun.CryptoHasher, label: string, value: string | Uint8
     const length = typeof value == "string" ? Buffer.byteLength(value) : value.byteLength
     hasher.update(`${label}\0${length}\0`)
     hasher.update(value)
-}
-
-async function requireGit(cwd: string, ...args: string[]): Promise<string>
-async function requireGit(cwd: string, args: string[], input: string): Promise<string>
-async function requireGit(cwd: string, first: string | string[], ...rest: string[]): Promise<string> {
-    const args = Array.isArray(first) ? first : [first, ...rest]
-    const input = Array.isArray(first) ? rest[0] : undefined
-    const result = await runGit(cwd, args, input)
-    if (result.exitCode != 0)
-        throw gitFailure(result, result.stderr || "Git command failed.")
-    return result.stdout.trim()
-}
-
-async function requireGitRaw(cwd: string, ...args: string[]) {
-    const result = await runGit(cwd, args)
-    if (result.exitCode != 0)
-        throw gitFailure(result, result.stderr || "Git command failed.")
-    return result.stdout
-}
-
-async function runGit(cwd: string, args: string[], input?: string): Promise<GitResult> {
-    const child = Bun.spawn(["git", ...args], {
-        cwd,
-        stdin: input == undefined ? "ignore" : "pipe",
-        stderr: "pipe",
-        stdout: "pipe",
-    })
-    if (input != undefined) {
-        const stdin = child.stdin
-        if (!stdin)
-            throw new OperationRuntimeError("operation.internal", "Git stdin was unavailable.")
-        stdin.write(input)
-        await stdin.end()
-    }
-    const [exitCode, stderr, stdout] = await Promise.all([
-        child.exited,
-        new Response(child.stderr).text(),
-        new Response(child.stdout).text(),
-    ])
-    return { exitCode, stderr, stdout }
-}
-
-function gitFailure(result: GitResult, fallback: string) {
-    return new OperationRuntimeError("operation.internal", result.stderr.trim() || fallback, { gitExitCode: result.exitCode })
 }
 
 async function appendJsonLine(path: string, value: unknown) {

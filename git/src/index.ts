@@ -1,0 +1,576 @@
+import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
+import { constants } from "node:fs"
+import { access, lstat, mkdir, readdir, readFile, realpath, rm } from "node:fs/promises"
+import { delimiter, dirname, extname, isAbsolute, resolve } from "node:path"
+
+const minimumGitVersion = [2, 41, 0] as const
+const credentialPattern = /([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]+)(?::[^\s/@]*)?@/gi
+const sensitiveQueryPattern = /([?&](?:access_token|auth|key|password|signature|token)=)[^&#\s]*/gi
+const sensitiveHeaderPattern = /^(authorization|proxy-authorization):.*$/gim
+
+export type ObjectFormat = "sha1" | "sha256"
+declare const objectIdBrand: unique symbol
+export type ObjectId = string & { readonly [objectIdBrand]: true }
+
+export type GitErrorCode =
+    | "git.unavailable"
+    | "git.too-old"
+    | "git.invalid-root"
+    | "git.bare-repository"
+    | "git.missing-main-worktree"
+    | "git.unsupported-format"
+    | "git.authentication-required"
+    | "git.destination-conflict"
+    | "git.cancelled"
+    | "git.command-failed"
+
+export interface GitInstallation {
+    path: string
+    version: string
+}
+
+export interface RepositoryDescriptor {
+    id: string
+    root: string
+    mainWorktree: string
+    selectedWorktree: string
+    commonDirectory: string
+    gitDirectory: string
+    objectFormat: ObjectFormat
+    shallow: boolean
+    partial: boolean
+    sparse: boolean
+    git: GitInstallation
+}
+
+export interface RefUpdate {
+    ref: string
+    before: string | null
+    after: string | null
+}
+
+export interface WorktreeGitState {
+    index: Uint8Array
+    status: Uint8Array
+    diff: Uint8Array
+    untracked: string[]
+}
+
+export class GitError extends Error {
+    constructor(
+        readonly code: GitErrorCode,
+        message: string,
+        readonly details?: Record<string, unknown>,
+    ) {
+        super(message)
+    }
+}
+
+interface GitRunOptions {
+    installation: GitInstallation
+    args: string[]
+    cwd?: string
+    input?: string
+    secrets?: string[]
+    onProgress?: (message: string) => void
+}
+
+interface GitRunResult {
+    exitCode: number
+    stderr: Buffer
+    stdout: Buffer
+}
+
+export interface GitTask<T> {
+    result: Promise<T>
+    cancel(): void
+}
+
+export function parseGitVersion(output: string) {
+    const match = /^git version (\d+)\.(\d+)\.(\d+)(?:[^\d].*)?\s*$/.exec(output)
+    if (!match)
+        throw new GitError("git.unavailable", "The selected executable did not return a valid Git version.")
+
+    const numbers = match.slice(1, 4).map(Number) as [number, number, number]
+    for (let index = 0; index < minimumGitVersion.length; index += 1) {
+        if (numbers[index] > minimumGitVersion[index])
+            break
+        if (numbers[index] < minimumGitVersion[index]) {
+            throw new GitError(
+                "git.too-old",
+                `Git ${numbers.join(".")} is too old. Git ${minimumGitVersion.join(".")} or newer is required.`,
+                { version: numbers.join("."), minimumVersion: minimumGitVersion.join(".") },
+            )
+        }
+    }
+    return numbers.join(".")
+}
+
+export function redactGitText(text: string, secrets: string[] = []) {
+    let redacted = text
+        .replace(credentialPattern, "$1")
+        .replace(sensitiveQueryPattern, "$1[redacted]")
+        .replace(sensitiveHeaderPattern, "$1: [redacted]")
+    for (const secret of secrets.filter(Boolean).sort((left, right) => right.length - left.length))
+        redacted = redacted.replaceAll(secret, "[redacted]")
+    return redacted.trim()
+}
+
+export async function selectGit(override?: string): Promise<GitInstallation> {
+    const path = override ? resolve(override) : await findGitOnPath()
+    if (override) {
+        try {
+            await access(path, constants.X_OK)
+        } catch {
+            throw new GitError("git.unavailable", `The selected Git executable does not exist or cannot run: ${path}.`, { path })
+        }
+    }
+
+    let result: GitRunResult
+    try {
+        result = await runGitProcess({ installation: { path, version: "" }, args: ["--version"] })
+    } catch (error) {
+        if (error instanceof GitError)
+            throw error
+        throw new GitError("git.unavailable", `Workbench could not start Git at ${path}.`, { path })
+    }
+    if (result.exitCode != 0)
+        throw new GitError("git.unavailable", redactGitText(result.stderr.toString()) || `Git at ${path} could not run.`, { path })
+
+    return { path, version: parseGitVersion(result.stdout.toString()) }
+}
+
+async function findGitOnPath() {
+    const pathValue = process.env.PATH
+    if (!pathValue)
+        throw new GitError("git.unavailable", "Git was not found because PATH is empty. Install Git 2.41 or newer, or choose it in Settings.")
+
+    const candidates = process.platform == "win32" ? ["git.exe"] : ["git"]
+    for (const directory of pathValue.split(delimiter).map(value => value.replace(/^"|"$/g, "")).filter(Boolean)) {
+        for (const candidate of candidates) {
+            const path = resolve(directory, candidate)
+            try {
+                await access(path, constants.X_OK)
+                return await realpath(path)
+            } catch {
+                // Try the next PATH entry.
+            }
+        }
+    }
+    throw new GitError("git.unavailable", "Git was not found on PATH. Install Git 2.41 or newer, or choose it in Settings.")
+}
+
+export async function openRepository(path: string, gitPath?: string) {
+    return connectRepository(path, gitPath, true)
+}
+
+export async function connectRepository(path: string, gitPath?: string, requireExactRoot = false) {
+    const installation = await selectGit(gitPath)
+    const selectedPath = resolve(path)
+    let selectedDirectory: string
+    try {
+        if (!(await lstat(selectedPath)).isDirectory())
+            throw new Error("not a directory")
+        selectedDirectory = await realpath(selectedPath)
+    } catch {
+        throw new GitError("git.invalid-root", `The selected path is not a valid Git repository root: ${selectedPath}.`, { path: selectedPath })
+    }
+
+    const bare = await runGitProcess({ installation, cwd: selectedDirectory, args: ["rev-parse", "--is-bare-repository"] })
+    if (bare.exitCode != 0 && await hasMissingLinkedWorktreeTarget(selectedDirectory)) {
+        throw new GitError(
+            "git.missing-main-worktree",
+            "This linked worktree points to a missing Main Worktree. Locate the Main Worktree before opening this repository.",
+            { path: selectedPath },
+        )
+    }
+    if (bare.exitCode != 0)
+        throw invalidRoot(selectedPath)
+    if (bare.stdout.toString().trim() == "true") {
+        throw new GitError(
+            "git.bare-repository",
+            "Bare repositories are unsupported because Workbench requires a Main Worktree for changes, columns, and recovery.",
+            { path: selectedPath },
+        )
+    }
+
+    const [rootResult, commonResult, gitDirectoryResult, formatResult, shallowResult, worktreesResult] = await Promise.all([
+        requireGit(installation, selectedDirectory, ["rev-parse", "--path-format=absolute", "--show-toplevel"], "Git could not identify the worktree root."),
+        requireGit(
+            installation,
+            selectedDirectory,
+            ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+            "Git could not identify its shared directory.",
+        ),
+        requireGit(installation, selectedDirectory, ["rev-parse", "--path-format=absolute", "--git-dir"], "Git could not identify the selected worktree."),
+        requireGit(installation, selectedDirectory, ["rev-parse", "--show-object-format=storage"], "Git could not report the repository object format."),
+        requireGit(installation, selectedDirectory, ["rev-parse", "--is-shallow-repository"], "Git could not inspect shallow state."),
+        requireGit(installation, selectedDirectory, ["worktree", "list", "--porcelain", "-z"], "Git could not list Registered Worktrees."),
+    ])
+
+    const root = await canonicalDirectory(rootResult)
+    if (requireExactRoot && !samePath(root, selectedDirectory))
+        throw invalidRoot(selectedPath)
+    const commonDirectory = await canonicalDirectory(commonResult)
+    const gitDirectory = await canonicalDirectory(gitDirectoryResult)
+    const worktrees = parseWorktreeRoots(worktreesResult)
+    const mainWorktree = worktrees[0]
+    if (!mainWorktree) {
+        throw new GitError(
+            "git.missing-main-worktree",
+            "Git did not report a Main Worktree. Locate the Main Worktree before opening this repository.",
+            { path: selectedPath },
+        )
+    }
+    try {
+        await access(mainWorktree)
+    } catch {
+        throw new GitError(
+            "git.missing-main-worktree",
+            `The Main Worktree is missing at ${mainWorktree}. Locate it before opening this repository.`,
+            { path: selectedPath, mainWorktree },
+        )
+    }
+
+    const objectFormat = formatResult.trim()
+    if (objectFormat != "sha1" && objectFormat != "sha256") {
+        throw new GitError(
+            "git.unsupported-format",
+            `Workbench does not support Git object format "${redactGitText(objectFormat)}". Supported formats are SHA-1 and SHA-256.`,
+            { objectFormat: redactGitText(objectFormat) },
+        )
+    }
+
+    const [partialResult, sparseResult] = await Promise.all([
+        runGitProcess({ installation, cwd: root, args: ["config", "--get-regexp", "^remote\\..*\\.promisor$"] }),
+        runGitProcess({ installation, cwd: root, args: ["config", "--bool", "--get", "core.sparseCheckout"] }),
+    ])
+    const descriptor: RepositoryDescriptor = {
+        id: commonDirectory,
+        root,
+        mainWorktree,
+        selectedWorktree: root,
+        commonDirectory,
+        gitDirectory,
+        objectFormat,
+        shallow: shallowResult.trim() == "true",
+        partial: partialResult.exitCode == 0 && partialResult.stdout.length > 0,
+        sparse: sparseResult.exitCode == 0 && sparseResult.stdout.toString().trim() == "true",
+        git: installation,
+    }
+    return new RepositoryGit(descriptor)
+}
+
+export class RepositoryGit {
+    constructor(readonly descriptor: RepositoryDescriptor) {}
+
+    async hashObject(value: string) {
+        const objectId = await this.requireText(this.descriptor.selectedWorktree, ["hash-object", "-w", "--stdin"], value)
+        this.validateObjectId(objectId)
+        return objectId as ObjectId
+    }
+
+    async resolveRef(ref: string) {
+        const result = await this.run(this.descriptor.selectedWorktree, ["rev-parse", "--verify", "--quiet", ref])
+        if (result.exitCode == 1)
+            return null
+        this.throwIfFailed(result, `Could not read ${ref}.`)
+        const objectId = result.stdout.toString().trim()
+        this.validateObjectId(objectId)
+        return objectId as ObjectId
+    }
+
+    async listRefs(prefix: string) {
+        const output = await this.requireText(this.descriptor.selectedWorktree, ["for-each-ref", "--format=%(refname)", prefix])
+        return output.split("\n").filter(Boolean)
+    }
+
+    async updateRef(ref: string, objectId: string | null) {
+        if (objectId)
+            this.validateObjectId(objectId)
+        const args = objectId ? ["update-ref", ref, objectId] : ["update-ref", "-d", ref]
+        const result = await this.run(this.descriptor.selectedWorktree, args)
+        this.throwIfFailed(result, objectId ? `Could not update ${ref}.` : `Could not delete ${ref}.`)
+    }
+
+    async updateRefs(changes: RefUpdate[]) {
+        const zeroObjectId = "0".repeat(this.descriptor.objectFormat == "sha1" ? 40 : 64)
+        const commands = ["start"]
+        for (const change of changes) {
+            if (change.before)
+                this.validateObjectId(change.before)
+            if (change.after)
+                this.validateObjectId(change.after)
+            if (change.after)
+                commands.push(`update ${change.ref} ${change.after} ${change.before ?? zeroObjectId}`)
+            else if (change.before)
+                commands.push(`delete ${change.ref} ${change.before}`)
+        }
+        commands.push("prepare", "commit", "")
+        const result = await this.run(this.descriptor.selectedWorktree, ["update-ref", "--stdin"], commands.join("\n"))
+        this.throwIfFailed(result, "Repository refs changed before Workbench could update them.")
+    }
+
+    async readWorktreeState(worktree: string): Promise<WorktreeGitState> {
+        const [index, status, diff, untracked] = await Promise.all([
+            this.requireBytes(worktree, ["ls-files", "--stage", "-v", "-z"]),
+            this.requireBytes(worktree, ["status", "--porcelain=v2", "-z", "--untracked-files=all", "--ignore-submodules=none"]),
+            this.requireBytes(worktree, ["diff", "--binary", "--no-ext-diff", "--no-textconv", "--ignore-submodules=none"]),
+            this.requireBytes(worktree, ["ls-files", "--others", "--exclude-standard", "-z"]),
+        ])
+        return {
+            index,
+            status,
+            diff,
+            untracked: Buffer.from(untracked).toString().split("\0").filter(Boolean),
+        }
+    }
+
+    private run(cwd: string, args: string[], input?: string) {
+        return runGitProcess({ installation: this.descriptor.git, cwd, args, input })
+    }
+
+    private async requireText(cwd: string, args: string[], input?: string) {
+        return Buffer.from(await this.requireBytes(cwd, args, input)).toString().trim()
+    }
+
+    private async requireBytes(cwd: string, args: string[], input?: string) {
+        const result = await this.run(cwd, args, input)
+        this.throwIfFailed(result, "Git command failed.")
+        return new Uint8Array(result.stdout)
+    }
+
+    private throwIfFailed(result: GitRunResult, fallback: string) {
+        if (result.exitCode == 0)
+            return
+        throw commandFailure(result, fallback)
+    }
+
+    private validateObjectId(objectId: string) {
+        const length = this.descriptor.objectFormat == "sha1" ? 40 : 64
+        if (!new RegExp(`^[0-9a-f]{${length}}$`).test(objectId))
+            throw new GitError("git.command-failed", `Git returned an invalid ${this.descriptor.objectFormat} object ID.`)
+    }
+}
+
+export async function initializeRepository(options: { path: string; gitPath?: string; initialBranch?: string }) {
+    const installation = await selectGit(options.gitPath)
+    const path = resolve(options.path)
+    await mkdir(path, { recursive: true })
+    const args = ["init"]
+    if (options.initialBranch)
+        args.push(`--initial-branch=${options.initialBranch}`)
+    args.push("--", path)
+    const result = await runGitProcess({ installation, args })
+    if (result.exitCode != 0)
+        throw commandFailure(result, "Git could not initialise the directory.")
+    return openRepository(path, installation.path)
+}
+
+export function inferCloneDirectoryName(source: string) {
+    const withoutQuery = source.trim().replace(/[?#].*$/, "").replace(/[\\/]+$/, "")
+    const tail = withoutQuery.slice(Math.max(withoutQuery.lastIndexOf("/"), withoutQuery.lastIndexOf(":")) + 1)
+    const name = tail.replace(/\.git$/i, "")
+    return name || "repository"
+}
+
+export async function startCloneRepository(options: {
+    source: string
+    destination: string
+    gitPath?: string
+    onProgress?: (message: string) => void
+}): Promise<GitTask<RepositoryGit>> {
+    const installation = await selectGit(options.gitPath)
+    const source = options.source.trim()
+    const destination = resolve(options.destination)
+    if (!source)
+        throw new GitError("git.command-failed", "A clone source is required.")
+
+    let destinationExisted = true
+    try {
+        const entries = await readdir(destination)
+        if (entries.length > 0)
+            throw new GitError("git.destination-conflict", `The clone destination is not empty: ${destination}.`, { destination })
+    } catch (error) {
+        if (error instanceof GitError)
+            throw error
+        if ((error as NodeJS.ErrnoException).code == "ENOENT")
+            destinationExisted = false
+        else
+            throw new GitError("git.destination-conflict", `Workbench cannot use the clone destination: ${destination}.`, { destination })
+    }
+
+    const execution = startGitProcess({
+        installation,
+        args: ["clone", "--progress", "--", source, destination],
+        secrets: [source],
+        onProgress: options.onProgress,
+    })
+    return {
+        cancel: execution.cancel,
+        result: (async () => {
+            const result = await execution.result
+            if (execution.wasCancelled()) {
+                throw new GitError("git.cancelled", "Clone cancelled. The partial destination was preserved.", {
+                    destination,
+                    createdDestination: !destinationExisted,
+                })
+            }
+            if (result.exitCode != 0) {
+                const failure = commandFailure(result, "Git could not clone the repository.", [source])
+                throw new GitError(failure.code, failure.message, {
+                    ...failure.details,
+                    destination,
+                    createdDestination: !destinationExisted,
+                })
+            }
+            return openRepository(destination, installation.path)
+        })(),
+    }
+}
+
+export async function removeCreatedCloneDestination(path: string) {
+    const target = resolve(path)
+    if (target == resolve(target, "..") || !extname(target) && dirname(target) == target)
+        throw new GitError("git.command-failed", "Workbench refused to remove an unsafe clone destination.")
+    await rm(target, { recursive: true, force: true })
+}
+
+async function requireGit(installation: GitInstallation, cwd: string, args: string[], fallback: string) {
+    const result = await runGitProcess({ installation, cwd, args })
+    if (result.exitCode != 0)
+        throw commandFailure(result, fallback)
+    return result.stdout.toString().trim()
+}
+
+function invalidRoot(path: string) {
+    return new GitError("git.invalid-root", `The selected path is not a valid Git repository root: ${path}.`, { path })
+}
+
+async function hasMissingLinkedWorktreeTarget(path: string) {
+    let marker: string
+    try {
+        marker = await readFile(resolve(path, ".git"), "utf8")
+    } catch {
+        return false
+    }
+    const match = /^gitdir:\s*(.+)\s*$/i.exec(marker.trim())
+    if (!match)
+        return false
+    const target = isAbsolute(match[1]) ? match[1] : resolve(path, match[1])
+    try {
+        await access(target)
+        return false
+    } catch (error) {
+        return (error as NodeJS.ErrnoException).code == "ENOENT"
+    }
+}
+
+async function canonicalDirectory(path: string) {
+    return realpath(isAbsolute(path) ? path : resolve(path))
+}
+
+function samePath(left: string, right: string) {
+    return process.platform == "win32" ? left.toLocaleLowerCase() == right.toLocaleLowerCase() : left == right
+}
+
+function parseWorktreeRoots(output: string) {
+    return output.split("\0\0")
+        .map(record => record.split("\0").find(line => line.startsWith("worktree "))?.slice("worktree ".length))
+        .filter((value): value is string => Boolean(value))
+        .map(value => resolve(value))
+}
+
+function commandFailure(result: GitRunResult, fallback: string, secrets: string[] = []) {
+    const diagnostics = redactGitText(result.stderr.toString(), secrets)
+    const authentication =
+        /authentication failed|could not read username|permission denied \(publickey\)|host key verification failed|terminal prompts disabled/i.test(
+            diagnostics,
+        )
+    return new GitError(
+        authentication ? "git.authentication-required" : "git.command-failed",
+        diagnostics || fallback,
+        { gitExitCode: result.exitCode },
+    )
+}
+
+async function runGitProcess(options: GitRunOptions) {
+    return startGitProcess(options).result
+}
+
+function startGitProcess(options: GitRunOptions) {
+    let cancelled = false
+    let forceTimer: ReturnType<typeof setTimeout> | undefined
+    let child: ChildProcessWithoutNullStreams
+    try {
+        child = spawn(options.installation.path, options.args, {
+            cwd: options.cwd,
+            detached: process.platform != "win32",
+            env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+            stdio: ["pipe", "pipe", "pipe"],
+            windowsHide: true,
+        })
+    } catch {
+        throw new GitError("git.unavailable", `Workbench could not start Git at ${options.installation.path}.`, { path: options.installation.path })
+    }
+
+    const stdout: Buffer[] = []
+    const stderr: Buffer[] = []
+    let progressBuffer = ""
+    child.stdout.on("data", (chunk: Buffer) => stdout.push(Buffer.from(chunk)))
+    child.stderr.on("data", (chunk: Buffer) => {
+        stderr.push(Buffer.from(chunk))
+        progressBuffer += chunk.toString()
+        const segments = progressBuffer.split(/[\r\n]+/)
+        progressBuffer = segments.pop() ?? ""
+        for (const segment of segments) {
+            const message = redactGitText(segment, options.secrets)
+            if (message)
+                options.onProgress?.(message)
+        }
+    })
+    if (options.input == undefined)
+        child.stdin.end()
+    else
+        child.stdin.end(options.input)
+
+    const result = new Promise<GitRunResult>((resolveResult, rejectResult) => {
+        child.once("error", () => rejectResult(new GitError("git.unavailable", `Workbench could not start Git at ${options.installation.path}.`)))
+        child.once("close", code => {
+            if (forceTimer)
+                clearTimeout(forceTimer)
+            const finalProgress = redactGitText(progressBuffer, options.secrets)
+            if (finalProgress)
+                options.onProgress?.(finalProgress)
+            resolveResult({ exitCode: code ?? 1, stderr: Buffer.concat(stderr), stdout: Buffer.concat(stdout) })
+        })
+    })
+
+    return {
+        result,
+        wasCancelled: () => cancelled,
+        cancel() {
+            if (cancelled || child.exitCode != null)
+                return
+            cancelled = true
+            void terminateProcessTree(child.pid!, false)
+            forceTimer = setTimeout(() => void terminateProcessTree(child.pid!, true), 1500)
+        },
+    }
+}
+
+async function terminateProcessTree(pid: number, force: boolean) {
+    if (process.platform == "win32") {
+        const args = ["/pid", String(pid), "/t"]
+        if (force)
+            args.push("/f")
+        const killer = spawn("taskkill.exe", args, { stdio: "ignore", windowsHide: true })
+        await new Promise<void>(resolveCompletion => killer.once("close", () => resolveCompletion()))
+        return
+    }
+    try {
+        process.kill(-pid, force ? "SIGKILL" : "SIGTERM")
+    } catch {
+        // The process may have exited between the completion check and signal.
+    }
+}

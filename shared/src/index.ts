@@ -14,7 +14,17 @@ export const ErrorCodeSchema = z.enum([
     "usage.unknown-command",
     "engine.internal",
     "git.unavailable",
-    "git.smoke-failed",
+    "git.too-old",
+    "git.invalid-root",
+    "git.bare-repository",
+    "git.missing-main-worktree",
+    "git.unsupported-format",
+    "git.authentication-required",
+    "git.destination-conflict",
+    "git.cancelled",
+    "git.command-failed",
+    "settings.corrupt",
+    "settings.write-failed",
     "operation.history-corrupt",
     "operation.internal",
     "operation.journal-corrupt",
@@ -35,13 +45,6 @@ export const EchoResultSchema = z.object({
     type: z.literal("result"),
     command: z.literal("echo"),
     message: z.string(),
-})
-
-export const GitSmokeResultSchema = z.object({
-    type: z.literal("result"),
-    command: z.literal("git-smoke"),
-    gitVersion: z.string(),
-    repositoryRoot: z.string(),
 })
 
 export const OperationSummarySchema = z.object({
@@ -126,7 +129,6 @@ export const ErrorEventSchema = z.object({
 export const EngineMessageSchema = z.union([
     ProgressEventSchema,
     EchoResultSchema,
-    GitSmokeResultSchema,
     OperationTransitionResultSchema,
     OperationHistoryResultSchema,
     TestMutationResultSchema,
@@ -138,7 +140,6 @@ export const EngineMessageSchema = z.union([
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>
 export type ProgressEvent = z.infer<typeof ProgressEventSchema>
 export type EchoResult = z.infer<typeof EchoResultSchema>
-export type GitSmokeResult = z.infer<typeof GitSmokeResultSchema>
 export type OperationSummary = z.infer<typeof OperationSummarySchema>
 export type OperationAvailabilityReason = z.infer<typeof OperationAvailabilityReasonSchema>
 export type OperationTransitionResult = z.infer<typeof OperationTransitionResultSchema>
@@ -151,3 +152,65 @@ export type RecoveryResult = z.infer<typeof RecoveryResultSchema>
 export type CancelledEvent = z.infer<typeof CancelledEventSchema>
 export type ErrorEvent = z.infer<typeof ErrorEventSchema>
 export type EngineMessage = z.infer<typeof EngineMessageSchema>
+
+export type ObjectFormat = "sha1" | "sha256"
+
+export interface GitInstallationInfo {
+    path: string
+    version: string
+}
+
+export interface RepositoryInfo {
+    id: string
+    root: string
+    mainWorktree: string
+    selectedWorktree: string
+    commonDirectory: string
+    gitDirectory: string
+    objectFormat: ObjectFormat
+    shallow: boolean
+    partial: boolean
+    sparse: boolean
+    git: GitInstallationInfo
+}
+
+export interface WorkbenchSession {
+    repositories: RepositoryInfo[]
+    activeRepositoryId?: string
+}
+
+export type EntryErrorCode =
+    | "git.unavailable"
+    | "git.too-old"
+    | "git.invalid-root"
+    | "git.bare-repository"
+    | "git.missing-main-worktree"
+    | "git.unsupported-format"
+    | "git.authentication-required"
+    | "git.destination-conflict"
+    | "git.cancelled"
+    | "git.command-failed"
+    | "settings.corrupt"
+    | "settings.write-failed"
+
+export interface EntryError {
+    code: EntryErrorCode
+    message: string
+    destination?: string
+    canRemoveDestination?: boolean
+}
+
+export type EntryResult =
+    | { ok: true; session: WorkbenchSession }
+    | { ok: false; error: EntryError }
+
+export interface EntryProgress {
+    message: string
+}
+
+export interface GitSettingsState {
+    path: string
+    override?: string
+    git?: GitInstallationInfo
+    error?: EntryError
+}
