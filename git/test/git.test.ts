@@ -118,6 +118,19 @@ describe("system Git", () => {
         expect((await clone.result).descriptor.root).toBe(destination)
     })
 
+    test("rejects a non-empty clone destination without changing it", async () => {
+        const source = await temporaryDirectory("workbench-clone-source-")
+        expect(runGit(source, "init", "--quiet").exitCode).toBe(0)
+        const destination = await temporaryDirectory("workbench-clone-conflict-")
+        await writeFile(resolve(destination, "keep.txt"), "keep me")
+
+        await expect(startCloneRepository({ source, destination })).rejects.toMatchObject({
+            code: "git.destination-conflict",
+            details: { destination },
+        })
+        expect(await Bun.file(resolve(destination, "keep.txt")).text()).toBe("keep me")
+    })
+
     test("cancels clone without deleting a destination Workbench created", async () => {
         const source = await temporaryDirectory("workbench-cancel-source-")
         expect(runGit(source, "init", "--quiet").exitCode).toBe(0)

@@ -1,3 +1,4 @@
+import { selectGit } from "@git-workbench/git"
 import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -49,5 +50,26 @@ describe("repository session", () => {
 
         await new RepositorySession(settingsPath).open(repository)
         expect(new RepositorySession(settingsPath).snapshot()).toEqual({ repositories: [], activeRepositoryId: undefined })
+    })
+
+    test("caches Git selection until its setting changes", async () => {
+        const settingsPath = resolve(await temporaryDirectory("workbench-session-settings-"), "settings.json")
+        const installation = await selectGit()
+        let selections = 0
+        const session = new RepositorySession(settingsPath, async () => {
+            selections += 1
+            return installation
+        })
+
+        await session.gitSettings()
+        await session.gitSettings()
+        expect(selections).toBe(1)
+
+        await session.setGitOverride(installation.path)
+        await session.gitSettings()
+        expect(selections).toBe(2)
+
+        await session.resetSettings()
+        expect(selections).toBe(3)
     })
 })

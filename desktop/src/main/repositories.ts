@@ -1,4 +1,4 @@
-import { GitError, type GitTask, inferCloneDirectoryName, initializeRepository, openRepository, type RepositoryGit, selectGit, startCloneRepository } from "@git-workbench/git"
+import { GitError, type GitInstallation, type GitTask, inferCloneDirectoryName, initializeRepository, openRepository, type RepositoryGit, selectGit, startCloneRepository } from "@git-workbench/git"
 import { defaultSettingsPath, readSettings, SettingsError, writeSettings } from "@git-workbench/settings"
 import { type EntryError, type GitSettingsState, type RepositoryInfo, type WorkbenchSession } from "@git-workbench/shared"
 import { resolve } from "node:path"
@@ -6,8 +6,12 @@ import { resolve } from "node:path"
 export class RepositorySession {
     private readonly repositories = new Map<string, RepositoryInfo>()
     private activeRepositoryId: string | undefined
+    private cachedGit: { override: string | undefined; installation: GitInstallation } | undefined
 
-    constructor(private readonly settingsPath = defaultSettingsPath()) {}
+    constructor(
+        private readonly settingsPath = defaultSettingsPath(),
+        private readonly selectInstallation: typeof selectGit = selectGit,
+    ) {}
 
     snapshot(): WorkbenchSession {
         return {
@@ -22,7 +26,7 @@ export class RepositorySession {
             return {
                 path: this.settingsPath,
                 override: settings.gitPath,
-                git: await selectGit(settings.gitPath),
+                git: await this.git(settings.gitPath),
             }
         } catch (error) {
             return {
@@ -33,29 +37,32 @@ export class RepositorySession {
     }
 
     async setGitOverride(path?: string): Promise<GitSettingsState> {
-        const git = await selectGit(path)
-        await writeSettings({ version: 1, gitPath: path ? resolve(path) : undefined }, this.settingsPath)
-        return { path: this.settingsPath, override: path ? resolve(path) : undefined, git }
+        const git = await this.selectInstallation(path)
+        const override = path ? resolve(path) : undefined
+        await writeSettings({ version: 1, gitPath: override }, this.settingsPath)
+        this.cachedGit = { override, installation: git }
+        return { path: this.settingsPath, override, git }
     }
 
     async resetSettings() {
         await writeSettings({ version: 1 }, this.settingsPath)
+        this.cachedGit = undefined
         return this.gitSettings()
     }
 
     async open(path: string) {
         const settings = await readSettings(this.settingsPath)
-        return this.add(await openRepository(path, settings.gitPath))
+        return this.add(await openRepository(path, await this.git(settings.gitPath)))
     }
 
     async initialize(path: string, initialBranch?: string) {
         const settings = await readSettings(this.settingsPath)
-        return this.add(await initializeRepository({ path, initialBranch, gitPath: settings.gitPath }))
+        return this.add(await initializeRepository({ path, initialBranch, git: await this.git(settings.gitPath) }))
     }
 
     async startClone(options: { source: string; destination: string; onProgress?: (message: string) => void }): Promise<GitTask<WorkbenchSession>> {
         const settings = await readSettings(this.settingsPath)
-        const task = await startCloneRepository({ ...options, gitPath: settings.gitPath })
+        const task = await startCloneRepository({ ...options, git: await this.git(settings.gitPath) })
         return {
             cancel: task.cancel,
             result: task.result.then(repository => this.add(repository)),
@@ -73,6 +80,14 @@ export class RepositorySession {
         return true
     }
 
+    private async git(override: string | undefined): Promise<GitInstallation> {
+        if (this.cachedGit && this.cachedGit.override == override)
+            return this.cachedGit.installation
+        const installation = await this.selectInstallation(override)
+        this.cachedGit = { override, installation }
+        return installation
+    }
+
     private add(repository: RepositoryGit) {
         const info: RepositoryInfo = { ...repository.descriptor }
         this.repositories.set(info.id, info)
@@ -87,7 +102,6 @@ export function entryError(error: unknown): EntryError {
             code: error.code,
             message: error.message,
             destination: typeof error.details?.destination == "string" ? error.details.destination : undefined,
-            canRemoveDestination: error.details?.createdDestination === true,
         }
     }
     if (error instanceof SettingsError)

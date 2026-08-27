@@ -197,7 +197,6 @@ export interface EntryError {
     code: EntryErrorCode
     message: string
     destination?: string
-    canRemoveDestination?: boolean
 }
 
 export type EntryResult =

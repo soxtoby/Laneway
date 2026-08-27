@@ -73,9 +73,6 @@ const browserWorkbench: Window["workbench"] = {
         cancelled = true
         return true
     },
-    async removePartialClone() {
-        return true
-    },
     async selectRepository(id) {
         activeRepositoryId = id
         return session()

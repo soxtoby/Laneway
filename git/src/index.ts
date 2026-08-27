@@ -1,7 +1,7 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
 import { constants } from "node:fs"
-import { access, lstat, mkdir, readdir, readFile, realpath, rm } from "node:fs/promises"
-import { delimiter, dirname, extname, isAbsolute, resolve } from "node:path"
+import { access, lstat, mkdir, readdir, readFile, realpath } from "node:fs/promises"
+import { delimiter, isAbsolute, resolve } from "node:path"
 
 const minimumGitVersion = [2, 41, 0] as const
 const credentialPattern = /([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]+)(?::[^\s/@]*)?@/gi
@@ -28,6 +28,8 @@ export interface GitInstallation {
     path: string
     version: string
 }
+
+type GitSelection = GitInstallation | string | undefined
 
 export interface RepositoryDescriptor {
     id: string
@@ -160,12 +162,12 @@ async function findGitOnPath() {
     throw new GitError("git.unavailable", "Git was not found on PATH. Install Git 2.41 or newer, or choose it in Settings.")
 }
 
-export async function openRepository(path: string, gitPath?: string) {
-    return connectRepository(path, gitPath, true)
+export async function openRepository(path: string, git?: GitSelection) {
+    return connectRepository(path, git, true)
 }
 
-export async function connectRepository(path: string, gitPath?: string, requireExactRoot = false) {
-    const installation = await selectGit(gitPath)
+export async function connectRepository(path: string, git?: GitSelection, requireExactRoot = false) {
+    const installation = await resolveGitSelection(git)
     const selectedPath = resolve(path)
     let selectedDirectory: string
     try {
@@ -353,8 +355,8 @@ export class RepositoryGit {
     }
 }
 
-export async function initializeRepository(options: { path: string; gitPath?: string; initialBranch?: string }) {
-    const installation = await selectGit(options.gitPath)
+export async function initializeRepository(options: { path: string; gitPath?: string; git?: GitInstallation; initialBranch?: string }) {
+    const installation = await resolveGitSelection(options.git ?? options.gitPath)
     const path = resolve(options.path)
     await mkdir(path, { recursive: true })
     const args = ["init"]
@@ -364,7 +366,7 @@ export async function initializeRepository(options: { path: string; gitPath?: st
     const result = await runGitProcess({ installation, args })
     if (result.exitCode != 0)
         throw commandFailure(result, "Git could not initialise the directory.")
-    return openRepository(path, installation.path)
+    return openRepository(path, installation)
 }
 
 export function inferCloneDirectoryName(source: string) {
@@ -378,9 +380,10 @@ export async function startCloneRepository(options: {
     source: string
     destination: string
     gitPath?: string
+    git?: GitInstallation
     onProgress?: (message: string) => void
 }): Promise<GitTask<RepositoryGit>> {
-    const installation = await selectGit(options.gitPath)
+    const installation = await resolveGitSelection(options.git ?? options.gitPath)
     const source = options.source.trim()
     const destination = resolve(options.destination)
     if (!source)
@@ -424,16 +427,9 @@ export async function startCloneRepository(options: {
                     createdDestination: !destinationExisted,
                 })
             }
-            return openRepository(destination, installation.path)
+            return openRepository(destination, installation)
         })(),
     }
-}
-
-export async function removeCreatedCloneDestination(path: string) {
-    const target = resolve(path)
-    if (target == resolve(target, "..") || !extname(target) && dirname(target) == target)
-        throw new GitError("git.command-failed", "Workbench refused to remove an unsafe clone destination.")
-    await rm(target, { recursive: true, force: true })
 }
 
 async function requireGit(installation: GitInstallation, cwd: string, args: string[], fallback: string) {
@@ -441,6 +437,10 @@ async function requireGit(installation: GitInstallation, cwd: string, args: stri
     if (result.exitCode != 0)
         throw commandFailure(result, fallback)
     return result.stdout.toString().trim()
+}
+
+function resolveGitSelection(git: GitSelection) {
+    return typeof git == "object" ? Promise.resolve(git) : selectGit(git)
 }
 
 function invalidRoot(path: string) {

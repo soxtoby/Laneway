@@ -1,9 +1,9 @@
-import { type GitTask, removeCreatedCloneDestination } from "@git-workbench/git"
 import type { EntryResult, WorkbenchSession } from "@git-workbench/shared"
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { inspectEngine, resolveEnginePath } from "./engine"
+import { EntryQueue } from "./entry-queue"
 import { entryError, RepositorySession } from "./repositories"
 
 const workspacePath = resolve(app.getAppPath(), "..")
@@ -15,9 +15,12 @@ const enginePath = resolveEnginePath({
 })
 const repositories = new RepositorySession(process.env.WORKBENCH_SETTINGS_PATH)
 
-let activeEntry = false
-let activeClone: GitTask<WorkbenchSession> | undefined
-let removableCloneDestination: string | undefined
+const cancelledEntry = () =>
+    ({
+        ok: false,
+        error: { code: "git.cancelled", message: "Repository entry cancelled." },
+    }) satisfies EntryResult
+const entryQueue = new EntryQueue<EntryResult>(cancelledEntry)
 let engineStatus:
     | { state: "ready"; path: string; name: "workbench-engine"; version: string }
     | { state: "error"; path: string; error: string }
@@ -35,20 +38,13 @@ async function inspectEngineAtStartup() {
 }
 
 async function performEntry(action: () => Promise<WorkbenchSession>): Promise<EntryResult> {
-    if (activeEntry)
-        return { ok: false, error: { code: "git.command-failed", message: "Another repository entry is already running." } }
-    activeEntry = true
-    removableCloneDestination = undefined
-    try {
-        return { ok: true, session: await action() }
-    } catch (error) {
-        const mapped = entryError(error)
-        if (mapped.canRemoveDestination)
-            removableCloneDestination = mapped.destination
-        return { ok: false, error: mapped }
-    } finally {
-        activeEntry = false
-    }
+    return entryQueue.enqueue(async () => {
+        try {
+            return { ok: true, session: await action() }
+        } catch (error) {
+            return { ok: false, error: entryError(error) }
+        }
+    })
 }
 
 function registerHandlers() {
@@ -100,60 +96,28 @@ function registerHandlers() {
             return { ok: false, error: { code: "git.command-failed", message: "Enter a repository source to clone." } } satisfies EntryResult
         if (typeof request.destination != "string" || request.destination.trim() == "")
             return { ok: false, error: { code: "git.command-failed", message: "Choose a clone destination." } } satisfies EntryResult
-        if (activeEntry)
-            return { ok: false, error: { code: "git.command-failed", message: "Another repository entry is already running." } } satisfies EntryResult
-
-        activeEntry = true
-        removableCloneDestination = undefined
-        try {
-            const sender = event.sender
-            activeClone = await repositories.startClone({
-                source: request.source,
-                destination: request.destination,
-                onProgress: message => {
-                    if (!sender.isDestroyed())
-                        sender.send("entry:progress", { message })
-                },
-            })
-            return { ok: true, session: await activeClone.result } satisfies EntryResult
-        } catch (error) {
-            const mapped = entryError(error)
-            if (mapped.canRemoveDestination)
-                removableCloneDestination = mapped.destination
-            return { ok: false, error: mapped } satisfies EntryResult
-        } finally {
-            activeClone = undefined
-            activeEntry = false
-        }
-    })
-
-    ipcMain.handle("entry:cancel", () => {
-        if (!activeClone)
-            return false
-        activeClone.cancel()
-        return true
-    })
-
-    ipcMain.handle("entry:remove-partial", async event => {
-        if (!removableCloneDestination)
-            return false
-        const destination = removableCloneDestination
-        const confirmation = await dialog.showMessageBox(BrowserWindow.fromWebContents(event.sender)!, {
-            type: "warning",
-            title: "Remove partial clone?",
-            message: "Remove the partial clone created by Workbench?",
-            detail: destination,
-            buttons: ["Keep files", "Remove partial clone"],
-            defaultId: 0,
-            cancelId: 0,
-            noLink: true,
+        const source = request.source
+        const destination = request.destination
+        return entryQueue.enqueue(async setCancel => {
+            try {
+                const sender = event.sender
+                const clone = await repositories.startClone({
+                    source,
+                    destination,
+                    onProgress: message => {
+                        if (!sender.isDestroyed())
+                            sender.send("entry:progress", { message })
+                    },
+                })
+                setCancel(clone.cancel)
+                return { ok: true, session: await clone.result } satisfies EntryResult
+            } catch (error) {
+                return { ok: false, error: entryError(error) } satisfies EntryResult
+            }
         })
-        if (confirmation.response != 1)
-            return false
-        await removeCreatedCloneDestination(destination)
-        removableCloneDestination = undefined
-        return true
     })
+
+    ipcMain.handle("entry:cancel", () => entryQueue.cancel())
 
     ipcMain.handle("session:select", (_event, request: { id?: unknown }) => {
         if (typeof request?.id == "string")

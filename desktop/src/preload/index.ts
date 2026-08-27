@@ -9,7 +9,6 @@ contextBridge.exposeInMainWorld("workbench", {
     cloneRepository: (source: string, destination: string) => ipcRenderer.invoke("entry:clone", { source, destination }),
     initializeRepository: (path: string, initialBranch?: string) => ipcRenderer.invoke("entry:initialize", { path, initialBranch }),
     cancelEntry: () => ipcRenderer.invoke("entry:cancel"),
-    removePartialClone: () => ipcRenderer.invoke("entry:remove-partial"),
     selectRepository: (id: string) => ipcRenderer.invoke("session:select", { id }),
     chooseGit: () => ipcRenderer.invoke("settings:choose-git"),
     useGitFromPath: () => ipcRenderer.invoke("settings:use-path"),

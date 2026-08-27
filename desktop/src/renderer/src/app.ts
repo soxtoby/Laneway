@@ -303,21 +303,22 @@ function handleEntryResult(result: EntryResult, dialog: HTMLDialogElement, form:
         return
     }
     showFormError(form, result.error)
-    if (result.error.canRemoveDestination)
+    if (result.error.destination)
         showEntryError(result.error)
 }
 
 function showFormError(form: "clone" | "init", error?: EntryError) {
     const element = required<HTMLElement>(`#${form}-error`)
     element.hidden = !error
-    element.textContent = error?.message ?? ""
+    element.textContent = error ? entryErrorMessage(error) : ""
 }
 
 function showEntryError(error: EntryError) {
-    showNotice(error.code, error.message, error.canRemoveDestination ? "Remove partial clone" : undefined, async () => {
-        if (await window.workbench.removePartialClone())
-            showNotice("clone.cleaned", "Partial clone removed.")
-    })
+    showNotice(error.code, entryErrorMessage(error))
+}
+
+function entryErrorMessage(error: EntryError) {
+    return error.destination ? `${error.message}\nPartial clone preserved at ${error.destination}` : error.message
 }
 
 function showNotice(code: string, message: string, action?: string, callback?: () => void | Promise<void>) {

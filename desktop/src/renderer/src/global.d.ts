@@ -30,7 +30,6 @@ declare global {
             cloneRepository(source: string, destination: string): Promise<EntryResult>
             initializeRepository(path: string, initialBranch?: string): Promise<EntryResult>
             cancelEntry(): Promise<boolean>
-            removePartialClone(): Promise<boolean>
             selectRepository(id: string): Promise<WorkbenchSession>
             chooseGit(): Promise<GitSettingsState>
             useGitFromPath(): Promise<GitSettingsState>
