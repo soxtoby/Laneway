@@ -92,7 +92,7 @@ describe("system Git", () => {
     })
 
     for (const objectFormat of ["sha1", "sha256"] as const) {
-        test(`initialises and mutates a ${objectFormat} repository`, async () => {
+        test(`initializes and mutates a ${objectFormat} repository`, async () => {
             const repository = resolve(await temporaryDirectory(`workbench-${objectFormat}-`), "repository")
             expect(runGit(resolve(repository, ".."), "init", `--object-format=${objectFormat}`, "--quiet", repository).exitCode).toBe(0)
             const git = await openRepository(repository)
@@ -106,7 +106,7 @@ describe("system Git", () => {
         })
     }
 
-    test("initialises populated directories and clones a disposable local remote", async () => {
+    test("initializes populated directories and clones a disposable local remote", async () => {
         const populated = await temporaryDirectory("workbench-init-")
         await writeFile(resolve(populated, "kept.txt"), "keep me")
         const initialized = await initializeRepository({ path: populated, initialBranch: "entry-test" })

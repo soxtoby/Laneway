@@ -38,6 +38,26 @@ body {
     background-size: 32px 32px, 32px 32px, auto, auto;
 }
 
+.bootstrap-state {
+    display: grid;
+    min-height: 100vh;
+    place-items: center;
+    padding: 40px;
+    text-align: center;
+}
+
+.bootstrap-state > div {
+    max-width: 560px;
+}
+
+.bootstrap-state h1 {
+    margin: 10px 0;
+}
+
+.bootstrap-state .primary-button {
+    margin-top: 14px;
+}
+
 button,
 input {
     font: inherit;

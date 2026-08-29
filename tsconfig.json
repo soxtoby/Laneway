@@ -2,6 +2,8 @@
     "compilerOptions": {
         "allowImportingTsExtensions": true,
         "lib": ["ES2023", "DOM", "DOM.Iterable"],
+        "jsx": "react-jsx",
+        "jsxImportSource": "remix/ui",
         "module": "ESNext",
         "moduleResolution": "Bundler",
         "noEmit": true,
@@ -17,6 +19,7 @@
         "git/**/*.ts",
         "cli/**/*.ts",
         "desktop/**/*.ts",
+        "desktop/**/*.tsx",
         "electron.vite.config.ts"
     ]
 }

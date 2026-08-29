@@ -84,7 +84,7 @@ function registerHandlers() {
 
     ipcMain.handle("entry:initialize", (_event, request: { path?: unknown; initialBranch?: unknown }) => {
         if (typeof request?.path != "string" || request.path.trim() == "")
-            return { ok: false, error: { code: "git.command-failed", message: "Choose a directory to initialise." } } satisfies EntryResult
+            return { ok: false, error: { code: "git.command-failed", message: "Choose a directory to initialize." } } satisfies EntryResult
         if (request.initialBranch != undefined && typeof request.initialBranch != "string")
             return { ok: false, error: { code: "git.command-failed", message: "The initial branch must be text." } } satisfies EntryResult
         const initialBranch = typeof request.initialBranch == "string" && request.initialBranch.trim() ? request.initialBranch.trim() : undefined

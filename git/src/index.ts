@@ -365,7 +365,7 @@ export async function initializeRepository(options: { path: string; gitPath?: st
     args.push("--", path)
     const result = await runGitProcess({ installation, args })
     if (result.exitCode != 0)
-        throw commandFailure(result, "Git could not initialise the directory.")
+        throw commandFailure(result, "Git could not initialize the directory.")
     return openRepository(path, installation)
 }
 
