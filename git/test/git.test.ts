@@ -215,6 +215,31 @@ describe("system Git", () => {
             expect(feature.base.candidates.map(candidate => candidate.name)).toEqual(expect.arrayContaining(["candidate/left", "candidate/right", "main"]))
     })
 
+    test("reads a many-branch graph in under one second", async () => {
+        const repository = await temporaryDirectory("workbench-graph-performance-")
+        expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.name", "Workbench Test").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.email", "workbench@example.invalid").exitCode).toBe(0)
+        await commitFile(repository, "README.md", "initial\n", "Initial")
+        const initial = gitText(repository, "rev-parse", "HEAD")
+        const tree = gitText(repository, "rev-parse", "HEAD^{tree}")
+        for (let index = 0; index < 40; index += 1) {
+            const tip = gitText(repository, "commit-tree", tree, "-p", initial, "-m", `Branch ${index}`)
+            expect(runGit(repository, "update-ref", `refs/heads/branch-${index}`, tip).exitCode).toBe(0)
+        }
+
+        const opened = await openRepository(repository)
+        const started = performance.now()
+        const graph = await opened.startReadBranchGraph({
+            authorIdentities: { primary: "workbench@example.invalid", secondary: [] },
+            remotePatterns: [],
+        }).result
+        const elapsed = performance.now() - started
+
+        expect(graph.branches).toHaveLength(41)
+        expect(elapsed).toBeLessThan(1_000)
+    })
+
     test("initializes populated directories and clones a disposable local remote", async () => {
         const populated = await temporaryDirectory("workbench-init-")
         await writeFile(resolve(populated, "kept.txt"), "keep me")

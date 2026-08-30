@@ -180,7 +180,25 @@ export async function connectRepository(path: string, git?: GitSelection, requir
         throw new GitError("git.invalid-root", `The selected path is not a valid Git repository root: ${selectedPath}.`, { path: selectedPath })
     }
 
-    const bare = await runGitProcess({ installation, cwd: selectedDirectory, args: ["rev-parse", "--is-bare-repository"] })
+    const [bare, details, worktreesResult, partialResult, sparseResult] = await Promise.all([
+        runGitProcess({ installation, cwd: selectedDirectory, args: ["rev-parse", "--is-bare-repository"] }),
+        runGitProcess({
+            installation,
+            cwd: selectedDirectory,
+            args: [
+                "rev-parse",
+                "--path-format=absolute",
+                "--show-toplevel",
+                "--git-common-dir",
+                "--git-dir",
+                "--show-object-format=storage",
+                "--is-shallow-repository",
+            ],
+        }),
+        runGitProcess({ installation, cwd: selectedDirectory, args: ["worktree", "list", "--porcelain", "-z"] }),
+        runGitProcess({ installation, cwd: selectedDirectory, args: ["config", "--get-regexp", "^remote\\..*\\.promisor$"] }),
+        runGitProcess({ installation, cwd: selectedDirectory, args: ["config", "--bool", "--get", "core.sparseCheckout"] }),
+    ])
     if (bare.exitCode != 0 && await hasMissingLinkedWorktreeTarget(selectedDirectory)) {
         throw new GitError(
             "git.missing-main-worktree",
@@ -197,27 +215,20 @@ export async function connectRepository(path: string, git?: GitSelection, requir
             { path: selectedPath },
         )
     }
-
-    const [rootResult, commonResult, gitDirectoryResult, formatResult, shallowResult, worktreesResult] = await Promise.all([
-        requireGit(installation, selectedDirectory, ["rev-parse", "--path-format=absolute", "--show-toplevel"], "Git could not identify the worktree root."),
-        requireGit(
-            installation,
-            selectedDirectory,
-            ["rev-parse", "--path-format=absolute", "--git-common-dir"],
-            "Git could not identify its shared directory.",
-        ),
-        requireGit(installation, selectedDirectory, ["rev-parse", "--path-format=absolute", "--git-dir"], "Git could not identify the selected worktree."),
-        requireGit(installation, selectedDirectory, ["rev-parse", "--show-object-format=storage"], "Git could not report the repository object format."),
-        requireGit(installation, selectedDirectory, ["rev-parse", "--is-shallow-repository"], "Git could not inspect shallow state."),
-        requireGit(installation, selectedDirectory, ["worktree", "list", "--porcelain", "-z"], "Git could not list Registered Worktrees."),
-    ])
+    if (details.exitCode != 0)
+        throw commandFailure(details, "Git could not inspect the repository.")
+    if (worktreesResult.exitCode != 0)
+        throw commandFailure(worktreesResult, "Git could not list Registered Worktrees.")
+    const [rootResult, commonResult, gitDirectoryResult, formatResult, shallowResult] = details.stdout.toString().trim().split(/\r?\n/)
+    if (!rootResult || !commonResult || !gitDirectoryResult || !formatResult || !shallowResult)
+        throw new GitError("git.command-failed", "Git returned incomplete repository details.")
 
     const root = await canonicalDirectory(rootResult)
     if (requireExactRoot && !samePath(root, selectedDirectory))
         throw invalidRoot(selectedPath)
     const commonDirectory = await canonicalDirectory(commonResult)
     const gitDirectory = await canonicalDirectory(gitDirectoryResult)
-    const worktrees = parseWorktreeRoots(worktreesResult)
+    const worktrees = parseWorktreeRoots(worktreesResult.stdout.toString().trim())
     const mainWorktree = worktrees[0]
     if (!mainWorktree) {
         throw new GitError(
@@ -245,10 +256,6 @@ export async function connectRepository(path: string, git?: GitSelection, requir
         )
     }
 
-    const [partialResult, sparseResult] = await Promise.all([
-        runGitProcess({ installation, cwd: root, args: ["config", "--get-regexp", "^remote\\..*\\.promisor$"] }),
-        runGitProcess({ installation, cwd: root, args: ["config", "--bool", "--get", "core.sparseCheckout"] }),
-    ])
     const descriptor: RepositoryDescriptor = {
         id: commonDirectory,
         root,
@@ -335,7 +342,7 @@ export class RepositoryGit {
     startReadBranchGraph(options: BranchGraphReadOptions) {
         return startBranchGraphRead(
             this.descriptor,
-            args => startGitProcess({ installation: this.descriptor.git, cwd: this.descriptor.selectedWorktree, args }),
+            (args, input) => startGitProcess({ installation: this.descriptor.git, cwd: this.descriptor.selectedWorktree, args, input }),
             options,
             this.branchGraphCache,
             cache => this.branchGraphCache = cache,
@@ -345,7 +352,7 @@ export class RepositoryGit {
     startReadBranchHistory(request: BranchHistoryRequest) {
         return startBranchHistoryRead(
             this.descriptor,
-            args => startGitProcess({ installation: this.descriptor.git, cwd: this.descriptor.selectedWorktree, args }),
+            (args, input) => startGitProcess({ installation: this.descriptor.git, cwd: this.descriptor.selectedWorktree, args, input }),
             request,
         )
     }
@@ -452,13 +459,6 @@ export async function startCloneRepository(options: {
             return openRepository(destination, installation)
         })(),
     }
-}
-
-async function requireGit(installation: GitInstallation, cwd: string, args: string[], fallback: string) {
-    const result = await runGitProcess({ installation, cwd, args })
-    if (result.exitCode != 0)
-        throw commandFailure(result, fallback)
-    return result.stdout.toString().trim()
 }
 
 function resolveGitSelection(git: GitSelection) {

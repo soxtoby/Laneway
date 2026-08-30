@@ -14,7 +14,7 @@ interface CommandExecution {
     wasCancelled(): boolean
 }
 
-type StartCommand = (args: string[]) => CommandExecution
+type StartCommand = (args: string[], input?: string) => CommandExecution
 
 export interface BranchGraphReadCache {
     key: string
@@ -28,6 +28,10 @@ interface RefRecord {
     peeledObjectId?: string
     upstreamRef?: string
     symbolicTarget?: string
+    authoredAt?: number
+    subject?: string
+    ahead: number
+    behind: number
 }
 
 interface StashRecord {
@@ -52,8 +56,28 @@ interface MutableBranch extends BranchGraphBranchNode {
     sourceUpstreams: Map<string, string>
 }
 
+interface TopologyCommit {
+    objectId: string
+    parentIndexes: number[]
+}
+
+interface BranchCommitSummary {
+    objectId: string
+    authoredAt: number
+    subject: string
+}
+
+interface GraphTopology {
+    commits: TopologyCommit[]
+    isAncestor(ancestor: string, descendant: string): boolean
+    ancestry(roots: string[]): (ancestor: string, descendant: string) => boolean
+    mergeBases(branch: MutableBranch, candidates: MutableBranch[]): Array<{ candidate: MutableBranch; objectId: string }>
+    exclusiveCommits(branches: MutableBranch[]): string[]
+    hasExclusive(commits: Set<string>, tip: string, base: string): boolean
+}
+
 interface GraphRunner {
-    run(args: string[], acceptedExitCodes?: number[]): Promise<CommandResult>
+    run(args: string[], acceptedExitCodes?: number[], input?: string): Promise<CommandResult>
 }
 
 export function startBranchGraphRead(
@@ -84,20 +108,21 @@ export function startBranchHistoryRead(
 
 function cancellableRunner(startCommand: StartCommand): GraphRunner & { cancel(): void } {
     let cancelled = false
-    let current: CommandExecution | undefined
+    const current = new Set<CommandExecution>()
     return {
         cancel() {
             cancelled = true
-            current?.cancel()
+            for (const command of current)
+                command.cancel()
         },
-        async run(args, acceptedExitCodes = [0]) {
+        async run(args, acceptedExitCodes = [0], input) {
             if (cancelled)
                 throw cancelledError()
-            current = startCommand(args)
-            const result = await current.result
-            if (cancelled || current.wasCancelled())
+            const command = startCommand(args, input)
+            current.add(command)
+            const result = await command.result.finally(() => current.delete(command))
+            if (cancelled || command.wasCancelled())
                 throw cancelledError()
-            current = undefined
             if (!acceptedExitCodes.includes(result.exitCode)) {
                 throw new GitError(
                     "git.command-failed",
@@ -123,17 +148,31 @@ async function readVerifiedGraph(
         const beforeFingerprint = fingerprint(before)
         if (!options.refreshRemote && cached?.key == key && cached.evidence == beforeFingerprint)
             return cached.graph
-        const graph = await buildGraph(descriptor, runner, options, before)
-        const after = await readEvidence(runner)
-        if (beforeFingerprint == fingerprint(after)) {
-            cache?.({ key, evidence: beforeFingerprint, graph })
-            return graph
+        const built = await buildGraph(descriptor, runner, options, before, () => readVerificationEvidence(runner))
+        if (verificationFingerprint(before) == verificationFingerprint(built.verification)) {
+            cache?.({ key, evidence: beforeFingerprint, graph: built.graph })
+            return built.graph
         }
     }
     throw new GitError(
         "git.command-failed",
         "Repository refs kept changing while Workbench read the Branch Graph. Workbench will retry while the graph is visible.",
     )
+}
+
+async function readVerificationEvidence(runner: GraphRunner) {
+    const [refResult, worktreeResult] = await Promise.all([
+        runner.run([
+            "for-each-ref",
+            "--format=%(refname)%00%(objectname)%00%(*objectname)%00%(upstream)%00%(symref)%00%(authordate:unix)%00%(contents:subject)%00%(upstream:track,nobracket)%00",
+            "refs/heads",
+            "refs/remotes",
+            "refs/tags",
+            "refs/stash",
+        ]),
+        runner.run(["worktree", "list", "--porcelain", "-z"]),
+    ])
+    return { refText: text(refResult), worktreeText: text(worktreeResult) }
 }
 
 function graphOptionsKey(options: BranchGraphReadOptions) {
@@ -145,19 +184,22 @@ function graphOptionsKey(options: BranchGraphReadOptions) {
 }
 
 async function readEvidence(runner: GraphRunner): Promise<Evidence> {
-    const remoteText = text(await runner.run(["remote"]))
-    const refText = text(
-        await runner.run([
+    const [remoteResult, refResult, worktreeResult, stashResult] = await Promise.all([
+        runner.run(["remote"]),
+        runner.run([
             "for-each-ref",
-            "--format=%(refname)%00%(objectname)%00%(*objectname)%00%(upstream)%00%(symref)%00",
+            "--format=%(refname)%00%(objectname)%00%(*objectname)%00%(upstream)%00%(symref)%00%(authordate:unix)%00%(contents:subject)%00%(upstream:track,nobracket)%00",
             "refs/heads",
             "refs/remotes",
             "refs/tags",
             "refs/stash",
         ]),
-    )
-    const worktreeText = text(await runner.run(["worktree", "list", "--porcelain", "-z"]))
-    const stashResult = await runner.run(["stash", "list", "--format=%gd%x00%H%x00%P%x00%gs"], [0])
+        runner.run(["worktree", "list", "--porcelain", "-z"]),
+        runner.run(["stash", "list", "--format=%gd%x00%H%x00%P%x00%gs"], [0]),
+    ])
+    const remoteText = text(remoteResult)
+    const refText = text(refResult)
+    const worktreeText = text(worktreeResult)
     const stashText = text(stashResult)
     return {
         remotes: remoteText.split("\n").filter(Boolean).sort(naturalCompare),
@@ -176,21 +218,39 @@ async function buildGraph(
     runner: GraphRunner,
     options: BranchGraphReadOptions,
     evidence: Evidence,
-): Promise<BranchGraph> {
+    verify: () => Promise<Pick<Evidence, "refText" | "worktreeText">>,
+) {
     const availableRemotes = [...new Set([...evidence.remotes, ...listRefRemotes(evidence.refs)])].sort(naturalCompare)
     const selectedRemote = options.selectedRemote && availableRemotes.includes(options.selectedRemote)
         ? options.selectedRemote
         : availableRemotes.length == 1
         ? availableRemotes[0]
         : undefined
+    const tips = graphTips(evidence.refs)
+    const topologyPromise = readTopology(runner, tips)
     const effectiveAuthorEmail = optionalText(await runner.run(["config", "--get", "user.email"], [0, 1]))
     const authorIdentities = effectiveIdentities(options.authorIdentities, effectiveAuthorEmail)
-    const primaryBranch = await readPrimaryBranch(runner, evidence.refs, selectedRemote, options.refreshRemote == true)
+    const [primaryBranch, topology] = await Promise.all([
+        readPrimaryBranch(runner, evidence.refs, selectedRemote, options.refreshRemote == true),
+        topologyPromise,
+    ])
     const branches = createBranches(evidence.refs, evidence.worktrees, primaryBranch.ref)
-    const ancestry = ancestryReader(runner)
+    const summaries = new Map(
+        evidence.refs.filter(ref =>
+            (ref.ref.startsWith("refs/heads/") || ref.ref.startsWith("refs/remotes/"))
+            && ref.authoredAt != undefined
+            && ref.subject != undefined
+        )
+            .map(ref => [ref.objectId, { objectId: ref.objectId, authoredAt: ref.authoredAt!, subject: ref.subject! }]),
+    )
 
-    await inferBases(branches, branches, ancestry)
-    await enrichBranches(runner, branches, authorIdentities)
+    inferBases(branches, branches, topology)
+    const exclusiveCommits = topology.exclusiveCommits(branches)
+    const [authoredCommits, verification] = await Promise.all([
+        readAuthoredCommits(runner, exclusiveCommits, authorIdentities),
+        verify(),
+    ])
+    enrichBranches(topology, branches, authorIdentities, authoredCommits, summaries)
 
     const patterns = options.remotePatterns.map(globPattern)
     const included = new Set(
@@ -203,13 +263,9 @@ async function buildGraph(
     )
     includeBaseRelationships(branches, included)
     let visibleBranches = branches.filter(branch => included.has(branch.id))
-    await inferBases(visibleBranches, visibleBranches, ancestry)
-    await enrichBranches(runner, visibleBranches, authorIdentities)
-    includeBaseRelationships(visibleBranches, included)
-    visibleBranches = visibleBranches.filter(branch => included.has(branch.id))
 
     attachStashes(visibleBranches, evidence.stashes)
-    const { branchTags, tagNodes } = await placeTags(evidence.refs, visibleBranches, ancestry)
+    const { branchTags, tagNodes } = placeTags(evidence.refs, visibleBranches, topology)
     for (const [branchId, tags] of branchTags) {
         const branch = visibleBranches.find(candidate => candidate.id == branchId)
         if (branch)
@@ -220,26 +276,29 @@ async function buildGraph(
     const referencedBases = new Set(
         visibleBranches.flatMap(branch => branch.base.status == "known" ? [branch.base.branchId] : branch.base.candidates.map(candidate => candidate.branchId)),
     )
-    visibleBranches = (await filterMergedInactive(visibleBranches, primary, referencedBases, ancestry))
+    visibleBranches = filterMergedInactive(visibleBranches, primary, referencedBases, topology)
         .sort(compareBranches)
 
     return {
-        repositoryId: descriptor.id,
-        primaryBranch,
-        availableRemotes,
-        selectedRemote,
-        remotePatterns: options.remotePatterns,
-        authorIdentities,
-        effectiveAuthorEmail,
-        branches: visibleBranches.map(withoutInternals),
-        tags: tagNodes.filter(tag => !tag.parentBranchId || visibleBranches.some(branch => branch.id == tag.parentBranchId)),
-        virtualBranches: createVirtualBranches(evidence.worktrees),
-        unassignedStashes: unassignedStashes(visibleBranches, evidence.stashes),
-        limited: [
-            ...(descriptor.shallow ? ["shallow" as const] : []),
-            ...(descriptor.partial ? ["partial" as const] : []),
-            ...(descriptor.sparse ? ["sparse" as const] : []),
-        ],
+        verification,
+        graph: {
+            repositoryId: descriptor.id,
+            primaryBranch,
+            availableRemotes,
+            selectedRemote,
+            remotePatterns: options.remotePatterns,
+            authorIdentities,
+            effectiveAuthorEmail,
+            branches: visibleBranches.map(withoutInternals),
+            tags: tagNodes.filter(tag => !tag.parentBranchId || visibleBranches.some(branch => branch.id == tag.parentBranchId)),
+            virtualBranches: createVirtualBranches(evidence.worktrees),
+            unassignedStashes: unassignedStashes(visibleBranches, evidence.stashes),
+            limited: [
+                ...(descriptor.shallow ? ["shallow" as const] : []),
+                ...(descriptor.partial ? ["partial" as const] : []),
+                ...(descriptor.sparse ? ["sparse" as const] : []),
+            ],
+        },
     }
 }
 
@@ -301,8 +360,8 @@ function createBranches(refs: RefRecord[], worktrees: BranchGraphWorktree[], pri
             tip,
             upstreamRef,
             upstreamTip,
-            ahead: 0,
-            behind: 0,
+            ahead: preferred.ahead,
+            behind: preferred.behind,
             base: { status: "unknown", candidates: [] },
             involvement: "unknown",
             checkedOut: worktrees.filter(worktree => worktree.branchRef && local.some(ref => ref.ref == worktree.branchRef)),
@@ -315,33 +374,26 @@ function createBranches(refs: RefRecord[], worktrees: BranchGraphWorktree[], pri
     })
 }
 
-async function inferBases(branches: MutableBranch[], candidates: MutableBranch[], ancestry: ReturnType<typeof ancestryReader>) {
+function inferBases(branches: MutableBranch[], candidates: MutableBranch[], topology: GraphTopology) {
+    const mergeBasesByBranch = new Map<MutableBranch, Array<{ candidate: MutableBranch; objectId: string }>>()
     for (const branch of branches) {
         if (branch.primary) {
             branch.base = { status: "unknown", candidates: [] }
             continue
         }
-        const mergeBases: Array<{ candidate: MutableBranch; objectId: string }> = []
-        for (const candidate of candidates) {
-            if (candidate.id == branch.id || candidate.tip == branch.tip)
-                continue
-            if (await ancestry.isAncestor(branch.tip, candidate.tip))
-                continue
-            const objectId = await ancestry.mergeBase(branch.tip, candidate.tip)
-            if (objectId)
-                mergeBases.push({ candidate, objectId })
-        }
+        mergeBasesByBranch.set(branch, topology.mergeBases(branch, candidates))
+    }
+    const baseObjectIds = unique([...mergeBasesByBranch.values()].flat().map(entry => entry.objectId), objectId => objectId)
+    const isAncestor = topology.ancestry(baseObjectIds)
+    for (const [branch, mergeBases] of mergeBasesByBranch) {
         const closest: typeof mergeBases = []
+        const frontier: string[] = []
         for (const entry of mergeBases) {
-            let dominated = false
-            for (const other of mergeBases) {
-                if (entry.objectId != other.objectId && await ancestry.isAncestor(entry.objectId, other.objectId)) {
-                    dominated = true
-                    break
-                }
-            }
-            if (!dominated)
-                closest.push(entry)
+            if (frontier.some(objectId => entry.objectId != objectId && isAncestor(entry.objectId, objectId)))
+                continue
+            closest.push(entry)
+            if (!frontier.includes(entry.objectId))
+                frontier.push(entry.objectId)
         }
         branch.base = chooseBase(closest)
     }
@@ -371,48 +423,27 @@ function baseCandidate(branch: MutableBranch) {
     return { branchId: branch.id, name: branch.name, ref: branch.preferredRef, tip: branch.tip }
 }
 
-async function enrichBranches(runner: GraphRunner, branches: MutableBranch[], identities: AuthorIdentitySettings) {
+function enrichBranches(
+    topology: GraphTopology,
+    branches: MutableBranch[],
+    identities: AuthorIdentitySettings,
+    authoredCommits: Set<string>,
+    summaries: Map<string, BranchCommitSummary>,
+) {
+    const hasIdentities = Boolean(identities.primary || identities.secondary.length > 0)
     for (const branch of branches) {
-        if (branch.upstreamRef && branch.upstreamTip && branch.localRefs.length > 0) {
-            const divergence = text(await runner.run(["rev-list", "--left-right", "--count", `${branch.tip}...${branch.upstreamTip}`], [0, 1]))
-                .split(/\s+/).map(Number)
-            branch.ahead = Number.isFinite(divergence[0]) ? divergence[0] : 0
-            branch.behind = Number.isFinite(divergence[1]) ? divergence[1] : 0
-        }
         if (branch.base.status != "known") {
             branch.involvement = "unknown"
             branch.lastUniqueCommit = undefined
             continue
         }
-        const range = `${branch.base.tip}..${branch.tip}`
-        const latest = optionalText(
-            await runner.run([
-                "log",
-                "--use-mailmap",
-                "-1",
-                "--format=%H%x00%at%x00%s",
-                range,
-            ], [0, 128]),
-        )
-        branch.lastUniqueCommit = latest ? parseCommitSummary(latest) : undefined
-        const emails = [identities.primary, ...identities.secondary].filter((email): email is string => Boolean(email))
-        if (emails.length == 0) {
+        branch.lastUniqueCommit = summaries.get(branch.tip)
+        if (!hasIdentities) {
             branch.involvement = "unknown"
             continue
         }
-        const authorArguments = emails.flatMap(email => ["--author", `<${escapeRegularExpression(email)}>$`])
-        const involved = optionalText(
-            await runner.run([
-                "log",
-                "--use-mailmap",
-                "--regexp-ignore-case",
-                "-1",
-                "--format=%H",
-                ...authorArguments,
-                range,
-            ], [0, 128]),
-        )
-        branch.involvement = involved ? "involved" : "uninvolved"
+        const baseTip = branch.base.tip
+        branch.involvement = topology.hasExclusive(authoredCommits, branch.tip, baseTip) ? "involved" : "uninvolved"
     }
 }
 
@@ -453,7 +484,7 @@ function unassignedStashes(branches: MutableBranch[], stashes: StashRecord[]) {
     return stashes.map(stashMarker).filter(marker => !assigned.has(marker.id))
 }
 
-async function placeTags(refs: RefRecord[], branches: MutableBranch[], ancestry: ReturnType<typeof ancestryReader>) {
+function placeTags(refs: RefRecord[], branches: MutableBranch[], topology: GraphTopology) {
     const branchTags = new Map<string, string[]>()
     const tagNodes: BranchGraphTagNode[] = []
     for (const tag of refs.filter(ref => ref.ref.startsWith("refs/tags/"))) {
@@ -465,9 +496,9 @@ async function placeTags(refs: RefRecord[], branches: MutableBranch[], ancestry:
         }
         const possibleParents: MutableBranch[] = []
         for (const branch of branches) {
-            if (!await ancestry.isAncestor(target, branch.tip))
+            if (!topology.isAncestor(target, branch.tip))
                 continue
-            if (branch.base.status == "known" && await ancestry.isAncestor(target, branch.base.tip))
+            if (branch.base.status == "known" && topology.isAncestor(target, branch.base.tip))
                 continue
             possibleParents.push(branch)
         }
@@ -484,11 +515,11 @@ async function placeTags(refs: RefRecord[], branches: MutableBranch[], ancestry:
     return { branchTags, tagNodes: tagNodes.sort((left, right) => naturalCompare(left.name, right.name)) }
 }
 
-async function filterMergedInactive(
+function filterMergedInactive(
     branches: MutableBranch[],
     primary: MutableBranch | undefined,
     referencedBases: Set<string>,
-    ancestry: ReturnType<typeof ancestryReader>,
+    topology: GraphTopology,
 ) {
     if (!primary)
         return branches
@@ -497,7 +528,7 @@ async function filterMergedInactive(
         const merged = branch.id != primary.id
             && branch.checkedOut.length == 0
             && !referencedBases.has(branch.id)
-            && await ancestry.isAncestor(branch.tip, primary.tip)
+            && topology.isAncestor(branch.tip, primary.tip)
         if (!merged)
             result.push(branch)
     }
@@ -515,32 +546,234 @@ function createVirtualBranches(worktrees: BranchGraphWorktree[]): BranchGraphVir
     }))
 }
 
-function ancestryReader(runner: GraphRunner) {
-    const ancestors = new Map<string, boolean>()
-    const mergeBases = new Map<string, string | null>()
+function graphTips(refs: RefRecord[]) {
+    return unique(
+        refs.filter(ref =>
+            ref.ref.startsWith("refs/heads/")
+            || ref.ref.startsWith("refs/remotes/") && !ref.symbolicTarget
+        ).map(ref => ref.objectId),
+        objectId => objectId,
+    )
+}
+
+async function readTopology(runner: GraphRunner, tips: string[]): Promise<GraphTopology> {
+    if (tips.length == 0)
+        return emptyTopology()
+    const output = await runner.run(["rev-list", "--topo-order", "--parents", ...tips])
+    const records = parseTopology(output.stdout.toString())
+    const commitIndexes = new Map(records.map((commit, index) => [commit.objectId, index]))
+    const commits: TopologyCommit[] = records.map(commit => ({
+        objectId: commit.objectId,
+        parentIndexes: commit.parentIds.map(parentId => commitIndexes.get(parentId))
+            .filter((index): index is number => index != undefined),
+    }))
+    const tipIndexes = new Map(tips.map((objectId, index) => [objectId, index]))
+    const wordCount = Math.ceil(tips.length / 32)
+    const reachability = new Uint32Array(commits.length * wordCount)
+
+    for (let commitIndex = 0; commitIndex < commits.length; commitIndex += 1) {
+        const commit = commits[commitIndex]
+        const tipIndex = tipIndexes.get(commit.objectId)
+        if (tipIndex != undefined)
+            reachability[commitIndex * wordCount + Math.floor(tipIndex / 32)] |= 1 << tipIndex % 32
+        for (const parentIndex of commit.parentIndexes) {
+            for (let word = 0; word < wordCount; word += 1)
+                reachability[parentIndex * wordCount + word] |= reachability[commitIndex * wordCount + word]
+        }
+    }
+
+    const ancestorCache = new Map<string, boolean>()
+    const hasReach = (commitIndex: number, tipIndex: number) => (reachability[commitIndex * wordCount + Math.floor(tipIndex / 32)] & 1 << tipIndex % 32) != 0
+    const isAncestor = (ancestor: string, descendant: string) => {
+        if (ancestor == descendant)
+            return true
+        const ancestorIndex = commitIndexes.get(ancestor)
+        const descendantIndex = commitIndexes.get(descendant)
+        if (ancestorIndex == undefined || descendantIndex == undefined || ancestorIndex < descendantIndex)
+            return false
+        const descendantTipIndex = tipIndexes.get(descendant)
+        if (descendantTipIndex != undefined)
+            return hasReach(ancestorIndex, descendantTipIndex)
+        const key = `${ancestor}\0${descendant}`
+        const cached = ancestorCache.get(key)
+        if (cached != undefined)
+            return cached
+        const pending = [descendantIndex]
+        const visited = new Set<number>()
+        let found = false
+        while (pending.length > 0 && !found) {
+            const current = pending.pop()!
+            if (current == ancestorIndex) {
+                found = true
+                break
+            }
+            if (current > ancestorIndex || visited.has(current))
+                continue
+            visited.add(current)
+            pending.push(...commits[current].parentIndexes)
+        }
+        ancestorCache.set(key, found)
+        return found
+    }
+
     return {
-        async isAncestor(ancestor: string, descendant: string) {
-            if (ancestor == descendant)
-                return true
-            const key = `${ancestor}\0${descendant}`
-            const cached = ancestors.get(key)
-            if (cached != undefined)
-                return cached
-            const result = await runner.run(["merge-base", "--is-ancestor", ancestor, descendant], [0, 1])
-            const value = result.exitCode == 0
-            ancestors.set(key, value)
-            return value
+        commits,
+        isAncestor,
+        ancestry(roots) {
+            const uniqueRoots = unique(roots, objectId => objectId)
+            const rootIndexes = new Map(uniqueRoots.map((objectId, index) => [objectId, index]))
+            const rootWordCount = Math.ceil(uniqueRoots.length / 32)
+            const rootReachability = new Uint32Array(commits.length * rootWordCount)
+            for (let commitIndex = 0; commitIndex < commits.length; commitIndex += 1) {
+                const rootIndex = rootIndexes.get(commits[commitIndex].objectId)
+                if (rootIndex != undefined)
+                    rootReachability[commitIndex * rootWordCount + Math.floor(rootIndex / 32)] |= 1 << rootIndex % 32
+                for (const parentIndex of commits[commitIndex].parentIndexes) {
+                    for (let word = 0; word < rootWordCount; word += 1)
+                        rootReachability[parentIndex * rootWordCount + word] |= rootReachability[commitIndex * rootWordCount + word]
+                }
+            }
+            return (ancestor: string, descendant: string) => {
+                if (ancestor == descendant)
+                    return true
+                const ancestorIndex = commitIndexes.get(ancestor)
+                const descendantRootIndex = rootIndexes.get(descendant)
+                if (ancestorIndex == undefined || descendantRootIndex == undefined)
+                    return false
+                return (rootReachability[ancestorIndex * rootWordCount + Math.floor(descendantRootIndex / 32)] & 1 << descendantRootIndex % 32) != 0
+            }
         },
-        async mergeBase(left: string, right: string) {
-            const key = [left, right].sort().join("\0")
-            if (mergeBases.has(key))
-                return mergeBases.get(key)!
-            const result = await runner.run(["merge-base", left, right], [0, 1])
-            const value = result.exitCode == 0 ? optionalText(result) ?? null : null
-            mergeBases.set(key, value)
-            return value
+        mergeBases(branch, candidates) {
+            const branchTipIndex = tipIndexes.get(branch.tip)
+            if (branchTipIndex == undefined)
+                return []
+            const unresolved = new Uint32Array(wordCount)
+            const candidatesByTipIndex = new Map<number, MutableBranch>()
+            for (const candidate of candidates) {
+                const candidateTipIndex = tipIndexes.get(candidate.tip)
+                if (
+                    candidate.id == branch.id
+                    || candidate.tip == branch.tip
+                    || candidateTipIndex == undefined
+                    || isAncestor(branch.tip, candidate.tip)
+                ) {
+                    continue
+                }
+                unresolved[Math.floor(candidateTipIndex / 32)] |= 1 << candidateTipIndex % 32
+                candidatesByTipIndex.set(candidateTipIndex, candidate)
+            }
+            let unresolvedCount = candidatesByTipIndex.size
+            const result: Array<{ candidate: MutableBranch; objectId: string }> = []
+            for (let commitIndex = 0; commitIndex < commits.length && unresolvedCount > 0; commitIndex += 1) {
+                if (!hasReach(commitIndex, branchTipIndex))
+                    continue
+                const offset = commitIndex * wordCount
+                for (let word = 0; word < wordCount; word += 1) {
+                    let matching = (reachability[offset + word] & unresolved[word]) >>> 0
+                    while (matching != 0) {
+                        const lowest = (matching & -matching) >>> 0
+                        const bit = 31 - Math.clz32(lowest)
+                        const candidate = candidatesByTipIndex.get(word * 32 + bit)
+                        if (candidate)
+                            result.push({ candidate, objectId: commits[commitIndex].objectId })
+                        unresolved[word] &= ~lowest
+                        unresolvedCount -= 1
+                        matching = (matching & (matching - 1)) >>> 0
+                    }
+                }
+            }
+            return result
+        },
+        exclusiveCommits(branches) {
+            const ranges = branches.flatMap(branch => {
+                if (branch.base.status != "known")
+                    return []
+                const tipIndex = tipIndexes.get(branch.tip)
+                const baseIndex = tipIndexes.get(branch.base.tip)
+                return tipIndex == undefined || baseIndex == undefined ? [] : [{ tipIndex, baseIndex }]
+            })
+            const result: string[] = []
+            for (let commitIndex = 0; commitIndex < commits.length; commitIndex += 1) {
+                for (const range of ranges) {
+                    if (hasReach(commitIndex, range.tipIndex) && !hasReach(commitIndex, range.baseIndex)) {
+                        result.push(commits[commitIndex].objectId)
+                        break
+                    }
+                }
+            }
+            return result
+        },
+        hasExclusive(objectIds, tip, base) {
+            const tipIndex = tipIndexes.get(tip)
+            const baseIndex = tipIndexes.get(base)
+            if (tipIndex == undefined || baseIndex == undefined)
+                return false
+            for (const objectId of objectIds) {
+                const commitIndex = commitIndexes.get(objectId)
+                if (commitIndex != undefined && hasReach(commitIndex, tipIndex) && !hasReach(commitIndex, baseIndex))
+                    return true
+            }
+            return false
         },
     }
+}
+
+function parseTopology(output: string) {
+    const records: Array<{ objectId: string; parentIds: string[] }> = []
+    let lineStart = 0
+    while (lineStart < output.length) {
+        let lineEnd = output.indexOf("\n", lineStart)
+        if (lineEnd < 0)
+            lineEnd = output.length
+        const separator = output.indexOf(" ", lineStart)
+        const objectEnd = separator < 0 || separator > lineEnd ? lineEnd : separator
+        const parentIds: string[] = []
+        let parentStart = objectEnd + 1
+        while (parentStart < lineEnd) {
+            const nextSeparator = output.indexOf(" ", parentStart)
+            const parentEnd = nextSeparator < 0 || nextSeparator > lineEnd ? lineEnd : nextSeparator
+            parentIds.push(output.slice(parentStart, parentEnd))
+            parentStart = parentEnd + 1
+        }
+        if (objectEnd > lineStart)
+            records.push({ objectId: output.slice(lineStart, objectEnd), parentIds })
+        lineStart = lineEnd + 1
+    }
+    return records
+}
+
+function emptyTopology(): GraphTopology {
+    return {
+        commits: [],
+        isAncestor: () => false,
+        ancestry: () => () => false,
+        mergeBases: () => [],
+        exclusiveCommits: () => [],
+        hasExclusive: () => false,
+    }
+}
+
+async function readAuthoredCommits(runner: GraphRunner, commits: string[], identities: AuthorIdentitySettings) {
+    const emails = [identities.primary, ...identities.secondary].filter((email): email is string => Boolean(email))
+    if (emails.length == 0 || commits.length == 0)
+        return new Set<string>()
+    const authorArguments = emails.flatMap(email => ["--author", `<${escapeRegularExpression(email)}>$`])
+    const output = text(
+        await runner.run(
+            [
+                "log",
+                "--stdin",
+                "--no-walk",
+                "--use-mailmap",
+                "--regexp-ignore-case",
+                "--format=%H",
+                ...authorArguments,
+            ],
+            [0, 128],
+            `${commits.join("\n")}\n`,
+        ),
+    )
+    return new Set(output.split("\n").filter(Boolean))
 }
 
 async function readPrimaryBranch(runner: GraphRunner, refs: RefRecord[], remote: string | undefined, refreshRemote: boolean) {
@@ -609,13 +842,17 @@ async function readHistoryPage(descriptor: RepositoryDescriptor, runner: GraphRu
 
 function parseRefs(output: string): RefRecord[] {
     return output.split("\n").map(line => line.replace(/\0$/, "")).filter(Boolean).map(line => {
-        const [ref, objectId, peeledObjectId, upstreamRef, symbolicTarget] = line.split("\0")
+        const [ref, objectId, peeledObjectId, upstreamRef, symbolicTarget, authoredAt, subject, tracking] = line.split("\0")
         return {
             ref,
             objectId,
             peeledObjectId: peeledObjectId || undefined,
             upstreamRef: upstreamRef || undefined,
             symbolicTarget: symbolicTarget || undefined,
+            authoredAt: authoredAt ? Number(authoredAt) : undefined,
+            subject: subject || undefined,
+            ahead: Number(/ahead (\d+)/.exec(tracking)?.[1] ?? 0),
+            behind: Number(/behind (\d+)/.exec(tracking)?.[1] ?? 0),
         }
     })
 }
@@ -642,11 +879,6 @@ function parseStashes(output: string): StashRecord[] {
         const [selector, objectId, parents, subject] = line.split("\0")
         return { selector, objectId, parentIds: parents.split(" ").filter(Boolean), subject }
     })
-}
-
-function parseCommitSummary(output: string) {
-    const [objectId, authoredAt, subject] = output.split("\0")
-    return { objectId, authoredAt: Number(authoredAt), subject }
 }
 
 function parseHistory(output: string): BranchHistoryCommit[] {
@@ -720,6 +952,10 @@ function shortObjectId(objectId: string) {
 
 function fingerprint(evidence: Evidence) {
     return `${evidence.remoteText}\0${evidence.refText}\0${evidence.worktreeText}\0${evidence.stashText}`
+}
+
+function verificationFingerprint(evidence: Pick<Evidence, "refText" | "worktreeText">) {
+    return `${evidence.refText}\0${evidence.worktreeText}`
 }
 
 function text(result: CommandResult) {
