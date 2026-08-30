@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { resolve } from "node:path"
+import { basename, resolve } from "node:path"
 import { connectRepository, GitError, inferCloneDirectoryName, initializeRepository, openRepository, parseGitVersion, redactGitText, selectGit, startCloneRepository } from "../src/index"
 
 const temporaryDirectories: string[] = []
@@ -18,6 +18,18 @@ async function temporaryDirectory(prefix: string) {
 
 function runGit(cwd: string, ...args: string[]) {
     return Bun.spawnSync(["git", ...args], { cwd, stderr: "pipe", stdout: "pipe" })
+}
+
+function gitText(cwd: string, ...args: string[]) {
+    const result = runGit(cwd, ...args)
+    expect(result.exitCode).toBe(0)
+    return result.stdout.toString().trim()
+}
+
+async function commitFile(repository: string, path: string, content: string, message: string) {
+    await writeFile(resolve(repository, path), content)
+    expect(runGit(repository, "add", path).exitCode).toBe(0)
+    expect(runGit(repository, "commit", "--quiet", "-m", message).exitCode).toBe(0)
 }
 
 describe("system Git", () => {
@@ -104,7 +116,104 @@ describe("system Git", () => {
             await git.updateRefs([{ ref: "refs/workbench/test/object-format", before: objectId, after: null }])
             expect(await git.resolveRef("refs/workbench/test/object-format")).toBeNull()
         })
+
+        test(`reads a verified ${objectFormat} Branch Graph and lazy history`, async () => {
+            const repository = resolve(await temporaryDirectory(`workbench-graph-${objectFormat}-`), "repository")
+            expect(runGit(resolve(repository, ".."), "init", `--object-format=${objectFormat}`, "--initial-branch=main", "--quiet", repository).exitCode).toBe(
+                0,
+            )
+            expect(runGit(repository, "config", "user.name", "Workbench Test").exitCode).toBe(0)
+            expect(runGit(repository, "config", "user.email", "primary@example.invalid").exitCode).toBe(0)
+            await commitFile(repository, "README.md", "initial\n", "Initial")
+            const mainTip = gitText(repository, "rev-parse", "HEAD")
+            expect(runGit(repository, "update-ref", "refs/remotes/upstream/main", mainTip).exitCode).toBe(0)
+            expect(runGit(repository, "symbolic-ref", "refs/remotes/upstream/HEAD", "refs/remotes/upstream/main").exitCode).toBe(0)
+            expect(runGit(repository, "config", "branch.main.remote", "upstream").exitCode).toBe(0)
+            expect(runGit(repository, "config", "branch.main.merge", "refs/heads/main").exitCode).toBe(0)
+
+            expect(runGit(repository, "checkout", "-q", "-b", "feature/base").exitCode).toBe(0)
+            await writeFile(resolve(repository, ".mailmap"), "Secondary Author <secondary@example.invalid> Workbench Test <legacy@example.invalid>\n")
+            expect(runGit(repository, "add", ".mailmap").exitCode).toBe(0)
+            await commitFile(repository, "base.txt", "base\n", "Base work")
+            const baseTip = gitText(repository, "rev-parse", "HEAD")
+            expect(runGit(repository, "checkout", "-q", "-b", "feature/tip").exitCode).toBe(0)
+            expect(runGit(repository, "config", "user.email", "legacy@example.invalid").exitCode).toBe(0)
+            await commitFile(repository, "tip.txt", "one\n", "First tip commit")
+            const taggedCommit = gitText(repository, "rev-parse", "HEAD")
+            expect(runGit(repository, "tag", "waypoint", taggedCommit).exitCode).toBe(0)
+            expect(runGit(repository, "config", "user.email", "unrelated@example.invalid").exitCode).toBe(0)
+            await commitFile(repository, "tip.txt", "two\n", "Second tip commit")
+            const tip = gitText(repository, "rev-parse", "HEAD")
+            expect(runGit(repository, "branch", "feature/alias", tip).exitCode).toBe(0)
+            await writeFile(resolve(repository, "working.txt"), "stashed\n")
+            expect(runGit(repository, "add", "working.txt").exitCode).toBe(0)
+            expect(runGit(repository, "stash", "push", "-m", "Graph marker").exitCode).toBe(0)
+            const detached = resolve(await temporaryDirectory(`workbench-graph-detached-${objectFormat}-`), "detached")
+            expect(runGit(repository, "worktree", "add", "--detach", detached, mainTip).exitCode).toBe(0)
+
+            const opened = await openRepository(repository)
+            const graph = await opened.startReadBranchGraph({
+                authorIdentities: { primary: "primary@example.invalid", secondary: ["secondary@example.invalid"] },
+                selectedRemote: "upstream",
+                remotePatterns: [],
+            }).result
+
+            const tipNode = graph.branches.find(branch => branch.refs.includes("refs/heads/feature/tip"))!
+            expect(tipNode.localRefs).toContain("refs/heads/feature/alias")
+            expect(tipNode.base).toMatchObject({ status: "known", ref: "refs/heads/feature/base", tip: baseTip })
+            expect(tipNode.involvement).toBe("involved")
+            expect(tipNode.markers).toHaveLength(1)
+            expect(tipNode.markers[0].tooltip).toContain("Graph marker")
+            expect(graph.primaryBranch).toMatchObject({ status: "known", remote: "upstream", ref: "refs/remotes/upstream/main" })
+            expect(graph.virtualBranches).toContainEqual(expect.objectContaining({ name: basename(detached), objectId: mainTip }))
+            expect(graph.tags).toContainEqual(expect.objectContaining({ name: "waypoint", objectId: taggedCommit, parentBranchId: tipNode.id }))
+
+            const history = await opened.startReadBranchHistory({
+                branchRef: "refs/heads/feature/tip",
+                tip,
+                baseTip,
+                limit: 1,
+            }).result
+            expect(history.commits).toHaveLength(1)
+            expect(history.commits[0]).toMatchObject({ objectId: tip, subject: "Second tip commit" })
+            expect(history.nextOffset).toBe(1)
+        })
     }
+
+    test("retains divergent upstream tips and reports an ambiguous Base without a Primary Branch", async () => {
+        const repository = await temporaryDirectory("workbench-graph-ambiguous-")
+        expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.name", "Workbench Test").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.email", "workbench@example.invalid").exitCode).toBe(0)
+        await commitFile(repository, "README.md", "initial\n", "Initial")
+        const initial = gitText(repository, "rev-parse", "HEAD")
+        expect(runGit(repository, "checkout", "-q", "-b", "candidate/left").exitCode).toBe(0)
+        await commitFile(repository, "left.txt", "left\n", "Left")
+        expect(runGit(repository, "checkout", "-q", "-b", "candidate/right", initial).exitCode).toBe(0)
+        await commitFile(repository, "right.txt", "right\n", "Right")
+        expect(runGit(repository, "checkout", "-q", "-b", "feature/ambiguous", initial).exitCode).toBe(0)
+        await commitFile(repository, "feature.txt", "feature\n", "Feature")
+
+        const localTip = gitText(repository, "rev-parse", "HEAD")
+        const initialTree = gitText(repository, "rev-parse", `${initial}^{tree}`)
+        const remoteTip = gitText(repository, "commit-tree", initialTree, "-p", initial, "-m", "Remote divergence")
+        expect(runGit(repository, "remote", "add", "origin", ".").exitCode).toBe(0)
+        expect(runGit(repository, "update-ref", "refs/remotes/origin/feature/ambiguous", remoteTip).exitCode).toBe(0)
+        expect(runGit(repository, "config", "branch.feature/ambiguous.remote", "origin").exitCode).toBe(0)
+        expect(runGit(repository, "config", "branch.feature/ambiguous.merge", "refs/heads/feature/ambiguous").exitCode).toBe(0)
+
+        const graph = await (await openRepository(repository)).startReadBranchGraph({
+            authorIdentities: { primary: "workbench@example.invalid", secondary: [] },
+            remotePatterns: ["origin/**"],
+        }).result
+        const feature = graph.branches.find(branch => branch.preferredRef == "refs/heads/feature/ambiguous")!
+        expect(feature.tip).toBe(localTip)
+        expect(feature.upstreamTip).toBe(remoteTip)
+        expect(feature).toMatchObject({ ahead: 1, behind: 1 })
+        expect(feature.base.status).toBe("ambiguous")
+        if (feature.base.status == "ambiguous")
+            expect(feature.base.candidates.map(candidate => candidate.name)).toEqual(expect.arrayContaining(["candidate/left", "candidate/right", "main"]))
+    })
 
     test("initializes populated directories and clones a disposable local remote", async () => {
         const populated = await temporaryDirectory("workbench-init-")

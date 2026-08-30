@@ -34,6 +34,31 @@ describe("Workbench settings", () => {
         expect(await readFile(path, "utf8")).toEndWith("\n")
     })
 
+    test("round-trips author identities and repository graph settings", async () => {
+        const path = await temporarySettingsPath()
+        await writeSettings({
+            version: 1,
+            authorIdentities: { primary: "developer@example.test", secondary: ["old@example.test"] },
+            repositories: {
+                "D:\\Source\\project\\.git": {
+                    selectedRemote: "upstream",
+                    remotePatterns: ["upstream/release/*"],
+                },
+            },
+        }, path)
+
+        expect(await readSettings(path)).toEqual({
+            version: 1,
+            authorIdentities: { primary: "developer@example.test", secondary: ["old@example.test"] },
+            repositories: {
+                "D:\\Source\\project\\.git": {
+                    selectedRemote: "upstream",
+                    remotePatterns: ["upstream/release/*"],
+                },
+            },
+        })
+    })
+
     test("reports corrupt settings without falling back", async () => {
         const path = await temporarySettingsPath()
         await mkdir(resolve(path, ".."), { recursive: true })

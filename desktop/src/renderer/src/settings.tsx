@@ -2,7 +2,7 @@ import type { GitSettingsState } from "@git-workbench/shared"
 import { on, ref, type Handle, type RemixNode } from "remix/ui"
 import { errorMessage, type NoticeState } from "./feedback"
 
-type SettingsAction = "idle" | "choosing" | "path" | "resetting" | "opening-file"
+type SettingsAction = "idle" | "choosing" | "path" | "resetting" | "opening-file" | "saving-identities"
 
 interface SettingsOptions {
     api: Window["workbench"]
@@ -21,6 +21,8 @@ export function createGitSettings(options: SettingsOptions): GitSettings {
     let settings = options.initial
     let action: SettingsAction = "idle"
     let dialog: HTMLDialogElement
+    let primaryEmail = settings.authorIdentities.primary ?? ""
+    let secondaryEmails = settings.authorIdentities.secondary.join(", ")
 
     function showFailure(code: string, error: unknown) {
         options.notify({ code, message: errorMessage(error) })
@@ -63,6 +65,8 @@ export function createGitSettings(options: SettingsOptions): GitSettings {
             return settings
         },
         open() {
+            primaryEmail = settings.authorIdentities.primary ?? ""
+            secondaryEmails = settings.authorIdentities.secondary.join(", ")
             dialog.showModal()
         },
         render() {
@@ -76,6 +80,20 @@ export function createGitSettings(options: SettingsOptions): GitSettings {
                     usePath={() => run("path", options.api.useGitFromPath)}
                     reset={() => run("resetting", options.api.resetSettings)}
                     openFile={openFile}
+                    primaryEmail={primaryEmail}
+                    secondaryEmails={secondaryEmails}
+                    setPrimaryEmail={value => {
+                        primaryEmail = value
+                        void options.update()
+                    }}
+                    setSecondaryEmails={value => {
+                        secondaryEmails = value
+                        void options.update()
+                    }}
+                    saveIdentities={() => run("saving-identities", () => options.api.setAuthorIdentities({
+                        primary: primaryEmail.trim() || undefined,
+                        secondary: secondaryEmails.split(",").map(email => email.trim()).filter(Boolean),
+                    }))}
                 />
             )
         },
@@ -91,6 +109,11 @@ function SettingsDialog(handle: Handle<{
     usePath(): void
     reset(): void
     openFile(): void
+    primaryEmail: string
+    secondaryEmails: string
+    setPrimaryEmail(value: string): void
+    setSecondaryEmails(value: string): void
+    saveIdentities(): void
 }>) {
     return () => {
         const pending = handle.props.action != "idle"
@@ -113,6 +136,15 @@ function SettingsDialog(handle: Handle<{
                                 <Fact label="Settings file" value={handle.props.settings.path} />
                             </dl>
                         )}
+                    <section class="identity-settings" aria-labelledby="identity-heading">
+                        <div><p class="eyebrow">Branch involvement</p><h3 id="identity-heading">Author identities</h3></div>
+                        <label for="primary-email">Primary email</label>
+                        <input id="primary-email" type="email" value={handle.props.primaryEmail} placeholder="Detected from Git when empty" disabled={pending} mix={[on("input", event => handle.props.setPrimaryEmail(event.currentTarget.value))]} />
+                        <label for="secondary-emails">Secondary emails</label>
+                        <input id="secondary-emails" value={handle.props.secondaryEmails} placeholder="Comma-separated" disabled={pending} mix={[on("input", event => handle.props.setSecondaryEmails(event.currentTarget.value))]} />
+                        <p class="field-note">Used with mailmap to decide which branches are involved.</p>
+                        <button class="secondary-button" type="button" disabled={pending} mix={[on("click", handle.props.saveIdentities)]}>Save identities</button>
+                    </section>
                     <footer class="dialog-actions">
                         <button class="text-button" type="button" disabled={pending} mix={[on("click", handle.props.close)]}>Close</button>
                         <button class="secondary-button" type="button" disabled={pending} mix={[on("click", handle.props.usePath)]}>Use Git from PATH</button>

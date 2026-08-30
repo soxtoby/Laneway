@@ -1,4 +1,4 @@
-import type { EntryProgress, EntryResult, GitSettingsState, WorkbenchSession } from "@git-workbench/shared"
+import type { AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryProgress, EntryResult, GitSettingsState, RepositoryGraphSettings, WorkbenchSession } from "@git-workbench/shared"
 
 interface EngineStatusReady {
     state: "ready"
@@ -34,7 +34,13 @@ declare global {
             chooseGit(): Promise<GitSettingsState>
             useGitFromPath(): Promise<GitSettingsState>
             resetSettings(): Promise<GitSettingsState>
+            setAuthorIdentities(settings: AuthorIdentitySettings): Promise<GitSettingsState>
             openSettingsFile(): Promise<string>
+            readBranchGraph(repositoryId: string, refreshRemote?: boolean): Promise<BranchGraphResult>
+            cancelBranchGraph(repositoryId: string): Promise<boolean>
+            readBranchHistory(repositoryId: string, history: BranchHistoryRequest): Promise<BranchHistoryResult>
+            cancelBranchHistory(repositoryId: string): Promise<boolean>
+            setRepositoryGraphSettings(repositoryId: string, settings: RepositoryGraphSettings): Promise<RepositoryGraphSettings>
             onEntryProgress(listener: (progress: EntryProgress) => void): () => void
         }
     }

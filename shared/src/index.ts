@@ -211,5 +211,154 @@ export interface GitSettingsState {
     path: string
     override?: string
     git?: GitInstallationInfo
+    authorIdentities: AuthorIdentitySettings
     error?: EntryError
 }
+
+export interface AuthorIdentitySettings {
+    primary?: string
+    secondary: string[]
+}
+
+export interface RepositoryGraphSettings {
+    selectedRemote?: string
+    remotePatterns: string[]
+}
+
+export interface BranchGraphWorktree {
+    path: string
+    name: string
+    head: string
+    branchRef?: string
+    main: boolean
+}
+
+export interface BranchGraphMarker {
+    id: string
+    kind: "stash"
+    label: string
+    objectId: string
+    tooltip: string
+}
+
+export interface BranchGraphBaseCandidate {
+    branchId: string
+    name: string
+    ref: string
+    tip: string
+}
+
+export type BranchGraphBase =
+    | { status: "known"; branchId: string; name: string; ref: string; tip: string }
+    | { status: "ambiguous"; candidates: BranchGraphBaseCandidate[] }
+    | { status: "unknown"; candidates: BranchGraphBaseCandidate[] }
+
+export interface BranchGraphCommitSummary {
+    objectId: string
+    subject: string
+    authoredAt: number
+}
+
+export interface BranchGraphBranchNode {
+    kind: "branch"
+    id: string
+    name: string
+    preferredRef: string
+    refs: string[]
+    aliases: string[]
+    localRefs: string[]
+    remoteRefs: string[]
+    tip: string
+    upstreamRef?: string
+    upstreamTip?: string
+    ahead: number
+    behind: number
+    base: BranchGraphBase
+    involvement: "involved" | "uninvolved" | "unknown"
+    checkedOut: BranchGraphWorktree[]
+    lastUniqueCommit?: BranchGraphCommitSummary
+    markers: BranchGraphMarker[]
+    tags: string[]
+    primary: boolean
+    remoteOnly: boolean
+}
+
+export interface BranchGraphTagNode {
+    kind: "tag"
+    id: string
+    name: string
+    objectId: string
+    parentBranchId?: string
+    tooltip: string
+}
+
+export interface BranchGraphVirtualBranch {
+    kind: "virtual"
+    id: string
+    name: string
+    objectId: string
+    worktree: BranchGraphWorktree
+    tooltip: string
+}
+
+export interface BranchGraphPrimaryBranch {
+    status: "known" | "unknown"
+    remote?: string
+    ref?: string
+    reason?: string
+}
+
+export interface BranchGraph {
+    repositoryId: string
+    primaryBranch: BranchGraphPrimaryBranch
+    availableRemotes: string[]
+    selectedRemote?: string
+    remotePatterns: string[]
+    authorIdentities: AuthorIdentitySettings
+    effectiveAuthorEmail?: string
+    branches: BranchGraphBranchNode[]
+    tags: BranchGraphTagNode[]
+    virtualBranches: BranchGraphVirtualBranch[]
+    unassignedStashes: BranchGraphMarker[]
+    limited: Array<"shallow" | "partial" | "sparse">
+}
+
+export interface BranchGraphReadOptions {
+    authorIdentities: AuthorIdentitySettings
+    selectedRemote?: string
+    remotePatterns: string[]
+    refreshRemote?: boolean
+}
+
+export interface BranchHistoryRequest {
+    branchRef: string
+    tip: string
+    baseTip: string
+    offset?: number
+    limit?: number
+}
+
+export interface BranchHistoryCommit {
+    objectId: string
+    parentIds: string[]
+    authorName: string
+    authorEmail: string
+    authoredAt: number
+    subject: string
+}
+
+export interface BranchHistoryPage {
+    branchRef: string
+    tip: string
+    baseTip: string
+    commits: BranchHistoryCommit[]
+    nextOffset?: number
+}
+
+export type BranchGraphResult =
+    | { ok: true; graph: BranchGraph }
+    | { ok: false; error: EntryError }
+
+export type BranchHistoryResult =
+    | { ok: true; page: BranchHistoryPage }
+    | { ok: false; error: EntryError }

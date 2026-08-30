@@ -27,6 +27,7 @@ beforeAll(async () => {
         "CustomEvent",
         "EventTarget",
         "MouseEvent",
+        "KeyboardEvent",
         "SubmitEvent",
     ]
     browserGlobal.window = browserWindow
@@ -75,6 +76,7 @@ describe("Remix repository entry renderer", () => {
                     path: "C:\\Users\\developer\\settings.json",
                     override: "D:\\Tools\\Git\\git.exe",
                     git: { path: "D:\\Tools\\Git\\git.exe", version: "2.52.0" },
+                    authorIdentities: { secondary: [] },
                 }
             },
         })
@@ -166,6 +168,101 @@ describe("Remix repository entry renderer", () => {
         expect(attempts).toBe(2)
         dispose()
     })
+
+    test("separates graph selection, branch opening, filtering, and Command Lens navigation", async () => {
+        const repository = repositoryInfo("D:\\Source\\graph-project")
+        const graph = branchGraph(repository.id)
+        const api = fakeWorkbench({
+            getState: async () => ({ ...appState(), session: { repositories: [repository], activeRepositoryId: repository.id } }),
+            readBranchGraph: async () => ({ ok: true, graph }),
+            selectRepository: async () => ({ repositories: [repository], activeRepositoryId: repository.id }),
+        })
+        const { container, root, dispose } = render(api)
+
+        await flush(root)
+        expect(container.textContent).toContain("feature/workbench")
+        expect(container.textContent).not.toContain("other/team")
+
+        click(button(container, "Show all"))
+        root.flush()
+        expect(container.textContent).toContain("other/team")
+
+        const feature = container.querySelector<HTMLElement>("[data-node-id='branch:refs/heads/feature/workbench']")!
+        click(feature)
+        root.flush()
+        expect(feature.classList.contains("selected")).toBe(true)
+        expect(container.querySelector(".branch-column")).toBeNull()
+
+        click(feature.querySelector<HTMLButtonElement>(".open-branch")!)
+        await flush(root)
+        expect(container.querySelector(".branch-column")?.textContent).toContain("feature/workbench")
+
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }))
+        root.flush()
+        expect(container.querySelector(".command-lens")?.textContent).toContain("Search open repositories and branches.")
+        input(container.querySelector<HTMLInputElement>("[aria-label='Command Lens search']")!, "workbench")
+        root.flush()
+        expect(container.querySelector(".lens-results")?.textContent).toContain("feature/workbench")
+        dispose()
+    })
+
+    test("virtualizes large semantic Branch Graph row sets", async () => {
+        const repository = repositoryInfo("D:\\Source\\large-graph")
+        const graph = branchGraph(repository.id)
+        const template = graph.branches[1]
+        graph.branches = [
+            graph.branches[0],
+            ...Array.from({ length: 120 }, (_, index) => ({
+                ...template,
+                id: `branch:refs/heads/feature/${index}`,
+                name: `feature/${index}`,
+                preferredRef: `refs/heads/feature/${index}`,
+                refs: [`refs/heads/feature/${index}`],
+                aliases: [`feature/${index}`],
+                localRefs: [`refs/heads/feature/${index}`],
+                tip: index.toString(16).padStart(40, "0"),
+            })),
+        ]
+        const api = fakeWorkbench({
+            getState: async () => ({ ...appState(), session: { repositories: [repository], activeRepositoryId: repository.id } }),
+            readBranchGraph: async () => ({ ok: true, graph }),
+        })
+        const { container, root, dispose } = render(api)
+
+        await flush(root)
+        expect(container.querySelectorAll(".graph-row").length).toBeLessThan(30)
+        expect(container.querySelector(".graph-spacer")).not.toBeNull()
+        dispose()
+    })
+
+    test("shows polling activity inside the fixed-size refresh control", async () => {
+        const repository = repositoryInfo("D:\\Source\\refresh-graph")
+        const graph = branchGraph(repository.id)
+        let calls = 0
+        let finishRefresh: () => void = () => {}
+        const refresh = new Promise<void>(resolve => finishRefresh = resolve)
+        const api = fakeWorkbench({
+            getState: async () => ({ ...appState(), session: { repositories: [repository], activeRepositoryId: repository.id } }),
+            readBranchGraph: async () => {
+                calls++
+                if (calls > 2)
+                    await refresh
+                return { ok: true, graph }
+            },
+        })
+        const { container, root, dispose } = render(api)
+
+        await flush(root)
+        click(container.querySelector<HTMLButtonElement>("[aria-label='Refresh Branch Graph']")!)
+        await flush(root)
+        expect(container.querySelector(".graph-status")).toBeNull()
+        expect(container.querySelector(".refresh-button.refreshing")).not.toBeNull()
+
+        finishRefresh()
+        await flush(root)
+        expect(container.querySelector(".refresh-button.refreshing")).toBeNull()
+        dispose()
+    })
 })
 
 function render(api: Window["workbench"]) {
@@ -218,6 +315,7 @@ function appState() {
         settings: {
             path: "C:\\Users\\developer\\settings.json",
             git: { path: "C:\\Program Files\\Git\\cmd\\git.exe", version: "2.51.1" },
+            authorIdentities: { secondary: [] },
         },
         engine: { state: "ready" as const, path: "D:\\GitWorkbench\\cli\\bin\\workbench-engine.exe", name: "workbench-engine" as const, version: "0.1.0" },
         defaultCloneParent: "C:\\Users\\developer\\Documents",
@@ -240,6 +338,56 @@ function repositoryInfo(path: string) {
     }
 }
 
+function branchGraph(repositoryId: string) {
+    const main = {
+        kind: "branch" as const,
+        id: "branch:refs/heads/main",
+        name: "main",
+        preferredRef: "refs/heads/main",
+        refs: ["refs/heads/main"],
+        aliases: ["main"],
+        localRefs: ["refs/heads/main"],
+        remoteRefs: [],
+        tip: "1".repeat(40),
+        ahead: 0,
+        behind: 0,
+        base: { status: "unknown" as const, candidates: [] },
+        involvement: "uninvolved" as const,
+        checkedOut: [],
+        markers: [],
+        tags: [],
+        primary: true,
+        remoteOnly: false,
+    }
+    const branch = (name: string, involvement: "involved" | "uninvolved") => ({
+        ...main,
+        id: `branch:refs/heads/${name}`,
+        name,
+        preferredRef: `refs/heads/${name}`,
+        refs: [`refs/heads/${name}`],
+        aliases: [name],
+        localRefs: [`refs/heads/${name}`],
+        tip: involvement == "involved" ? "2".repeat(40) : "3".repeat(40),
+        base: { status: "known" as const, branchId: main.id, name: "main", ref: main.preferredRef, tip: main.tip },
+        involvement,
+        primary: false,
+    })
+    return {
+        repositoryId,
+        primaryBranch: { status: "known" as const, remote: "origin", ref: main.preferredRef },
+        availableRemotes: ["origin"],
+        selectedRemote: "origin",
+        remotePatterns: [],
+        authorIdentities: { primary: "developer@example.test", secondary: [] },
+        effectiveAuthorEmail: "developer@example.test",
+        branches: [main, branch("feature/workbench", "involved"), branch("other/team", "uninvolved")],
+        tags: [],
+        virtualBranches: [],
+        unassignedStashes: [],
+        limited: [],
+    }
+}
+
 function fakeWorkbench(overrides: Partial<Window["workbench"]> = {}): Window["workbench"] {
     return {
         getState: async () => appState(),
@@ -253,7 +401,13 @@ function fakeWorkbench(overrides: Partial<Window["workbench"]> = {}): Window["wo
         chooseGit: async () => appState().settings,
         useGitFromPath: async () => appState().settings,
         resetSettings: async () => appState().settings,
+        setAuthorIdentities: async authorIdentities => ({ ...appState().settings, authorIdentities }),
         openSettingsFile: async () => "",
+        readBranchGraph: async () => ({ ok: false, error: { code: "git.command-failed", message: "Graph unavailable" } }),
+        cancelBranchGraph: async () => false,
+        readBranchHistory: async () => ({ ok: false, error: { code: "git.command-failed", message: "History unavailable" } }),
+        cancelBranchHistory: async () => false,
+        setRepositoryGraphSettings: async (_repositoryId, settings) => settings,
         onEntryProgress: () => () => undefined,
         ...overrides,
     }

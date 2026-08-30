@@ -1,4 +1,5 @@
 import { selectGit } from "@git-workbench/git"
+import { readSettings } from "@git-workbench/settings"
 import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -71,5 +72,35 @@ describe("repository session", () => {
 
         await session.resetSettings()
         expect(selections).toBe(3)
+    })
+
+    test("seeds graph identity and single-remote settings without persisting workspace state", async () => {
+        const repository = await temporaryDirectory("workbench-session-graph-")
+        expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.name", "Workbench Test").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.email", "workbench@example.invalid").exitCode).toBe(0)
+        await writeFile(resolve(repository, "README.md"), "initial\n")
+        expect(runGit(repository, "add", "README.md").exitCode).toBe(0)
+        expect(runGit(repository, "commit", "--quiet", "-m", "Initial").exitCode).toBe(0)
+        expect(runGit(repository, "remote", "add", "origin", ".").exitCode).toBe(0)
+        const settingsPath = resolve(await temporaryDirectory("workbench-session-settings-"), "settings.json")
+        const session = new RepositorySession(settingsPath)
+        const opened = await session.open(repository)
+        const repositoryId = opened.activeRepositoryId!
+
+        const graph = await (await session.startBranchGraph(repositoryId)).result
+        expect(graph.selectedRemote).toBe("origin")
+        expect(await readSettings(settingsPath)).toMatchObject({
+            authorIdentities: { primary: "workbench@example.invalid", secondary: [] },
+            repositories: { [repositoryId]: { selectedRemote: "origin", remotePatterns: [] } },
+        })
+
+        await session.setAuthorIdentities({ primary: "primary@example.invalid", secondary: ["secondary@example.invalid"] })
+        await session.setRepositoryGraphSettings(repositoryId, { selectedRemote: "origin", remotePatterns: ["origin/release/**"] })
+        expect(await readSettings(settingsPath)).toMatchObject({
+            authorIdentities: { primary: "primary@example.invalid", secondary: ["secondary@example.invalid"] },
+            repositories: { [repositoryId]: { selectedRemote: "origin", remotePatterns: ["origin/release/**"] } },
+        })
+        expect(new RepositorySession(settingsPath).snapshot()).toEqual({ repositories: [], activeRepositoryId: undefined })
     })
 })

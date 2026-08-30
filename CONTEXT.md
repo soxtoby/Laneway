@@ -65,11 +65,23 @@ The headless CLI executable that performs coarse-grained, scriptable Workbench a
 _Avoid_: Git service, daemon, utility process
 
 **Branch Graph**:
-A graph of visible lines of work whose edges place unmerged local branches relative to their target branches. Merged inactive branches are normally hidden; remote branches are normally limited to targets and configured name patterns; commits appear only when a branch is expanded.
+A graph of visible lines of work whose edges place branches relative to their Base Branches. It shows Involved Branches, the Primary Branch, their Base chains, checked-out branches, detached worktree heads, and required remote Base candidates by default; the user may show other branches, while merged inactive branches remain normally hidden.
 _Avoid_: Commit graph
 
+**Graph Selection**:
+The one Branch Node, Tag Node, or Virtual Branch highlighted in a repository's Branch Graph. Selecting only highlights the node and exposes its controls; it never opens a Workspace Column, and hiding the node clears the selection.
+_Avoid_: Open branch, active branch
+
+**Open Branch**:
+A branch represented by a Workspace Column. Opening creates or focuses its column independently of Graph Selection and Branch Graph filtering.
+_Avoid_: Selected branch
+
+**Author Identity**:
+An email address Workbench treats as belonging to the current developer after repository mailmap canonicalization. One application-wide primary address and any number of secondary addresses determine branch involvement.
+_Avoid_: User account, Git identity
+
 **Involved Branch**:
-A branch whose unique history contains a commit authored by any identity configured for the current developer. Involvement supports emphasis and filtering but does not determine default local-branch visibility.
+A branch whose unique history contains a commit authored by any Author Identity. Involved Branches appear by default; other branches remain available on request.
 _Avoid_: My branch, owned branch
 
 **Base Branch**:
@@ -117,7 +129,7 @@ A tag occupying its commit's position as a history waypoint when that commit is 
 _Avoid_: Tag branch
 
 **Virtual Branch**:
-A default-named changes-only view representing a clean or dirty detached worktree head, created either by branch relocation or by explicitly opening a commit in a new worktree. Workbench keeps its column available but hides commit history until attached; before committing or switching away from unique state, Workbench creates a real local branch using a configurable name prefix and stashes any Working Changes.
+A changes-only view named for its Registered Worktree and representing that worktree's clean or dirty detached head, created either by branch relocation or by explicitly opening a commit in a new worktree. Workbench keeps its column available but hides commit history until attached; before committing or switching away from unique state, Workbench creates a real local branch using a configurable name prefix and stashes any Working Changes.
 _Avoid_: Detached HEAD
 
 **Worktree-only Commit**:

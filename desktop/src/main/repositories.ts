@@ -1,12 +1,15 @@
 import { GitError, type GitInstallation, type GitTask, inferCloneDirectoryName, initializeRepository, openRepository, type RepositoryGit, selectGit, startCloneRepository } from "@git-workbench/git"
 import { defaultSettingsPath, readSettings, SettingsError, writeSettings } from "@git-workbench/settings"
-import { type EntryError, type GitSettingsState, type RepositoryInfo, type WorkbenchSession } from "@git-workbench/shared"
+import type { AuthorIdentitySettings, BranchGraph, BranchGraphReadOptions, BranchHistoryPage, BranchHistoryRequest, EntryError, GitSettingsState, RepositoryGraphSettings, RepositoryInfo, WorkbenchSession } from "@git-workbench/shared"
 import { resolve } from "node:path"
 
 export class RepositorySession {
-    private readonly repositories = new Map<string, RepositoryInfo>()
+    private readonly repositories = new Map<string, { info: RepositoryInfo; git: RepositoryGit }>()
+    private readonly graphReads = new Map<string, GitTask<BranchGraph>>()
+    private readonly historyReads = new Map<string, GitTask<BranchHistoryPage>>()
     private activeRepositoryId: string | undefined
     private cachedGit: { override: string | undefined; installation: GitInstallation } | undefined
+    private settingsWrite: Promise<void> = Promise.resolve()
 
     constructor(
         private readonly settingsPath = defaultSettingsPath(),
@@ -15,7 +18,7 @@ export class RepositorySession {
 
     snapshot(): WorkbenchSession {
         return {
-            repositories: [...this.repositories.values()],
+            repositories: [...this.repositories.values()].map(repository => repository.info),
             activeRepositoryId: this.activeRepositoryId,
         }
     }
@@ -27,10 +30,12 @@ export class RepositorySession {
                 path: this.settingsPath,
                 override: settings.gitPath,
                 git: await this.git(settings.gitPath),
+                authorIdentities: settings.authorIdentities ?? { secondary: [] },
             }
         } catch (error) {
             return {
                 path: this.settingsPath,
+                authorIdentities: { secondary: [] },
                 error: entryError(error),
             }
         }
@@ -39,15 +44,82 @@ export class RepositorySession {
     async setGitOverride(path?: string): Promise<GitSettingsState> {
         const git = await this.selectInstallation(path)
         const override = path ? resolve(path) : undefined
-        await writeSettings({ version: 1, gitPath: override }, this.settingsPath)
+        const settings = await this.updateSettings(current => ({ ...current, gitPath: override }))
         this.cachedGit = { override, installation: git }
-        return { path: this.settingsPath, override, git }
+        return { path: this.settingsPath, override, git, authorIdentities: settings.authorIdentities ?? { secondary: [] } }
     }
 
     async resetSettings() {
-        await writeSettings({ version: 1 }, this.settingsPath)
+        await this.updateSettings(() => ({ version: 1 }))
         this.cachedGit = undefined
         return this.gitSettings()
+    }
+
+    async setAuthorIdentities(authorIdentities: AuthorIdentitySettings) {
+        await this.updateSettings(current => ({ ...current, authorIdentities }))
+        return this.gitSettings()
+    }
+
+    async setRepositoryGraphSettings(repositoryId: string, graphSettings: RepositoryGraphSettings) {
+        await this.requireRepository(repositoryId)
+        await this.updateSettings(current => ({
+            ...current,
+            repositories: { ...current.repositories, [repositoryId]: graphSettings },
+        }))
+        return graphSettings
+    }
+
+    async startBranchGraph(repositoryId: string, refreshRemote = false) {
+        const repository = this.requireRepository(repositoryId)
+        const settings = await readSettings(this.settingsPath)
+        const graphSettings = settings.repositories?.[repositoryId] ?? { remotePatterns: [] }
+        const options: BranchGraphReadOptions = {
+            authorIdentities: settings.authorIdentities ?? { secondary: [] },
+            selectedRemote: graphSettings.selectedRemote,
+            remotePatterns: graphSettings.remotePatterns,
+            refreshRemote,
+        }
+        this.graphReads.get(repositoryId)?.cancel()
+        const read = repository.git.startReadBranchGraph(options)
+        const tracked: GitTask<BranchGraph> = {
+            cancel: read.cancel,
+            result: read.result.then(async graph => {
+                await this.seedGraphSettings(repositoryId, graph)
+                return graph
+            }).finally(() => {
+                if (this.graphReads.get(repositoryId) == tracked)
+                    this.graphReads.delete(repositoryId)
+            }),
+        }
+        this.graphReads.set(repositoryId, tracked)
+        return tracked
+    }
+
+    startBranchHistory(repositoryId: string, request: BranchHistoryRequest) {
+        const repository = this.requireRepository(repositoryId)
+        this.historyReads.get(repositoryId)?.cancel()
+        const read = repository.git.startReadBranchHistory(request)
+        const tracked: GitTask<BranchHistoryPage> = {
+            cancel: read.cancel,
+            result: read.result.finally(() => {
+                if (this.historyReads.get(repositoryId) == tracked)
+                    this.historyReads.delete(repositoryId)
+            }),
+        }
+        this.historyReads.set(repositoryId, tracked)
+        return tracked
+    }
+
+    cancelBranchGraph(repositoryId: string) {
+        const read = this.graphReads.get(repositoryId)
+        read?.cancel()
+        return Boolean(read)
+    }
+
+    cancelBranchHistory(repositoryId: string) {
+        const read = this.historyReads.get(repositoryId)
+        read?.cancel()
+        return Boolean(read)
     }
 
     async open(path: string) {
@@ -90,9 +162,44 @@ export class RepositorySession {
 
     private add(repository: RepositoryGit) {
         const info: RepositoryInfo = { ...repository.descriptor }
-        this.repositories.set(info.id, info)
+        this.repositories.set(info.id, { info, git: repository })
         this.activeRepositoryId = info.id
         return this.snapshot()
+    }
+
+    private requireRepository(repositoryId: string) {
+        const repository = this.repositories.get(repositoryId)
+        if (!repository)
+            throw new GitError("git.invalid-root", "The repository is no longer open in this Workbench session.", { repositoryId })
+        return repository
+    }
+
+    private async seedGraphSettings(repositoryId: string, graph: BranchGraph) {
+        await this.updateSettings(current => {
+            const authorIdentities = current.authorIdentities?.primary || !graph.effectiveAuthorEmail
+                ? current.authorIdentities
+                : { primary: graph.effectiveAuthorEmail, secondary: current.authorIdentities?.secondary ?? [] }
+            const existing = current.repositories?.[repositoryId] ?? { remotePatterns: [] }
+            const repository = existing.selectedRemote || !graph.selectedRemote
+                ? existing
+                : { ...existing, selectedRemote: graph.selectedRemote }
+            return {
+                ...current,
+                ...(authorIdentities ? { authorIdentities } : {}),
+                repositories: { ...current.repositories, [repositoryId]: repository },
+            }
+        })
+    }
+
+    private async updateSettings(change: (settings: Awaited<ReturnType<typeof readSettings>>) => Awaited<ReturnType<typeof readSettings>>) {
+        let result: Awaited<ReturnType<typeof readSettings>> | undefined
+        const write = async () => {
+            result = change(await readSettings(this.settingsPath))
+            await writeSettings(result, this.settingsPath)
+        }
+        this.settingsWrite = this.settingsWrite.then(write, write)
+        await this.settingsWrite
+        return result!
     }
 }
 

@@ -42,9 +42,15 @@
     },
     "git": {
       "name": "@git-workbench/git",
+      "dependencies": {
+        "@git-workbench/shared": "workspace:*",
+      },
     },
     "settings": {
       "name": "@git-workbench/settings",
+      "dependencies": {
+        "@git-workbench/shared": "workspace:*",
+      },
     },
     "shared": {
       "name": "@git-workbench/shared",

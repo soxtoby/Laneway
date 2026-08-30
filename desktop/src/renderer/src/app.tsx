@@ -1,9 +1,10 @@
 import type { EntryProgress, WorkbenchSession } from "@git-workbench/shared"
 import type { Handle } from "remix/ui"
+import { createBranchWorkspace, type BranchWorkspace } from "./branch-workspace"
 import { errorMessage, FatalError, Notice, type NoticeState } from "./feedback"
 import { createRepositoryEntry, type RepositoryEntry } from "./repository-entry"
 import { createGitSettings, type GitSettings } from "./settings"
-import { RepositoryView, Welcome, WorkbenchHeader } from "./workspace"
+import { Welcome, WorkbenchHeader } from "./workspace"
 
 type AppState = Awaited<ReturnType<Window["workbench"]["getState"]>>
 
@@ -12,6 +13,7 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
     let session: WorkbenchSession | undefined
     let repositoryEntry: RepositoryEntry | undefined
     let gitSettings: GitSettings | undefined
+    let branchWorkspace: BranchWorkspace | undefined
     let openingRepository = false
     let notice: NoticeState | undefined
     let fatalError: string | undefined
@@ -21,7 +23,7 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
     handle.signal.addEventListener("abort", () => document.body.classList.remove("busy"), { once: true })
 
     return () => {
-        if (!initial || !session || !repositoryEntry || !gitSettings) {
+        if (!initial || !session || !repositoryEntry || !gitSettings || !branchWorkspace) {
             return fatalError
                 ? <FatalError message={fatalError} retry={bootstrap} />
                 : <main class="bootstrap-state" aria-live="polite"><p>Starting Git Workbench…</p></main>
@@ -37,21 +39,14 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
                     busy={busy}
                     home={() => {
                         showWelcome = true
+                        branchWorkspace?.deactivate()
                         handle.update()
                     }}
                     openSettings={gitSettings.open}
                 />
                 {active && !showWelcome
                     ? (
-                        <RepositoryView
-                            active={active}
-                            session={currentSession}
-                            busy={busy}
-                            selectRepository={selectRepository}
-                            openRepository={openRepository}
-                            openClone={repositoryEntry.openClone}
-                            openInitialize={repositoryEntry.openInitialize}
-                        />
+                        branchWorkspace.render(active, currentSession)
                     )
                     : (
                         <Welcome
@@ -66,6 +61,7 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
             </main>
             {repositoryEntry.render()}
             {gitSettings.render()}
+            {branchWorkspace.renderLens(currentSession)}
             <Notice notice={notice} dismiss={() => {
                 notice = undefined
                 handle.update()
@@ -85,6 +81,13 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
                 update: handle.update,
                 notify,
             })
+            branchWorkspace = createBranchWorkspace({
+                api: handle.props.api,
+                update: handle.update,
+                signal: handle.signal,
+                notify,
+                selectRepository,
+            })
             repositoryEntry = createRepositoryEntry({
                 api: handle.props.api,
                 defaultCloneParent: initial.defaultCloneParent,
@@ -93,8 +96,12 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
                 sessionOpened(nextSession) {
                     session = nextSession
                     showWelcome = false
+                    if (nextSession.activeRepositoryId)
+                        branchWorkspace?.activate(nextSession.activeRepositoryId)
                 },
             })
+            if (session.activeRepositoryId)
+                branchWorkspace.activate(session.activeRepositoryId)
             const unsubscribe = handle.props.api.onEntryProgress(updateProgress)
             handle.signal.addEventListener("abort", unsubscribe, { once: true })
         } catch (error) {
@@ -140,6 +147,7 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
         try {
             session = await handle.props.api.selectRepository(id)
             showWelcome = false
+            branchWorkspace?.activate(id)
         } catch (error) {
             notify({ code: "repository.select.failed", message: errorMessage(error) })
         } finally {

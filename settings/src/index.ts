@@ -1,3 +1,4 @@
+import type { AuthorIdentitySettings, RepositoryGraphSettings } from "@git-workbench/shared"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, resolve } from "node:path"
@@ -5,6 +6,8 @@ import { dirname, resolve } from "node:path"
 export interface WorkbenchSettings {
     version: 1
     gitPath?: string
+    authorIdentities?: AuthorIdentitySettings
+    repositories?: Record<string, RepositoryGraphSettings>
 }
 
 export class SettingsError extends Error {
@@ -45,9 +48,16 @@ export async function readSettings(path = defaultSettingsPath()): Promise<Workbe
         const record = value as Record<string, unknown>
         if (record.version != 1)
             throw new Error("Unsupported settings version.")
-        if (record.gitPath != undefined && (typeof record.gitPath != "string" || record.gitPath.trim() == ""))
+        if (record.gitPath != undefined && !nonEmptyString(record.gitPath))
             throw new Error("gitPath must be a non-empty string.")
-        return { version: 1, gitPath: record.gitPath as string | undefined }
+        const authorIdentities = parseAuthorIdentities(record.authorIdentities)
+        const repositories = parseRepositories(record.repositories)
+        return {
+            version: 1,
+            gitPath: record.gitPath as string | undefined,
+            ...(authorIdentities ? { authorIdentities } : {}),
+            ...(repositories ? { repositories } : {}),
+        }
     } catch {
         throw new SettingsError(
             "settings.corrupt",
@@ -55,6 +65,48 @@ export async function readSettings(path = defaultSettingsPath()): Promise<Workbe
             path,
         )
     }
+}
+
+function parseAuthorIdentities(value: unknown): AuthorIdentitySettings | undefined {
+    if (value == undefined)
+        return undefined
+    if (!value || typeof value != "object" || Array.isArray(value))
+        throw new Error("authorIdentities must be an object.")
+    const record = value as Record<string, unknown>
+    if (record.primary != undefined && !nonEmptyString(record.primary))
+        throw new Error("authorIdentities.primary must be a non-empty string.")
+    if (!Array.isArray(record.secondary) || !record.secondary.every(nonEmptyString))
+        throw new Error("authorIdentities.secondary must contain non-empty strings.")
+    return {
+        primary: record.primary as string | undefined,
+        secondary: [...new Set(record.secondary as string[])],
+    }
+}
+
+function parseRepositories(value: unknown): Record<string, RepositoryGraphSettings> | undefined {
+    if (value == undefined)
+        return undefined
+    if (!value || typeof value != "object" || Array.isArray(value))
+        throw new Error("repositories must be an object.")
+    const result: Record<string, RepositoryGraphSettings> = {}
+    for (const [repositoryId, settings] of Object.entries(value as Record<string, unknown>)) {
+        if (!repositoryId || !settings || typeof settings != "object" || Array.isArray(settings))
+            throw new Error("repositories contains an invalid entry.")
+        const record = settings as Record<string, unknown>
+        if (record.selectedRemote != undefined && !nonEmptyString(record.selectedRemote))
+            throw new Error("selectedRemote must be a non-empty string.")
+        if (!Array.isArray(record.remotePatterns) || !record.remotePatterns.every(nonEmptyString))
+            throw new Error("remotePatterns must contain non-empty strings.")
+        result[repositoryId] = {
+            selectedRemote: record.selectedRemote as string | undefined,
+            remotePatterns: [...new Set(record.remotePatterns as string[])],
+        }
+    }
+    return result
+}
+
+function nonEmptyString(value: unknown): value is string {
+    return typeof value == "string" && value.trim() != ""
 }
 
 export async function writeSettings(settings: WorkbenchSettings, path = defaultSettingsPath()) {

@@ -1,5 +1,8 @@
 {
     "[typescript]": {
         "editor.defaultFormatter": "gplane.dprint2"
-    }
+    },
+    "cSpell.words": [
+        "Worktree"
+    ]
 }

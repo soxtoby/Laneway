@@ -1,4 +1,4 @@
-import type { EntryResult, WorkbenchSession } from "@git-workbench/shared"
+import type { AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryResult, RepositoryGraphSettings, WorkbenchSession } from "@git-workbench/shared"
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -148,10 +148,67 @@ function registerHandlers() {
         }
     })
     ipcMain.handle("settings:reset", () => repositories.resetSettings())
+    ipcMain.handle("settings:author-identities", (_event, request: AuthorIdentitySettings) => {
+        const primary = typeof request?.primary == "string" && request.primary.trim() ? request.primary.trim() : undefined
+        const secondary = Array.isArray(request?.secondary)
+            ? [...new Set(request.secondary.filter(email => typeof email == "string").map(email => email.trim()).filter(Boolean))]
+            : []
+        return repositories.setAuthorIdentities({ primary, secondary })
+    })
     ipcMain.handle("settings:open-file", async () => {
         const state = await repositories.gitSettings()
         return shell.openPath(state.path)
     })
+
+    ipcMain.handle("graph:read", async (_event, request: { repositoryId?: unknown; refreshRemote?: unknown }): Promise<BranchGraphResult> => {
+        if (typeof request?.repositoryId != "string")
+            return { ok: false, error: { code: "git.command-failed", message: "Choose a repository." } }
+        try {
+            const read = await repositories.startBranchGraph(request.repositoryId, request.refreshRemote === true)
+            return { ok: true, graph: await read.result }
+        } catch (error) {
+            return { ok: false, error: entryError(error) }
+        }
+    })
+    ipcMain.handle(
+        "graph:cancel",
+        (_event, request: { repositoryId?: unknown }) => typeof request?.repositoryId == "string" && repositories.cancelBranchGraph(request.repositoryId),
+    )
+    ipcMain.handle("graph:history", async (_event, request: { repositoryId?: unknown; history?: unknown }): Promise<BranchHistoryResult> => {
+        if (typeof request?.repositoryId != "string" || !isBranchHistoryRequest(request.history))
+            return { ok: false, error: { code: "git.command-failed", message: "The branch history request is invalid." } }
+        try {
+            return { ok: true, page: await repositories.startBranchHistory(request.repositoryId, request.history).result }
+        } catch (error) {
+            return { ok: false, error: entryError(error) }
+        }
+    })
+    ipcMain.handle(
+        "graph:history-cancel",
+        (_event, request: { repositoryId?: unknown }) => typeof request?.repositoryId == "string" && repositories.cancelBranchHistory(request.repositoryId),
+    )
+    ipcMain.handle("graph:settings", (_event, request: { repositoryId?: unknown; settings?: unknown }) => {
+        if (typeof request?.repositoryId != "string" || !isGraphSettings(request.settings))
+            throw new Error("The Branch Graph settings are invalid.")
+        return repositories.setRepositoryGraphSettings(request.repositoryId, request.settings)
+    })
+}
+
+function isGraphSettings(value: unknown): value is RepositoryGraphSettings {
+    if (!value || typeof value != "object")
+        return false
+    const settings = value as Partial<RepositoryGraphSettings>
+    return (settings.selectedRemote == undefined || typeof settings.selectedRemote == "string")
+        && Array.isArray(settings.remotePatterns) && settings.remotePatterns.every(pattern => typeof pattern == "string")
+}
+
+function isBranchHistoryRequest(value: unknown): value is BranchHistoryRequest {
+    if (!value || typeof value != "object")
+        return false
+    const request = value as Partial<BranchHistoryRequest>
+    return typeof request.branchRef == "string" && typeof request.tip == "string" && typeof request.baseTip == "string"
+        && (request.offset == undefined || Number.isSafeInteger(request.offset))
+        && (request.limit == undefined || Number.isSafeInteger(request.limit))
 }
 
 function createWindow() {

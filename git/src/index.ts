@@ -1,7 +1,9 @@
+import type { BranchGraphReadOptions, BranchHistoryRequest } from "@git-workbench/shared"
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
 import { constants } from "node:fs"
 import { access, lstat, mkdir, readdir, readFile, realpath } from "node:fs/promises"
 import { delimiter, isAbsolute, resolve } from "node:path"
+import { type BranchGraphReadCache, startBranchGraphRead, startBranchHistoryRead } from "./branch-graph"
 
 const minimumGitVersion = [2, 41, 0] as const
 const credentialPattern = /([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]+)(?::[^\s/@]*)?@/gi
@@ -264,6 +266,8 @@ export async function connectRepository(path: string, git?: GitSelection, requir
 }
 
 export class RepositoryGit {
+    private branchGraphCache: BranchGraphReadCache | undefined
+
     constructor(readonly descriptor: RepositoryDescriptor) {}
 
     async hashObject(value: string) {
@@ -326,6 +330,24 @@ export class RepositoryGit {
             diff,
             untracked: Buffer.from(untracked).toString().split("\0").filter(Boolean),
         }
+    }
+
+    startReadBranchGraph(options: BranchGraphReadOptions) {
+        return startBranchGraphRead(
+            this.descriptor,
+            args => startGitProcess({ installation: this.descriptor.git, cwd: this.descriptor.selectedWorktree, args }),
+            options,
+            this.branchGraphCache,
+            cache => this.branchGraphCache = cache,
+        )
+    }
+
+    startReadBranchHistory(request: BranchHistoryRequest) {
+        return startBranchHistoryRead(
+            this.descriptor,
+            args => startGitProcess({ installation: this.descriptor.git, cwd: this.descriptor.selectedWorktree, args }),
+            request,
+        )
     }
 
     private run(cwd: string, args: string[], input?: string) {
