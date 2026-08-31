@@ -1207,13 +1207,95 @@ kbd {
 }
 
 .branch-column {
-    width: clamp(310px, 52%, 430px);
+    position: relative;
+    width: 380px;
+    flex: 0 0 auto;
     min-width: 310px;
     min-height: 100%;
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr);
     border-right: 1px solid var(--line);
     background: var(--panel);
+}
+
+.column-divider {
+    position: absolute;
+    z-index: 2;
+    top: 0;
+    right: -5px;
+    bottom: 0;
+    width: 10px;
+    cursor: col-resize;
+}
+
+.column-divider:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -4px;
+}
+
+.branch-column > header[draggable="true"] {
+    cursor: grab;
+}
+
+.branch-column > header[draggable="true"]:active {
+    cursor: grabbing;
+}
+
+.missing-repository {
+    display: grid;
+    grid-template-columns: 230px minmax(0, 1fr);
+}
+
+.missing-copy {
+    align-self: center;
+    justify-self: center;
+    max-width: 640px;
+    padding: 40px;
+}
+
+.repository-row {
+    position: relative;
+}
+
+.repository-row .repository-item {
+    width: 100%;
+    padding-right: 34px;
+}
+
+.repository-close {
+    position: absolute;
+    top: 50%;
+    right: 8px;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    translate: 0 -50%;
+    color: var(--muted);
+    border: 0;
+    background: transparent;
+}
+
+.workspace-recovery {
+    position: fixed;
+    z-index: 20;
+    right: 20px;
+    bottom: 44px;
+    left: 20px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    border: 1px solid rgb(225 166 91 / 55%);
+    border-radius: 7px;
+    background: #211b12;
+    box-shadow: 0 16px 48px rgb(0 0 0 / 42%);
+}
+
+.workspace-recovery p {
+    margin: 4px 0 0;
+    color: var(--muted);
+    font-size: 0.7rem;
 }
 
 .branch-columns.maximized .branch-column {

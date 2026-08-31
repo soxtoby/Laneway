@@ -1,4 +1,4 @@
-import type { AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryProgress, EntryResult, GitSettingsState, RepositoryGraphSettings, WorkbenchSession } from "@git-workbench/shared"
+import type { AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryProgress, EntryResult, GitSettingsState, RepositoryGraphSettings, Workspace } from "@git-workbench/shared"
 
 interface EngineStatusReady {
     state: "ready"
@@ -14,7 +14,7 @@ interface EngineStatusError {
 }
 
 interface AppState {
-    session: WorkbenchSession
+    workspace: Workspace
     settings: GitSettingsState
     engine: EngineStatusReady | EngineStatusError
     defaultCloneParent: string
@@ -30,7 +30,11 @@ declare global {
             cloneRepository(source: string, destination: string): Promise<EntryResult>
             initializeRepository(path: string, initialBranch?: string): Promise<EntryResult>
             cancelEntry(): Promise<boolean>
-            selectRepository(id: string): Promise<WorkbenchSession>
+            selectRepository(id: string): Promise<Workspace>
+            closeRepository(id: string): Promise<Workspace>
+            locateRepository(id: string, useAnyway?: boolean): Promise<Workspace>
+            updateWorkspace(workspace: Workspace): Promise<Workspace>
+            resetWorkspace(): Promise<Workspace>
             chooseGit(): Promise<GitSettingsState>
             useGitFromPath(): Promise<GitSettingsState>
             resetSettings(): Promise<GitSettingsState>

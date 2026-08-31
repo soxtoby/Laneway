@@ -28,6 +28,10 @@ _Avoid_: Worktree column
 The persisted presentation of repositories and columns, including their order, size, focus, and diff layout. Workbench restores it after restart but always recomputes Git facts and rejects views whose pinned objects no longer exist.
 _Avoid_: Repository cache, persisted Git state
 
+**Open Repository**:
+A repository retained in Workspace State and shown in the repository rail, whether its Git directory is currently available or missing.
+_Avoid_: Session repository
+
 **Worktree Backing**:
 Worktree Backing is the association between one filesystem worktree and one Workspace Column. Checking out from a branch-only column transfers it without moving columns; switching a worktree to a branch held elsewhere preserves and detaches the previous worktree, while undo restores both worktrees unless external changes make replay unsafe.
 _Avoid_: Switch column, replace column

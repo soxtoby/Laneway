@@ -1,4 +1,4 @@
-import type { GitSettingsState, RepositoryInfo, WorkbenchSession } from "@git-workbench/shared"
+import type { AvailableOpenRepository, GitSettingsState, Workspace } from "@git-workbench/shared"
 import { on, type Handle } from "remix/ui"
 
 export interface EntryActions {
@@ -51,26 +51,26 @@ export function Welcome(handle: Handle<EntryActions & { settings: GitSettingsSta
 }
 
 export function RepositoryView(handle: Handle<EntryActions & {
-    active: RepositoryInfo
-    session: WorkbenchSession
+    active: AvailableOpenRepository
+    workspace: Workspace
     selectRepository(id: string): void
 }>) {
     return () => {
-        const active = handle.props.active
+        const active = handle.props.active.info
         return (
             <section class="workspace repository-view" aria-live="polite">
                 <aside class="repository-rail">
-                    <div class="rail-heading"><p class="eyebrow">Session</p><span>{handle.props.session.repositories.length}</span></div>
+                    <div class="rail-heading"><p class="eyebrow">Open repositories</p><span>{handle.props.workspace.repositories.length}</span></div>
                     <nav aria-label="Open repositories">
-                        {handle.props.session.repositories.map(repository => (
+                        {handle.props.workspace.repositories.map(repository => (
                             <button
                                 class={`repository-item ${repository.id == active.id ? "active" : ""}`}
                                 type="button"
                                 disabled={handle.props.busy}
                                 mix={[on("click", () => handle.props.selectRepository(repository.id))]}
                             >
-                                <span>{initials(repository.mainWorktree)}</span>
-                                <span><strong>{baseName(repository.mainWorktree)}</strong><small>{repository.selectedWorktree}</small></span>
+                                <span>{initials(repository.path)}</span>
+                                <span><strong>{repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name}</strong><small>{repository.status == "available" ? repository.info.selectedWorktree : "Unavailable"}</small></span>
                             </button>
                         ))}
                     </nav>

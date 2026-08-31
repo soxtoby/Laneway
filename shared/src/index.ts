@@ -174,9 +174,52 @@ export interface RepositoryInfo {
     git: GitInstallationInfo
 }
 
-export interface WorkbenchSession {
-    repositories: RepositoryInfo[]
+export interface BranchWorkspaceColumn {
+    kind: "branch"
+    id: string
+    ref: string
+    lastSeenObjectId: string
+    width: number
+    worktreePath?: string
+}
+
+export interface VirtualBranchWorkspaceColumn {
+    kind: "virtual"
+    id: string
+    worktreePath: string
+    lastSeenObjectId: string
+    width: number
+}
+
+export type WorkspaceColumn = BranchWorkspaceColumn | VirtualBranchWorkspaceColumn
+
+export interface AvailableOpenRepository {
+    status: "available"
+    id: string
+    path: string
+    info: RepositoryInfo
+    columns: WorkspaceColumn[]
+    focusedColumnId?: string
+    layoutInitialized: boolean
+}
+
+export interface MissingOpenRepository {
+    status: "missing"
+    id: string
+    path: string
+    name: string
+    columns: WorkspaceColumn[]
+    focusedColumnId?: string
+    layoutInitialized: boolean
+    error: EntryError
+}
+
+export type OpenRepository = AvailableOpenRepository | MissingOpenRepository
+
+export interface Workspace {
+    repositories: OpenRepository[]
     activeRepositoryId?: string
+    persistenceError?: EntryError
 }
 
 export type EntryErrorCode =
@@ -192,6 +235,10 @@ export type EntryErrorCode =
     | "git.command-failed"
     | "settings.corrupt"
     | "settings.write-failed"
+    | "workspace.corrupt"
+    | "workspace.unsupported-version"
+    | "workspace.write-failed"
+    | "workspace.partial"
 
 export interface EntryError {
     code: EntryErrorCode
@@ -200,7 +247,7 @@ export interface EntryError {
 }
 
 export type EntryResult =
-    | { ok: true; session: WorkbenchSession }
+    | { ok: true; workspace: Workspace }
     | { ok: false; error: EntryError }
 
 export interface EntryProgress {

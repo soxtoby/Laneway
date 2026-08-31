@@ -1,13 +1,12 @@
 import { GitError, type GitInstallation, type GitTask, inferCloneDirectoryName, initializeRepository, openRepository, type RepositoryGit, selectGit, startCloneRepository } from "@git-workbench/git"
-import { defaultSettingsPath, readSettings, SettingsError, writeSettings } from "@git-workbench/settings"
-import type { AuthorIdentitySettings, BranchGraph, BranchGraphReadOptions, BranchHistoryPage, BranchHistoryRequest, EntryError, GitSettingsState, RepositoryGraphSettings, RepositoryInfo, WorkbenchSession } from "@git-workbench/shared"
+import { defaultSettingsPath, readSettings, SettingsError, WorkspaceStateError, writeSettings } from "@git-workbench/settings"
+import type { AuthorIdentitySettings, BranchGraph, BranchGraphReadOptions, BranchHistoryPage, BranchHistoryRequest, EntryError, GitSettingsState, RepositoryGraphSettings, RepositoryInfo } from "@git-workbench/shared"
 import { resolve } from "node:path"
 
-export class RepositorySession {
+export class OpenRepositories {
     private readonly repositories = new Map<string, { info: RepositoryInfo; git: RepositoryGit }>()
     private readonly graphReads = new Map<string, GitTask<BranchGraph>>()
     private readonly historyReads = new Map<string, GitTask<BranchHistoryPage>>()
-    private activeRepositoryId: string | undefined
     private cachedGit: { override: string | undefined; installation: GitInstallation } | undefined
     private settingsWrite: Promise<void> = Promise.resolve()
 
@@ -16,11 +15,8 @@ export class RepositorySession {
         private readonly selectInstallation: typeof selectGit = selectGit,
     ) {}
 
-    snapshot(): WorkbenchSession {
-        return {
-            repositories: [...this.repositories.values()].map(repository => repository.info),
-            activeRepositoryId: this.activeRepositoryId,
-        }
+    list() {
+        return [...this.repositories.values()].map(repository => repository.info)
     }
 
     async gitSettings(): Promise<GitSettingsState> {
@@ -85,7 +81,7 @@ export class RepositorySession {
             cancel: read.cancel,
             result: read.result.then(async graph => {
                 await this.seedGraphSettings(repositoryId, graph)
-                return graph
+                return { ...graph, repositoryId }
             }).finally(() => {
                 if (this.graphReads.get(repositoryId) == tracked)
                     this.graphReads.delete(repositoryId)
@@ -122,22 +118,22 @@ export class RepositorySession {
         return Boolean(read)
     }
 
-    async open(path: string) {
+    async open(path: string, id?: string) {
         const settings = await readSettings(this.settingsPath)
-        return this.add(await openRepository(path, await this.git(settings.gitPath)))
+        return this.add(await openRepository(path, await this.git(settings.gitPath)), id)
     }
 
-    async initialize(path: string, initialBranch?: string) {
+    async initialize(path: string, initialBranch?: string, id?: string) {
         const settings = await readSettings(this.settingsPath)
-        return this.add(await initializeRepository({ path, initialBranch, git: await this.git(settings.gitPath) }))
+        return this.add(await initializeRepository({ path, initialBranch, git: await this.git(settings.gitPath) }), id)
     }
 
-    async startClone(options: { source: string; destination: string; onProgress?: (message: string) => void }): Promise<GitTask<WorkbenchSession>> {
+    async startClone(options: { source: string; destination: string; onProgress?: (message: string) => void; id?: string }): Promise<GitTask<RepositoryInfo>> {
         const settings = await readSettings(this.settingsPath)
         const task = await startCloneRepository({ ...options, git: await this.git(settings.gitPath) })
         return {
             cancel: task.cancel,
-            result: task.result.then(repository => this.add(repository)),
+            result: task.result.then(repository => this.add(repository, options.id)),
         }
     }
 
@@ -145,11 +141,18 @@ export class RepositorySession {
         return resolve(parent, inferCloneDirectoryName(source))
     }
 
-    selectRepository(id: string) {
-        if (!this.repositories.has(id))
+    close(id: string) {
+        this.graphReads.get(id)?.cancel()
+        this.historyReads.get(id)?.cancel()
+        return this.repositories.delete(id)
+    }
+
+    async containsObject(id: string, objectId: string) {
+        try {
+            return await this.requireRepository(id).git.resolveRef(objectId) == objectId
+        } catch {
             return false
-        this.activeRepositoryId = id
-        return true
+        }
     }
 
     private async git(override: string | undefined): Promise<GitInstallation> {
@@ -160,17 +163,20 @@ export class RepositorySession {
         return installation
     }
 
-    private add(repository: RepositoryGit) {
-        const info: RepositoryInfo = { ...repository.descriptor }
-        this.repositories.set(info.id, { info, git: repository })
-        this.activeRepositoryId = info.id
-        return this.snapshot()
+    private add(repository: RepositoryGit, preferredId?: string) {
+        const existing = [...this.repositories.values()].find(candidate => candidate.git.descriptor.commonDirectory == repository.descriptor.commonDirectory)
+        const id = existing?.info.id ?? preferredId ?? crypto.randomUUID()
+        const info: RepositoryInfo = { ...repository.descriptor, id }
+        if (existing && existing.info.id != id)
+            this.repositories.delete(existing.info.id)
+        this.repositories.set(id, { info, git: repository })
+        return info
     }
 
     private requireRepository(repositoryId: string) {
         const repository = this.repositories.get(repositoryId)
         if (!repository)
-            throw new GitError("git.invalid-root", "The repository is no longer open in this Workbench session.", { repositoryId })
+            throw new GitError("git.invalid-root", "The repository is no longer open in this Workspace.", { repositoryId })
         return repository
     }
 
@@ -212,6 +218,8 @@ export function entryError(error: unknown): EntryError {
         }
     }
     if (error instanceof SettingsError)
+        return { code: error.code, message: error.message }
+    if (error instanceof WorkspaceStateError)
         return { code: error.code, message: error.message }
     return { code: "git.command-failed", message: error instanceof Error ? error.message : String(error) }
 }

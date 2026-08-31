@@ -1,0 +1,3 @@
+# Own Workspace State in application data
+
+Persist Workspace State in a versioned `workspace.json` under Workbench application data, separate from both repository `.git` data and durable Git settings. Electron main owns validation and persistence while the renderer sends complete presentation snapshots; restoration recomputes Git facts and treats saved object IDs only as identity anchors. This keeps user-specific layout out of repositories, isolates corrupt layout from Git configuration, and preserves the privileged-process boundary. Resetting corrupt state makes a best-effort copy of the unreadable document to `workspace.json.bak`, replacing any earlier backup, but backup failure does not block reset.

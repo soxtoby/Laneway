@@ -1,4 +1,4 @@
-import type { EntryError, EntryProgress, EntryResult, WorkbenchSession } from "@git-workbench/shared"
+import type { EntryError, EntryProgress, EntryResult, Workspace } from "@git-workbench/shared"
 import { on, ref, type Handle, type RemixNode } from "remix/ui"
 import { errorMessage, type NoticeState } from "./feedback"
 
@@ -22,7 +22,7 @@ interface RepositoryEntryOptions {
     api: Window["workbench"]
     defaultCloneParent: string
     update(): Promise<AbortSignal>
-    sessionOpened(session: WorkbenchSession): void
+    workspaceOpened(workspace: Workspace): void
     notify(notice: NoticeState): void
 }
 
@@ -140,7 +140,7 @@ export function createRepositoryEntry(options: RepositoryEntryOptions): Reposito
 
     async function finishEntry(result: EntryResult, form: "clone" | "init") {
         if (result.ok) {
-            options.sessionOpened(result.session)
+            options.workspaceOpened(result.workspace)
             if (form == "clone") {
                 cloneDialog.close()
                 clone = emptyClone()

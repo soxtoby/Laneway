@@ -1,10 +1,12 @@
-import type { AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryResult, RepositoryGraphSettings, WorkbenchSession } from "@git-workbench/shared"
+import { defaultWorkspacePath } from "@git-workbench/settings"
+import type { AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryResult, RepositoryGraphSettings, Workspace } from "@git-workbench/shared"
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { inspectEngine, resolveEnginePath } from "./engine"
 import { EntryQueue } from "./entry-queue"
-import { entryError, RepositorySession } from "./repositories"
+import { entryError, OpenRepositories } from "./repositories"
+import { WorkspaceManager } from "./workspace-manager"
 
 const workspacePath = resolve(app.getAppPath(), "..")
 const enginePath = resolveEnginePath({
@@ -13,7 +15,8 @@ const enginePath = resolveEnginePath({
     applicationPath: process.execPath,
     workspacePath,
 })
-const repositories = new RepositorySession(process.env.WORKBENCH_SETTINGS_PATH)
+const repositories = new OpenRepositories(process.env.WORKBENCH_SETTINGS_PATH)
+const workspace = new WorkspaceManager(repositories, process.env.WORKBENCH_WORKSPACE_PATH ?? defaultWorkspacePath())
 
 const cancelledEntry = () =>
     ({
@@ -37,10 +40,10 @@ async function inspectEngineAtStartup() {
     }
 }
 
-async function performEntry(action: () => Promise<WorkbenchSession>): Promise<EntryResult> {
+async function performEntry(action: () => Promise<Workspace>): Promise<EntryResult> {
     return entryQueue.enqueue(async () => {
         try {
-            return { ok: true, session: await action() }
+            return { ok: true, workspace: await action() }
         } catch (error) {
             return { ok: false, error: entryError(error) }
         }
@@ -49,7 +52,7 @@ async function performEntry(action: () => Promise<WorkbenchSession>): Promise<En
 
 function registerHandlers() {
     ipcMain.handle("app:state", async () => ({
-        session: repositories.snapshot(),
+        workspace: workspace.snapshot(),
         settings: await repositories.gitSettings(),
         engine: engineStatus,
         defaultCloneParent: app.getPath("documents"),
@@ -58,12 +61,13 @@ function registerHandlers() {
     ipcMain.handle("entry:open", async event => {
         const selection = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
             title: "Open repository root",
+            defaultPath: workspace.repositoryOpenDefaultPath(),
             buttonLabel: "Open repository",
             properties: ["openDirectory", "dontAddToRecent"],
         })
         if (selection.canceled || !selection.filePaths[0])
             return { ok: false, error: { code: "git.cancelled", message: "Open cancelled." } } satisfies EntryResult
-        return performEntry(() => repositories.open(selection.filePaths[0]))
+        return performEntry(() => workspace.open(selection.filePaths[0]))
     })
 
     ipcMain.handle("entry:choose-directory", async (event, request: { defaultPath?: unknown }) => {
@@ -88,7 +92,7 @@ function registerHandlers() {
         if (request.initialBranch != undefined && typeof request.initialBranch != "string")
             return { ok: false, error: { code: "git.command-failed", message: "The initial branch must be text." } } satisfies EntryResult
         const initialBranch = typeof request.initialBranch == "string" && request.initialBranch.trim() ? request.initialBranch.trim() : undefined
-        return performEntry(() => repositories.initialize(request.path as string, initialBranch))
+        return performEntry(async () => workspace.add(await repositories.initialize(request.path as string, initialBranch)))
     })
 
     ipcMain.handle("entry:clone", async (event, request: { source?: unknown; destination?: unknown }) => {
@@ -110,7 +114,7 @@ function registerHandlers() {
                     },
                 })
                 setCancel(clone.cancel)
-                return { ok: true, session: await clone.result } satisfies EntryResult
+                return { ok: true, workspace: await workspace.add(await clone.result) } satisfies EntryResult
             } catch (error) {
                 return { ok: false, error: entryError(error) } satisfies EntryResult
             }
@@ -119,10 +123,46 @@ function registerHandlers() {
 
     ipcMain.handle("entry:cancel", () => entryQueue.cancel())
 
-    ipcMain.handle("session:select", (_event, request: { id?: unknown }) => {
-        if (typeof request?.id == "string")
-            repositories.selectRepository(request.id)
-        return repositories.snapshot()
+    ipcMain.handle(
+        "workspace:select",
+        (_event, request: { id?: unknown }) => typeof request?.id == "string" ? workspace.select(request.id) : workspace.snapshot(),
+    )
+    ipcMain.handle(
+        "workspace:close",
+        (_event, request: { id?: unknown }) => typeof request?.id == "string" ? workspace.close(request.id) : workspace.snapshot(),
+    )
+    ipcMain.handle("workspace:update", (_event, request: { workspace?: unknown }) => {
+        if (!isWorkspace(request.workspace))
+            throw new Error("Workspace State is invalid.")
+        return workspace.update(request.workspace)
+    })
+    ipcMain.handle("workspace:reset", () => workspace.reset())
+    ipcMain.handle("workspace:locate", async (event, request: { id?: unknown; useAnyway?: unknown }) => {
+        if (typeof request?.id != "string")
+            return workspace.snapshot()
+        const selection = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
+            title: "Locate repository root",
+            buttonLabel: "Use repository",
+            properties: ["openDirectory", "dontAddToRecent"],
+        })
+        if (selection.canceled || !selection.filePaths[0])
+            return workspace.snapshot()
+        try {
+            return await workspace.locate(request.id, selection.filePaths[0], request.useAnyway === true)
+        } catch (error) {
+            if (request.useAnyway === true)
+                throw error
+            const confirmation = await dialog.showMessageBox(BrowserWindow.fromWebContents(event.sender)!, {
+                type: "warning",
+                title: "Repository identity differs",
+                message: "The selected repository does not match the saved Workspace State.",
+                detail: "Its object format or saved object anchors differ. Use it anyway only if this is the relocated repository.",
+                buttons: ["Cancel", "Use anyway"],
+                defaultId: 0,
+                cancelId: 0,
+            })
+            return confirmation.response == 1 ? workspace.locate(request.id, selection.filePaths[0], true) : workspace.snapshot()
+        }
     })
 
     ipcMain.handle("settings:choose-git", async event => {
@@ -211,6 +251,33 @@ function isBranchHistoryRequest(value: unknown): value is BranchHistoryRequest {
         && (request.limit == undefined || Number.isSafeInteger(request.limit))
 }
 
+function isWorkspace(value: unknown): value is Workspace {
+    if (!value || typeof value != "object")
+        return false
+    const candidate = value as Partial<Workspace>
+    if (!Array.isArray(candidate.repositories) || (candidate.activeRepositoryId != undefined && typeof candidate.activeRepositoryId != "string"))
+        return false
+    const repositoryIds = new Set<string>()
+    const valid = candidate.repositories.every(repository => {
+        if (!repository || typeof repository.id != "string" || repositoryIds.has(repository.id) || !Array.isArray(repository.columns))
+            return false
+        repositoryIds.add(repository.id)
+        const columnIds = new Set<string>()
+        return repository.columns.every(column => {
+            if (
+                !column || typeof column.id != "string" || columnIds.has(column.id) || typeof column.lastSeenObjectId != "string"
+                || typeof column.width != "number"
+                || !Number.isFinite(column.width) || column.width < 310
+            ) {
+                return false
+            }
+            columnIds.add(column.id)
+            return column.kind == "branch" ? typeof column.ref == "string" : column.kind == "virtual" && typeof column.worktreePath == "string"
+        })
+    })
+    return valid && (candidate.activeRepositoryId == undefined || repositoryIds.has(candidate.activeRepositoryId))
+}
+
 function createWindow() {
     const window = new BrowserWindow({
         width: 1180,
@@ -234,10 +301,33 @@ function createWindow() {
         void window.loadFile(fileURLToPath(new URL("../renderer/index.html", import.meta.url)))
 }
 
+const singleInstance = app.requestSingleInstanceLock()
+if (!singleInstance)
+    app.quit()
+
 void app.whenReady().then(async () => {
     await inspectEngineAtStartup()
+    await workspace.load()
     registerHandlers()
     createWindow()
+})
+
+app.on("second-instance", () => {
+    const window = BrowserWindow.getAllWindows()[0]
+    if (window?.isMinimized())
+        window.restore()
+    window?.focus()
+})
+
+let workspaceFlushed = false
+app.on("before-quit", event => {
+    if (workspaceFlushed)
+        return
+    event.preventDefault()
+    void workspace.flush().finally(() => {
+        workspaceFlushed = true
+        app.quit()
+    })
 })
 
 app.on("activate", () => {

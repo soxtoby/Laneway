@@ -1,4 +1,4 @@
-import type { AuthorIdentitySettings, BranchHistoryRequest, EntryProgress, RepositoryGraphSettings } from "@git-workbench/shared"
+import type { AuthorIdentitySettings, BranchHistoryRequest, EntryProgress, RepositoryGraphSettings, Workspace } from "@git-workbench/shared"
 import { contextBridge, ipcRenderer } from "electron"
 
 contextBridge.exposeInMainWorld("workbench", {
@@ -9,7 +9,11 @@ contextBridge.exposeInMainWorld("workbench", {
     cloneRepository: (source: string, destination: string) => ipcRenderer.invoke("entry:clone", { source, destination }),
     initializeRepository: (path: string, initialBranch?: string) => ipcRenderer.invoke("entry:initialize", { path, initialBranch }),
     cancelEntry: () => ipcRenderer.invoke("entry:cancel"),
-    selectRepository: (id: string) => ipcRenderer.invoke("session:select", { id }),
+    selectRepository: (id: string) => ipcRenderer.invoke("workspace:select", { id }),
+    closeRepository: (id: string) => ipcRenderer.invoke("workspace:close", { id }),
+    locateRepository: (id: string, useAnyway = false) => ipcRenderer.invoke("workspace:locate", { id, useAnyway }),
+    updateWorkspace: (workspace: Workspace) => ipcRenderer.invoke("workspace:update", { workspace }),
+    resetWorkspace: () => ipcRenderer.invoke("workspace:reset"),
     chooseGit: () => ipcRenderer.invoke("settings:choose-git"),
     useGitFromPath: () => ipcRenderer.invoke("settings:use-path"),
     resetSettings: () => ipcRenderer.invoke("settings:reset"),

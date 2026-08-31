@@ -41,13 +41,13 @@ beforeAll(async () => {
 afterAll(() => browserWindow.close())
 
 describe("Remix repository entry renderer", () => {
-    test("initializes a repository and opens the resulting session", async () => {
+    test("initializes a repository and opens the resulting workspace", async () => {
         const repository = repositoryInfo("D:\\Source\\new-project")
         const api = fakeWorkbench({
             initializeRepository: async (path, branch) => {
                 expect(path).toBe("D:\\Source\\new-project")
                 expect(branch).toBe("trunk")
-                return { ok: true, session: { repositories: [repository], activeRepositoryId: repository.id } }
+                return { ok: true, workspace: openedWorkspace(repository) }
             },
         })
         const { container, root, dispose } = render(api)
@@ -173,9 +173,9 @@ describe("Remix repository entry renderer", () => {
         const repository = repositoryInfo("D:\\Source\\graph-project")
         const graph = branchGraph(repository.id)
         const api = fakeWorkbench({
-            getState: async () => ({ ...appState(), session: { repositories: [repository], activeRepositoryId: repository.id } }),
+            getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
             readBranchGraph: async () => ({ ok: true, graph }),
-            selectRepository: async () => ({ repositories: [repository], activeRepositoryId: repository.id }),
+            selectRepository: async () => openedWorkspace(repository),
         })
         const { container, root, dispose } = render(api)
 
@@ -224,7 +224,7 @@ describe("Remix repository entry renderer", () => {
             })),
         ]
         const api = fakeWorkbench({
-            getState: async () => ({ ...appState(), session: { repositories: [repository], activeRepositoryId: repository.id } }),
+            getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
             readBranchGraph: async () => ({ ok: true, graph }),
         })
         const { container, root, dispose } = render(api)
@@ -242,7 +242,7 @@ describe("Remix repository entry renderer", () => {
         let finishRefresh: () => void = () => {}
         const refresh = new Promise<void>(resolve => finishRefresh = resolve)
         const api = fakeWorkbench({
-            getState: async () => ({ ...appState(), session: { repositories: [repository], activeRepositoryId: repository.id } }),
+            getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
             readBranchGraph: async () => {
                 calls++
                 if (calls > 2)
@@ -261,6 +261,50 @@ describe("Remix repository entry renderer", () => {
         finishRefresh()
         await flush(root)
         expect(container.querySelector(".refresh-button.refreshing")).toBeNull()
+        dispose()
+    })
+
+    test("restores, reorders, resizes, and persists Workspace Columns", async () => {
+        const repository = repositoryInfo("D:\\Source\\persisted-graph")
+        const graph = branchGraph(repository.id)
+        const main = graph.branches[0]
+        const feature = graph.branches[1]
+        let saved = {
+            repositories: [{
+                status: "available" as const,
+                id: repository.id,
+                path: repository.mainWorktree,
+                info: repository,
+                layoutInitialized: true,
+                focusedColumnId: main.id,
+                columns: [main, feature].map(branch => ({
+                    kind: "branch" as const,
+                    id: branch.id,
+                    ref: branch.preferredRef,
+                    lastSeenObjectId: branch.tip,
+                    width: 380,
+                })),
+            }],
+            activeRepositoryId: repository.id,
+        }
+        const api = fakeWorkbench({
+            getState: async () => ({ ...appState(), workspace: saved }),
+            readBranchGraph: async () => ({ ok: true, graph }),
+            updateWorkspace: async workspace => saved = structuredClone(workspace) as typeof saved,
+        })
+        const { container, root, dispose } = render(api)
+
+        await flush(root)
+        const mainColumn = container.querySelector<HTMLElement>(`[data-column-id='${main.id}']`)!
+        mainColumn.querySelector("button")!.dispatchEvent(new KeyboardEvent("keydown", { key: ">", ctrlKey: true, shiftKey: true, bubbles: true }))
+        await flush(root)
+        expect(saved.repositories[0].columns.map(column => column.id)).toEqual([feature.id, main.id])
+        expect(document.activeElement?.getAttribute("data-column-id")).toBe(main.id)
+
+        const divider = container.querySelector<HTMLElement>(`[data-column-id='${main.id}'] [role='separator']`)!
+        divider.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))
+        await flush(root)
+        expect(saved.repositories[0].columns.find(column => column.id == main.id)?.width).toBe(390)
         dispose()
     })
 })
@@ -311,7 +355,7 @@ function button(container: HTMLElement, label: string) {
 
 function appState() {
     return {
-        session: { repositories: [] },
+        workspace: { repositories: [] },
         settings: {
             path: "C:\\Users\\developer\\settings.json",
             git: { path: "C:\\Program Files\\Git\\cmd\\git.exe", version: "2.51.1" },
@@ -335,6 +379,13 @@ function repositoryInfo(path: string) {
         partial: false,
         sparse: false,
         git: { path: "C:\\Program Files\\Git\\cmd\\git.exe", version: "2.51.1" },
+    }
+}
+
+function openedWorkspace(info: ReturnType<typeof repositoryInfo>) {
+    return {
+        repositories: [{ status: "available" as const, id: info.id, path: info.mainWorktree, info, columns: [], layoutInitialized: false }],
+        activeRepositoryId: info.id,
     }
 }
 
@@ -398,6 +449,10 @@ function fakeWorkbench(overrides: Partial<Window["workbench"]> = {}): Window["wo
         initializeRepository: async () => ({ ok: false, error: { code: "git.cancelled", message: "Cancelled" } }),
         cancelEntry: async () => true,
         selectRepository: async () => ({ repositories: [] }),
+        closeRepository: async () => ({ repositories: [] }),
+        locateRepository: async () => ({ repositories: [] }),
+        updateWorkspace: async workspace => workspace,
+        resetWorkspace: async () => ({ repositories: [] }),
         chooseGit: async () => appState().settings,
         useGitFromPath: async () => appState().settings,
         resetSettings: async () => appState().settings,

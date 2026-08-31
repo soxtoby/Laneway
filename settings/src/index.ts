@@ -3,6 +3,8 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, resolve } from "node:path"
 
+export * from "./workspace"
+
 export interface WorkbenchSettings {
     version: 1
     gitPath?: string

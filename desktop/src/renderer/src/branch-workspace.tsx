@@ -1,4 +1,4 @@
-import type { BranchGraph, BranchGraphBranchNode, BranchGraphMarker, RepositoryInfo, RepositoryGraphSettings, WorkbenchSession } from "@git-workbench/shared"
+import type { AvailableOpenRepository, BranchGraph, BranchGraphBranchNode, BranchGraphMarker, RepositoryGraphSettings, Workspace, WorkspaceColumn } from "@git-workbench/shared"
 import { on, ref, type Handle, type RemixNode } from "remix/ui"
 import { errorMessage, type NoticeState } from "./feedback"
 
@@ -19,6 +19,11 @@ interface RepositoryGraphState {
     baseCandidateSelections: Record<string, string>
     graphScrollTop: number
     graphViewportHeight: number
+    widths: Record<string, number>
+    focusedColumnId?: string
+    draggingColumnId?: string
+    dragOriginalIds?: string[]
+    focusRestored: boolean
 }
 
 interface BranchWorkspaceOptions {
@@ -27,13 +32,20 @@ interface BranchWorkspaceOptions {
     signal: AbortSignal
     notify(notice: NoticeState): void
     selectRepository(id: string): Promise<void>
+    closeRepository(id: string): Promise<void>
+    moveRepository(id: string, targetId: string): Promise<void>
+    previewRepositoryMove(id: string, targetId: string): void
+    commitRepositoryOrder(): Promise<void>
+    cancelRepositoryMove(): void
+    workspace(): Workspace
+    workspaceChanged(workspace: Workspace): void
 }
 
 export interface BranchWorkspace {
     activate(repositoryId: string): void
     deactivate(): void
-    render(active: RepositoryInfo, session: WorkbenchSession): RemixNode
-    renderLens(session: WorkbenchSession): RemixNode
+    render(active: AvailableOpenRepository, workspace: Workspace): RemixNode
+    renderLens(workspace: Workspace): RemixNode
 }
 
 export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWorkspace {
@@ -44,7 +56,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
     let lensIndex = 0
     let lensInput: HTMLInputElement | undefined
     let restoreFocus: HTMLElement | null = null
-    let currentSession: WorkbenchSession | undefined
+    let currentWorkspace: Workspace | undefined
 
     const interval = window.setInterval(() => {
         if (activeRepositoryId && document.visibilityState == "visible" && document.hasFocus())
@@ -86,8 +98,8 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         deactivate() {
             activeRepositoryId = undefined
         },
-        render(active, session) {
-            currentSession = session
+        render(active, workspace) {
+            currentWorkspace = workspace
             const state = stateFor(active.id)
             const graph = state.graph
             const visibleBranches = graph ? branchesForDisplay(graph, state.showAll, state.collapsedBranchIds) : []
@@ -100,10 +112,10 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                 state.selectedId = undefined
             return (
                 <section class="workspace graph-workspace" aria-live="polite">
-                    <RepositoryRail active={active} session={session} busy={state.loading} selectRepository={options.selectRepository} openLens={openLens} />
+                    <RepositoryRail active={active} workspace={workspace} busy={state.loading} selectRepository={options.selectRepository} closeRepository={options.closeRepository} moveRepository={options.moveRepository} previewRepositoryMove={options.previewRepositoryMove} commitRepositoryOrder={options.commitRepositoryOrder} cancelRepositoryMove={options.cancelRepositoryMove} openLens={openLens} />
                     <section class="graph-desk">
                         <header class="graph-toolbar">
-                            <div><p class="eyebrow">Branch Graph</p><h1>{baseName(active.mainWorktree)}</h1></div>
+                            <div><p class="eyebrow">Branch Graph</p><h1>{baseName(active.info.mainWorktree)}</h1></div>
                             <div class="graph-actions">
                                 <button type="button" class={state.showAll ? "active" : ""} mix={[on("click", () => toggleAll(active.id))]}>{state.showAll ? "Involved only" : "Show all"}</button>
                                 <button class={`refresh-button ${state.refreshing ? "refreshing" : ""}`} type="button" aria-label={state.refreshing ? "Refreshing Branch Graph" : "Refresh Branch Graph"} aria-busy={state.refreshing} title={state.refreshing ? "Refreshing Branch Graph" : "Refresh Branch Graph"} disabled={state.loading || state.refreshing} mix={[on("click", () => read(active.id, true, true))]}><span aria-hidden="true">↻</span></button>
@@ -148,18 +160,18 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                         void options.update()
                                     }} />}
                                 </section>
-                                <BranchColumns graph={graph} state={state} close={branchId => closeBranch(active.id, branchId)} maximize={branchId => maximizeBranch(active.id, branchId)} />
+                                <BranchColumns graph={graph} state={state} close={branchId => closeBranch(active.id, branchId)} maximize={branchId => maximizeBranch(active.id, branchId)} focus={branchId => focusColumn(active.id, branchId)} move={(branchId, delta) => moveColumn(active.id, branchId, delta)} previewMove={(branchId, targetId) => previewColumnMove(active.id, branchId, targetId)} commitMove={branchId => commitColumnMove(active.id, branchId)} resize={(branchId, width) => resizeColumn(active.id, branchId, width)} />
                             </div>
                         )}
                     </section>
                 </section>
             )
         },
-        renderLens(session) {
-            currentSession = session
+        renderLens(workspace) {
+            currentWorkspace = workspace
             if (!lensOpen)
                 return null
-            const results = lensResults(session, states, activeRepositoryId, lensQuery)
+            const results = lensResults(workspace, states, activeRepositoryId, lensQuery)
             if (lensIndex >= results.length)
                 lensIndex = Math.max(0, results.length - 1)
             return (
@@ -178,7 +190,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                         }), on("keydown", event => lensKeydown(event, results))]} /></header>
                         {lensQuery.trim() == ""
                             ? <p class="lens-guidance">Search open repositories and branches.</p>
-                            : <div class="lens-results">{results.map((result, index) => <button type="button" class={index == lensIndex ? "active" : ""} mix={[on("click", () => activateLensResult(result))]}><span class={`lens-kind ${result.kind}`}>{result.kind == "repository" ? "REPO" : "BR"}</span><span><strong>{result.label}</strong><small>{result.detail}</small></span><kbd>↵</kbd></button>)}</div>}
+                            : <div class="lens-results">{results.map((result, index) => <button type="button" class={index == lensIndex ? "active" : ""} mix={[on("click", () => activateLensResult(result))]}><span class={`lens-kind ${result.kind}`}>{result.kind == "repository" ? "REPO" : result.kind == "command" ? "CMD" : "BR"}</span><span><strong>{result.label}</strong><small>{result.detail}</small></span><kbd>↵</kbd></button>)}</div>}
                     </section>
                 </div>
             )
@@ -188,7 +200,8 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
     function stateFor(repositoryId: string) {
         let state = states.get(repositoryId)
         if (!state) {
-            state = { loading: false, refreshing: false, showAll: false, openedBranchIds: [], showSettings: false, patterns: "", collapsedBranchIds: [], remoteRefreshed: false, baseCandidateSelections: {}, graphScrollTop: 0, graphViewportHeight: 600 }
+            const saved = options.workspace().repositories.find(repository => repository.id == repositoryId)
+            state = { loading: false, refreshing: false, showAll: false, openedBranchIds: saved?.columns.map(column => column.id) ?? [], widths: Object.fromEntries(saved?.columns.map(column => [column.id, column.width]) ?? []), focusedColumnId: saved?.focusedColumnId, focusRestored: false, showSettings: false, patterns: "", collapsedBranchIds: [], remoteRefreshed: false, baseCandidateSelections: {}, graphScrollTop: 0, graphViewportHeight: 600 }
             states.set(repositoryId, state)
         }
         return state
@@ -218,18 +231,47 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         try {
             const result = await options.api.readBranchGraph(repositoryId, refreshRemote)
             if (result.ok) {
-                const removedColumns = state.openedBranchIds.filter(id => !result.graph.branches.some(branch => branch.id == id))
+                const validColumnIds = new Set([...result.graph.branches, ...result.graph.virtualBranches].map(branch => branch.id))
+                const removedColumns = state.openedBranchIds.filter(id => !validColumnIds.has(id))
                 state.graph = result.graph
                 if (refreshRemote)
                     state.remoteRefreshed = true
                 state.patterns = result.graph.remotePatterns.join(", ")
-                state.openedBranchIds = state.openedBranchIds.filter(id => result.graph.branches.some(branch => branch.id == id))
+                state.openedBranchIds = state.openedBranchIds.filter(id => validColumnIds.has(id))
+                if (!state.focusedColumnId || !state.openedBranchIds.includes(state.focusedColumnId))
+                    state.focusedColumnId = state.openedBranchIds[0]
+                for (const column of [...result.graph.branches, ...result.graph.virtualBranches].filter(column => state.openedBranchIds.includes(column.id)))
+                    state.widths[column.id] ??= 380
+                const savedRepository = options.workspace().repositories.find(repository => repository.id == repositoryId)
+                if (savedRepository?.status == "available") {
+                    for (const savedColumn of savedRepository.columns.filter(column => column.kind == "branch" && column.worktreePath)) {
+                        const current = result.graph.branches.find(branch => branch.checkedOut.some(worktree => worktree.path == savedColumn.worktreePath))
+                            ?? result.graph.virtualBranches.find(branch => branch.worktree.path == savedColumn.worktreePath)
+                        if (current && current.id != savedColumn.id && !state.openedBranchIds.includes(current.id)) {
+                            const savedIndex = state.openedBranchIds.indexOf(savedColumn.id)
+                            state.openedBranchIds.splice(savedIndex + 1, 0, current.id)
+                            state.widths[current.id] = state.widths[savedColumn.id] ?? 380
+                        }
+                    }
+                }
+                if (savedRepository?.status == "available" && !savedRepository.layoutInitialized) {
+                    const selectedPath = savedRepository.info.selectedWorktree
+                    const initialColumn = result.graph.branches.find(branch => branch.checkedOut.some(worktree => worktree.path == selectedPath))
+                        ?? result.graph.virtualBranches.find(branch => branch.worktree.path == selectedPath)
+                    if (initialColumn) {
+                        state.openedBranchIds.push(initialColumn.id)
+                        state.focusedColumnId = initialColumn.id
+                        state.widths[initialColumn.id] = 380
+                    }
+                    savedRepository.layoutInitialized = true
+                }
                 state.baseCandidateSelections = Object.fromEntries(Object.entries(state.baseCandidateSelections).filter(([branchId, candidateId]) => {
                     const branch = result.graph.branches.find(candidate => candidate.id == branchId)
                     return branch?.base.status == "ambiguous" && branch.base.candidates.some(candidate => candidate.branchId == candidateId)
                 }))
                 if (removedColumns.length > 0)
                     options.notify({ code: "branch.removed", message: `${removedColumns.length == 1 ? "An open branch" : `${removedColumns.length} open branches`} no longer exists; its column was closed.` })
+                await persist(repositoryId)
             } else if (result.error.code != "git.cancelled") {
                 state.error = result.error.message
                 if (state.graph)
@@ -241,6 +283,12 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             state.loading = false
             state.refreshing = false
             await options.update()
+            if (!state.focusRestored && state.focusedColumnId) {
+                state.focusRestored = true
+                const column = [...document.querySelectorAll<HTMLElement>("[data-column-id]")].find(candidate => candidate.dataset.columnId == state.focusedColumnId)
+                column?.focus({ preventScroll: true })
+                column?.scrollIntoView({ block: "nearest", inline: "nearest" })
+            }
         }
     }
 
@@ -271,16 +319,98 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         if (!state.openedBranchIds.includes(branchId))
             state.openedBranchIds.push(branchId)
         state.selectedId = branchId
+        state.focusedColumnId = branchId
+        state.widths[branchId] ??= 380
         state.maximizedBranchId = undefined
-        void options.update().then(() => [...document.querySelectorAll<HTMLElement>("[data-column-id]")].find(column => column.dataset.columnId == branchId)?.focus())
+        void persist(repositoryId).then(() => options.update()).then(() => [...document.querySelectorAll<HTMLElement>("[data-column-id]")].find(column => column.dataset.columnId == branchId)?.focus())
     }
 
     function closeBranch(repositoryId: string, branchId: string) {
         const state = stateFor(repositoryId)
+        const index = state.openedBranchIds.indexOf(branchId)
         state.openedBranchIds = state.openedBranchIds.filter(id => id != branchId)
         if (state.maximizedBranchId == branchId)
             state.maximizedBranchId = undefined
+        if (state.focusedColumnId == branchId) {
+            state.focusedColumnId = state.openedBranchIds[index] ?? state.openedBranchIds[index - 1]
+        }
+        void persist(repositoryId).then(() => options.update()).then(() => {
+            const next = state.focusedColumnId
+                ? [...document.querySelectorAll<HTMLElement>("[data-column-id]")].find(column => column.dataset.columnId == state.focusedColumnId)
+                : document.querySelector<HTMLElement>(".graph-rows")
+            next?.focus()
+        })
+    }
+
+    function focusColumn(repositoryId: string, branchId: string) {
+        const state = stateFor(repositoryId)
+        if (state.focusedColumnId == branchId)
+            return
+        state.focusedColumnId = branchId
+        void persist(repositoryId)
+    }
+
+    function moveColumn(repositoryId: string, branchId: string, delta: number) {
+        const state = stateFor(repositoryId)
+        const index = state.openedBranchIds.indexOf(branchId)
+        const target = index + delta
+        if (index < 0 || target < 0 || target >= state.openedBranchIds.length) {
+            options.notify({ code: "column.boundary", message: target < 0 ? "Already first column." : "Already last column." })
+            return
+        }
+        state.openedBranchIds.splice(index, 1)
+        state.openedBranchIds.splice(target, 0, branchId)
+        state.focusedColumnId = branchId
+        void persist(repositoryId).then(() => options.update()).then(() => {
+            const column = [...document.querySelectorAll<HTMLElement>("[data-column-id]")].find(candidate => candidate.dataset.columnId == branchId)
+            column?.focus({ preventScroll: true })
+            column?.scrollIntoView({ block: "nearest", inline: "nearest" })
+        })
+    }
+
+    function previewColumnMove(repositoryId: string, branchId: string, targetId: string) {
+        const state = stateFor(repositoryId)
+        const from = state.openedBranchIds.indexOf(branchId)
+        const to = state.openedBranchIds.indexOf(targetId)
+        if (from < 0 || to < 0 || from == to)
+            return
+        state.openedBranchIds.splice(from, 1)
+        state.openedBranchIds.splice(to, 0, branchId)
         void options.update()
+    }
+
+    function commitColumnMove(repositoryId: string, branchId: string) {
+        const state = stateFor(repositoryId)
+        state.focusedColumnId = branchId
+        state.draggingColumnId = undefined
+        state.dragOriginalIds = undefined
+        void persist(repositoryId).then(() => options.update())
+    }
+
+    function resizeColumn(repositoryId: string, branchId: string, width: number) {
+        stateFor(repositoryId).widths[branchId] = Math.max(310, Math.round(width))
+        void persist(repositoryId).then(() => options.update())
+    }
+
+    async function persist(repositoryId: string) {
+        const workspace = options.workspace()
+        const repository = workspace.repositories.find(candidate => candidate.id == repositoryId)
+        const state = stateFor(repositoryId)
+        if (!repository || !state.graph)
+            return
+        repository.columns = state.openedBranchIds.flatMap((id): WorkspaceColumn[] => {
+            const branch = state.graph!.branches.find(candidate => candidate.id == id)
+            if (branch)
+                return [{ kind: "branch" as const, id, ref: branch.preferredRef, lastSeenObjectId: branch.tip, width: state.widths[id] ?? 380, ...(branch.checkedOut[0]?.path ? { worktreePath: branch.checkedOut[0].path } : {}) }]
+            const virtual = state.graph!.virtualBranches.find(candidate => candidate.id == id)
+            return virtual ? [{ kind: "virtual" as const, id, worktreePath: virtual.worktree.path, lastSeenObjectId: virtual.objectId, width: state.widths[id] ?? 380 }] : []
+        })
+        repository.focusedColumnId = state.focusedColumnId
+        try {
+            options.workspaceChanged(await options.api.updateWorkspace(workspace))
+        } catch (error) {
+            options.notify({ code: "workspace.write-failed", message: errorMessage(error) })
+        }
     }
 
     function maximizeBranch(repositoryId: string, branchId: string) {
@@ -347,8 +477,10 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         lensOpen = true
         lensQuery = ""
         lensIndex = 0
-        for (const repository of currentSession?.repositories ?? [])
-            void ensure(repository.id, false)
+        for (const repository of currentWorkspace?.repositories ?? []) {
+            if (repository.status == "available")
+                void ensure(repository.id, false)
+        }
         void options.update()
     }
 
@@ -373,6 +505,11 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
     }
 
     async function activateLensResult(result: LensResult) {
+        if (result.kind == "command") {
+            moveColumn(result.repositoryId, result.nodeId, result.delta)
+            closeLens()
+            return
+        }
         if (result.repositoryId != activeRepositoryId)
             await options.selectRepository(result.repositoryId)
         activeRepositoryId = result.repositoryId
@@ -445,13 +582,37 @@ function branchesForDisplay(graph: BranchGraph, showAll: boolean, collapsedBranc
     })
 }
 
-function RepositoryRail(handle: Handle<{ active: RepositoryInfo; session: WorkbenchSession; busy: boolean; selectRepository(id: string): void; openLens(): void }>) {
+let draggingRepositoryId: string | undefined
+
+function RepositoryRail(handle: Handle<{ active: AvailableOpenRepository; workspace: Workspace; busy: boolean; selectRepository(id: string): void; closeRepository(id: string): void; moveRepository(id: string, targetId: string): void; previewRepositoryMove(id: string, targetId: string): void; commitRepositoryOrder(): void; cancelRepositoryMove(): void; openLens(): void }>) {
     return () => {
         const props = handle.props
         return (
         <aside class="repository-rail graph-rail">
-            <div class="rail-heading"><p class="eyebrow">Open repositories</p><span>{props.session.repositories.length}</span></div>
-            <nav aria-label="Open repositories">{props.session.repositories.map(repository => <button class={`repository-item ${repository.id == props.active.id ? "active" : ""}`} type="button" disabled={props.busy} mix={[on("click", () => props.selectRepository(repository.id))]}><span>{initials(repository.mainWorktree)}</span><span><strong>{baseName(repository.mainWorktree)}</strong><small>{repository.selectedWorktree}</small></span></button>)}</nav>
+            <div class="rail-heading"><p class="eyebrow">Open repositories</p><span>{props.workspace.repositories.length}</span></div>
+            <nav aria-label="Open repositories">{props.workspace.repositories.map((repository, index) => <div class="repository-row" draggable={!props.busy} mix={[on("keydown", event => {
+                if (event.ctrlKey && event.shiftKey && (event.key == "<" || event.key == ">")) {
+                    event.preventDefault()
+                    const target = props.workspace.repositories[index + (event.key == "<" ? -1 : 1)]
+                    if (target)
+                        props.moveRepository(repository.id, target.id)
+                }
+            }), on("dragstart", event => {
+                draggingRepositoryId = repository.id
+                event.dataTransfer?.setData("text/plain", repository.id)
+            }), on("dragover", event => {
+                event.preventDefault()
+                if (draggingRepositoryId)
+                    props.previewRepositoryMove(draggingRepositoryId, repository.id)
+            }), on("drop", event => {
+                event.preventDefault()
+                props.commitRepositoryOrder()
+                draggingRepositoryId = undefined
+            }), on("dragend", () => {
+                if (draggingRepositoryId)
+                    props.cancelRepositoryMove()
+                draggingRepositoryId = undefined
+            })]}><button class={`repository-item ${repository.id == props.active.id ? "active" : ""} ${repository.status}`} type="button" disabled={props.busy} mix={[on("click", () => props.selectRepository(repository.id))]}><span>{initials(repository.path)}</span><span><strong>{repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name}</strong><small>{repository.status == "available" ? repository.info.selectedWorktree : "Unavailable"}</small></span></button><button class="repository-close" type="button" aria-label={`Close ${repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name}`} title="Close repository" mix={[on("click", () => props.closeRepository(repository.id))]}>×</button></div>)}</nav>
             <button class="lens-button" type="button" mix={[on("click", props.openLens)]}><span>⌕</span>Command Lens<kbd>Ctrl K</kbd></button>
         </aside>
         )
@@ -504,15 +665,72 @@ function SimpleNodeRow(handle: Handle<{ id: string; kind: "tag" | "worktree"; na
     return () => <button class={`graph-row simple ${handle.props.selected ? "selected" : ""}`} data-node-id={handle.props.id} role="option" aria-selected={handle.props.selected} type="button" title={handle.props.title} mix={[on("click", handle.props.select)]}><span class="node-icon">{handle.props.kind == "tag" ? "⌑" : "⌂"}</span><span class="branch-copy"><strong>{handle.props.name}</strong><small>{handle.props.kind == "tag" ? "Tag" : "Detached worktree"}</small></span></button>
 }
 
-function BranchColumns(handle: Handle<{ graph: BranchGraph; state: RepositoryGraphState; close(branchId: string): void; maximize(branchId: string): void }>) {
+function BranchColumns(handle: Handle<{ graph: BranchGraph; state: RepositoryGraphState; close(branchId: string): void; maximize(branchId: string): void; focus(branchId: string): void; move(branchId: string, delta: number): void; previewMove(branchId: string, targetId: string): void; commitMove(branchId: string): void; resize(branchId: string, width: number): void }>) {
     return () => {
         const props = handle.props
-        const branches = props.state.openedBranchIds.map(id => props.graph.branches.find(branch => branch.id == id)).filter((branch): branch is BranchGraphBranchNode => Boolean(branch))
-        if (branches.length == 0)
+        const columns = props.state.openedBranchIds.map(id => props.graph.branches.find(branch => branch.id == id) ?? props.graph.virtualBranches.find(branch => branch.id == id)).filter(column => column != undefined)
+        if (columns.length == 0)
             return <section class="column-empty"><span>Open a branch</span><p>Select a Branch Node, then use Open or Enter.</p></section>
-        const visible = props.state.maximizedBranchId ? branches.filter(branch => branch.id == props.state.maximizedBranchId) : branches
-        return <section class={`branch-columns ${props.state.maximizedBranchId ? "maximized" : ""}`}>{visible.map(branch => <article class="branch-column" data-column-id={branch.id} tabIndex={-1}><header><div><span class="column-kind">BRANCH</span><h2>{branch.name}</h2><p>{branch.preferredRef}</p></div><div><button type="button" title={props.state.maximizedBranchId ? "Restore columns" : "Maximize column"} mix={[on("click", () => props.maximize(branch.id))]}>{props.state.maximizedBranchId ? "↙" : "↗"}</button><button type="button" title="Close column" mix={[on("click", () => props.close(branch.id))]}>×</button></div></header>{branch.checkedOut.length > 0 && <div class="column-worktree">⌂ {branch.checkedOut.map(worktree => worktree.name).join(", ")}</div>}<div class="column-placeholder"><span></span><p>Branch column</p><small>Content follows in a later issue.</small></div></article>)}</section>
+        const visible = props.state.maximizedBranchId ? columns.filter(column => column.id == props.state.maximizedBranchId) : columns
+        return <section class={`branch-columns ${props.state.maximizedBranchId ? "maximized" : ""}`}>{visible.map(column => <article class="branch-column" data-column-id={column.id} tabIndex={-1} style={`width:${props.state.widths[column.id] ?? 380}px`} mix={[on("focusin", () => props.focus(column.id)), on("keydown", event => {
+            if (event.ctrlKey && event.shiftKey && (event.key == "<" || event.key == ">")) {
+                event.preventDefault()
+                props.move(column.id, event.key == "<" ? -1 : 1)
+            }
+        })]}><header draggable={!props.state.maximizedBranchId} title="Drag to reorder · Ctrl+< / Ctrl+>" mix={[on("dragstart", event => {
+            props.state.draggingColumnId = column.id
+            props.state.dragOriginalIds = [...props.state.openedBranchIds]
+            event.dataTransfer?.setData("text/plain", column.id)
+        }), on("dragover", event => {
+            event.preventDefault()
+            if (props.state.draggingColumnId)
+                props.previewMove(props.state.draggingColumnId, column.id)
+        }), on("drop", event => {
+            event.preventDefault()
+            const source = props.state.draggingColumnId
+            if (source)
+                props.commitMove(source)
+        }), on("dragend", () => {
+            if (props.state.draggingColumnId && props.state.dragOriginalIds) {
+                props.state.openedBranchIds = props.state.dragOriginalIds
+                void handle.update()
+            }
+            props.state.draggingColumnId = undefined
+            props.state.dragOriginalIds = undefined
+        })]}><div><span class="column-kind">{column.kind == "branch" ? "BRANCH" : "VIRTUAL"}</span><h2>{column.name}</h2><p>{column.kind == "branch" ? column.preferredRef : shortOid(column.objectId)}</p></div><div><button type="button" title={props.state.maximizedBranchId ? "Restore columns" : "Maximize column"} mix={[on("click", () => props.maximize(column.id))]}>{props.state.maximizedBranchId ? "↙" : "↗"}</button><button type="button" title="Close column" mix={[on("click", () => props.close(column.id))]}>×</button></div></header>{column.kind == "branch" && column.checkedOut.length > 0 && <div class="column-worktree">⌂ {column.checkedOut.map(worktree => worktree.name).join(", ")}</div>}{column.kind == "virtual" && <div class="column-worktree">⌂ {column.worktree.name}</div>}<div class="column-placeholder"><span></span><p>{column.kind == "branch" ? "Branch column" : "Virtual Branch column"}</p><small>Content follows in a later issue.</small></div>{!props.state.maximizedBranchId && <ColumnDivider branchId={column.id} width={props.state.widths[column.id] ?? 380} resize={props.resize} />}</article>)}</section>
     }
+}
+
+function ColumnDivider(handle: Handle<{ branchId: string; width: number; resize(branchId: string, width: number): void }>) {
+    return () => <div class="column-divider" role="separator" tabIndex={0} aria-label="Resize branch column" aria-orientation="vertical" aria-valuemin={310} aria-valuemax={2000} aria-valuenow={Math.round(handle.props.width)} mix={[on("keydown", event => {
+        const step = event.shiftKey ? 50 : 10
+        if (event.key == "ArrowLeft" || event.key == "ArrowRight") {
+            event.preventDefault()
+            handle.props.resize(handle.props.branchId, handle.props.width + (event.key == "ArrowLeft" ? -step : step))
+        } else if (event.key == "Home") {
+            event.preventDefault()
+            handle.props.resize(handle.props.branchId, 310)
+        } else if (event.key == "End") {
+            event.preventDefault()
+            handle.props.resize(handle.props.branchId, Math.max(310, document.querySelector<HTMLElement>(".graph-layout")?.clientWidth ?? 1180))
+        }
+    }), on("pointerdown", event => {
+        event.preventDefault()
+        const startX = event.clientX
+        const startWidth = handle.props.width
+        const column = (event.currentTarget as HTMLElement).closest<HTMLElement>(".branch-column")
+        const move = (next: PointerEvent) => {
+            if (column)
+                column.style.width = `${Math.max(310, startWidth + next.clientX - startX)}px`
+        }
+        const end = (next: PointerEvent) => {
+            window.removeEventListener("pointermove", move)
+            window.removeEventListener("pointerup", end)
+            handle.props.resize(handle.props.branchId, startWidth + next.clientX - startX)
+        }
+        window.addEventListener("pointermove", move)
+        window.addEventListener("pointerup", end, { once: true })
+    })]}></div>
 }
 
 function GraphSettings(handle: Handle<{ graph: BranchGraph; state: RepositoryGraphState; apply(settings: RepositoryGraphSettings): void; close(): void }>) {
@@ -533,7 +751,7 @@ function GraphError(handle: Handle<{ message: string; retry(): void }>) {
     return () => <div class="graph-error" role="alert"><span>Graph unavailable</span><p>{handle.props.message}</p><button class="primary-button" type="button" mix={[on("click", handle.props.retry)]}>Retry</button></div>
 }
 
-interface LensResult {
+interface LensNavigationResult {
     kind: "repository" | "branch"
     repositoryId: string
     nodeId: string
@@ -542,16 +760,31 @@ interface LensResult {
     score: number
 }
 
-function lensResults(session: WorkbenchSession, states: Map<string, RepositoryGraphState>, activeId: string | undefined, query: string): LensResult[] {
+interface ColumnCommandResult extends Omit<LensNavigationResult, "kind"> {
+    kind: "command"
+    delta: number
+}
+
+type LensResult = LensNavigationResult | ColumnCommandResult
+
+function lensResults(workspace: Workspace, states: Map<string, RepositoryGraphState>, activeId: string | undefined, query: string): LensResult[] {
     const needle = query.trim().toLocaleLowerCase()
     if (!needle)
         return []
     const results: LensResult[] = []
-    for (const repository of session.repositories) {
-        const name = baseName(repository.mainWorktree)
+    const focusedColumnId = activeId ? states.get(activeId)?.focusedColumnId : undefined
+    if (activeId && focusedColumnId) {
+        for (const command of [{ label: "Move column left", delta: -1 }, { label: "Move column right", delta: 1 }]) {
+            const score = textScore(command.label, needle)
+            if (score > 0)
+                results.push({ kind: "command", repositoryId: activeId, nodeId: focusedColumnId, label: command.label, detail: command.delta < 0 ? "Ctrl+<" : "Ctrl+>", score, delta: command.delta })
+        }
+    }
+    for (const repository of workspace.repositories) {
+        const name = repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name
         const repoScore = textScore(name, needle)
         if (repoScore > 0)
-            results.push({ kind: "repository", repositoryId: repository.id, nodeId: repository.id, label: name, detail: repository.selectedWorktree, score: repoScore })
+            results.push({ kind: "repository", repositoryId: repository.id, nodeId: repository.id, label: name, detail: repository.status == "available" ? repository.info.selectedWorktree : "Unavailable", score: repoScore })
         for (const branch of states.get(repository.id)?.graph?.branches ?? []) {
             const score = Math.max(...[branch.name, ...branch.aliases].map(value => textScore(value, needle)))
             if (score > 0)
