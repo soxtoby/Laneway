@@ -37,6 +37,7 @@ interface BranchWorkspaceOptions {
     previewRepositoryMove(id: string, targetId: string): void
     commitRepositoryOrder(): Promise<void>
     cancelRepositoryMove(): void
+    addRepository(): void
     workspace(): Workspace
     workspaceChanged(workspace: Workspace): void
 }
@@ -112,7 +113,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                 state.selectedId = undefined
             return (
                 <section class="workspace graph-workspace" aria-live="polite">
-                    <RepositoryRail active={active} workspace={workspace} busy={state.loading} selectRepository={options.selectRepository} closeRepository={options.closeRepository} moveRepository={options.moveRepository} previewRepositoryMove={options.previewRepositoryMove} commitRepositoryOrder={options.commitRepositoryOrder} cancelRepositoryMove={options.cancelRepositoryMove} openLens={openLens} />
+                    <RepositoryRail active={active} workspace={workspace} busy={state.loading} selectRepository={options.selectRepository} closeRepository={options.closeRepository} moveRepository={options.moveRepository} previewRepositoryMove={options.previewRepositoryMove} commitRepositoryOrder={options.commitRepositoryOrder} cancelRepositoryMove={options.cancelRepositoryMove} addRepository={options.addRepository} openLens={openLens} />
                     <section class="graph-desk">
                         <header class="graph-toolbar">
                             <div><p class="eyebrow">Branch Graph</p><h1>{baseName(active.info.mainWorktree)}</h1></div>
@@ -525,7 +526,7 @@ type DisplayNode =
     | { kind: "branch"; id: string; branch: BranchGraphBranchNode; branchIndex: number }
     | { kind: "tag" | "worktree"; id: string; name: string; title: string }
 
-const graphRowHeight = 56
+const graphRowHeight = 40
 
 function nodesForDisplay(graph: BranchGraph, branches: BranchGraphBranchNode[]): DisplayNode[] {
     return [
@@ -584,12 +585,12 @@ function branchesForDisplay(graph: BranchGraph, showAll: boolean, collapsedBranc
 
 let draggingRepositoryId: string | undefined
 
-function RepositoryRail(handle: Handle<{ active: AvailableOpenRepository; workspace: Workspace; busy: boolean; selectRepository(id: string): void; closeRepository(id: string): void; moveRepository(id: string, targetId: string): void; previewRepositoryMove(id: string, targetId: string): void; commitRepositoryOrder(): void; cancelRepositoryMove(): void; openLens(): void }>) {
+function RepositoryRail(handle: Handle<{ active: AvailableOpenRepository; workspace: Workspace; busy: boolean; selectRepository(id: string): void; closeRepository(id: string): void; moveRepository(id: string, targetId: string): void; previewRepositoryMove(id: string, targetId: string): void; commitRepositoryOrder(): void; cancelRepositoryMove(): void; addRepository(): void; openLens(): void }>) {
     return () => {
         const props = handle.props
         return (
         <aside class="repository-rail graph-rail">
-            <div class="rail-heading"><p class="eyebrow">Open repositories</p><span>{props.workspace.repositories.length}</span></div>
+            <div class="rail-heading"><p class="eyebrow">Open repositories</p><span>{props.workspace.repositories.length}</span><button class="rail-add" type="button" aria-label="Add repository" title="Add repository" disabled={props.busy} mix={[on("click", props.addRepository)]}>+</button></div>
             <nav aria-label="Open repositories">{props.workspace.repositories.map((repository, index) => <div class="repository-row" draggable={!props.busy} mix={[on("keydown", event => {
                 if (event.ctrlKey && event.shiftKey && (event.key == "<" || event.key == ">")) {
                     event.preventDefault()
@@ -697,7 +698,7 @@ function BranchColumns(handle: Handle<{ graph: BranchGraph; state: RepositoryGra
             }
             props.state.draggingColumnId = undefined
             props.state.dragOriginalIds = undefined
-        })]}><div><span class="column-kind">{column.kind == "branch" ? "BRANCH" : "VIRTUAL"}</span><h2>{column.name}</h2><p>{column.kind == "branch" ? column.preferredRef : shortOid(column.objectId)}</p></div><div><button type="button" title={props.state.maximizedBranchId ? "Restore columns" : "Maximize column"} mix={[on("click", () => props.maximize(column.id))]}>{props.state.maximizedBranchId ? "↙" : "↗"}</button><button type="button" title="Close column" mix={[on("click", () => props.close(column.id))]}>×</button></div></header>{column.kind == "branch" && column.checkedOut.length > 0 && <div class="column-worktree">⌂ {column.checkedOut.map(worktree => worktree.name).join(", ")}</div>}{column.kind == "virtual" && <div class="column-worktree">⌂ {column.worktree.name}</div>}<div class="column-placeholder"><span></span><p>{column.kind == "branch" ? "Branch column" : "Virtual Branch column"}</p><small>Content follows in a later issue.</small></div>{!props.state.maximizedBranchId && <ColumnDivider branchId={column.id} width={props.state.widths[column.id] ?? 380} resize={props.resize} />}</article>)}</section>
+        })]}><div><span class="column-kind">{column.kind == "branch" ? "BRANCH" : "VIRTUAL"}</span><h2>{column.name}</h2><p>{column.kind == "branch" ? column.preferredRef : shortOid(column.objectId)}</p></div><div><button type="button" title={props.state.maximizedBranchId ? "Restore columns" : "Maximize column"} mix={[on("click", () => props.maximize(column.id))]}>{props.state.maximizedBranchId ? "↙" : "↗"}</button><button type="button" title="Close column" mix={[on("click", () => props.close(column.id))]}>×</button></div></header>{column.kind == "branch" && column.checkedOut.length > 0 && <div class="column-worktree">⌂ {column.checkedOut.map(worktree => worktree.name).join(", ")}</div>}{column.kind == "virtual" && <div class="column-worktree">⌂ {column.worktree.name}</div>}<div class="column-placeholder"><span></span><p>{column.kind == "branch" ? "Branch column" : "Virtual Branch column"}</p><small>Not yet implemented</small></div>{!props.state.maximizedBranchId && <ColumnDivider branchId={column.id} width={props.state.widths[column.id] ?? 380} resize={props.resize} />}</article>)}</section>
     }
 }
 

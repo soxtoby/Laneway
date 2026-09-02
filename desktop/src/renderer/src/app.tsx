@@ -4,7 +4,7 @@ import { createBranchWorkspace, type BranchWorkspace } from "./branch-workspace"
 import { errorMessage, FatalError, Notice, type NoticeState } from "./feedback"
 import { createRepositoryEntry, type RepositoryEntry } from "./repository-entry"
 import { createGitSettings, type GitSettings } from "./settings"
-import { Welcome, WorkbenchHeader } from "./workspace"
+import { Welcome, WorkbenchHeader, WorkbenchStatus } from "./workspace"
 
 type AppState = Awaited<ReturnType<Window["workbench"]["getState"]>>
 
@@ -17,7 +17,6 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
     let openingRepository = false
     let notice: NoticeState | undefined
     let fatalError: string | undefined
-    let showWelcome = false
     let repositoryOrderBeforeDrag: string[] | undefined
 
     handle.queueTask(() => void bootstrap())
@@ -35,22 +34,13 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
         const busy = openingRepository || repositoryEntry.busy
         return <>
             <main class="shell">
-                <WorkbenchHeader
-                    settings={gitSettings.current}
-                    busy={busy}
-                    home={() => {
-                        showWelcome = true
-                        branchWorkspace?.deactivate()
-                        handle.update()
-                    }}
-                    openSettings={gitSettings.open}
-                />
-                {active?.status == "available" && !showWelcome
+                <WorkbenchHeader busy={busy} openSettings={gitSettings.open} />
+                {active?.status == "available"
                     ? (
                         branchWorkspace.render(active, currentWorkspace)
                     )
-                    : active?.status == "missing" && !showWelcome
-                    ? <MissingRepository repository={active} workspace={currentWorkspace} select={selectRepository} locate={locateRepository} close={closeRepository} move={moveRepository} previewMove={previewRepositoryMove} commitOrder={commitRepositoryOrder} cancelMove={cancelRepositoryMove} />
+                    : active?.status == "missing"
+                    ? <MissingRepository repository={active} workspace={currentWorkspace} select={selectRepository} locate={locateRepository} close={closeRepository} move={moveRepository} previewMove={previewRepositoryMove} commitOrder={commitRepositoryOrder} cancelMove={cancelRepositoryMove} addRepository={() => repositoryEntry?.openAdd()} />
                     : (
                         <Welcome
                             settings={gitSettings.current}
@@ -60,7 +50,7 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
                             openInitialize={repositoryEntry.openInitialize}
                         />
                     )}
-                <footer><span>System Git</span><i></i><span>{initial.engine.state == "ready" ? `Engine ${initial.engine.version}` : "Engine unavailable"}</span></footer>
+                <WorkbenchStatus settings={gitSettings.current} engine={initial.engine.state == "ready" ? `Engine ${initial.engine.version}` : "Engine unavailable"} />
             </main>
             {repositoryEntry.render()}
             {gitSettings.render()}
@@ -98,6 +88,7 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
                 previewRepositoryMove,
                 commitRepositoryOrder,
                 cancelRepositoryMove,
+                addRepository: () => repositoryEntry?.openAdd(),
                 workspace: () => workspace!,
                 workspaceChanged(nextWorkspace) {
                     workspace = nextWorkspace
@@ -109,9 +100,9 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
                 defaultCloneParent: initial.defaultCloneParent,
                 update: handle.update,
                 notify,
+                openRepository,
                 workspaceOpened(nextWorkspace) {
                     workspace = nextWorkspace
-                    showWelcome = false
                     if (nextWorkspace.activeRepositoryId)
                         branchWorkspace?.activate(nextWorkspace.activeRepositoryId)
                 },
@@ -146,7 +137,6 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
             const result = await handle.props.api.openRepository()
             if (result.ok) {
                 workspace = result.workspace
-                showWelcome = false
                 notify({ code: "repository.opened", message: "Repository opened." })
             } else if (result.error.code != "git.cancelled") {
                 notify({ code: result.error.code, message: result.error.message })
@@ -162,7 +152,6 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
         await setOpeningRepository(true)
         try {
             workspace = await handle.props.api.selectRepository(id)
-            showWelcome = false
             if (workspace.repositories.find(repository => repository.id == id)?.status == "available")
                 branchWorkspace?.activate(id)
             else
@@ -240,7 +229,6 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
         try {
             workspace = await handle.props.api.resetWorkspace()
             branchWorkspace?.deactivate()
-            showWelcome = true
         } catch (error) {
             notify({ code: "workspace.reset.failed", message: errorMessage(error) })
         }
@@ -254,8 +242,8 @@ function WorkspaceRecovery(handle: Handle<{ error: string; reset?(): void }>) {
 
 let draggingMissingRepositoryId: string | undefined
 
-function MissingRepository(handle: Handle<{ repository: Extract<Workspace["repositories"][number], { status: "missing" }>; workspace: Workspace; select(id: string): void; locate(id: string): void; close(id: string): void; move(id: string, targetId: string): void; previewMove(id: string, targetId: string): void; commitOrder(): void; cancelMove(): void }>) {
-    return () => <section class="workspace missing-repository"><aside class="repository-rail"><div class="rail-heading"><p class="eyebrow">Open repositories</p><span>{handle.props.workspace.repositories.length}</span></div><nav aria-label="Open repositories">{handle.props.workspace.repositories.map((repository, index) => <div draggable title="Drag to reorder · Ctrl+< / Ctrl+>" mix={[on("keydown", event => {
+function MissingRepository(handle: Handle<{ repository: Extract<Workspace["repositories"][number], { status: "missing" }>; workspace: Workspace; select(id: string): void; locate(id: string): void; close(id: string): void; move(id: string, targetId: string): void; previewMove(id: string, targetId: string): void; commitOrder(): void; cancelMove(): void; addRepository(): void }>) {
+    return () => <section class="workspace missing-repository"><aside class="repository-rail"><div class="rail-heading"><p class="eyebrow">Open repositories</p><span>{handle.props.workspace.repositories.length}</span><button class="rail-add" type="button" aria-label="Add repository" title="Add repository" mix={[on("click", handle.props.addRepository)]}>+</button></div><nav aria-label="Open repositories">{handle.props.workspace.repositories.map((repository, index) => <div draggable title="Drag to reorder · Ctrl+< / Ctrl+>" mix={[on("keydown", event => {
         if (event.ctrlKey && event.shiftKey && (event.key == "<" || event.key == ">")) {
             event.preventDefault()
             const target = handle.props.workspace.repositories[index + (event.key == "<" ? -1 : 1)]

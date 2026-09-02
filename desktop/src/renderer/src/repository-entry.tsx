@@ -1,6 +1,7 @@
 import type { EntryError, EntryProgress, EntryResult, Workspace } from "@git-workbench/shared"
 import { on, ref, type Handle, type RemixNode } from "remix/ui"
 import { errorMessage, type NoticeState } from "./feedback"
+import { EntryOptions, type EntryActions } from "./workspace"
 
 type Operation = "idle" | "cloning" | "initializing" | "cancelling"
 
@@ -24,10 +25,12 @@ interface RepositoryEntryOptions {
     update(): Promise<AbortSignal>
     workspaceOpened(workspace: Workspace): void
     notify(notice: NoticeState): void
+    openRepository(): Promise<void>
 }
 
 export interface RepositoryEntry {
     readonly busy: boolean
+    openAdd(): void
     openClone(): Promise<void>
     openInitialize(): Promise<void>
     updateProgress(progress: EntryProgress): void
@@ -38,6 +41,7 @@ export function createRepositoryEntry(options: RepositoryEntryOptions): Reposito
     let operation: Operation = "idle"
     let clone: CloneState = emptyClone()
     let initialize: InitState = { path: "", branch: "" }
+    let addDialog: HTMLDialogElement
     let cloneDialog: HTMLDialogElement
     let cloneSource: HTMLInputElement
     let cloneError: HTMLElement
@@ -53,6 +57,11 @@ export function createRepositoryEntry(options: RepositoryEntryOptions): Reposito
 
     function showFailure(action: string, error: unknown) {
         options.notify({ code: `${action}.failed`, message: errorMessage(error) })
+    }
+
+    function chooseEntry(action: () => void) {
+        addDialog.close()
+        action()
     }
 
     async function openClone() {
@@ -192,6 +201,9 @@ export function createRepositoryEntry(options: RepositoryEntryOptions): Reposito
         get busy() {
             return operation != "idle"
         },
+        openAdd() {
+            addDialog.showModal()
+        },
         openClone,
         openInitialize,
         updateProgress(progress) {
@@ -203,6 +215,14 @@ export function createRepositoryEntry(options: RepositoryEntryOptions): Reposito
         render() {
             return (
                 <>
+                    <AddDialog
+                        busy={operation != "idle"}
+                        dialogRef={node => addDialog = node}
+                        close={() => addDialog.close()}
+                        openRepository={() => chooseEntry(() => void options.openRepository())}
+                        openClone={() => chooseEntry(() => void openClone())}
+                        openInitialize={() => chooseEntry(() => void openInitialize())}
+                    />
                     <CloneDialog
                         state={clone}
                         operation={operation}
@@ -247,6 +267,16 @@ export function createRepositoryEntry(options: RepositoryEntryOptions): Reposito
     }
 }
 
+function AddDialog(handle: Handle<EntryActions & { dialogRef(node: HTMLDialogElement): void; close(): void }>) {
+    return () => (
+        <dialog class="add-dialog" aria-labelledby="add-heading" mix={[ref(handle.props.dialogRef)]}>
+            <header><h2 id="add-heading">Add repository</h2></header>
+            <EntryOptions busy={handle.props.busy} openRepository={handle.props.openRepository} openClone={handle.props.openClone} openInitialize={handle.props.openInitialize} />
+            <footer class="dialog-actions"><button class="text-button" type="button" mix={[on("click", handle.props.close)]}>Cancel</button></footer>
+        </dialog>
+    )
+}
+
 function CloneDialog(handle: Handle<{
     state: CloneState
     operation: Operation
@@ -278,7 +308,7 @@ function CloneDialog(handle: Handle<{
                     event.preventDefault()
                     handle.props.submit()
                 })]}>
-                    <header><span class="sequence">02</span><div><p class="eyebrow">Bring work in</p><h2 id="clone-heading">Clone repository</h2></div></header>
+                    <header><h2 id="clone-heading">Clone repository</h2></header>
                     <label for="clone-source">Git source</label>
                     <input id="clone-source" name="source" autocomplete="off" spellcheck={false} placeholder="https://host/team/repository.git" required value={handle.props.state.source} disabled={busy} mix={[ref(handle.props.sourceRef), on("input", event => handle.props.setSource(event.currentTarget.value))]} />
                     <label for="clone-destination">Destination</label>
@@ -321,7 +351,7 @@ function InitDialog(handle: Handle<{
                     event.preventDefault()
                     handle.props.submit()
                 })]}>
-                    <header><span class="sequence">03</span><div><p class="eyebrow">Start local</p><h2 id="init-heading">Initialize repository</h2></div></header>
+                    <header><h2 id="init-heading">Initialize repository</h2></header>
                     <label for="init-path">Directory</label>
                     <div class="field-with-action">
                         <input id="init-path" name="path" autocomplete="off" spellcheck={false} required value={handle.props.state.path} disabled={busy} mix={[ref(handle.props.pathRef), on("input", event => handle.props.setPath(event.currentTarget.value))]} />

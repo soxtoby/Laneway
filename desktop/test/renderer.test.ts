@@ -53,7 +53,7 @@ describe("Remix repository entry renderer", () => {
         const { container, root, dispose } = render(api)
 
         await flush(root)
-        click(container.querySelectorAll<HTMLElement>(".entry-card")[2]!)
+        click(container.querySelectorAll<HTMLElement>(".welcome .entry-card")[2]!)
         root.flush()
         const dialog = container.querySelector<HTMLDialogElement>("dialog[aria-labelledby='init-heading']")!
         input(container.querySelector<HTMLInputElement>("#init-path")!, "D:\\Source\\new-project")
@@ -114,7 +114,7 @@ describe("Remix repository entry renderer", () => {
         const { container, root, dispose } = render(api)
 
         await flush(root)
-        click(container.querySelectorAll<HTMLElement>(".entry-card")[1]!)
+        click(container.querySelectorAll<HTMLElement>(".welcome .entry-card")[1]!)
         root.flush()
 
         const dialog = container.querySelector<HTMLDialogElement>("dialog[aria-labelledby='clone-heading']")!
@@ -164,7 +164,7 @@ describe("Remix repository entry renderer", () => {
 
         click(button(container, "Retry"))
         await flush(root)
-        expect(container.textContent).toContain("Put a line of work")
+        expect(container.textContent).toContain("No repository open")
         expect(attempts).toBe(2)
         dispose()
     })

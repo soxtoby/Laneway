@@ -120,7 +120,7 @@ function SettingsDialog(handle: Handle<{
         return (
             <dialog aria-labelledby="settings-heading" mix={[ref(handle.props.dialogRef)]}>
                 <section class="settings-panel">
-                    <header><span class="sequence">CFG</span><div><p class="eyebrow">Application setting</p><h2 id="settings-heading">System Git</h2></div></header>
+                    <header><h2 id="settings-heading">System Git</h2></header>
                     {handle.props.settings.error
                         ? (
                             <div class="settings-error">
@@ -137,7 +137,7 @@ function SettingsDialog(handle: Handle<{
                             </dl>
                         )}
                     <section class="identity-settings" aria-labelledby="identity-heading">
-                        <div><p class="eyebrow">Branch involvement</p><h3 id="identity-heading">Author identities</h3></div>
+                        <h3 id="identity-heading">Author identities</h3>
                         <label for="primary-email">Primary email</label>
                         <input id="primary-email" type="email" value={handle.props.primaryEmail} placeholder="Detected from Git when empty" disabled={pending} mix={[on("input", event => handle.props.setPrimaryEmail(event.currentTarget.value))]} />
                         <label for="secondary-emails">Secondary emails</label>
