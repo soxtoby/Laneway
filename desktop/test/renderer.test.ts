@@ -146,6 +146,27 @@ describe("Remix repository entry renderer", () => {
         dispose()
     })
 
+    test("applies the saved appearance and persists a toggle", async () => {
+        const saved: string[] = []
+        const api = fakeWorkbench({
+            getState: async () => ({ ...appState(), appearance: "dark" as const }),
+            setAppearance: async appearance => {
+                saved.push(appearance)
+                return appearance
+            },
+        })
+        const { container, root, dispose } = render(api)
+
+        await flush(root)
+        expect(document.documentElement.dataset.appearance).toBe("dark")
+
+        click(container.querySelector<HTMLButtonElement>("[aria-label='Switch to light appearance']")!)
+        await flush(root)
+        expect(document.documentElement.dataset.appearance).toBe("light")
+        expect(saved).toEqual(["light"])
+        dispose()
+    })
+
     test("shows a retryable fatal state when bootstrap rejects", async () => {
         let attempts = 0
         const api = fakeWorkbench({
@@ -362,6 +383,7 @@ function appState() {
             authorIdentities: { secondary: [] },
         },
         engine: { state: "ready" as const, path: "D:\\GitWorkbench\\cli\\bin\\workbench-engine.exe", name: "workbench-engine" as const, version: "0.1.0" },
+        appearance: "light" as const,
         defaultCloneParent: "C:\\Users\\developer\\Documents",
     }
 }
@@ -458,6 +480,7 @@ function fakeWorkbench(overrides: Partial<Window["workbench"]> = {}): Window["wo
         resetSettings: async () => appState().settings,
         setAuthorIdentities: async authorIdentities => ({ ...appState().settings, authorIdentities }),
         openSettingsFile: async () => "",
+        setAppearance: async appearance => appearance,
         readBranchGraph: async () => ({ ok: false, error: { code: "git.command-failed", message: "Graph unavailable" } }),
         cancelBranchGraph: async () => false,
         readBranchHistory: async () => ({ ok: false, error: { code: "git.command-failed", message: "History unavailable" } }),

@@ -1,4 +1,4 @@
-import type { AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryProgress, EntryResult, GitSettingsState, RepositoryGraphSettings, Workspace } from "@git-workbench/shared"
+import type { Appearance, AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryProgress, EntryResult, GitSettingsState, RepositoryGraphSettings, Workspace } from "@git-workbench/shared"
 
 interface EngineStatusReady {
     state: "ready"
@@ -17,6 +17,7 @@ interface AppState {
     workspace: Workspace
     settings: GitSettingsState
     engine: EngineStatusReady | EngineStatusError
+    appearance: Appearance
     defaultCloneParent: string
 }
 
@@ -40,6 +41,7 @@ declare global {
             resetSettings(): Promise<GitSettingsState>
             setAuthorIdentities(settings: AuthorIdentitySettings): Promise<GitSettingsState>
             openSettingsFile(): Promise<string>
+            setAppearance(appearance: Appearance): Promise<Appearance>
             readBranchGraph(repositoryId: string, refreshRemote?: boolean): Promise<BranchGraphResult>
             cancelBranchGraph(repositoryId: string): Promise<boolean>
             readBranchHistory(repositoryId: string, history: BranchHistoryRequest): Promise<BranchHistoryResult>

@@ -1,4 +1,4 @@
-import type { AuthorIdentitySettings, BranchHistoryRequest, EntryProgress, RepositoryGraphSettings, Workspace } from "@git-workbench/shared"
+import type { Appearance, AuthorIdentitySettings, BranchHistoryRequest, EntryProgress, RepositoryGraphSettings, Workspace } from "@git-workbench/shared"
 import { contextBridge, ipcRenderer } from "electron"
 
 contextBridge.exposeInMainWorld("workbench", {
@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("workbench", {
     resetSettings: () => ipcRenderer.invoke("settings:reset"),
     setAuthorIdentities: (settings: AuthorIdentitySettings) => ipcRenderer.invoke("settings:author-identities", settings),
     openSettingsFile: () => ipcRenderer.invoke("settings:open-file"),
+    setAppearance: (appearance: Appearance) => ipcRenderer.invoke("settings:appearance", { appearance }),
     readBranchGraph: (repositoryId: string, refreshRemote = false) => ipcRenderer.invoke("graph:read", { repositoryId, refreshRemote }),
     cancelBranchGraph: (repositoryId: string) => ipcRenderer.invoke("graph:cancel", { repositoryId }),
     readBranchHistory: (repositoryId: string, history: BranchHistoryRequest) => ipcRenderer.invoke("graph:history", { repositoryId, history }),

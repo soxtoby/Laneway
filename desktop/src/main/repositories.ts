@@ -1,6 +1,6 @@
 import { GitError, type GitInstallation, type GitTask, inferCloneDirectoryName, initializeRepository, openRepository, type RepositoryGit, selectGit, startCloneRepository } from "@git-workbench/git"
 import { defaultSettingsPath, readSettings, SettingsError, WorkspaceStateError, writeSettings } from "@git-workbench/settings"
-import type { AuthorIdentitySettings, BranchGraph, BranchGraphReadOptions, BranchHistoryPage, BranchHistoryRequest, EntryError, GitSettingsState, RepositoryGraphSettings, RepositoryInfo } from "@git-workbench/shared"
+import type { Appearance, AuthorIdentitySettings, BranchGraph, BranchGraphReadOptions, BranchHistoryPage, BranchHistoryRequest, EntryError, GitSettingsState, RepositoryGraphSettings, RepositoryInfo } from "@git-workbench/shared"
 import { resolve } from "node:path"
 
 export class OpenRepositories {
@@ -54,6 +54,19 @@ export class OpenRepositories {
     async setAuthorIdentities(authorIdentities: AuthorIdentitySettings) {
         await this.updateSettings(current => ({ ...current, authorIdentities }))
         return this.gitSettings()
+    }
+
+    async appearance(): Promise<Appearance> {
+        try {
+            return (await readSettings(this.settingsPath)).appearance ?? "light"
+        } catch {
+            return "light"
+        }
+    }
+
+    async setAppearance(appearance: Appearance) {
+        await this.updateSettings(current => ({ ...current, appearance }))
+        return appearance
     }
 
     async setRepositoryGraphSettings(repositoryId: string, graphSettings: RepositoryGraphSettings) {

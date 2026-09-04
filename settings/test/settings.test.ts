@@ -115,6 +115,16 @@ describe("Workbench settings", () => {
         })
     })
 
+    test("round-trips the appearance preference and rejects unknown values", async () => {
+        const path = await temporarySettingsPath()
+        await writeSettings({ version: 1, appearance: "dark" }, path)
+
+        expect(await readSettings(path)).toEqual({ version: 1, appearance: "dark" })
+
+        await writeFile(path, JSON.stringify({ version: 1, appearance: "sepia" }))
+        await expect(readSettings(path)).rejects.toMatchObject({ code: "settings.corrupt", path })
+    })
+
     test("reports corrupt settings without falling back", async () => {
         const path = await temporarySettingsPath()
         await mkdir(resolve(path, ".."), { recursive: true })

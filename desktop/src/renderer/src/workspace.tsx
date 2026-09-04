@@ -1,4 +1,4 @@
-import type { GitSettingsState } from "@git-workbench/shared"
+import type { Appearance, GitSettingsState } from "@git-workbench/shared"
 import { on, type Handle } from "remix/ui"
 
 export interface EntryActions {
@@ -10,7 +10,9 @@ export interface EntryActions {
 
 export function WorkbenchHeader(handle: Handle<{
     busy: boolean
+    appearance: Appearance
     openSettings(): void
+    toggleAppearance(): void
 }>) {
     return () => (
         <header class="masthead">
@@ -19,6 +21,7 @@ export function WorkbenchHeader(handle: Handle<{
                 <span>Git Workbench</span>
             </div>
             <div class="header-actions">
+                <button class="icon-button" type="button" aria-label={handle.props.appearance == "dark" ? "Switch to light appearance" : "Switch to dark appearance"} title={handle.props.appearance == "dark" ? "Switch to light appearance" : "Switch to dark appearance"} mix={[on("click", handle.props.toggleAppearance)]}>{handle.props.appearance == "dark" ? "☀" : "☽"}</button>
                 <button class="icon-button" type="button" aria-label="Git settings" title="Git settings" disabled={handle.props.busy} mix={[on("click", handle.props.openSettings)]}>⚙</button>
             </div>
         </header>

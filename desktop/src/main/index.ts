@@ -54,6 +54,7 @@ function registerHandlers() {
     ipcMain.handle("app:state", async () => ({
         workspace: workspace.snapshot(),
         settings: await repositories.gitSettings(),
+        appearance: await repositories.appearance(),
         engine: engineStatus,
         defaultCloneParent: app.getPath("documents"),
     }))
@@ -195,6 +196,10 @@ function registerHandlers() {
             : []
         return repositories.setAuthorIdentities({ primary, secondary })
     })
+    ipcMain.handle(
+        "settings:appearance",
+        (_event, request: { appearance?: unknown }) => repositories.setAppearance(request?.appearance == "dark" ? "dark" : "light"),
+    )
     ipcMain.handle("settings:open-file", async () => {
         const state = await repositories.gitSettings()
         return shell.openPath(state.path)
@@ -278,13 +283,13 @@ function isWorkspace(value: unknown): value is Workspace {
     return valid && (candidate.activeRepositoryId == undefined || repositoryIds.has(candidate.activeRepositoryId))
 }
 
-function createWindow() {
+function createWindow(backgroundColor: string) {
     const window = new BrowserWindow({
         width: 1180,
         height: 760,
         minWidth: 820,
         minHeight: 620,
-        backgroundColor: "#0e110f",
+        backgroundColor,
         show: true,
         title: "Git Workbench",
         webPreferences: {
@@ -309,7 +314,7 @@ void app.whenReady().then(async () => {
     await inspectEngineAtStartup()
     await workspace.load()
     registerHandlers()
-    createWindow()
+    createWindow(await repositories.appearance() == "dark" ? "#1a1e1b" : "#f4f5f4")
 })
 
 app.on("second-instance", () => {
@@ -332,7 +337,7 @@ app.on("before-quit", event => {
 
 app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length == 0)
-        createWindow()
+        void repositories.appearance().then(appearance => createWindow(appearance == "dark" ? "#1a1e1b" : "#f4f5f4"))
 })
 
 app.on("window-all-closed", () => {

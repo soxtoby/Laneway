@@ -1,4 +1,4 @@
-import type { EntryProgress, Workspace } from "@git-workbench/shared"
+import type { Appearance, EntryProgress, Workspace } from "@git-workbench/shared"
 import { on, type Handle } from "remix/ui"
 import { createBranchWorkspace, type BranchWorkspace } from "./branch-workspace"
 import { errorMessage, FatalError, Notice, type NoticeState } from "./feedback"
@@ -18,6 +18,7 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
     let notice: NoticeState | undefined
     let fatalError: string | undefined
     let repositoryOrderBeforeDrag: string[] | undefined
+    let appearance: Appearance = "light"
 
     handle.queueTask(() => void bootstrap())
     handle.signal.addEventListener("abort", () => document.body.classList.remove("busy"), { once: true })
@@ -34,7 +35,7 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
         const busy = openingRepository || repositoryEntry.busy
         return <>
             <main class="shell">
-                <WorkbenchHeader busy={busy} openSettings={gitSettings.open} />
+                <WorkbenchHeader busy={busy} appearance={appearance} openSettings={gitSettings.open} toggleAppearance={() => void toggleAppearance()} />
                 {active?.status == "available"
                     ? (
                         branchWorkspace.render(active, currentWorkspace)
@@ -68,6 +69,7 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
         await handle.update()
         try {
             initial = await handle.props.api.getState()
+            applyAppearance(initial.appearance)
             workspace = initial.workspace
             if (workspace.persistenceError?.code == "workspace.partial")
                 notify({ code: workspace.persistenceError.code, message: workspace.persistenceError.message })
@@ -115,6 +117,22 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
             fatalError = errorMessage(error)
         }
         await handle.update()
+    }
+
+    function applyAppearance(next: Appearance) {
+        appearance = next
+        document.documentElement.dataset.appearance = next
+    }
+
+    async function toggleAppearance() {
+        applyAppearance(appearance == "dark" ? "light" : "dark")
+        await handle.update()
+        try {
+            await handle.props.api.setAppearance(appearance)
+        } catch (error) {
+            notify({ code: "settings.appearance.failed", message: errorMessage(error) })
+            await handle.update()
+        }
     }
 
     function updateProgress(progress: EntryProgress) {

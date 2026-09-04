@@ -1,4 +1,4 @@
-import type { AuthorIdentitySettings, RepositoryGraphSettings } from "@git-workbench/shared"
+import type { Appearance, AuthorIdentitySettings, RepositoryGraphSettings } from "@git-workbench/shared"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, resolve } from "node:path"
@@ -8,6 +8,7 @@ export * from "./workspace"
 export interface WorkbenchSettings {
     version: 1
     gitPath?: string
+    appearance?: Appearance
     authorIdentities?: AuthorIdentitySettings
     repositories?: Record<string, RepositoryGraphSettings>
 }
@@ -53,10 +54,12 @@ export async function readSettings(path = defaultSettingsPath()): Promise<Workbe
         if (record.gitPath != undefined && !nonEmptyString(record.gitPath))
             throw new Error("gitPath must be a non-empty string.")
         const authorIdentities = parseAuthorIdentities(record.authorIdentities)
+        const appearance = parseAppearance(record.appearance)
         const repositories = parseRepositories(record.repositories)
         return {
             version: 1,
             gitPath: record.gitPath as string | undefined,
+            ...(appearance ? { appearance } : {}),
             ...(authorIdentities ? { authorIdentities } : {}),
             ...(repositories ? { repositories } : {}),
         }
@@ -67,6 +70,14 @@ export async function readSettings(path = defaultSettingsPath()): Promise<Workbe
             path,
         )
     }
+}
+
+function parseAppearance(value: unknown): Appearance | undefined {
+    if (value == undefined)
+        return undefined
+    if (value != "light" && value != "dark")
+        throw new Error('appearance must be "light" or "dark".')
+    return value as Appearance
 }
 
 function parseAuthorIdentities(value: unknown): AuthorIdentitySettings | undefined {
