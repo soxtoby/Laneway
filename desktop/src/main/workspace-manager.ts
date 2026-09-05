@@ -1,4 +1,4 @@
-import { readWorkspace, resetWorkspace, type StoredRepository, type StoredWorkspace, WorkspaceStateError, writeWorkspace } from "@git-workbench/settings"
+import { parseWorkspacePresentation, readWorkspace, resetWorkspace, type StoredRepository, type StoredWorkspace, WorkspaceStateError, writeWorkspace } from "@git-workbench/settings"
 import type { EntryError, OpenRepository, RepositoryInfo, Workspace } from "@git-workbench/shared"
 import { basename, dirname } from "node:path"
 import { entryError, type OpenRepositories } from "./repositories"
@@ -46,7 +46,7 @@ export class WorkspaceManager {
             const common = {
                 id: repository.id,
                 path: repository.path,
-                columns: repository.columns,
+                columns: repository.columns.map(column => ({ ...column })),
                 focusedColumnId: repository.focusedColumnId,
                 layoutInitialized: repository.layoutInitialized,
             }
@@ -144,23 +144,19 @@ export class WorkspaceManager {
         return this.snapshot()
     }
 
-    async update(workspace: Workspace) {
+    async update(value: unknown) {
+        const workspace = parseWorkspacePresentation(value)
         const previous = JSON.stringify(this.stored)
         const openIds = new Set(workspace.repositories.map(repository => repository.id))
-        const ordered: StoredRepository[] = []
-        for (const repository of workspace.repositories) {
-            const stored = this.requireStored(repository.id)
-            stored.open = true
-            stored.columns = repository.columns
-            stored.focusedColumnId = repository.focusedColumnId
-            stored.layoutInitialized = repository.layoutInitialized
-            stored.anchors = [...new Set(repository.columns.map(column => column.lastSeenObjectId))]
-            ordered.push(stored)
-        }
-        for (const stored of this.stored.repositories.filter(repository => !openIds.has(repository.id))) {
-            stored.open = false
-            ordered.push(stored)
-        }
+        const ordered: StoredRepository[] = workspace.repositories.map(repository => ({
+            ...this.requireStored(repository.id),
+            ...repository,
+            focusedColumnId: repository.focusedColumnId,
+            open: true,
+            anchors: [...new Set(repository.columns.map(column => column.lastSeenObjectId))],
+        }))
+        for (const stored of this.stored.repositories.filter(repository => !openIds.has(repository.id)))
+            ordered.push({ ...stored, open: false })
         this.stored.repositories = ordered
         this.stored.activeRepositoryId = workspace.activeRepositoryId
         if (JSON.stringify(this.stored) != previous)

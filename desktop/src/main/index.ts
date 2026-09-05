@@ -159,9 +159,7 @@ function registerHandlers() {
         (_event, request: { id?: unknown }) => typeof request?.id == "string" ? workspace.close(request.id) : workspace.snapshot(),
     )
     ipcMain.handle("workspace:update", (_event, request: { workspace?: unknown }) => {
-        if (!isWorkspace(request.workspace))
-            throw new Error("Workspace State is invalid.")
-        return workspace.update(request.workspace)
+        return workspace.update(request?.workspace)
     })
     ipcMain.handle("workspace:reset", () => workspace.reset())
     ipcMain.handle("workspace:locate", async (event, request: { id?: unknown; useAnyway?: unknown }) => {
@@ -281,34 +279,6 @@ function isBranchHistoryRequest(value: unknown): value is BranchHistoryRequest {
         && (request.requestId == undefined || typeof request.requestId == "string")
         && (request.offset == undefined || Number.isSafeInteger(request.offset))
         && (request.limit == undefined || Number.isSafeInteger(request.limit))
-}
-
-function isWorkspace(value: unknown): value is Workspace {
-    if (!value || typeof value != "object")
-        return false
-    const candidate = value as Partial<Workspace>
-    if (!Array.isArray(candidate.repositories) || (candidate.activeRepositoryId != undefined && typeof candidate.activeRepositoryId != "string"))
-        return false
-    const repositoryIds = new Set<string>()
-    const valid = candidate.repositories.every(repository => {
-        if (!repository || typeof repository.id != "string" || repositoryIds.has(repository.id) || !Array.isArray(repository.columns))
-            return false
-        repositoryIds.add(repository.id)
-        const columnIds = new Set<string>()
-        return repository.columns.every(column => {
-            if (
-                !column || typeof column.id != "string" || columnIds.has(column.id) || typeof column.lastSeenObjectId != "string"
-                || typeof column.width != "number"
-                || !Number.isFinite(column.width) || column.width < 310
-                || (column.diffLayout != undefined && column.diffLayout != "unified" && column.diffLayout != "split")
-            ) {
-                return false
-            }
-            columnIds.add(column.id)
-            return column.kind == "branch" ? typeof column.ref == "string" : column.kind == "virtual" && typeof column.worktreePath == "string"
-        })
-    })
-    return valid && (candidate.activeRepositoryId == undefined || repositoryIds.has(candidate.activeRepositoryId))
 }
 
 function createWindow(backgroundColor: string) {

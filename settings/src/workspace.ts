@@ -1,4 +1,4 @@
-import type { DiffLayout, ObjectFormat, WorkspaceColumn } from "@git-workbench/shared"
+import type { DiffLayout, ObjectFormat, Workspace, WorkspaceColumn } from "@git-workbench/shared"
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, resolve } from "node:path"
@@ -41,6 +41,23 @@ export function defaultWorkspacePath(
     if (platform == "darwin")
         return resolve(homedir(), "Library", "Application Support", "Git Workbench", "workspace.json")
     return resolve(environment.XDG_CONFIG_HOME ?? resolve(homedir(), ".config"), "git-workbench", "workspace.json")
+}
+
+export function parseWorkspacePresentation(value: unknown) {
+    if (!value || typeof value != "object" || Array.isArray(value))
+        throw new Error("Workspace State is invalid.")
+    const record = value as Partial<Workspace>
+    if (!Array.isArray(record.repositories))
+        throw new Error("Workspace State is invalid.")
+    const repositories = Array.from(record.repositories, repository => parsePresentation(repository)).filter(repository => repository != undefined)
+    const ids = new Set(repositories.map(repository => repository.id))
+    if (
+        repositories.length != record.repositories.length || ids.size != repositories.length
+        || (record.activeRepositoryId !== undefined && !ids.has(record.activeRepositoryId))
+    ) {
+        throw new Error("Workspace State is invalid.")
+    }
+    return { repositories, activeRepositoryId: record.activeRepositoryId }
 }
 
 export async function readWorkspace(path = defaultWorkspacePath()): Promise<{ workspace: StoredWorkspace; skipped: number }> {
@@ -117,37 +134,64 @@ function parseRepository(value: unknown): StoredRepository | undefined {
         return undefined
     const record = value as Record<string, unknown>
     if (
-        !nonEmptyString(record.id) || !nonEmptyString(record.path) || !nonEmptyString(record.name)
+        !nonEmptyString(record.path) || !nonEmptyString(record.name)
         || typeof record.open != "boolean" || !Array.isArray(record.anchors) || !record.anchors.every(nonEmptyString)
-        || !Array.isArray(record.columns)
     ) {
         return undefined
     }
-    const columns = record.columns.map(parseColumn).filter(column => column != undefined)
-    if (columns.length != record.columns.length)
+    const presentation = parsePresentation(record, true)
+    if (!presentation)
         return undefined
     const objectFormat = record.objectFormat == "sha1" || record.objectFormat == "sha256" ? record.objectFormat as ObjectFormat : undefined
-    const focusedColumnId = nonEmptyString(record.focusedColumnId) ? record.focusedColumnId : undefined
     return {
-        id: record.id,
+        ...presentation,
         path: record.path,
         name: record.name,
         ...(objectFormat ? { objectFormat } : {}),
         anchors: [...new Set(record.anchors as string[])],
         open: record.open,
+    }
+}
+
+function parsePresentation(value: unknown, restoring = false) {
+    if (!value || typeof value != "object" || Array.isArray(value))
+        return undefined
+    const record = value as Partial<StoredRepository>
+    if (!nonEmptyString(record.id) || !Array.isArray(record.columns))
+        return undefined
+    const columns = Array.from(record.columns, column => parseColumn(column, restoring)).filter(column => column != undefined)
+    if (columns.length != record.columns.length)
+        return undefined
+    const ids = new Set(columns.map(column => column.id))
+    if (
+        !restoring && (ids.size != columns.length || typeof record.layoutInitialized != "boolean"
+            || (record.focusedColumnId !== undefined && !ids.has(record.focusedColumnId)))
+    ) {
+        return undefined
+    }
+    return {
+        id: record.id,
         columns,
-        ...(focusedColumnId ? { focusedColumnId } : {}),
+        ...(nonEmptyString(record.focusedColumnId) ? { focusedColumnId: record.focusedColumnId } : {}),
         layoutInitialized: record.layoutInitialized === true,
     }
 }
 
-function parseColumn(value: unknown): WorkspaceColumn | undefined {
+function parseColumn(value: unknown, restoring = false): WorkspaceColumn | undefined {
     if (!value || typeof value != "object" || Array.isArray(value))
         return undefined
     const record = value as Record<string, unknown>
     if (
         !nonEmptyString(record.id) || !nonEmptyString(record.lastSeenObjectId) || typeof record.width != "number" || !Number.isFinite(record.width)
         || record.width < 310
+    ) {
+        return undefined
+    }
+    const diffLayout = record.diffLayout == "split" || record.diffLayout == "unified" ? record.diffLayout as DiffLayout : undefined
+    const worktreePath = nonEmptyString(record.worktreePath) ? record.worktreePath : undefined
+    if (
+        !restoring && ((record.diffLayout !== undefined && diffLayout === undefined)
+            || (record.worktreePath !== undefined && worktreePath === undefined))
     ) {
         return undefined
     }
@@ -158,8 +202,8 @@ function parseColumn(value: unknown): WorkspaceColumn | undefined {
             ref: record.ref,
             lastSeenObjectId: record.lastSeenObjectId,
             width: record.width,
-            ...(record.diffLayout == "split" || record.diffLayout == "unified" ? { diffLayout: record.diffLayout as DiffLayout } : {}),
-            ...(nonEmptyString(record.worktreePath) ? { worktreePath: record.worktreePath } : {}),
+            ...(diffLayout ? { diffLayout } : {}),
+            ...(worktreePath ? { worktreePath } : {}),
         }
     }
     if (record.kind == "virtual" && nonEmptyString(record.worktreePath)) {
@@ -169,7 +213,7 @@ function parseColumn(value: unknown): WorkspaceColumn | undefined {
             worktreePath: record.worktreePath,
             lastSeenObjectId: record.lastSeenObjectId,
             width: record.width,
-            ...(record.diffLayout == "split" || record.diffLayout == "unified" ? { diffLayout: record.diffLayout as DiffLayout } : {}),
+            ...(diffLayout ? { diffLayout } : {}),
         }
     }
     return undefined
