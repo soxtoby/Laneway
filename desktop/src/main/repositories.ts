@@ -1,12 +1,13 @@
 import { GitError, type GitInstallation, type GitTask, inferCloneDirectoryName, initializeRepository, openRepository, type RepositoryGit, selectGit, startCloneRepository } from "@git-workbench/git"
 import { defaultSettingsPath, readSettings, SettingsError, WorkspaceStateError, writeSettings } from "@git-workbench/settings"
-import type { Appearance, AuthorIdentitySettings, BranchGraph, BranchGraphReadOptions, BranchHistoryPage, BranchHistoryRequest, EntryError, GitSettingsState, RepositoryGraphSettings, RepositoryInfo } from "@git-workbench/shared"
+import type { Appearance, AuthorIdentitySettings, BranchGraph, BranchGraphReadOptions, BranchHistoryPage, BranchHistoryRequest, ChangesRequest, EntryError, FileDiffRequest, GitSettingsState, RepositoryGraphSettings, RepositoryInfo } from "@git-workbench/shared"
 import { resolve } from "node:path"
 
 export class OpenRepositories {
     private readonly repositories = new Map<string, { info: RepositoryInfo; git: RepositoryGit }>()
     private readonly graphReads = new Map<string, GitTask<BranchGraph>>()
     private readonly historyReads = new Map<string, GitTask<BranchHistoryPage>>()
+    private readonly inspectionReads = new Map<string, Map<string, GitTask<unknown>>>()
     private cachedGit: { override: string | undefined; installation: GitInstallation } | undefined
     private settingsWrite: Promise<void> = Promise.resolve()
 
@@ -106,6 +107,15 @@ export class OpenRepositories {
 
     startBranchHistory(repositoryId: string, request: BranchHistoryRequest) {
         const repository = this.requireRepository(repositoryId)
+        if (request.requestId) {
+            const requestId = request.requestId
+            return {
+                result: this.trackInspection(repositoryId, requestId, () => repository.git.startReadBranchHistory(request)),
+                cancel: () => {
+                    this.cancelInspection(repositoryId, requestId)
+                },
+            }
+        }
         this.historyReads.get(repositoryId)?.cancel()
         const read = repository.git.startReadBranchHistory(request)
         const tracked: GitTask<BranchHistoryPage> = {
@@ -129,6 +139,37 @@ export class OpenRepositories {
         const read = this.historyReads.get(repositoryId)
         read?.cancel()
         return Boolean(read)
+    }
+
+    readChanges(repositoryId: string, requestId: string, request: ChangesRequest) {
+        return this.trackInspection(repositoryId, requestId, () => this.requireRepository(repositoryId).git.startReadChanges(request))
+    }
+
+    readFileDiff(repositoryId: string, requestId: string, request: FileDiffRequest) {
+        return this.trackInspection(repositoryId, requestId, () => this.requireRepository(repositoryId).git.startReadFileDiff(request))
+    }
+
+    cancelInspection(repositoryId: string, requestId: string) {
+        const read = this.inspectionReads.get(repositoryId)?.get(requestId)
+        read?.cancel()
+        return Boolean(read)
+    }
+
+    private trackInspection<T>(repositoryId: string, requestId: string, start: () => GitTask<T>) {
+        let reads = this.inspectionReads.get(repositoryId)
+        if (!reads) {
+            reads = new Map()
+            this.inspectionReads.set(repositoryId, reads)
+        }
+        reads.get(requestId)?.cancel()
+        const read = start()
+        reads.set(requestId, read)
+        return read.result.finally(() => {
+            if (reads.get(requestId) == read)
+                reads.delete(requestId)
+            if (reads.size == 0)
+                this.inspectionReads.delete(repositoryId)
+        })
     }
 
     async open(path: string, id?: string) {
@@ -157,6 +198,8 @@ export class OpenRepositories {
     close(id: string) {
         this.graphReads.get(id)?.cancel()
         this.historyReads.get(id)?.cancel()
+        for (const read of this.inspectionReads.get(id)?.values() ?? [])
+            read.cancel()
         return this.repositories.delete(id)
     }
 

@@ -1,4 +1,4 @@
-import type { ObjectFormat, WorkspaceColumn } from "@git-workbench/shared"
+import type { DiffLayout, ObjectFormat, WorkspaceColumn } from "@git-workbench/shared"
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, resolve } from "node:path"
@@ -158,11 +158,20 @@ function parseColumn(value: unknown): WorkspaceColumn | undefined {
             ref: record.ref,
             lastSeenObjectId: record.lastSeenObjectId,
             width: record.width,
+            ...(record.diffLayout == "split" || record.diffLayout == "unified" ? { diffLayout: record.diffLayout as DiffLayout } : {}),
             ...(nonEmptyString(record.worktreePath) ? { worktreePath: record.worktreePath } : {}),
         }
     }
-    if (record.kind == "virtual" && nonEmptyString(record.worktreePath))
-        return { kind: "virtual", id: record.id, worktreePath: record.worktreePath, lastSeenObjectId: record.lastSeenObjectId, width: record.width }
+    if (record.kind == "virtual" && nonEmptyString(record.worktreePath)) {
+        return {
+            kind: "virtual",
+            id: record.id,
+            worktreePath: record.worktreePath,
+            lastSeenObjectId: record.lastSeenObjectId,
+            width: record.width,
+            ...(record.diffLayout == "split" || record.diffLayout == "unified" ? { diffLayout: record.diffLayout as DiffLayout } : {}),
+        }
+    }
     return undefined
 }
 

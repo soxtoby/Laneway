@@ -25,7 +25,7 @@ A resizable view of an Active Stack ending at one branch. It may be branch-only,
 _Avoid_: Worktree column
 
 **Workspace State**:
-The persisted presentation of repositories and columns, including their order, size, focus, and diff layout. Workbench restores it after restart but always recomputes Git facts and rejects views whose pinned objects no longer exist.
+The persisted presentation of repositories and Workspace Columns, including their order, size, focus, and each column's unified or side-by-side diff preference. Workbench restores it after restart but does not restore broken-out diffs, focused inspection, selected files, selected changes, or scroll positions; Git facts are always recomputed.
 _Avoid_: Repository cache, persisted Git state
 
 **Open Repository**:
@@ -149,12 +149,20 @@ A read-only auxiliary column anchored to one file and a pinned committed revisio
 _Avoid_: File log column, History Workspace Column
 
 **Commit Diff Column**:
-A read-only auxiliary column for inspecting one commit's complete diff without replacing its source column's selection.
+A read-only auxiliary column for inspecting one commit's complete diff against one explicit parent without replacing its source column's selection. A merge commit initially uses its first parent, and the user may select another parent.
 _Avoid_: Diff Workspace Column
 
+**Working Changes Diff Column**:
+A transient auxiliary column that breaks the selected Working Changes diff out from its source Workspace Column. Closing it or restarting Workbench returns the source column to inline diff.
+_Avoid_: Diff Column, Commit Diff Column
+
 **Working Changes**:
-The uncommitted changes belonging to one worktree. Before checkout changes, Workbench stores them in an ordinary Git stash associated with the old branch and exposes that stash as a Branch Marker. When Worktree Backing transfers between open columns, the old column keeps them visible as Stashed Working Changes. Commit composition normally bypasses Git's index as a user-facing concept.
+The uncommitted, non-ignored changes belonging to one worktree. Before checkout changes, Workbench stores them in an ordinary Git stash associated with the old branch and exposes that stash as a Branch Marker. When Worktree Backing transfers between open columns, the old column keeps them visible as Stashed Working Changes. Git's index is imported compatibility state, not a Workbench composition mechanism.
 _Avoid_: Staged changes, unstaged changes
+
+**Change Selection**:
+A file, hunk, line, or fragment chosen from exact Working Changes or committed content for a later Workbench Operation. Hunk, line, and fragment selection belongs to one visible file diff; Workbench does not expand it to paired lines, and a source-content change invalidates it instead of remapping it. Text derived by a custom diff program cannot be selected.
+_Avoid_: Staging, highlighted text
 
 **Historical Edit**:
 An explicit temporary mode of a worktree-backed Workspace Column for editing from the snapshot of one commit unique to its focused Active Stack. The original column preserves its prior Working Changes and checks out the selected commit detached; normal commit-composition operations can move new Historical Working Changes to eligible commits, branches, or new-commit seams without ending the session. A clean session offers to return to the original branch; a dirty return offers to drop or bring the remaining Historical Working Changes, or cancel the return. A branch-only column must gain existing Worktree Backing before Historical Edit is available.

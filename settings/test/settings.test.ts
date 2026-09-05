@@ -28,7 +28,7 @@ describe("Workspace State", () => {
                 open: true,
                 layoutInitialized: true,
                 focusedColumnId: "branch:main",
-                columns: [{ kind: "branch", id: "branch:main", ref: "refs/heads/main", lastSeenObjectId: "1".repeat(40), width: 420 }],
+                columns: [{ kind: "branch", id: "branch:main", ref: "refs/heads/main", lastSeenObjectId: "1".repeat(40), width: 420, diffLayout: "split" }],
             }],
             activeRepositoryId: "repository-1",
         }, path)
@@ -36,7 +36,11 @@ describe("Workspace State", () => {
         value.unknown = true
         await writeFile(path, JSON.stringify(value))
 
-        expect((await readWorkspace(path)).workspace.repositories[0]).toMatchObject({ id: "repository-1", layoutInitialized: true, columns: [{ width: 420 }] })
+        expect((await readWorkspace(path)).workspace.repositories[0]).toMatchObject({
+            id: "repository-1",
+            layoutInitialized: true,
+            columns: [{ width: 420, diffLayout: "split" }],
+        })
     })
 
     test("skips malformed repository records", async () => {

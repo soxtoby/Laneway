@@ -23,6 +23,28 @@ function runGit(cwd: string, ...args: string[]) {
 }
 
 describe("open repositories", () => {
+    test("isolates inspection cancellation by request and cancels reads on close", async () => {
+        const path = await temporaryDirectory("workbench-inspection-requests-")
+        expect(runGit(path, "init", "--quiet").exitCode).toBe(0)
+        await writeFile(resolve(path, "file.txt"), "content\n")
+        const settingsPath = resolve(await temporaryDirectory("workbench-inspection-settings-"), "settings.json")
+        const repositories = new OpenRepositories(settingsPath)
+        const repository = await repositories.open(path)
+        const source = { kind: "working" as const, worktreePath: path }
+        const cancelled = repositories.readChanges(repository.id, "column-one", { source })
+        const independent = repositories.readChanges(repository.id, "column-two", { source })
+        repositories.cancelInspection(repository.id, "column-one")
+        await expect(cancelled).rejects.toMatchObject({ code: "git.cancelled" })
+        expect((await independent).files[0].path).toBe("file.txt")
+        const superseded = repositories.readChanges(repository.id, "same", { source })
+        const latest = repositories.readChanges(repository.id, "same", { source })
+        await expect(superseded).rejects.toMatchObject({ code: "git.cancelled" })
+        await latest
+        const closing = repositories.readFileDiff(repository.id, "diff", { source, path: "file.txt" })
+        repositories.close(repository.id)
+        await expect(closing).rejects.toMatchObject({ code: "git.cancelled" })
+    })
+
     test("deduplicates a repository and focuses the selected worktree", async () => {
         const repository = await temporaryDirectory("workbench-open-repository-")
         const linkedParent = await temporaryDirectory("workbench-open-repository-linked-")

@@ -1,4 +1,5 @@
 import type { Appearance, AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryProgress, EntryResult, GitSettingsState, RepositoryGraphSettings, Workspace } from "@git-workbench/shared"
+import type { ChangesRequest, ChangesResult, FileDiffRequest, FileDiffResult } from "@git-workbench/shared"
 
 interface EngineStatusReady {
     state: "ready"
@@ -24,6 +25,9 @@ interface AppState {
 declare global {
     interface Window {
         workbench: {
+            readChanges(repositoryId: string, requestId: string, request: ChangesRequest): Promise<ChangesResult>
+            readFileDiff(repositoryId: string, requestId: string, request: FileDiffRequest): Promise<FileDiffResult>
+            cancelInspection(repositoryId: string, requestId: string): Promise<boolean>
             getState(): Promise<AppState>
             openRepository(): Promise<EntryResult>
             chooseDirectory(defaultPath?: string): Promise<string | undefined>

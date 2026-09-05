@@ -1,9 +1,10 @@
-import type { BranchGraphReadOptions, BranchHistoryRequest } from "@git-workbench/shared"
+import type { BranchGraphReadOptions, BranchHistoryRequest, ChangesRequest, FileDiffRequest } from "@git-workbench/shared"
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
 import { constants } from "node:fs"
 import { access, lstat, mkdir, readdir, readFile, realpath } from "node:fs/promises"
 import { delimiter, isAbsolute, resolve } from "node:path"
 import { type BranchGraphReadCache, startBranchGraphRead, startBranchHistoryRead } from "./branch-graph"
+import { startChangesRead, startFileDiffRead } from "./changes"
 
 const minimumGitVersion = [2, 41, 0] as const
 const credentialPattern = /([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]+)(?::[^\s/@]*)?@/gi
@@ -71,6 +72,8 @@ export class GitError extends Error {
 }
 
 interface GitRunOptions {
+    readOnly?: boolean
+    onOutput?: (chunk: Buffer) => void
     installation: GitInstallation
     args: string[]
     cwd?: string
@@ -276,6 +279,22 @@ export class RepositoryGit {
     private branchGraphCache: BranchGraphReadCache | undefined
 
     constructor(readonly descriptor: RepositoryDescriptor) {}
+
+    startReadChanges(request: ChangesRequest) {
+        return startChangesRead(
+            this.descriptor,
+            (cwd, args, onOutput) => startGitProcess({ installation: this.descriptor.git, cwd, args, readOnly: true, onOutput }),
+            request,
+        )
+    }
+
+    startReadFileDiff(request: FileDiffRequest) {
+        return startFileDiffRead(
+            this.descriptor,
+            (cwd, args, onOutput) => startGitProcess({ installation: this.descriptor.git, cwd, args, readOnly: true, onOutput }),
+            request,
+        )
+    }
 
     async hashObject(value: string) {
         const objectId = await this.requireText(this.descriptor.selectedWorktree, ["hash-object", "-w", "--stdin"], value)
@@ -525,10 +544,14 @@ function startGitProcess(options: GitRunOptions) {
     let forceTimer: ReturnType<typeof setTimeout> | undefined
     let child: ChildProcessWithoutNullStreams
     try {
-        child = spawn(options.installation.path, options.args, {
+        child = spawn(options.installation.path, options.readOnly ? ["-c", "diff.autoRefreshIndex=false", ...options.args] : options.args, {
             cwd: options.cwd,
             detached: process.platform != "win32",
-            env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+            env: {
+                ...process.env,
+                GIT_TERMINAL_PROMPT: "0",
+                ...(options.readOnly ? { GIT_OPTIONAL_LOCKS: "0", GIT_NO_LAZY_FETCH: "1", GIT_LITERAL_PATHSPECS: "1" } : {}),
+            },
             stdio: ["pipe", "pipe", "pipe"],
             windowsHide: true,
         })
@@ -539,7 +562,7 @@ function startGitProcess(options: GitRunOptions) {
     const stdout: Buffer[] = []
     const stderr: Buffer[] = []
     let progressBuffer = ""
-    child.stdout.on("data", (chunk: Buffer) => stdout.push(Buffer.from(chunk)))
+    child.stdout.on("data", (chunk: Buffer) => options.onOutput ? options.onOutput(chunk) : stdout.push(Buffer.from(chunk)))
     child.stderr.on("data", (chunk: Buffer) => {
         stderr.push(Buffer.from(chunk))
         progressBuffer += chunk.toString()

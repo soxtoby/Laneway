@@ -1,4 +1,4 @@
-import type { EntryProgress, EntryResult } from "@git-workbench/shared"
+import type { BranchGraph, ChangedFile, EntryProgress, EntryResult, FileDiffPage, FileDiffResult, Workspace } from "@git-workbench/shared"
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { Window as HappyWindow } from "happy-dom"
 import type { createElement as createRemixElement, createRoot as createRemixRoot, VirtualRoot } from "remix/ui"
@@ -330,6 +330,222 @@ describe("Remix repository entry renderer", () => {
     })
 })
 
+describe("Working Changes inspection", () => {
+    test("reads patches lazily, respects literal selection, and restores only diff layout", async () => {
+        const scenario = inspectionScenario()
+        let reads = 0
+        const api = {
+            ...scenario.api,
+            readFileDiff: async (...args: Parameters<Window["workbench"]["readFileDiff"]>) => {
+                reads++
+                return scenario.api.readFileDiff(...args)
+            },
+        }
+        const { container, root, dispose } = render(api)
+        await flush(root)
+        expect(container.textContent).toContain("Working Changes")
+        expect(container.textContent).toContain("staged")
+        expect(reads).toBe(0)
+        click(container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
+        await flush(root)
+        expect(reads).toBe(1)
+        click(container.querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
+        await flush(root)
+        expect(container.querySelectorAll(".diff-line.selected")).toHaveLength(1)
+        expect(container.querySelector(".diff-line.addition.selected")).toBeNull()
+        click(button(container, "Staged"))
+        await flush(root)
+        expect(container.querySelector(".diff-line.selected")).toBeNull()
+        expect(container.querySelector("[aria-label='Select deletion line 1']")).toBeNull()
+        click(button(container, "Working Changes"))
+        await flush(root)
+        click(button(container, "Select hunk"))
+        await flush(root)
+        expect(container.querySelectorAll(".diff-line.selected")).toHaveLength(2)
+        click(button(container, "Side by side"))
+        await flush(root)
+        expect(scenario.saved().repositories[0].columns[0].diffLayout).toBe("split")
+        click(button(container, "Break out diff"))
+        await flush(root)
+        expect(container.querySelector(".branch-column")?.nextElementSibling?.classList.contains("inspection-breakout")).toBe(true)
+        click(button(container, "Focus diff"))
+        await flush(root)
+        expect(container.querySelector(".inspection-breakout.focused")).not.toBeNull()
+        click(container.querySelector<HTMLButtonElement>("[aria-label='Close diff column']")!)
+        await flush(root)
+        expect(container.querySelector(".inspection-breakout")).toBeNull()
+        expect(container.querySelector(".branch-column .diff-inspector")).not.toBeNull()
+        dispose()
+        const restarted = render(api)
+        await flush(restarted.root)
+        expect(restarted.container.querySelector(".diff-inspector")).toBeNull()
+        click(restarted.container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
+        await flush(restarted.root)
+        expect(restarted.container.querySelector(".diff-lines.split")).not.toBeNull()
+        expect(restarted.container.querySelector(".diff-line.selected")).toBeNull()
+        restarted.dispose()
+    })
+
+    test("rejects superseded reads and clears stale or collapsed-file selections", async () => {
+        const scenario = inspectionScenario()
+        let finish: (page: FileDiffResult) => void = () => {}
+        let first = true
+        let version = "one"
+        const api = {
+            ...scenario.api,
+            readFileDiff: async (...args: Parameters<Window["workbench"]["readFileDiff"]>) => {
+                if (first) {
+                    first = false
+                    return new Promise<FileDiffResult>(resolve => finish = resolve)
+                }
+                const result = await scenario.api.readFileDiff(...args)
+                return result.ok ? { ...result, page: { ...result.page, version } } : result
+            },
+        }
+        const { container, root, dispose } = render(api)
+        await flush(root)
+        click(container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
+        await flush(root)
+        click(container.querySelector<HTMLButtonElement>("[title='other.txt']")!)
+        await flush(root)
+        finish({ ok: true, page: scenario.page })
+        await flush(root)
+        expect(container.querySelector(".diff-toolbar strong")?.textContent).toBe("other.txt")
+        click(container.querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
+        await flush(root)
+        version = "two"
+        click(container.querySelector<HTMLButtonElement>("[aria-label='Refresh Working Changes']")!)
+        await flush(root)
+        expect(container.textContent).toContain("Change Selection cleared")
+        expect(container.querySelector(".diff-line.selected")).toBeNull()
+        click(container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
+        await flush(root)
+        click(container.querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
+        await flush(root)
+        const folder = container.querySelector<HTMLDetailsElement>(".file-tree details")!
+        folder.open = false
+        folder.dispatchEvent(new Event("toggle"))
+        await flush(root)
+        expect(container.querySelector(".diff-inspector")).toBeNull()
+        dispose()
+    })
+
+    test("expands pinned commit history and keeps large patches virtualized", async () => {
+        const scenario = inspectionScenario()
+        let historyReads = 0
+        const api = {
+            ...scenario.api,
+            readBranchHistory: async (...args: Parameters<Window["workbench"]["readBranchHistory"]>) => {
+                historyReads++
+                return scenario.api.readBranchHistory(...args)
+            },
+            readFileDiff: async (...args: Parameters<Window["workbench"]["readFileDiff"]>) => {
+                const result = await scenario.api.readFileDiff(...args)
+                return result.ok
+                    ? {
+                        ...result,
+                        page: {
+                            ...result.page,
+                            lines: Array.from({ length: 2000 }, (_, id) => ({ id, kind: "addition" as const, text: `line ${id}`, newLine: id + 1, hunk: 0 })),
+                        },
+                    }
+                    : result
+            },
+        }
+        const { container, root, dispose } = render(api)
+        await flush(root)
+        expect(historyReads).toBe(0)
+        click(container.querySelector<HTMLButtonElement>(".stack-heading")!)
+        await flush(root)
+        expect(historyReads).toBe(1)
+        click(container.querySelector<HTMLButtonElement>(".commit-heading")!)
+        await flush(root)
+        click(container.querySelector<HTMLButtonElement>(".inspect-commit [title='src/file.txt']")!)
+        await flush(root)
+        expect(container.querySelectorAll(".diff-line").length).toBeLessThanOrEqual(80)
+        expect(container.querySelector(".diff-views")).toBeNull()
+        click(container.querySelector<HTMLButtonElement>(".stack-heading")!)
+        await flush(root)
+        expect(container.querySelector(".diff-inspector")).toBeNull()
+        dispose()
+    })
+})
+
+function inspectionScenario() {
+    const repository = repositoryInfo("D:\\Source\\inspection")
+    const graph: BranchGraph = branchGraph(repository.id)
+    const branch = graph.branches[1]
+    branch.checkedOut = [{ path: repository.root, name: "inspection", head: branch.tip, main: true }]
+    let workspace: Workspace = {
+        ...openedWorkspace(repository),
+        repositories: [{
+            ...openedWorkspace(repository).repositories[0],
+            layoutInitialized: true,
+            columns: [{ kind: "branch", id: branch.id, ref: branch.preferredRef, lastSeenObjectId: branch.tip, width: 380, worktreePath: repository.root }],
+        }],
+    }
+    const files: ChangedFile[] = ["src/file.txt", "other.txt"].map(path => ({
+        path,
+        status: "modified",
+        staged: true,
+        unstaged: true,
+        untracked: false,
+        ignored: false,
+        conflicted: false,
+    }))
+    const page: FileDiffPage = {
+        source: { kind: "working", worktreePath: repository.root },
+        file: files[0],
+        view: "combined",
+        version: "one",
+        summary: [],
+        selectable: true,
+        lines: [{ id: 0, kind: "hunk", text: "@@ -1 +1 @@", hunk: 0 }, { id: 1, kind: "deletion", text: "old", oldLine: 1, hunk: 0 }, {
+            id: 2,
+            kind: "addition",
+            text: "new",
+            newLine: 1,
+            hunk: 0,
+        }],
+    }
+    const api = fakeWorkbench({
+        getState: async () => ({ ...appState(), workspace }),
+        updateWorkspace: async next => workspace = structuredClone(next),
+        readBranchGraph: async () => ({ ok: true, graph }),
+        readChanges: async (_id, _requestId, request) => ({
+            ok: true,
+            inventory: { source: request.source, files, version: "inventory", parents: request.source.kind == "commit" ? [graph.branches[0].tip] : [] },
+        }),
+        readFileDiff: async (_id, _requestId, request) => ({
+            ok: true,
+            page: {
+                ...page,
+                source: request.source,
+                file: files.find(file => file.path == request.path)!,
+                view: request.view ?? "combined",
+                selectable: !request.view || request.view == "combined",
+            },
+        }),
+        readBranchHistory: async () => ({
+            ok: true,
+            page: {
+                branchRef: branch.preferredRef,
+                tip: branch.tip,
+                baseTip: graph.branches[0].tip,
+                commits: [{
+                    objectId: branch.tip,
+                    parentIds: [graph.branches[0].tip],
+                    subject: "Inspect changes",
+                    authorName: "Test",
+                    authorEmail: "test@example.test",
+                    authoredAt: 1788566400,
+                }],
+            },
+        }),
+    })
+    return { api, page, saved: () => workspace }
+}
+
 function render(api: Window["workbench"]) {
     const container = document.createElement("div")
     document.body.append(container)
@@ -464,6 +680,9 @@ function branchGraph(repositoryId: string) {
 function fakeWorkbench(overrides: Partial<Window["workbench"]> = {}): Window["workbench"] {
     return {
         getState: async () => appState(),
+        readChanges: async () => ({ ok: false, error: { code: "git.command-failed", message: "Changes unavailable" } }),
+        readFileDiff: async () => ({ ok: false, error: { code: "git.command-failed", message: "Diff unavailable" } }),
+        cancelInspection: async () => false,
         openRepository: async () => ({ ok: false, error: { code: "git.cancelled", message: "Cancelled" } }),
         chooseDirectory: async defaultPath => defaultPath,
         suggestCloneDestination: async (_source, parent) => `${parent}\\project`,

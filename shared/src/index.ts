@@ -175,6 +175,7 @@ export interface RepositoryInfo {
 }
 
 export interface BranchWorkspaceColumn {
+    diffLayout?: DiffLayout
     kind: "branch"
     id: string
     ref: string
@@ -184,6 +185,7 @@ export interface BranchWorkspaceColumn {
 }
 
 export interface VirtualBranchWorkspaceColumn {
+    diffLayout?: DiffLayout
     kind: "virtual"
     id: string
     worktreePath: string
@@ -380,6 +382,7 @@ export interface BranchGraphReadOptions {
 }
 
 export interface BranchHistoryRequest {
+    requestId?: string
     branchRef: string
     tip: string
     baseTip: string
@@ -411,3 +414,92 @@ export type BranchGraphResult =
 export type BranchHistoryResult =
     | { ok: true; page: BranchHistoryPage }
     | { ok: false; error: EntryError }
+
+export type DiffLayout = "unified" | "split"
+export type DiffSource =
+    | { kind: "working"; worktreePath: string }
+    | { kind: "commit"; objectId: string; parentId?: string }
+
+export interface ChangedFile {
+    path: string
+    oldPath?: string
+    status: string
+    staged: boolean
+    unstaged: boolean
+    untracked: boolean
+    ignored: boolean
+    conflicted: boolean
+    submodule?: string
+    oldMode?: string
+    newMode?: string
+}
+
+export interface ChangesRequest {
+    source: DiffSource
+    includeIgnored?: boolean
+}
+
+export interface ChangesInventory {
+    source: DiffSource
+    version: string
+    files: ChangedFile[]
+    parents: string[]
+}
+
+export type DiffView = "combined" | "staged" | "unstaged" | "base" | "ours" | "theirs"
+
+export interface FileDiffRequest {
+    source: DiffSource
+    path: string
+    view?: DiffView
+    offset?: number
+    expectedVersion?: string
+}
+
+export interface DiffLine {
+    id: number
+    kind: "context" | "addition" | "deletion" | "hunk" | "notice"
+    text: string
+    oldLine?: number
+    newLine?: number
+    hunk: number
+}
+
+export interface FileDiffPage {
+    source: DiffSource
+    file: ChangedFile
+    view: DiffView
+    version: string
+    lines: DiffLine[]
+    nextOffset?: number
+    summary: string[]
+    selectable: boolean
+}
+
+export interface ChangeSelection {
+    source: DiffSource
+    path: string
+    version: string
+    lineIds: number[]
+    rename: boolean
+}
+
+export type ChangesResult = { ok: true; inventory: ChangesInventory } | { ok: false; error: EntryError }
+export type FileDiffResult = { ok: true; page: FileDiffPage } | { ok: false; error: EntryError }
+
+export const DiffSourceSchema = z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("working"), worktreePath: z.string().min(1) }),
+    z.object({
+        kind: z.literal("commit"),
+        objectId: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/),
+        parentId: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/).optional(),
+    }),
+])
+export const ChangesRequestSchema = z.object({ source: DiffSourceSchema, includeIgnored: z.boolean().optional() })
+export const FileDiffRequestSchema = z.object({
+    source: DiffSourceSchema,
+    path: z.string().min(1),
+    view: z.enum(["combined", "staged", "unstaged", "base", "ours", "theirs"]).optional(),
+    offset: z.number().int().nonnegative().optional(),
+    expectedVersion: z.string().optional(),
+})

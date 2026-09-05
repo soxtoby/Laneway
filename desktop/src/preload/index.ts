@@ -1,7 +1,11 @@
 import type { Appearance, AuthorIdentitySettings, BranchHistoryRequest, EntryProgress, RepositoryGraphSettings, Workspace } from "@git-workbench/shared"
+import type { ChangesRequest, FileDiffRequest } from "@git-workbench/shared"
 import { contextBridge, ipcRenderer } from "electron"
 
 contextBridge.exposeInMainWorld("workbench", {
+    readChanges: (repositoryId: string, requestId: string, request: ChangesRequest) => ipcRenderer.invoke("changes:read", repositoryId, requestId, request),
+    readFileDiff: (repositoryId: string, requestId: string, request: FileDiffRequest) => ipcRenderer.invoke("changes:diff", repositoryId, requestId, request),
+    cancelInspection: (repositoryId: string, requestId: string) => ipcRenderer.invoke("changes:cancel", repositoryId, requestId),
     getState: () => ipcRenderer.invoke("app:state"),
     openRepository: () => ipcRenderer.invoke("entry:open"),
     chooseDirectory: (defaultPath?: string) => ipcRenderer.invoke("entry:choose-directory", { defaultPath }),

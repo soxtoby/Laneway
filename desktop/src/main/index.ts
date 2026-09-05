@@ -1,4 +1,5 @@
 import { defaultWorkspacePath } from "@git-workbench/settings"
+import { ChangesRequestSchema, type ChangesResult, FileDiffRequestSchema, type FileDiffResult } from "@git-workbench/shared"
 import type { AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryResult, RepositoryGraphSettings, Workspace } from "@git-workbench/shared"
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron"
 import { resolve } from "node:path"
@@ -51,6 +52,31 @@ async function performEntry(action: () => Promise<Workspace>): Promise<EntryResu
 }
 
 function registerHandlers() {
+    ipcMain.handle("changes:read", async (_event, repositoryId: unknown, requestId: unknown, value: unknown): Promise<ChangesResult> => {
+        const request = ChangesRequestSchema.safeParse(value)
+        if (typeof repositoryId != "string" || typeof requestId != "string" || !request.success)
+            return { ok: false, error: { code: "git.command-failed", message: "Invalid changes request." } }
+        try {
+            return { ok: true, inventory: await repositories.readChanges(repositoryId, requestId, request.data) }
+        } catch (error) {
+            return { ok: false, error: entryError(error) }
+        }
+    })
+    ipcMain.handle("changes:diff", async (_event, repositoryId: unknown, requestId: unknown, value: unknown): Promise<FileDiffResult> => {
+        const request = FileDiffRequestSchema.safeParse(value)
+        if (typeof repositoryId != "string" || typeof requestId != "string" || !request.success)
+            return { ok: false, error: { code: "git.command-failed", message: "Invalid diff request." } }
+        try {
+            return { ok: true, page: await repositories.readFileDiff(repositoryId, requestId, request.data) }
+        } catch (error) {
+            return { ok: false, error: entryError(error) }
+        }
+    })
+    ipcMain.handle(
+        "changes:cancel",
+        (_event, repositoryId: unknown, requestId: unknown) =>
+            typeof repositoryId == "string" && typeof requestId == "string" && repositories.cancelInspection(repositoryId, requestId),
+    )
     ipcMain.handle("app:state", async () => ({
         workspace: workspace.snapshot(),
         settings: await repositories.gitSettings(),
@@ -252,6 +278,7 @@ function isBranchHistoryRequest(value: unknown): value is BranchHistoryRequest {
         return false
     const request = value as Partial<BranchHistoryRequest>
     return typeof request.branchRef == "string" && typeof request.tip == "string" && typeof request.baseTip == "string"
+        && (request.requestId == undefined || typeof request.requestId == "string")
         && (request.offset == undefined || Number.isSafeInteger(request.offset))
         && (request.limit == undefined || Number.isSafeInteger(request.limit))
 }
@@ -273,6 +300,7 @@ function isWorkspace(value: unknown): value is Workspace {
                 !column || typeof column.id != "string" || columnIds.has(column.id) || typeof column.lastSeenObjectId != "string"
                 || typeof column.width != "number"
                 || !Number.isFinite(column.width) || column.width < 310
+                || (column.diffLayout != undefined && column.diffLayout != "unified" && column.diffLayout != "split")
             ) {
                 return false
             }
