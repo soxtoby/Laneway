@@ -246,10 +246,7 @@ async function buildGraph(
 
     inferBases(branches, branches, topology)
     const exclusiveCommits = topology.exclusiveCommits(branches)
-    const [authoredCommits, verification] = await Promise.all([
-        readAuthoredCommits(runner, exclusiveCommits, authorIdentities),
-        verify(),
-    ])
+    const [authoredCommits, verification] = await Promise.all([readAuthoredCommits(runner, exclusiveCommits, authorIdentities), verify()])
     enrichBranches(topology, branches, authorIdentities, authoredCommits, summaries)
 
     const patterns = options.remotePatterns.map(globPattern)
@@ -760,15 +757,7 @@ async function readAuthoredCommits(runner: GraphRunner, commits: string[], ident
     const authorArguments = emails.flatMap(email => ["--author", `<${escapeRegularExpression(email)}>$`])
     const output = text(
         await runner.run(
-            [
-                "log",
-                "--stdin",
-                "--no-walk",
-                "--use-mailmap",
-                "--regexp-ignore-case",
-                "--format=%H",
-                ...authorArguments,
-            ],
+            ["log", "--stdin", "--no-walk", "--use-mailmap", "--regexp-ignore-case", "--format=%H", ...authorArguments],
             [0, 128],
             `${commits.join("\n")}\n`,
         ),

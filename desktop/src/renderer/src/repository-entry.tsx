@@ -1,7 +1,7 @@
 import type { EntryError, EntryProgress, EntryResult, Workspace } from "@git-workbench/shared"
-import { on, ref, type Handle, type RemixNode } from "remix/ui"
+import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 import { errorMessage, type NoticeState } from "./feedback"
-import { EntryOptions, type EntryActions } from "./workspace"
+import { type EntryActions, EntryOptions } from "./workspace"
 
 type Operation = "idle" | "cloning" | "initializing" | "cancelling"
 
@@ -269,26 +269,39 @@ export function createRepositoryEntry(options: RepositoryEntryOptions): Reposito
 
 function AddDialog(handle: Handle<EntryActions & { dialogRef(node: HTMLDialogElement): void; close(): void }>) {
     return () => (
-        <dialog class="add-dialog" aria-labelledby="add-heading" mix={[ref(handle.props.dialogRef)]}>
-            <header><h2 id="add-heading">Add repository</h2></header>
-            <EntryOptions busy={handle.props.busy} openRepository={handle.props.openRepository} openClone={handle.props.openClone} openInitialize={handle.props.openInitialize} />
-            <footer class="dialog-actions"><button class="text-button" type="button" mix={[on("click", handle.props.close)]}>Cancel</button></footer>
+        <dialog class="add-dialog" aria-labelledby="add-heading" mix={[addDialog, ref(handle.props.dialogRef)]}>
+            <header mix={addDialogHeader}>
+                <h2 id="add-heading" mix={addHeading}>
+                    Add repository
+                </h2>
+            </header>
+            <EntryOptions
+                busy={handle.props.busy}
+                openRepository={handle.props.openRepository}
+                openClone={handle.props.openClone}
+                openInitialize={handle.props.openInitialize}
+            />
+            <footer class="dialog-actions" mix={dialogActions}>
+                <button class="text-button" type="button" mix={[on("click", handle.props.close)]}>Cancel</button>
+            </footer>
         </dialog>
     )
 }
 
-function CloneDialog(handle: Handle<{
-    state: CloneState
-    operation: Operation
-    dialogRef(node: HTMLDialogElement): void
-    sourceRef(node: HTMLInputElement): void
-    errorRef(node: HTMLElement): void
-    setSource(value: string): void
-    setDestination(value: string): void
-    browse(): void
-    submit(): void
-    cancel(): void
-}>) {
+function CloneDialog(
+    handle: Handle<{
+        state: CloneState
+        operation: Operation
+        dialogRef(node: HTMLDialogElement): void
+        sourceRef(node: HTMLInputElement): void
+        errorRef(node: HTMLElement): void
+        setSource(value: string): void
+        setDestination(value: string): void
+        browse(): void
+        submit(): void
+        cancel(): void
+    }>,
+) {
     return () => {
         const busy = handle.props.operation == "cloning" || handle.props.operation == "cancelling"
         return (
@@ -304,22 +317,69 @@ function CloneDialog(handle: Handle<{
                     }),
                 ]}
             >
-                <form class="entry-form" mix={[on("submit", event => {
-                    event.preventDefault()
-                    handle.props.submit()
-                })]}>
-                    <header><h2 id="clone-heading">Clone repository</h2></header>
-                    <label for="clone-source">Git source</label>
-                    <input id="clone-source" name="source" autocomplete="off" spellcheck={false} placeholder="https://host/team/repository.git" required value={handle.props.state.source} disabled={busy} mix={[ref(handle.props.sourceRef), on("input", event => handle.props.setSource(event.currentTarget.value))]} />
-                    <label for="clone-destination">Destination</label>
-                    <div class="field-with-action">
-                        <input id="clone-destination" name="destination" autocomplete="off" spellcheck={false} required value={handle.props.state.destination} disabled={busy} mix={[on("input", event => handle.props.setDestination(event.currentTarget.value))]} />
-                        <button type="button" disabled={busy} mix={[on("click", handle.props.browse)]}>Browse</button>
+                <form
+                    class="entry-form"
+                    mix={[
+                        entryForm,
+                        on("submit", event => {
+                            event.preventDefault()
+                            handle.props.submit()
+                        }),
+                    ]}
+                >
+                    <header mix={entryFormHeader}>
+                        <h2 id="clone-heading" mix={cloneHeading}>
+                            Clone repository
+                        </h2>
+                    </header>
+                    <label for="clone-source" mix={entryFormLabel}>
+                        Git source
+                    </label>
+                    <input
+                        id="clone-source"
+                        name="source"
+                        autocomplete="off"
+                        spellcheck={false}
+                        placeholder="https://host/team/repository.git"
+                        required
+                        value={handle.props.state.source}
+                        disabled={busy}
+                        mix={[ref(handle.props.sourceRef), on("input", event => handle.props.setSource(event.currentTarget.value))]}
+                    />
+                    <label for="clone-destination" mix={entryFormLabel}>
+                        Destination
+                    </label>
+                    <div class="field-with-action" mix={fieldWithAction}>
+                        <input
+                            id="clone-destination"
+                            name="destination"
+                            autocomplete="off"
+                            spellcheck={false}
+                            required
+                            value={handle.props.state.destination}
+                            disabled={busy}
+                            mix={[cloneDestination, on("input", event => handle.props.setDestination(event.currentTarget.value))]}
+                        />
+                        <button type="button" disabled={busy} mix={[fieldWithActionButton, on("click", handle.props.browse)]}>
+                            Browse
+                        </button>
                     </div>
-                    {handle.props.state.progress && <div class="progress-block"><span></span><p>{handle.props.state.progress}</p></div>}
-                    <div class="form-error" role="alert" tabIndex={-1} hidden={!handle.props.state.error} mix={[ref(handle.props.errorRef)]}>{handle.props.state.error ? entryErrorMessage(handle.props.state.error) : ""}</div>
-                    <footer class="dialog-actions">
-                        <button class="text-button" type="button" mix={[on("click", handle.props.cancel)]}>{busy ? (handle.props.operation == "cancelling" ? "Stopping…" : "Cancel clone") : "Cancel"}</button>
+                    {handle.props.state.progress && (
+                        <div class="progress-block" mix={progressBlock}>
+                            <span mix={progressBlockSpan}>
+                            </span>
+                            <p mix={progressBlockP}>
+                                {handle.props.state.progress}
+                            </p>
+                        </div>
+                    )}
+                    <div class="form-error" role="alert" tabIndex={-1} hidden={!handle.props.state.error} mix={[formError, ref(handle.props.errorRef)]}>
+                        {handle.props.state.error ? entryErrorMessage(handle.props.state.error) : ""}
+                    </div>
+                    <footer class="dialog-actions" mix={cloneDialogDialogActions}>
+                        <button class="text-button" type="button" mix={[on("click", handle.props.cancel)]}>
+                            {busy ? (handle.props.operation == "cancelling" ? "Stopping…" : "Cancel clone") : "Cancel"}
+                        </button>
                         <button class="primary-button" type="submit" disabled={busy}>Clone and open</button>
                     </footer>
                 </form>
@@ -328,40 +388,87 @@ function CloneDialog(handle: Handle<{
     }
 }
 
-function InitDialog(handle: Handle<{
-    state: InitState
-    operation: Operation
-    dialogRef(node: HTMLDialogElement): void
-    pathRef(node: HTMLInputElement): void
-    errorRef(node: HTMLElement): void
-    setPath(value: string): void
-    setBranch(value: string): void
-    browse(): void
-    submit(): void
-    close(): void
-}>) {
+function InitDialog(
+    handle: Handle<{
+        state: InitState
+        operation: Operation
+        dialogRef(node: HTMLDialogElement): void
+        pathRef(node: HTMLInputElement): void
+        errorRef(node: HTMLElement): void
+        setPath(value: string): void
+        setBranch(value: string): void
+        browse(): void
+        submit(): void
+        close(): void
+    }>,
+) {
     return () => {
         const busy = handle.props.operation == "initializing"
         return (
-            <dialog aria-labelledby="init-heading" mix={[ref(handle.props.dialogRef), on("cancel", event => {
-                if (busy)
-                    event.preventDefault()
-            })]}>
-                <form class="entry-form" mix={[on("submit", event => {
-                    event.preventDefault()
-                    handle.props.submit()
-                })]}>
-                    <header><h2 id="init-heading">Initialize repository</h2></header>
-                    <label for="init-path">Directory</label>
-                    <div class="field-with-action">
-                        <input id="init-path" name="path" autocomplete="off" spellcheck={false} required value={handle.props.state.path} disabled={busy} mix={[ref(handle.props.pathRef), on("input", event => handle.props.setPath(event.currentTarget.value))]} />
-                        <button type="button" disabled={busy} mix={[on("click", handle.props.browse)]}>Browse</button>
+            <dialog
+                aria-labelledby="init-heading"
+                mix={[
+                    ref(handle.props.dialogRef),
+                    on("cancel", event => {
+                        if (busy)
+                            event.preventDefault()
+                    }),
+                ]}
+            >
+                <form
+                    class="entry-form"
+                    mix={[
+                        entryForm,
+                        on("submit", event => {
+                            event.preventDefault()
+                            handle.props.submit()
+                        }),
+                    ]}
+                >
+                    <header mix={entryFormHeader}>
+                        <h2 id="init-heading" mix={initHeading}>
+                            Initialize repository
+                        </h2>
+                    </header>
+                    <label for="init-path" mix={entryFormLabel}>
+                        Directory
+                    </label>
+                    <div class="field-with-action" mix={fieldWithAction}>
+                        <input
+                            id="init-path"
+                            name="path"
+                            autocomplete="off"
+                            spellcheck={false}
+                            required
+                            value={handle.props.state.path}
+                            disabled={busy}
+                            mix={[initPath, ref(handle.props.pathRef), on("input", event => handle.props.setPath(event.currentTarget.value))]}
+                        />
+                        <button type="button" disabled={busy} mix={[fieldWithActionButton, on("click", handle.props.browse)]}>
+                            Browse
+                        </button>
                     </div>
-                    <label for="init-branch">Initial branch <span>optional</span></label>
-                    <input id="init-branch" name="branch" autocomplete="off" spellcheck={false} placeholder="Use system Git default" value={handle.props.state.branch} disabled={busy} mix={[on("input", event => handle.props.setBranch(event.currentTarget.value))]} />
+                    <label for="init-branch" mix={entryFormLabel}>
+                        Initial branch{" "}
+                        <span mix={entryFormSpan}>
+                            optional
+                        </span>
+                    </label>
+                    <input
+                        id="init-branch"
+                        name="branch"
+                        autocomplete="off"
+                        spellcheck={false}
+                        placeholder="Use system Git default"
+                        value={handle.props.state.branch}
+                        disabled={busy}
+                        mix={[on("input", event => handle.props.setBranch(event.currentTarget.value))]}
+                    />
                     <p class="field-note">Existing files stay untouched. Git creates only its repository data.</p>
-                    <div class="form-error" role="alert" tabIndex={-1} hidden={!handle.props.state.error} mix={[ref(handle.props.errorRef)]}>{handle.props.state.error ? entryErrorMessage(handle.props.state.error) : ""}</div>
-                    <footer class="dialog-actions">
+                    <div class="form-error" role="alert" tabIndex={-1} hidden={!handle.props.state.error} mix={[formError, ref(handle.props.errorRef)]}>
+                        {handle.props.state.error ? entryErrorMessage(handle.props.state.error) : ""}
+                    </div>
+                    <footer class="dialog-actions" mix={cloneDialogDialogActions}>
                         <button class="text-button" type="button" disabled={busy} mix={[on("click", handle.props.close)]}>Cancel</button>
                         <button class="primary-button" type="submit" disabled={busy}>Initialize and open</button>
                     </footer>
@@ -378,3 +485,145 @@ function emptyClone(): CloneState {
 function entryErrorMessage(error: EntryError) {
     return error.destination ? `${error.message}\nPartial clone preserved at ${error.destination}` : error.message
 }
+
+const addDialog = css({
+    width: "min(420px, calc(100vw - 48px))",
+})
+
+const addDialogHeader = css({
+    padding: "10px 14px",
+    borderBottom: "1px solid var(--line)",
+    background: "var(--panel-deep)",
+})
+
+const addHeading = css({
+    margin: "0",
+    fontSize: "14px",
+    fontWeight: "600",
+})
+
+const dialogActions = css({
+    marginTop: "0",
+})
+
+const entryForm = css({
+    padding: "0 14px",
+})
+
+const entryFormHeader = css({
+    padding: "10px 14px",
+    borderBottom: "1px solid var(--line)",
+    background: "var(--panel-deep)",
+    marginLeft: "-14px",
+    marginRight: "-14px",
+})
+
+const cloneHeading = css({
+    margin: "0",
+    fontSize: "14px",
+    fontWeight: "600",
+})
+
+const entryFormLabel = css({
+    display: "block",
+    margin: "14px 0 5px",
+})
+
+const fieldWithAction = css({
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) auto",
+})
+
+const cloneDestination = css({
+    borderRadius: "4px 0 0 4px",
+})
+
+const fieldWithActionButton = css({
+    padding: "0 11px",
+    color: "var(--text)",
+    border: "1px solid var(--line-strong)",
+    borderLeft: "0",
+    borderRadius: "0 4px 4px 0",
+    background: "var(--control)",
+    fontSize: "12px",
+    "&:hover:not(:disabled)": {
+        background: "var(--control-hover)",
+    },
+})
+
+const progressBlock = css({
+    position: "relative",
+    marginTop: "16px",
+    padding: "10px 12px 10px 30px",
+    overflow: "hidden",
+    border: "1px solid var(--line)",
+    borderRadius: "4px",
+    background: "var(--canvas)",
+    "&::before": {
+        position: "absolute",
+        top: "14px",
+        left: "13px",
+        width: "6px",
+        height: "6px",
+        content: '""',
+        borderRadius: "50%",
+        background: "var(--accent)",
+    },
+})
+
+const progressBlockSpan = css({
+    position: "absolute",
+    top: "0",
+    left: "0",
+    width: "26%",
+    height: "2px",
+    background: "var(--accent)",
+    animation: "progress-sweep 1.3s ease-in-out infinite alternate",
+    "@media (forced-colors: active)": {
+        background: "Highlight",
+    },
+})
+
+const progressBlockP = css({
+    margin: "0",
+    overflow: "hidden",
+    fontFamily: "var(--mono)",
+    fontSize: "12px",
+    lineHeight: "1.35",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+})
+
+const formError = css({
+    marginTop: "14px",
+    padding: "10px 12px",
+    color: "var(--danger)",
+    border: "1px solid var(--danger-edge)",
+    borderRadius: "4px",
+    background: "var(--danger-wash)",
+    fontSize: "12px",
+    lineHeight: "1.5",
+    "&[hidden]": {
+        display: "none",
+    },
+})
+
+const cloneDialogDialogActions = css({
+    marginLeft: "-14px",
+    marginRight: "-14px",
+})
+
+const initHeading = css({
+    margin: "0",
+    fontSize: "14px",
+    fontWeight: "600",
+})
+
+const initPath = css({
+    borderRadius: "4px 0 0 4px",
+})
+
+const entryFormSpan = css({
+    color: "var(--faint)",
+    fontWeight: "400",
+})

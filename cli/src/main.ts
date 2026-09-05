@@ -252,14 +252,7 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
             && process.env.WORKBENCH_ENABLE_TEST_COMMANDS == "1"
         ) {
             const phase = commandArguments[index + 1]
-            const phases: JournalPhase[] = [
-                "intent",
-                "recovery-retained",
-                "preconditions-verified",
-                "refs-committed",
-                "history-committed",
-                "finalized",
-            ]
+            const phases: JournalPhase[] = ["intent", "recovery-retained", "preconditions-verified", "refs-committed", "history-committed", "finalized"]
             if (!phase || !phases.includes(phase as JournalPhase))
                 return invalidOperationArgument(command, json, `Invalid journal phase "${phase ?? ""}".`, "--crash-after")
             crashAfter = phase as JournalPhase

@@ -1,6 +1,6 @@
 import type { BranchGraph, BranchGraphBranchNode, BranchGraphVirtualBranch, BranchHistoryPage, ChangedFile, ChangeSelection, ChangesInventory, DiffLayout, DiffLine, DiffSource, DiffView, FileDiffPage } from "@git-workbench/shared"
-import { type Handle, on, ref, type RemixNode } from "remix/ui"
-import "./inspection.css"
+import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
+import * as accordion from "remix/ui/accordion/primitives"
 
 type Column = BranchGraphBranchNode | BranchGraphVirtualBranch
 interface Options {
@@ -373,15 +373,24 @@ export function createInspection(options: Options) {
         const all = files.inventory?.files ?? []
         const visible = all.filter(file => !file.ignored && matchesFilter(state, file))
         return (
-            <section class="change-file-list" aria-label={group == "working" ? "Working Changes files" : "Commit files"}>
+            <section class="change-file-list" aria-label={group == "working" ? "Working Changes files" : "Commit files"} mix={changeFileList}>
                 {files.error && (
-                    <p role="alert">
-                        {files.error} <button type="button" mix={[on("click", () => readFiles(state, group, files.source))]}>Retry</button>
+                    <p role="alert" mix={changeFileListP}>
+                        {files.error}{" "}
+                        <button type="button" mix={[changeFileListButton, on("click", () => readFiles(state, group, files.source))]}>
+                            Retry
+                        </button>
                     </p>
                 )}
-                {files.loading && <p class="inspection-muted" role="status">Reading files…</p>}
+                {files.loading && (
+                    <p class="inspection-muted" role="status" mix={inspectionMuted}>
+                        Reading files…
+                    </p>
+                )}
                 {files.inventory && !all.some(file => !file.ignored) && (
-                    <p class="inspection-muted">{group == "working" ? "No Working Changes" : "No changes against this parent"}</p>
+                    <p class="inspection-muted" mix={inspectionMuted}>
+                        {group == "working" ? "No Working Changes" : "No changes against this parent"}
+                    </p>
                 )}
                 <FileTree
                     files={visible}
@@ -405,7 +414,11 @@ export function createInspection(options: Options) {
                 {group == "working" && state.showIgnored && (
                     <details>
                         <summary>Ignored files · {all.filter(file => file.ignored).length}</summary>
-                        {all.filter(file => file.ignored).map(file => <div class="inspection-muted">{file.path}</div>)}
+                        {all.filter(file => file.ignored).map(file => (
+                            <div class="inspection-muted" mix={inspectionMuted}>
+                                {file.path}
+                            </div>
+                        ))}
                     </details>
                 )}
             </section>
@@ -414,35 +427,45 @@ export function createInspection(options: Options) {
     function renderDiff(state: ColumnState): RemixNode {
         const page = state.diff
         const selected = state.selected
-        if (!selected)
-            return <p class="inspection-muted">Choose a file to inspect its changes.</p>
+        if (!selected) {
+            return (
+                <p class="inspection-muted" mix={inspectionMuted}>
+                    Choose a file to inspect its changes.
+                </p>
+            )
+        }
         const layout = options.layout(state.repositoryId, state.id)
         return (
-            <section class="diff-inspector" aria-label={`Diff for ${selected.path}`}>
-                <header class="diff-toolbar">
-                    <strong title={selected.path}>{selected.path}</strong>
-                    <div>
+            <section class="diff-inspector" aria-label={`Diff for ${selected.path}`} mix={diffInspector}>
+                <header class="diff-toolbar" mix={diffToolbar}>
+                    <strong title={selected.path} mix={diffToolbarStrong}>
+                        {selected.path}
+                    </strong>
+                    <div mix={diffToolbarDiv}>
                         <button
                             type="button"
                             aria-pressed={layout == "unified"}
-                            mix={[on("click", () => options.saveLayout(state.repositoryId, state.id, "unified"))]}
+                            mix={[diffToolbarButton, on("click", () => options.saveLayout(state.repositoryId, state.id, "unified"))]}
                         >
                             Unified
                         </button>
                         <button
                             type="button"
                             aria-pressed={layout == "split"}
-                            mix={[on("click", () => options.saveLayout(state.repositoryId, state.id, "split"))]}
+                            mix={[diffToolbarButton, on("click", () => options.saveLayout(state.repositoryId, state.id, "split"))]}
                         >
                             Side by side
                         </button>
                         {!state.breakout && (
                             <button
                                 type="button"
-                                mix={[on("click", () => {
-                                    state.breakout = true
-                                    update()
-                                })]}
+                                mix={[
+                                    diffToolbarButton,
+                                    on("click", () => {
+                                        state.breakout = true
+                                        update()
+                                    }),
+                                ]}
                             >
                                 Break out diff
                             </button>
@@ -450,19 +473,22 @@ export function createInspection(options: Options) {
                         <button
                             type="button"
                             aria-pressed={state.focused}
-                            mix={[on("click", () => {
-                                state.focused = !state.focused
-                                if (state.focused)
-                                    state.breakout = true
-                                update()
-                            })]}
+                            mix={[
+                                diffToolbarButton,
+                                on("click", () => {
+                                    state.focused = !state.focused
+                                    if (state.focused)
+                                        state.breakout = true
+                                    update()
+                                }),
+                            ]}
                         >
                             Focus diff
                         </button>
                     </div>
                 </header>
                 {page?.source.kind == "working" && (
-                    <div class="diff-views" role="group" aria-label="Comparison">
+                    <div class="diff-views" role="group" aria-label="Comparison" mix={diffViews}>
                         {([
                             "combined",
                             ...(page.file.staged ? ["staged", "unstaged"] : []),
@@ -471,51 +497,72 @@ export function createInspection(options: Options) {
                             <button
                                 type="button"
                                 aria-pressed={selected.view == view}
-                                mix={[on("click", () => changeView(state, view))]}
+                                mix={[diffViewsButton, on("click", () => changeView(state, view))]}
                             >
                                 {view == "combined" ? "Working Changes" : view[0].toUpperCase() + view.slice(1)}
                             </button>
                         ))}
                     </div>
                 )}
-                {state.notice && <p class="inspection-notice" role="status">{state.notice}</p>}
+                {state.notice && (
+                    <p class="inspection-notice" role="status" mix={inspectionNotice}>
+                        {state.notice}
+                    </p>
+                )}
                 {state.diffError && (
-                    <p role="alert">
-                        {state.diffError} <button type="button" mix={[on("click", () => readDiff(state))]}>Retry diff</button>
+                    <p role="alert" mix={diffInspectorP}>
+                        {state.diffError}{" "}
+                        <button type="button" mix={[diffInspectorButton, on("click", () => readDiff(state))]}>
+                            Retry diff
+                        </button>
                     </p>
                 )}
                 {page && (
                     <>
-                        {page.summary.map(text => <p class="diff-summary">{text}</p>)}
+                        {page.summary.map(text => (
+                            <p class="diff-summary" mix={diffSummary}>
+                                {text}
+                            </p>
+                        ))}
                         {page.file.oldPath && page.view == "combined" && (
-                            <label class="rename-selection">
+                            <label class="rename-selection" mix={renameSelection}>
                                 <input
                                     type="checkbox"
                                     checked={state.selection?.rename ?? false}
-                                    mix={[on("change", event => {
-                                        state.selection = {
-                                            source: page.source,
-                                            path: page.file.path,
-                                            version: page.version,
-                                            lineIds: state.selection?.lineIds ?? [],
-                                            rename: event.currentTarget.checked,
-                                        }
-                                        update()
-                                    })]}
+                                    mix={[
+                                        diffInspectorInput,
+                                        on("change", event => {
+                                            state.selection = {
+                                                source: page.source,
+                                                path: page.file.path,
+                                                version: page.version,
+                                                lineIds: state.selection?.lineIds ?? [],
+                                                rename: event.currentTarget.checked,
+                                            }
+                                            update()
+                                        }),
+                                    ]}
                                 />Select rename separately
                             </label>
                         )}
-                        {page.lines.length == 0 && page.summary.length == 0 && <p class="inspection-muted">No net content difference in this view.</p>}
+                        {page.lines.length == 0 && page.summary.length == 0 && (
+                            <p class="inspection-muted" mix={inspectionMuted}>
+                                No net content difference in this view.
+                            </p>
+                        )}
                         <DiffLines page={page} layout={layout} selected={state.selection?.lineIds ?? []} select={ids => selectLines(state, ids)} />
                         {state.selection && (
-                            <div class="selection-summary" role="status">
+                            <div class="selection-summary" role="status" mix={selectionSummary}>
                                 {state.selection.lineIds.length} lines selected{state.selection.rename ? " · rename selected" : ""}
                                 <button
                                     type="button"
-                                    mix={[on("click", () => {
-                                        state.selection = undefined
-                                        update()
-                                    })]}
+                                    mix={[
+                                        selectionSummaryButton,
+                                        on("click", () => {
+                                            state.selection = undefined
+                                            update()
+                                        }),
+                                    ]}
                                 >
                                     Clear selection
                                 </button>
@@ -526,7 +573,7 @@ export function createInspection(options: Options) {
                                 type="button"
                                 class="load-diff"
                                 disabled={state.diffLoading}
-                                mix={[on("click", () => readDiff(state, true))]}
+                                mix={[loadDiff, on("click", () => readDiff(state, true))]}
                             >
                                 Load more
                             </button>
@@ -534,17 +581,20 @@ export function createInspection(options: Options) {
                     </>
                 )}
                 {state.diffLoading && (
-                    <p class="inspection-muted" role="status">
+                    <p class="inspection-muted" role="status" mix={inspectionMuted}>
                         Reading diff…{" "}
                         <button
                             type="button"
-                            mix={[on("click", () => {
-                                state.diffGeneration++
-                                state.diffLoading = false
-                                state.diffError = "Diff read cancelled."
-                                cancel(state, requestId(state, "diff"))
-                                update()
-                            })]}
+                            mix={[
+                                inspectionMutedButton,
+                                on("click", () => {
+                                    state.diffGeneration++
+                                    state.diffLoading = false
+                                    state.diffError = "Diff read cancelled."
+                                    cancel(state, requestId(state, "diff"))
+                                    update()
+                                }),
+                            ]}
                         >
                             Cancel
                         </button>
@@ -596,24 +646,30 @@ export function createInspection(options: Options) {
                     : undefined
             }
             return (
-                <div class={`column-inspection ${state.focused ? "focused" : ""}`}>
-                    <div class="inspection-filters">
+                <div class={`column-inspection ${state.focused ? "focused" : ""}`} mix={columnInspection}>
+                    <div class="inspection-filters" mix={inspectionFilters}>
                         <input
                             aria-label="Filter changed files"
                             placeholder="Filter files…"
                             value={state.filter}
-                            mix={[on("input", event => {
-                                state.filter = event.currentTarget.value
-                                filterChanged(state)
-                            })]}
+                            mix={[
+                                filterChangedFilesInput,
+                                on("input", event => {
+                                    state.filter = event.currentTarget.value
+                                    filterChanged(state)
+                                }),
+                            ]}
                         />
                         <select
                             aria-label="Filter change status"
                             value={state.status}
-                            mix={[on("change", event => {
-                                state.status = event.currentTarget.value
-                                filterChanged(state)
-                            })]}
+                            mix={[
+                                filterChangeStatusSelect,
+                                on("change", event => {
+                                    state.status = event.currentTarget.value
+                                    filterChanged(state)
+                                }),
+                            ]}
                         >
                             {["all", "added", "modified", "deleted", "renamed", "copied", "type changed", "conflicted"].map(status => (
                                 <option value={status}>{status}</option>
@@ -622,68 +678,74 @@ export function createInspection(options: Options) {
                     </div>
                     {state.worktreePath && (
                         <section class="working-changes">
-                            <header>
-                                <h3>Working Changes</h3>
+                            <header mix={workingChangesHeader}>
+                                <h3 mix={workingChangesH3}>
+                                    Working Changes
+                                </h3>
                                 <button
                                     type="button"
                                     aria-label="Refresh Working Changes"
-                                    mix={[on("click", () => readFiles(state, "working", { kind: "working", worktreePath: state.worktreePath! }, true))]}
+                                    mix={[
+                                        refreshWorkingChangesButton,
+                                        on("click", () => readFiles(state, "working", { kind: "working", worktreePath: state.worktreePath! }, true)),
+                                    ]}
                                 >
                                     ↻
                                 </button>
                             </header>
-                            <label class="ignored-toggle">
+                            <label class="ignored-toggle" mix={ignoredToggle}>
                                 <input
                                     type="checkbox"
                                     checked={state.showIgnored}
-                                    mix={[on("change", event => {
-                                        state.showIgnored = event.currentTarget.checked
-                                        void readFiles(state, "working", { kind: "working", worktreePath: state.worktreePath! })
-                                    })]}
+                                    mix={[
+                                        workingChangesInput,
+                                        on("change", event => {
+                                            state.showIgnored = event.currentTarget.checked
+                                            void readFiles(state, "working", { kind: "working", worktreePath: state.worktreePath! })
+                                        }),
+                                    ]}
                                 />Show ignored
                             </label>
                             {fileList(state, "working", state.files.get("working"))}
                         </section>
                     )}
                     {!state.breakout && state.selected && renderDiff(state)}
-                    <div class="stack-inspection">
-                        {stack.map(branch => {
-                            const current = state.history.get(branch.id)
-                            return (
-                                <section class="stack-branch">
-                                    <button
-                                        class="stack-heading"
-                                        type="button"
-                                        aria-expanded={current?.open ?? false}
-                                        disabled={branch.base.status != "known"}
-                                        mix={[on("click", () => toggleHistory(state, branch))]}
-                                    >
-                                        <span>{current?.open ? "▾" : "▸"} {branch.name}</span>
-                                        <small>{branch.base.status == "known" ? "Unique commits" : "Base unresolved"}</small>
-                                    </button>
-                                    {current?.open && (
-                                        <div>
-                                            {current.loading && <p class="inspection-muted">Reading commits…</p>}
-                                            {current.error && (
-                                                <p role="alert">
-                                                    {current.error}
-                                                    <button
-                                                        type="button"
-                                                        mix={[on("click", () => history(state, branch))]}
-                                                    >
-                                                        Retry
-                                                    </button>
-                                                </p>
-                                            )}
-                                            {current.page?.commits.map(commit => {
-                                                const files = state.files.get(commit.objectId)
-                                                return (
-                                                    <div class="inspect-commit">
-                                                        <button
-                                                            class="commit-heading"
-                                                            type="button"
-                                                            aria-expanded={files?.open ?? false}
-                                                            mix={[on("click", () => {
+                    <accordion.Context
+                        type="multiple"
+                        value={stack.filter(branch => state.history.get(branch.id)?.open).map(branch => branch.id)}
+                        onValueChange={values => {
+                            for (const branch of stack) {
+                                if (values.includes(branch.id) != (state.history.get(branch.id)?.open ?? false))
+                                    toggleHistory(state, branch)
+                            }
+                        }}
+                    >
+                        <div class="stack-inspection" mix={accordion.root()}>
+                            {stack.map(branch => {
+                                const current = state.history.get(branch.id)
+                                return (
+                                    <accordion.ItemContext key={branch.id} value={branch.id} disabled={branch.base.status != "known"}>
+                                        <section class="stack-branch" mix={[stackBranch, accordion.item()]}>
+                                            <h3 class="disclosure-heading" mix={disclosureHeading}>
+                                                <button class="stack-heading" type="button" mix={[stackHeading, accordion.trigger()]}>
+                                                    <span>{current?.open ? "▾" : "▸"} {branch.name}</span>
+                                                    <small mix={stackHeadingSmall}>
+                                                        {branch.base.status == "known" ? "Unique commits" : "Base unresolved"}
+                                                    </small>
+                                                </button>
+                                            </h3>
+                                            <div hidden={!current?.open} mix={accordion.content()}>
+                                                {current?.open && (
+                                                    <accordion.Context
+                                                        type="multiple"
+                                                        value={(current.page?.commits ?? []).filter(commit => state.files.get(commit.objectId)?.open).map(
+                                                            commit => commit.objectId,
+                                                        )}
+                                                        onValueChange={values => {
+                                                            for (const commit of current.page?.commits ?? []) {
+                                                                const files = state.files.get(commit.objectId)
+                                                                if (values.includes(commit.objectId) == (files?.open ?? false))
+                                                                    continue
                                                                 if (files) {
                                                                     files.open = !files.open
                                                                     if (!files.open && state.selected?.group == commit.objectId)
@@ -692,64 +754,110 @@ export function createInspection(options: Options) {
                                                                 } else {
                                                                     void readFiles(state, commit.objectId, { kind: "commit", objectId: commit.objectId })
                                                                 }
-                                                            })]}
-                                                        >
-                                                            <code>{commit.objectId.slice(0, 8)}</code>
-                                                            <span>{commit.subject}</span>
-                                                        </button>
-                                                        {files?.open && (
-                                                            <>
-                                                                {commit.parentIds.length > 1 && (
-                                                                    <label class="merge-parent">
-                                                                        Compare parent<select
-                                                                            aria-label={`Parent for ${commit.subject}`}
-                                                                            value={files.inventory?.source.kind == "commit"
-                                                                                ? files.inventory.source.parentId
-                                                                                : commit.parentIds[0]}
-                                                                            mix={[on("change", event => {
-                                                                                clearDiff(state)
-                                                                                void readFiles(state, commit.objectId, {
-                                                                                    kind: "commit",
-                                                                                    objectId: commit.objectId,
-                                                                                    parentId: event.currentTarget.value,
-                                                                                })
-                                                                            })]}
-                                                                        >
-                                                                            {commit.parentIds.map((parent, index) => (
-                                                                                <option value={parent}>Parent {index + 1} · {parent.slice(0, 8)}</option>
-                                                                            ))}
-                                                                        </select>
-                                                                    </label>
-                                                                )}
-                                                                {fileList(state, commit.objectId, files)}
-                                                            </>
-                                                        )}
-                                                    </div>
-                                                )
-                                            })}
-                                            {current.page?.nextOffset != undefined && (
-                                                <button
-                                                    type="button"
-                                                    disabled={current.loading}
-                                                    mix={[on("click", () => history(state, branch, true))]}
-                                                >
-                                                    More commits
-                                                </button>
-                                            )}
-                                        </div>
-                                    )}
-                                </section>
-                            )
-                        })}
-                    </div>
+                                                            }
+                                                        }}
+                                                    >
+                                                        <div mix={accordion.root()}>
+                                                            {current.loading && (
+                                                                <p class="inspection-muted" mix={inspectionMuted}>
+                                                                    Reading commits…
+                                                                </p>
+                                                            )}
+                                                            {current.error && (
+                                                                <p role="alert">
+                                                                    {current.error}
+                                                                    <button type="button" mix={[stackBranchButton, on("click", () => history(state, branch))]}>
+                                                                        Retry
+                                                                    </button>
+                                                                </p>
+                                                            )}
+                                                            {current.page?.commits.map(commit => {
+                                                                const files = state.files.get(commit.objectId)
+                                                                return (
+                                                                    <accordion.ItemContext key={commit.objectId} value={commit.objectId}>
+                                                                        <div class="inspect-commit" mix={accordion.item()}>
+                                                                            <h4 class="disclosure-heading" mix={disclosureHeading}>
+                                                                                <button
+                                                                                    class="commit-heading"
+                                                                                    type="button"
+                                                                                    mix={[commitHeading, accordion.trigger()]}
+                                                                                >
+                                                                                    <code mix={commitHeadingCode}>
+                                                                                        {commit.objectId.slice(0, 8)}
+                                                                                    </code>
+                                                                                    <span mix={commitHeadingSpan}>
+                                                                                        {commit.subject}
+                                                                                    </span>
+                                                                                </button>
+                                                                            </h4>
+                                                                            <div hidden={!files?.open} mix={accordion.content()}>
+                                                                                {files?.open && (
+                                                                                    <>
+                                                                                        {commit.parentIds.length > 1 && (
+                                                                                            <label class="merge-parent" mix={mergeParent}>
+                                                                                                Compare parent<select
+                                                                                                    aria-label={`Parent for ${commit.subject}`}
+                                                                                                    value={files.inventory?.source.kind == "commit"
+                                                                                                        ? files.inventory.source.parentId
+                                                                                                        : commit.parentIds[0]}
+                                                                                                    mix={[
+                                                                                                        parentForSelect,
+                                                                                                        on("change", event => {
+                                                                                                            clearDiff(state)
+                                                                                                            void readFiles(state, commit.objectId, {
+                                                                                                                kind: "commit",
+                                                                                                                objectId: commit.objectId,
+                                                                                                                parentId: event.currentTarget.value,
+                                                                                                            })
+                                                                                                        }),
+                                                                                                    ]}
+                                                                                                >
+                                                                                                    {commit.parentIds.map((parent, index) => (
+                                                                                                        <option value={parent}>
+                                                                                                            Parent {index + 1} · {parent.slice(0, 8)}
+                                                                                                        </option>
+                                                                                                    ))}
+                                                                                                </select>
+                                                                                            </label>
+                                                                                        )}
+                                                                                        {fileList(state, commit.objectId, files)}
+                                                                                    </>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    </accordion.ItemContext>
+                                                                )
+                                                            })}
+                                                            {current.page?.nextOffset != undefined && (
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={current.loading}
+                                                                    mix={[stackBranchButton, on("click", () => history(state, branch, true))]}
+                                                                >
+                                                                    More commits
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </accordion.Context>
+                                                )}
+                                            </div>
+                                        </section>
+                                    </accordion.ItemContext>
+                                )
+                            })}
+                        </div>
+                    </accordion.Context>
                     {state.wholeFiles.size > 0 && (
-                        <div class="selection-summary">
+                        <div class="selection-summary" mix={selectionSummary}>
                             {state.wholeFiles.size} files selected<button
                                 type="button"
-                                mix={[on("click", () => {
-                                    state.wholeFiles.clear()
-                                    update()
-                                })]}
+                                mix={[
+                                    bodySelectionSummaryButton,
+                                    on("click", () => {
+                                        state.wholeFiles.clear()
+                                        update()
+                                    }),
+                                ]}
                             >
                                 Clear files
                             </button>
@@ -763,17 +871,20 @@ export function createInspection(options: Options) {
             if (!state?.breakout)
                 return null
             return (
-                <aside class={`inspection-breakout ${state.focused ? "focused" : ""}`} aria-label={`${state.column.name} diff`}>
-                    <header>
+                <aside class={`inspection-breakout ${state.focused ? "focused" : ""}`} mix={inspectionBreakout} aria-label={`${state.column.name} diff`}>
+                    <header mix={inspectionBreakoutHeader}>
                         <span>Diff · {state.column.name}</span>
                         <button
                             type="button"
                             aria-label="Close diff column"
-                            mix={[on("click", () => {
-                                state.breakout = false
-                                state.focused = false
-                                update()
-                            })]}
+                            mix={[
+                                closeDiffColumnButton,
+                                on("click", () => {
+                                    state.breakout = false
+                                    state.focused = false
+                                    update()
+                                }),
+                            ]}
                         >
                             ×
                         </button>
@@ -820,22 +931,30 @@ function FileTree(
         }
         const rows = (files: ChangedFile[]) =>
             files.map(file => (
-                <div class={`change-file ${props.selected == file.path ? "active" : ""}`}>
+                <div class={`change-file ${props.selected == file.path ? "active" : ""}`} mix={changeFile}>
                     <input
                         type="checkbox"
                         aria-label={`Select file ${file.path}`}
                         checked={props.checked.has(`${props.prefix}:${file.path}`)}
-                        mix={[on("change", () => props.check(file))]}
+                        mix={[selectFileInput, on("change", () => props.check(file))]}
                     />
                     <button
                         type="button"
                         title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
                         aria-pressed={props.selected == file.path}
-                        mix={[on("click", () => props.choose(file))]}
+                        mix={[changeFileButton, on("click", () => props.choose(file))]}
                     >
-                        <span class={`file-status ${file.status.replaceAll(" ", "-")}`}>{file.conflicted ? "!" : file.status[0].toUpperCase()}</span>
-                        <span>{file.oldPath ? `${file.oldPath} → ${file.path}` : file.path.split("/").at(-1)}</span>
-                        {file.staged && <small class="staged-badge">staged</small>}
+                        <span class={`file-status ${file.status.replaceAll(" ", "-")}`} mix={fileStatus}>
+                            {file.conflicted ? "!" : file.status[0].toUpperCase()}
+                        </span>
+                        <span mix={changeFileSpan}>
+                            {file.oldPath ? `${file.oldPath} → ${file.path}` : file.path.split("/").at(-1)}
+                        </span>
+                        {file.staged && (
+                            <small class="staged-badge" mix={stagedBadge}>
+                                staged
+                            </small>
+                        )}
                         {file.submodule && <small>submodule</small>}
                     </button>
                 </div>
@@ -857,7 +976,9 @@ function FileTree(
                                 }
                             })]}
                         >
-                            <summary>{name}/</summary>
+                            <summary mix={fileTreeSummary}>
+                                {name}/
+                            </summary>
                             {renderDirectory(child, path)}
                         </details>
                     )
@@ -877,22 +998,32 @@ function DiffLines(handle: Handle<{ page: FileDiffPage; layout: DiffLayout; sele
         const row = (line: DiffLine) => {
             const change = line.kind == "addition" || line.kind == "deletion"
             return (
-                <div class={`diff-line ${line.kind} ${selected.includes(line.id) ? "selected" : ""}`} role="row" data-line-id={line.id}>
-                    <span class="line-number">{line.oldLine ?? ""}</span>
-                    <span class="line-number">{line.newLine ?? ""}</span>
+                <div class={`diff-line ${line.kind} ${selected.includes(line.id) ? "selected" : ""}`} role="row" data-line-id={line.id} mix={diffLine}>
+                    <span class="line-number" mix={lineNumber}>
+                        {line.oldLine ?? ""}
+                    </span>
+                    <span class="line-number" mix={lineNumber}>
+                        {line.newLine ?? ""}
+                    </span>
                     {change && page.selectable
                         ? (
                             <button
                                 type="button"
                                 aria-label={`Select ${line.kind} line ${line.oldLine ?? line.newLine}`}
                                 aria-pressed={selected.includes(line.id)}
-                                mix={[on("click", () => select([line.id]))]}
+                                mix={[selectButton, on("click", () => select([line.id]))]}
                             >
                                 {line.kind == "addition" ? "+" : "−"}
                             </button>
                         )
-                        : <span class="diff-sign">{line.kind == "addition" ? "+" : line.kind == "deletion" ? "−" : ""}</span>}
-                    <code>{line.text}</code>
+                        : (
+                            <span class="diff-sign" mix={diffSign}>
+                                {line.kind == "addition" ? "+" : line.kind == "deletion" ? "−" : ""}
+                            </span>
+                        )}
+                    <code mix={diffLineCode}>
+                        {line.text}
+                    </code>
                     {line.kind == "hunk" && page.selectable && (
                         <button
                             type="button"
@@ -901,12 +1032,15 @@ function DiffLines(handle: Handle<{ page: FileDiffPage; layout: DiffLayout; sele
                             title={page.nextOffset != undefined && page.lines.at(-1)?.hunk == line.hunk
                                 ? "Load the rest of this hunk to select it"
                                 : "Select exactly the changed lines in this hunk"}
-                            mix={[on("click", () =>
-                                select(
-                                    page.lines.filter(candidate => candidate.hunk == line.hunk && ["addition", "deletion"].includes(candidate.kind)).map(
-                                        candidate => candidate.id,
-                                    ),
-                                ))]}
+                            mix={[
+                                hunkSelect,
+                                on("click", () =>
+                                    select(
+                                        page.lines.filter(candidate => candidate.hunk == line.hunk && ["addition", "deletion"].includes(candidate.kind)).map(
+                                            candidate => candidate.id,
+                                        ),
+                                    )),
+                            ]}
                         >
                             Select hunk
                         </button>
@@ -923,13 +1057,16 @@ function DiffLines(handle: Handle<{ page: FileDiffPage; layout: DiffLayout; sele
                 role="table"
                 aria-label="Changed lines"
                 tabIndex={0}
-                mix={[on("scroll", event => {
-                    const next = Math.max(0, Math.floor(event.currentTarget.scrollTop / height) - 10)
-                    if (next != start) {
-                        start = next
-                        void handle.update()
-                    }
-                })]}
+                mix={[
+                    diffLines,
+                    on("scroll", event => {
+                        const next = Math.max(0, Math.floor(event.currentTarget.scrollTop / height) - 10)
+                        if (next != start) {
+                            start = next
+                            void handle.update()
+                        }
+                    }),
+                ]}
             >
                 <div
                     aria-hidden="true"
@@ -943,16 +1080,25 @@ function DiffLines(handle: Handle<{ page: FileDiffPage; layout: DiffLayout; sele
                         ? (
                             <div
                                 class="split-row"
-                                mix={[ref(element => {
-                                    element.style.minWidth = `${splitWidth}px`
-                                })]}
+                                mix={[
+                                    splitRow,
+                                    ref(element => {
+                                        element.style.minWidth = `${splitWidth}px`
+                                    }),
+                                ]}
                             >
                                 {line.kind != "addition"
                                     ? row(line.kind == "context" ? { ...line, newLine: undefined } : line)
-                                    : <div class="diff-blank"></div>}
+                                    : (
+                                        <div class="diff-blank" mix={diffBlank}>
+                                        </div>
+                                    )}
                                 {line.kind != "deletion"
                                     ? row(line.kind == "context" ? { ...line, oldLine: undefined } : line)
-                                    : <div class="diff-blank"></div>}
+                                    : (
+                                        <div class="diff-blank" mix={diffBlank}>
+                                        </div>
+                                    )}
                             </div>
                         )
                         : row(line)
@@ -971,3 +1117,705 @@ function DiffLines(handle: Handle<{ page: FileDiffPage; layout: DiffLayout; sele
 function message(error: unknown) {
     return error instanceof Error ? error.message : String(error)
 }
+
+const changeFileList = css({
+    ".file-tree details &": {
+        paddingLeft: "14px",
+    },
+})
+
+const changeFileListP = css({
+    margin: 0,
+    padding: "8px 10px",
+    color: "var(--muted)",
+    fontSize: "12px",
+    overflowWrap: "anywhere",
+})
+
+const changeFileListButton = css({
+    border: "1px solid var(--line)",
+    background: "var(--control)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "3px 6px",
+    font: "inherit",
+    cursor: "pointer",
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+})
+
+const inspectionMuted = css({
+    margin: "0",
+    padding: "8px 10px",
+    color: "var(--muted)",
+    fontSize: "12px",
+    overflowWrap: "anywhere",
+})
+
+const diffInspector = css({
+    borderBlock: "1px solid var(--line-strong)",
+    background: "var(--panel)",
+    minWidth: "0",
+})
+
+const diffToolbar = css({
+    padding: "8px",
+    borderBottom: "1px solid var(--line)",
+})
+
+const diffToolbarStrong = css({
+    display: "block",
+    overflowWrap: "anywhere",
+    marginBottom: "6px",
+    font: "12px var(--mono)",
+})
+
+const diffToolbarDiv = css({
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "4px",
+    flex: "0 0 auto",
+})
+
+const diffToolbarButton = css({
+    border: "1px solid var(--line)",
+    background: "var(--control)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "3px 6px",
+    font: "inherit",
+    cursor: "pointer",
+    fontSize: "11px",
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+    minWidth: "26px",
+    minHeight: "26px",
+})
+
+const diffViews = css({
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "4px",
+    padding: "6px 8px",
+})
+
+const diffViewsButton = css({
+    border: "1px solid var(--line)",
+    background: "var(--control)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "3px 6px",
+    font: "inherit",
+    cursor: "pointer",
+    fontSize: "11px",
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+})
+
+const inspectionNotice = css({
+    margin: "0",
+    padding: "8px 10px",
+    color: "var(--warning)",
+    fontSize: "12px",
+    overflowWrap: "anywhere",
+    background: "var(--warning-wash)",
+})
+
+const diffInspectorP = css({
+    margin: 0,
+    padding: "8px 10px",
+    color: "var(--muted)",
+    fontSize: "12px",
+    overflowWrap: "anywhere",
+})
+
+const diffInspectorButton = css({
+    border: "1px solid var(--line)",
+    background: "var(--control)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "3px 6px",
+    font: "inherit",
+    cursor: "pointer",
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+})
+
+const diffSummary = css({
+    margin: "0",
+    padding: "8px 10px",
+    color: "var(--muted)",
+    fontSize: "12px",
+    overflowWrap: "anywhere",
+})
+
+const renameSelection = css({
+    display: "flex",
+    alignItems: "center",
+    gap: "5px",
+    color: "var(--muted)",
+    fontSize: "11px",
+    padding: "5px 8px",
+})
+
+const diffInspectorInput = css({
+    '&[type="checkbox"]': {
+        width: "14px",
+        height: "14px",
+        minHeight: "0",
+        padding: "0",
+        margin: "0 3px 0 0",
+        flex: "0 0 14px",
+    },
+    width: "14px",
+    height: "14px",
+    minHeight: 0,
+    padding: 0,
+    margin: "0 3px 0 0",
+    flex: "0 0 14px",
+})
+
+const selectionSummary = css({
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "6px 8px",
+    fontSize: "11px",
+    color: "var(--accent)",
+    borderTop: "1px solid var(--line)",
+})
+
+const selectionSummaryButton = css({
+    border: "1px solid var(--line)",
+    background: "var(--control)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "3px 6px",
+    font: "inherit",
+    cursor: "pointer",
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+})
+
+const loadDiff = css({
+    border: "1px solid var(--line)",
+    background: "var(--control)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "3px 6px",
+    font: "inherit",
+    cursor: "pointer",
+    margin: "8px",
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+})
+
+const inspectionMutedButton = css({
+    border: "1px solid var(--line)",
+    background: "var(--control)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "3px 6px",
+    font: "inherit",
+    cursor: "pointer",
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+})
+
+const columnInspection = css({
+    "&.focused .stack-inspection": {
+        display: "none",
+    },
+    overflow: "auto",
+    flex: "1",
+    minHeight: "0",
+})
+
+const inspectionFilters = css({
+    display: "flex",
+    gap: "4px",
+    padding: "8px",
+    borderBottom: "1px solid var(--line)",
+})
+
+const filterChangedFilesInput = css({
+    width: "100%",
+    minWidth: "40px",
+    color: "var(--text)",
+    background: "var(--field)",
+    border: "1px solid var(--line)",
+    padding: "5px",
+    borderRadius: "3px",
+})
+
+const filterChangeStatusSelect = css({
+    color: "var(--text)",
+    background: "var(--field)",
+    border: "1px solid var(--line)",
+    padding: "5px",
+    borderRadius: "3px",
+})
+
+const workingChangesHeader = css({
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "8px 10px",
+    background: "var(--panel-deep)",
+    borderBottom: "1px solid var(--line)",
+})
+
+const workingChangesH3 = css({
+    fontSize: "12px",
+    margin: "0",
+})
+
+const refreshWorkingChangesButton = css({
+    border: "1px solid var(--line)",
+    background: "var(--control)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "3px 6px",
+    font: "inherit",
+    cursor: "pointer",
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+    minWidth: "26px",
+    minHeight: "26px",
+})
+
+const ignoredToggle = css({
+    display: "flex",
+    alignItems: "center",
+    gap: "5px",
+    color: "var(--muted)",
+    fontSize: "11px",
+    padding: "5px 8px",
+})
+
+const workingChangesInput = css({
+    width: "14px",
+    height: "14px",
+    minHeight: 0,
+    padding: 0,
+    margin: "0 3px 0 0",
+    flex: "0 0 14px",
+})
+
+const stackBranch = css({
+    borderTop: "1px solid var(--line-strong)",
+})
+
+const disclosureHeading = css({
+    margin: 0,
+    font: "inherit",
+})
+
+const stackHeading = css({
+    border: "0",
+    background: "var(--panel-deep)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "10px",
+    font: "inherit",
+    cursor: "pointer",
+    width: "100%",
+    display: "flex",
+    justifyContent: "space-between",
+    textAlign: "left",
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+})
+
+const stackHeadingSmall = css({
+    color: "var(--muted)",
+})
+
+const stackBranchButton = css({
+    border: "1px solid var(--line)",
+    background: "var(--control)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "3px 6px",
+    font: "inherit",
+    cursor: "pointer",
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+})
+
+const commitHeading = css({
+    border: "0",
+    background: "var(--control)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "8px 10px",
+    font: "inherit",
+    cursor: "pointer",
+    display: "flex",
+    gap: "8px",
+    width: "100%",
+    textAlign: "left",
+    borderBottom: "1px solid var(--line)",
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+})
+
+const commitHeadingCode = css({
+    color: "var(--muted)",
+    font: "11px var(--mono)",
+})
+
+const commitHeadingSpan = css({
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+})
+
+const mergeParent = css({
+    display: "flex",
+    gap: "8px",
+    alignItems: "center",
+    padding: "6px",
+    fontSize: "11px",
+})
+
+const parentForSelect = css({
+    color: "var(--text)",
+    background: "var(--field)",
+    border: "1px solid var(--line)",
+    padding: "5px",
+    borderRadius: "3px",
+})
+
+const bodySelectionSummaryButton = css({
+    border: "1px solid var(--line)",
+    background: "var(--control)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "3px 6px",
+    font: "inherit",
+    cursor: "pointer",
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+})
+
+const inspectionBreakout = css({
+    "&.focused": {
+        flexBasis: "min(1000px, 75vw)",
+    },
+    "& .diff-lines": {
+        maxHeight: "calc(100vh - 280px)",
+    },
+    flex: "0 0 620px",
+    minWidth: "380px",
+    overflow: "auto",
+    background: "var(--panel)",
+    border: "1px solid var(--line-strong)",
+})
+
+const inspectionBreakoutHeader = css({
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "8px 10px",
+    background: "var(--panel-deep)",
+    borderBottom: "1px solid var(--line)",
+})
+
+const closeDiffColumnButton = css({
+    border: "1px solid var(--line)",
+    background: "var(--control)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "3px 6px",
+    font: "inherit",
+    cursor: "pointer",
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+    minWidth: "26px",
+    minHeight: "26px",
+})
+
+const changeFile = css({
+    display: "flex",
+    gap: "3px",
+    alignItems: "center",
+    padding: "1px 6px",
+    minHeight: "29px",
+    "&.active": {
+        background: "var(--accent-wash)",
+    },
+    ".file-tree details &": {
+        paddingLeft: "14px",
+    },
+})
+
+const selectFileInput = css({
+    accentColor: "var(--accent)",
+    flex: "0 0 14px",
+    width: "14px",
+    height: "14px",
+    minHeight: 0,
+    padding: 0,
+    margin: "0 3px 0 0",
+})
+
+const changeFileButton = css({
+    border: "0",
+    background: "transparent",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "3px 6px",
+    font: "inherit",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    width: "100%",
+    minWidth: "0",
+    textAlign: "left",
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+})
+
+const fileStatus = css({
+    width: "14px",
+    flex: "0 0 14px",
+    color: "var(--warning)",
+    font: "11px var(--mono)",
+    "&.added": {
+        color: "var(--accent)",
+    },
+    "&.deleted": {
+        color: "var(--danger)",
+    },
+    "&.conflicted": {
+        color: "var(--danger)",
+    },
+    "&:nth-child(2)": {
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+    },
+})
+
+const changeFileSpan = css({
+    "&:nth-child(2)": {
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+    },
+})
+
+const stagedBadge = css({
+    color: "var(--muted)",
+    marginLeft: "auto",
+    fontSize: "10px",
+})
+
+const fileTreeSummary = css({
+    padding: "5px 8px",
+    color: "var(--muted)",
+    font: "11px var(--mono)",
+    overflowWrap: "anywhere",
+    cursor: "pointer",
+})
+
+const diffLine = css({
+    display: "flex",
+    alignItems: "center",
+    height: "24px",
+    minWidth: "max-content",
+    whiteSpace: "pre",
+    "&.addition": {
+        background: "var(--accent-wash)",
+    },
+    "&.deletion": {
+        background: "var(--danger-wash)",
+    },
+    "&.selected": {
+        background: "var(--accent-wash-strong)",
+        boxShadow: "inset 3px 0 var(--accent)",
+    },
+    "&.hunk": {
+        background: "var(--panel-deep)",
+        color: "var(--muted)",
+        fontSize: "11px",
+    },
+    "&.notice": {
+        color: "var(--warning)",
+        fontSize: "11px",
+    },
+    "&.hunk .line-number": {
+        display: "none",
+    },
+})
+
+const lineNumber = css({
+    width: "35px",
+    flex: "0 0 35px",
+    textAlign: "right",
+    paddingRight: "5px",
+    color: "var(--faint)",
+    fontSize: "10px",
+    userSelect: "none",
+})
+
+const selectButton = css({
+    border: "0",
+    background: "transparent",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "0",
+    font: "inherit",
+    cursor: "pointer",
+    width: "23px",
+    flex: "0 0 23px",
+    height: "22px",
+    textAlign: "center",
+    userSelect: "none",
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+})
+
+const diffSign = css({
+    width: "23px",
+    flex: "0 0 23px",
+    padding: "0",
+    height: "22px",
+    border: "0",
+    background: "transparent",
+    textAlign: "center",
+    userSelect: "none",
+})
+
+const diffLineCode = css({
+    font: "inherit",
+    paddingRight: "12px",
+})
+
+const hunkSelect = css({
+    border: "0",
+    background: "transparent",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "0 5px",
+    font: "inherit",
+    cursor: "pointer",
+    height: "22px",
+    textAlign: "center",
+    userSelect: "none",
+    width: "auto",
+    flex: "0 0 auto",
+    marginLeft: "auto",
+    fontSize: "10px",
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+})
+
+const diffLines = css({
+    maxHeight: "480px",
+    overflow: "auto",
+    font: "12px/24px var(--mono)",
+    userSelect: "text",
+})
+
+const splitRow = css({
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+    height: "24px",
+    "& > .diff-line": {
+        minWidth: "0",
+        overflow: "hidden",
+    },
+    "& > :first-child": {
+        borderRight: "1px solid var(--line-strong)",
+    },
+    "& .line-number:empty": {
+        display: "none",
+    },
+})
+
+const diffBlank = css({
+    background: "var(--panel-deep)",
+})

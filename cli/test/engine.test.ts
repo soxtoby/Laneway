@@ -18,11 +18,7 @@ async function runEngineAt(
         stdout: "pipe",
     })
 
-    const [exitCode, stderr, stdout] = await Promise.all([
-        child.exited,
-        new Response(child.stderr).text(),
-        new Response(child.stdout).text(),
-    ])
+    const [exitCode, stderr, stdout] = await Promise.all([child.exited, new Response(child.stderr).text(), new Response(child.stdout).text()])
 
     return { exitCode, stderr, stdout }
 }
@@ -94,23 +90,19 @@ describe("Workbench Engine executable", () => {
 
         expect(result.exitCode).toBe(0)
         expect(result.stderr).toBe("")
-        expect(parseNdjson(result.stdout)).toEqual([
-            {
-                type: "progress",
-                command: "echo",
-                completed: 0,
-                total: 2,
-                message: "Preparing echo",
-            },
-            {
-                type: "progress",
-                command: "echo",
-                completed: 1,
-                total: 2,
-                message: "Echoing message",
-            },
-            { type: "result", command: "echo", message: "Hello, Workbench" },
-        ])
+        expect(parseNdjson(result.stdout)).toEqual([{
+            type: "progress",
+            command: "echo",
+            completed: 0,
+            total: 2,
+            message: "Preparing echo",
+        }, {
+            type: "progress",
+            command: "echo",
+            completed: 1,
+            total: 2,
+            message: "Echoing message",
+        }, { type: "result", command: "echo", message: "Hello, Workbench" }])
     })
 
     test("echo uses its default payload when only options are passed", async () => {
@@ -133,11 +125,7 @@ describe("Workbench Engine executable", () => {
         process.stdin.write("cancel\n")
         await process.stdin.end()
 
-        const [exitCode, stderr, stdout] = await Promise.all([
-            process.exited,
-            new Response(process.stderr).text(),
-            new Response(process.stdout).text(),
-        ])
+        const [exitCode, stderr, stdout] = await Promise.all([process.exited, new Response(process.stderr).text(), new Response(process.stdout).text()])
         const messages = parseNdjson(stdout)
 
         expect(exitCode).toBe(3)
@@ -159,14 +147,12 @@ describe("Workbench Engine executable", () => {
 
         expect(result.exitCode).toBe(2)
         expect(result.stderr).toBe('Unknown command "frobnicate".\n')
-        expect(parseNdjson(result.stdout)).toEqual([
-            {
-                type: "error",
-                code: "usage.unknown-command",
-                message: 'Unknown command "frobnicate".',
-                details: { command: "frobnicate" },
-            },
-        ])
+        expect(parseNdjson(result.stdout)).toEqual([{
+            type: "error",
+            code: "usage.unknown-command",
+            message: 'Unknown command "frobnicate".',
+            details: { command: "frobnicate" },
+        }])
     })
 
     test("malformed options return a structured usage error", async () => {
@@ -182,14 +168,12 @@ describe("Workbench Engine executable", () => {
         expect(result.stderr).toBe(
             'Invalid value "tomorrow" for --delay-ms. Expected a non-negative integer.\n',
         )
-        expect(parseNdjson(result.stdout)).toEqual([
-            {
-                type: "error",
-                code: "usage.invalid-argument",
-                message: 'Invalid value "tomorrow" for --delay-ms. Expected a non-negative integer.',
-                details: { argument: "--delay-ms", value: "tomorrow" },
-            },
-        ])
+        expect(parseNdjson(result.stdout)).toEqual([{
+            type: "error",
+            code: "usage.invalid-argument",
+            message: 'Invalid value "tomorrow" for --delay-ms. Expected a non-negative integer.',
+            details: { argument: "--delay-ms", value: "tomorrow" },
+        }])
     })
 
     test("a Workbench Operation can be undone and redone by later Engine processes", async () => {

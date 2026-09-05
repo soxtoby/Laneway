@@ -270,10 +270,7 @@ async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, reques
                         cwd,
                         ["diff", "--no-index", ...flags, "--", process.platform == "win32" ? "NUL" : "/dev/null", file.path],
                         collector.write,
-                        [
-                            0,
-                            1,
-                        ],
+                        [0, 1],
                     )
                 }
             } else {

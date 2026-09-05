@@ -1,6 +1,6 @@
 import type { Appearance, EntryProgress, Workspace } from "@git-workbench/shared"
-import { on, type Handle } from "remix/ui"
-import { createBranchWorkspace, type BranchWorkspace } from "./branch-workspace"
+import { css, type Handle, on } from "remix/ui"
+import { type BranchWorkspace, createBranchWorkspace } from "./branch-workspace"
 import { errorMessage, FatalError, Notice, type NoticeState } from "./feedback"
 import { createRepositoryEntry, type RepositoryEntry } from "./repository-entry"
 import { createGitSettings, type GitSettings } from "./settings"
@@ -27,41 +27,76 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
         if (!initial || !workspace || !repositoryEntry || !gitSettings || !branchWorkspace) {
             return fatalError
                 ? <FatalError message={fatalError} retry={bootstrap} />
-                : <main class="bootstrap-state" aria-live="polite"><p>Starting Git Workbench…</p></main>
+                : (
+                    <main class="bootstrap-state" mix={bootstrapState} aria-live="polite">
+                        <p mix={bootstrapStateP}>
+                            Starting Git Workbench…
+                        </p>
+                    </main>
+                )
         }
 
         const currentWorkspace = workspace
         const active = currentWorkspace.repositories.find(repository => repository.id == currentWorkspace.activeRepositoryId)
         const busy = openingRepository || repositoryEntry.busy
-        return <>
-            <main class="shell">
-                <WorkbenchHeader busy={busy} appearance={appearance} openSettings={gitSettings.open} toggleAppearance={() => void toggleAppearance()} />
-                {active?.status == "available"
-                    ? (
-                        branchWorkspace.render(active, currentWorkspace)
-                    )
-                    : active?.status == "missing"
-                    ? <MissingRepository repository={active} workspace={currentWorkspace} select={selectRepository} locate={locateRepository} close={closeRepository} move={moveRepository} previewMove={previewRepositoryMove} commitOrder={commitRepositoryOrder} cancelMove={cancelRepositoryMove} addRepository={() => repositoryEntry?.openAdd()} />
-                    : (
-                        <Welcome
-                            settings={gitSettings.current}
-                            busy={busy}
-                            openRepository={openRepository}
-                            openClone={repositoryEntry.openClone}
-                            openInitialize={repositoryEntry.openInitialize}
-                        />
-                    )}
-                <WorkbenchStatus settings={gitSettings.current} engine={initial.engine.state == "ready" ? `Engine ${initial.engine.version}` : "Engine unavailable"} />
-            </main>
-            {repositoryEntry.render()}
-            {gitSettings.render()}
-            {branchWorkspace.renderLens(currentWorkspace)}
-            <Notice notice={notice} dismiss={() => {
-                notice = undefined
-                handle.update()
-            }} />
-            {currentWorkspace.persistenceError && currentWorkspace.persistenceError.code != "workspace.partial" && <WorkspaceRecovery error={currentWorkspace.persistenceError.message} reset={currentWorkspace.persistenceError.code == "workspace.corrupt" || currentWorkspace.persistenceError.code == "workspace.unsupported-version" ? resetWorkspace : undefined} />}
-        </>
+        return (
+            <>
+                <main class="shell" mix={shell}>
+                    <WorkbenchHeader busy={busy} appearance={appearance} openSettings={gitSettings.open} toggleAppearance={() => void toggleAppearance()} />
+                    {active?.status == "available"
+                        ? (
+                            branchWorkspace.render(active, currentWorkspace)
+                        )
+                        : active?.status == "missing"
+                        ? (
+                            <MissingRepository
+                                repository={active}
+                                workspace={currentWorkspace}
+                                select={selectRepository}
+                                locate={locateRepository}
+                                close={closeRepository}
+                                move={moveRepository}
+                                previewMove={previewRepositoryMove}
+                                commitOrder={commitRepositoryOrder}
+                                cancelMove={cancelRepositoryMove}
+                                addRepository={() => repositoryEntry?.openAdd()}
+                            />
+                        )
+                        : (
+                            <Welcome
+                                settings={gitSettings.current}
+                                busy={busy}
+                                openRepository={openRepository}
+                                openClone={repositoryEntry.openClone}
+                                openInitialize={repositoryEntry.openInitialize}
+                            />
+                        )}
+                    <WorkbenchStatus
+                        settings={gitSettings.current}
+                        engine={initial.engine.state == "ready" ? `Engine ${initial.engine.version}` : "Engine unavailable"}
+                    />
+                </main>
+                {repositoryEntry.render()}
+                {gitSettings.render()}
+                {branchWorkspace.renderLens(currentWorkspace)}
+                <Notice
+                    notice={notice}
+                    dismiss={() => {
+                        notice = undefined
+                        handle.update()
+                    }}
+                />
+                {currentWorkspace.persistenceError && currentWorkspace.persistenceError.code != "workspace.partial" && (
+                    <WorkspaceRecovery
+                        error={currentWorkspace.persistenceError.message}
+                        reset={currentWorkspace.persistenceError.code == "workspace.corrupt"
+                                || currentWorkspace.persistenceError.code == "workspace.unsupported-version"
+                            ? resetWorkspace
+                            : undefined}
+                    />
+                )}
+            </>
+        )
     }
 
     async function bootstrap() {
@@ -255,34 +290,138 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
 }
 
 function WorkspaceRecovery(handle: Handle<{ error: string; reset?(): void }>) {
-    return () => <aside class="workspace-recovery" aria-live="assertive"><div><strong>Workspace State needs attention</strong><p>{handle.props.error}</p></div>{handle.props.reset && <button type="button" mix={[on("click", handle.props.reset)]}>Reset workspace</button>}</aside>
+    return () => (
+        <aside class="workspace-recovery" mix={workspaceRecovery} aria-live="assertive">
+            <div>
+                <strong mix={workspaceRecoveryStrong}>
+                    Workspace State needs attention
+                </strong>
+                <p mix={workspaceRecoveryP}>
+                    {handle.props.error}
+                </p>
+            </div>
+            {handle.props.reset && (
+                <button type="button" mix={[workspaceRecoveryButton, on("click", handle.props.reset)]}>
+                    Reset workspace
+                </button>
+            )}
+        </aside>
+    )
 }
 
 let draggingMissingRepositoryId: string | undefined
 
-function MissingRepository(handle: Handle<{ repository: Extract<Workspace["repositories"][number], { status: "missing" }>; workspace: Workspace; select(id: string): void; locate(id: string): void; close(id: string): void; move(id: string, targetId: string): void; previewMove(id: string, targetId: string): void; commitOrder(): void; cancelMove(): void; addRepository(): void }>) {
-    return () => <section class="workspace missing-repository"><aside class="repository-rail"><div class="rail-heading"><p class="eyebrow">Open repositories</p><span>{handle.props.workspace.repositories.length}</span><button class="rail-add" type="button" aria-label="Add repository" title="Add repository" mix={[on("click", handle.props.addRepository)]}>+</button></div><nav aria-label="Open repositories">{handle.props.workspace.repositories.map((repository, index) => <div draggable title="Drag to reorder · Ctrl+< / Ctrl+>" mix={[on("keydown", event => {
-        if (event.ctrlKey && event.shiftKey && (event.key == "<" || event.key == ">")) {
-            event.preventDefault()
-            const target = handle.props.workspace.repositories[index + (event.key == "<" ? -1 : 1)]
-            if (target)
-                handle.props.move(repository.id, target.id)
+function MissingRepository(
+    handle: Handle<
+        {
+            repository: Extract<Workspace["repositories"][number], { status: "missing" }>
+            workspace: Workspace
+            select(id: string): void
+            locate(id: string): void
+            close(id: string): void
+            move(id: string, targetId: string): void
+            previewMove(id: string, targetId: string): void
+            commitOrder(): void
+            cancelMove(): void
+            addRepository(): void
         }
-    }), on("dragstart", () => {
-        draggingMissingRepositoryId = repository.id
-    }), on("dragover", event => {
-        event.preventDefault()
-        if (draggingMissingRepositoryId)
-            handle.props.previewMove(draggingMissingRepositoryId, repository.id)
-    }), on("drop", event => {
-        event.preventDefault()
-        handle.props.commitOrder()
-        draggingMissingRepositoryId = undefined
-    }), on("dragend", () => {
-        if (draggingMissingRepositoryId)
-            handle.props.cancelMove()
-        draggingMissingRepositoryId = undefined
-    })]}><button class={`repository-item ${repository.id == handle.props.repository.id ? "active" : ""}`} type="button" mix={[on("click", () => handle.props.select(repository.id))]}><span>{initials(repository.path)}</span><span><strong>{repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name}</strong><small>{repository.status == "available" ? repository.info.selectedWorktree : "Unavailable"}</small></span></button></div>)}</nav></aside><div class="missing-copy"><p class="eyebrow">Repository unavailable</p><h1>{handle.props.repository.name}</h1><p>{handle.props.repository.path}</p><p>{handle.props.repository.error.message}</p><div class="dialog-actions"><button class="primary-button" type="button" mix={[on("click", () => handle.props.locate(handle.props.repository.id))]}>Locate</button><button class="secondary-button" type="button" mix={[on("click", () => handle.props.close(handle.props.repository.id))]}>Close</button></div></div></section>
+    >,
+) {
+    return () => (
+        <section class="workspace missing-repository" mix={workspace}>
+            <aside class="repository-rail" mix={repositoryRail}>
+                <div class="rail-heading" mix={railHeading}>
+                    <p class="eyebrow" mix={eyebrow}>
+                        Open repositories
+                    </p>
+                    <span mix={railHeadingSpan}>
+                        {handle.props.workspace.repositories.length}
+                    </span>
+                    <button
+                        class="rail-add"
+                        type="button"
+                        aria-label="Add repository"
+                        title="Add repository"
+                        mix={[railAdd, on("click", handle.props.addRepository)]}
+                    >
+                        +
+                    </button>
+                </div>
+                <nav aria-label="Open repositories" mix={openRepositoriesNav}>
+                    {handle.props.workspace.repositories.map((repository, index) => (
+                        <div
+                            draggable
+                            title="Drag to reorder · Ctrl+< / Ctrl+>"
+                            mix={[
+                                on("keydown", event => {
+                                    if (event.ctrlKey && event.shiftKey && (event.key == "<" || event.key == ">")) {
+                                        event.preventDefault()
+                                        const target = handle.props.workspace.repositories[index + (event.key == "<" ? -1 : 1)]
+                                        if (target)
+                                            handle.props.move(repository.id, target.id)
+                                    }
+                                }),
+                                on("dragstart", () => {
+                                    draggingMissingRepositoryId = repository.id
+                                }),
+                                on("dragover", event => {
+                                    event.preventDefault()
+                                    if (draggingMissingRepositoryId)
+                                        handle.props.previewMove(draggingMissingRepositoryId, repository.id)
+                                }),
+                                on("drop", event => {
+                                    event.preventDefault()
+                                    handle.props.commitOrder()
+                                    draggingMissingRepositoryId = undefined
+                                }),
+                                on("dragend", () => {
+                                    if (draggingMissingRepositoryId)
+                                        handle.props.cancelMove()
+                                    draggingMissingRepositoryId = undefined
+                                }),
+                            ]}
+                        >
+                            <button
+                                class={`repository-item ${repository.id == handle.props.repository.id ? "active" : ""}`}
+                                type="button"
+                                mix={[repositoryItem, on("click", () => handle.props.select(repository.id))]}
+                            >
+                                <span mix={repositoryItemSpan}>
+                                    {initials(repository.path)}
+                                </span>
+                                <span mix={repositoryItemSpan}>
+                                    <strong mix={repositoryItemStrong}>
+                                        {repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name}
+                                    </strong>
+                                    <small mix={repositoryItemSmall}>
+                                        {repository.status == "available" ? repository.info.selectedWorktree : "Unavailable"}
+                                    </small>
+                                </span>
+                            </button>
+                        </div>
+                    ))}
+                </nav>
+            </aside>
+            <div class="missing-copy" mix={missingCopy}>
+                <p class="eyebrow" mix={missingRepositoryEyebrow}>
+                    Repository unavailable
+                </p>
+                <h1 mix={missingCopyH1}>
+                    {handle.props.repository.name}
+                </h1>
+                <p mix={missingCopyP}>
+                    {handle.props.repository.path}
+                </p>
+                <p mix={missingCopyP}>
+                    {handle.props.repository.error.message}
+                </p>
+                <div class="dialog-actions" mix={dialogActions}>
+                    <button class="primary-button" type="button" mix={[on("click", () => handle.props.locate(handle.props.repository.id))]}>Locate</button>
+                    <button class="secondary-button" type="button" mix={[on("click", () => handle.props.close(handle.props.repository.id))]}>Close</button>
+                </div>
+            </div>
+        </section>
+    )
 }
 
 function baseName(path: string) {
@@ -293,3 +432,236 @@ function initials(path: string) {
     const words = baseName(path).split(/[-_.\s]+/).filter(Boolean)
     return (words.length > 1 ? words[0][0] + words[1][0] : words[0]?.slice(0, 2) ?? "GW").toUpperCase()
 }
+
+const bootstrapState = css({
+    height: "100%",
+    padding: "32px",
+    display: "grid",
+    placeItems: "center",
+    overflow: "auto",
+    textAlign: "center",
+})
+
+const bootstrapStateP = css({
+    color: "var(--muted)",
+})
+
+const shell = css({
+    width: "100%",
+    height: "100%",
+    display: "grid",
+    gridTemplateRows: "var(--toolbar) minmax(0, 1fr) var(--status)",
+    overflow: "hidden",
+})
+
+const workspaceRecovery = css({
+    position: "fixed",
+    zIndex: "20",
+    right: "14px",
+    bottom: "calc(var(--status) + 12px)",
+    left: "14px",
+    padding: "11px 12px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "16px",
+    border: "1px solid var(--warning-edge)",
+    borderRadius: "6px",
+    background: "var(--warning-raised)",
+    boxShadow: "var(--shadow-popover)",
+})
+
+const workspaceRecoveryStrong = css({
+    fontSize: "13px",
+})
+
+const workspaceRecoveryP = css({
+    margin: "4px 0 0",
+    color: "var(--muted)",
+    fontSize: "12px",
+})
+
+const workspaceRecoveryButton = css({
+    minHeight: "28px",
+    padding: "0 14px",
+    borderRadius: "4px",
+    fontSize: "13px",
+    fontWeight: "500",
+    letterSpacing: "0",
+    textTransform: "none",
+    color: "var(--text)",
+    border: "1px solid var(--line-strong)",
+    background: "var(--control)",
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+})
+
+const workspace = css({
+    height: "100%",
+    display: "grid",
+    gridTemplateColumns: "var(--rail) minmax(0, 1fr)",
+})
+
+const repositoryRail = css({
+    minHeight: "0",
+    padding: "6px",
+    display: "grid",
+    gridTemplateRows: "auto minmax(0, 1fr) auto",
+    gap: "6px",
+    borderRight: "1px solid var(--line)",
+    background: "var(--panel-deep)",
+})
+
+const railHeading = css({
+    padding: "2px 2px 6px 6px",
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    borderBottom: "1px solid var(--line)",
+})
+
+const eyebrow = css({
+    color: "var(--muted)",
+    fontSize: "11px",
+    fontWeight: "600",
+    letterSpacing: "0",
+    textTransform: "none",
+    minWidth: "0",
+    flex: "1 1 auto",
+    margin: "0",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+})
+
+const railHeadingSpan = css({
+    color: "var(--faint)",
+    fontSize: "11px",
+})
+
+const railAdd = css({
+    width: "22px",
+    height: "22px",
+    flex: "0 0 auto",
+    padding: "0",
+    display: "grid",
+    placeItems: "center",
+    color: "var(--muted)",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "4px",
+    background: "var(--control)",
+    fontSize: "14px",
+    lineHeight: "1",
+    "&:hover:not(:disabled)": {
+        color: "var(--text)",
+        background: "var(--control-hover)",
+    },
+})
+
+const openRepositoriesNav = css({
+    minHeight: "0",
+    display: "grid",
+    alignContent: "start",
+    gap: "1px",
+    overflowY: "auto",
+})
+
+const repositoryItem = css({
+    width: "100%",
+    padding: "5px 6px",
+    display: "grid",
+    gridTemplateColumns: "24px minmax(0, 1fr)",
+    gap: "8px",
+    textAlign: "left",
+    border: "1px solid transparent",
+    borderRadius: "4px",
+    background: "transparent",
+    "&.active": {
+        borderColor: "var(--line)",
+        background: "var(--panel)",
+        boxShadow: "inset 2px 0 var(--accent)",
+    },
+    "&.missing > span:first-child": {
+        color: "var(--warning)",
+    },
+    "&:hover:not(:disabled)": {
+        background: "var(--hover)",
+    },
+})
+
+const repositoryItemSpan = css({
+    "&:first-child": {
+        width: "24px",
+        height: "24px",
+        display: "grid",
+        placeItems: "center",
+        color: "var(--accent)",
+        border: "1px solid var(--line-strong)",
+        borderRadius: "4px",
+        fontSize: "10px",
+        fontWeight: "600",
+    },
+    "&:last-child": {
+        minWidth: "0",
+        display: "grid",
+        alignContent: "center",
+        gap: "1px",
+    },
+})
+
+const repositoryItemStrong = css({
+    overflow: "hidden",
+    fontSize: "12px",
+    fontWeight: "600",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+})
+
+const repositoryItemSmall = css({
+    overflow: "hidden",
+    color: "var(--faint)",
+    fontFamily: "var(--mono)",
+    fontSize: "10px",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+})
+
+const missingCopy = css({
+    minWidth: "0",
+    padding: "28px",
+    display: "grid",
+    alignContent: "safe center",
+    justifyItems: "start",
+    overflow: "auto",
+})
+
+const missingRepositoryEyebrow = css({
+    maxWidth: "70ch",
+    overflowWrap: "anywhere",
+    color: "var(--muted)",
+    fontFamily: "var(--mono)",
+    fontSize: "12px",
+    lineHeight: "1.5",
+})
+
+const missingCopyH1 = css({
+    margin: "0 0 10px",
+    fontSize: "18px",
+    fontWeight: "600",
+})
+
+const missingCopyP = css({
+    maxWidth: "70ch",
+    overflowWrap: "anywhere",
+    color: "var(--muted)",
+    fontFamily: "var(--mono)",
+    fontSize: "12px",
+    lineHeight: "1.5",
+})
+
+const dialogActions = css({
+    padding: "0",
+    justifyContent: "flex-start",
+    borderTop: "0",
+    background: "transparent",
+})

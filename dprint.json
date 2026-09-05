@@ -4,7 +4,7 @@
     "useTabs": false,
     "indentWidth": 4,
     "includes": [
-        "**/*.{ts,js,json,jsonc,css,html}"
+        "**/*.{ts,tsx,js,jsx,json,jsonc,css,html}"
     ],
     "typescript": {
         "semiColons": "asi",
@@ -13,6 +13,8 @@
         "singleBodyPosition": "nextLine",
         "exportDeclaration.forceSingleLine": true,
         "importDeclaration.forceSingleLine": true,
+        "jsxAttributes.preferSingleLine": true,
+        "arrayExpression.preferSingleLine": true,
         "arrowFunction.useParentheses": "preferNone"
     },
     "excludes": [
