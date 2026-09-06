@@ -109,6 +109,18 @@ async function checkRenderer() {
     const commitTrigger = element(".commit-heading")
     const commitPanel = element(`#${CSS.escape(commitTrigger.getAttribute("aria-controls")!)}`)
     const commitExpanded = commitTrigger.getAttribute("aria-expanded") == "true" && !commitPanel.hidden
+    const commitNodes = [...document.querySelectorAll<HTMLElement>(".commit-heading > span:first-child")]
+    const commitLine = getComputedStyle(commitTrigger, "::before")
+    const fileLine = getComputedStyle(element(".inspect-commit .change-file"), "::before")
+    const commitGraph = commitNodes.length == 2
+        && commitNodes.every(node => getComputedStyle(node).borderRadius == "50%")
+        && commitLine.width == "2px"
+        && fileLine.width == "2px"
+        && commitLine.top == "-1px"
+        && commitLine.bottom == "-1px"
+        && commitLine.left == fileLine.left
+        && commitLine.left == `${commitNodes[0].offsetLeft + commitNodes[0].offsetWidth / 2 - 1}px`
+        && ![...document.querySelectorAll(".commit-heading")].some(heading => /[▸▾]/u.test(heading.textContent ?? ""))
     scenario.page.lines = [
         { id: 0, kind: "hunk", text: "@@ -1000,1 +1000,1 @@", hunk: 0 },
         { id: 1, kind: "deletion", text: "old\r", oldLine: 1000, hunk: 0 },
@@ -123,6 +135,7 @@ async function checkRenderer() {
     element(".inspect-commit .change-file button").click()
     await settle()
     const compactDiff = element(".inspect-commit .pierre-diff")
+    const commitDiffClear = getComputedStyle(element(".inspect-commit .diff-inspector"), "::before").content == "none"
     const compactSplit = compactDiff.getBoundingClientRect().height < 120
     element("[aria-label='Unified']").click()
     await settle()
@@ -179,7 +192,10 @@ async function checkRenderer() {
     outer.dispatchEvent(new Event("scroll"))
     await settle()
     const stickyFile = secondFile.querySelector<HTMLElement>(".change-file")!
-    const stickyFileRow = Math.abs(stickyFile.getBoundingClientRect().top - outer.getBoundingClientRect().top - outer.clientTop) <= 1
+    const stickyCommit = secondFile.closest(".inspect-commit")!.querySelector<HTMLElement>(".commit-heading")!
+    const stickyCommitRow = Math.abs(stickyCommit.getBoundingClientRect().top - outer.getBoundingClientRect().top - outer.clientTop) <= 1
+    const stickyCommitOpaque = !getComputedStyle(stickyCommit).backgroundColor.startsWith("rgba")
+    const stickyFileRow = Math.abs(stickyFile.getBoundingClientRect().top - stickyCommit.getBoundingClientRect().bottom) <= 1
     const compactFileControls = !secondFile.querySelector(".diff-toolbar")
         && stickyFile.querySelectorAll(".diff-controls button").length == 4
         && [...stickyFile.querySelectorAll(".diff-controls button")].every(button => button.getBoundingClientRect().width <= 22)
@@ -269,6 +285,8 @@ async function checkRenderer() {
         breakoutDiffScroll,
         newlineNotice,
         stickyFileRow,
+        stickyCommitRow,
+        stickyCommitOpaque,
         compactFileControls,
         literalSelection,
         alignedSplit,
@@ -287,6 +305,8 @@ async function checkRenderer() {
         darkBackground,
         branchExpanded,
         commitExpanded,
+        commitGraph,
+        commitDiffClear,
         commitCollapsed,
         accordionKeyboard,
         radioChecked,

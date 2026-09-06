@@ -832,13 +832,13 @@ export function createInspection(options: Options) {
                                                                             data-expanded={files?.open ? "true" : "false"}
                                                                             mix={[inspectCommit, accordion.item()]}
                                                                         >
-                                                                            <h4 class="disclosure-heading" mix={disclosureHeading}>
+                                                                            <h4 class="disclosure-heading" mix={[disclosureHeading, commitStickyHeading]}>
                                                                                 <button
                                                                                     class="commit-heading"
                                                                                     type="button"
                                                                                     mix={[commitHeading, accordion.trigger()]}
                                                                                 >
-                                                                                    <span aria-hidden="true">{files?.open ? "▾" : "▸"}</span>
+                                                                                    <span aria-hidden="true" mix={commitNode} />
                                                                                     <span mix={commitHeadingSpan}>
                                                                                         {commit.subject}
                                                                                     </span>
@@ -1464,6 +1464,13 @@ const disclosureHeading = css({
     font: "inherit",
 })
 
+const commitStickyHeading = css({
+    position: "sticky",
+    top: "0",
+    zIndex: 7,
+    height: "32px",
+})
+
 const stackHeading = css({
     border: "0",
     background: "var(--panel-deep)",
@@ -1507,18 +1514,18 @@ const stackBranchButton = css({
 })
 
 const inspectCommit = css({
+    position: "relative",
     border: "1px solid transparent",
-    borderLeftWidth: "3px",
-    marginBlock: "2px",
     borderRadius: "3px",
     '&[data-expanded="true"]': {
         borderColor: "var(--line)",
-        borderLeftColor: "var(--accent-edge)",
         background: "var(--panel)",
     },
 })
 
 const commitHeading = css({
+    position: "relative",
+    height: "32px",
     border: "0",
     background: "var(--control)",
     color: "var(--text)",
@@ -1530,12 +1537,38 @@ const commitHeading = css({
     gap: "8px",
     width: "100%",
     textAlign: "left",
+    "&::before": {
+        position: "absolute",
+        top: "-1px",
+        bottom: "-1px",
+        left: "14px",
+        width: "2px",
+        content: '""',
+        background: "var(--line-strong)",
+        pointerEvents: "none",
+    },
     "&:hover": {
         background: "var(--control-hover)",
     },
     '&[aria-expanded="true"]': {
-        background: "var(--accent-wash)",
+        backgroundColor: "var(--control)",
+        backgroundImage: "linear-gradient(var(--accent-wash), var(--accent-wash))",
     },
+    '&[aria-expanded="true"] > span:first-child': {
+        background: "var(--accent)",
+    },
+})
+
+const commitNode = css({
+    position: "relative",
+    zIndex: 2,
+    width: "10px",
+    height: "10px",
+    marginBlock: "3px",
+    flex: "0 0 auto",
+    border: "2px solid var(--accent)",
+    borderRadius: "50%",
+    background: "var(--control)",
 })
 
 const commitHeadingSpan = css({
@@ -1545,11 +1578,22 @@ const commitHeadingSpan = css({
 })
 
 const mergeParent = css({
+    position: "relative",
     display: "flex",
     gap: "8px",
     alignItems: "center",
-    padding: "6px",
+    padding: "6px 6px 6px 28px",
     fontSize: "11px",
+    "&::before": {
+        position: "absolute",
+        top: "-1px",
+        bottom: "-1px",
+        left: "14px",
+        width: "2px",
+        content: '""',
+        background: "var(--line-strong)",
+        pointerEvents: "none",
+    },
 })
 
 const parentForSelect = css({
@@ -1623,6 +1667,21 @@ const changeFile = css({
     alignItems: "center",
     padding: "1px 6px",
     minHeight: "29px",
+    ".inspect-commit &": {
+        top: "32px",
+        zIndex: 6,
+        paddingLeft: "28px",
+    },
+    ".inspect-commit &::before": {
+        position: "absolute",
+        top: "-1px",
+        bottom: "-1px",
+        left: "14px",
+        width: "2px",
+        content: '""',
+        background: "var(--line-strong)",
+        pointerEvents: "none",
+    },
     "&.active": {
         backgroundImage: "linear-gradient(var(--accent-wash), var(--accent-wash))",
     },
