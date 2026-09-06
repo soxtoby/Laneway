@@ -148,6 +148,12 @@ describe("Working Changes and committed diff reads", () => {
         const inventory = await api.startReadChanges({ source: commit }).result
         expect(inventory.files.find(file => file.oldPath == "file.txt")).toMatchObject({ path: "name with spaces.txt", newMode: "100755" })
         expect(inventory.files.find(file => file.path == "link")?.newMode).toBe("120000")
+        const executable = await api.startReadFileDiff({ source: commit, path: "name with spaces.txt" }).result
+        expect(executable.summary).toContain("Executable")
+        expect(executable.summary.join(" ")).not.toMatch(/100644|100755|old mode|new mode/)
+        const link = await api.startReadFileDiff({ source: commit, path: "link" }).result
+        expect(link.summary).toContain("Symlink added")
+        expect(link.summary.join(" ")).not.toContain("120000")
         const binary = await api.startReadFileDiff({ source: commit, path: "binary.dat" }).result
         expect(binary.summary).toContain("Binary content changed.")
         expect(binary.selectable).toBe(false)
@@ -203,12 +209,12 @@ describe("Working Changes and committed diff reads", () => {
 
     test("pages patches with stable coordinates and rejects stale continuation", async () => {
         const { path, api, source } = await repository()
-        await writeFile(resolve(path, "large.txt"), Array.from({ length: 1400 }, (_, index) => `line ${index}\n`).join(""))
+        await writeFile(resolve(path, "large.txt"), Array.from({ length: 2400 }, (_, index) => `line ${index}\n`).join(""))
         const first = await api.startReadFileDiff({ source, path: "large.txt" }).result
-        expect(first.lines).toHaveLength(400)
-        expect(first.nextOffset).toBe(400)
+        expect(first.lines).toHaveLength(2000)
+        expect(first.nextOffset).toBe(2000)
         const next = await api.startReadFileDiff({ source, path: "large.txt", offset: first.nextOffset, expectedVersion: first.version }).result
-        expect(next.lines[0].id).toBe(400)
+        expect(next.lines[0].id).toBe(2000)
         expect(next.version).toBe(first.version)
         await writeFile(resolve(path, "large.txt"), "changed\n")
         await expect(api.startReadFileDiff({ source, path: "large.txt", offset: first.nextOffset, expectedVersion: first.version }).result).rejects.toThrow(

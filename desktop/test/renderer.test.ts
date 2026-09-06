@@ -354,6 +354,62 @@ describe("Remix repository entry renderer", () => {
 })
 
 describe("Working Changes inspection", () => {
+    test("opens file diffs independently beneath their rows and isolates pending reads", async () => {
+        const scenario = inspectionScenario()
+        const pending = new Map<string, { id: string; finish(result: FileDiffResult): void; request: Parameters<Window["workbench"]["readFileDiff"]>[2] }>()
+        const { container, root, dispose } = render({
+            ...scenario.api,
+            readFileDiff: async (_repositoryId, id, request) => new Promise<FileDiffResult>(finish => pending.set(request.path, { id, request, finish })),
+        })
+        await flush(root)
+        click(container.querySelector<HTMLButtonElement>(".commit-heading")!)
+        await flush(root)
+        const first = container.querySelector<HTMLButtonElement>(".inspect-commit [title='src/file.txt']")!
+        const second = container.querySelector<HTMLButtonElement>(".inspect-commit [title='other.txt']")!
+        const firstRow = first.closest(".file-inspection")!
+        const secondRow = second.closest(".file-inspection")!
+        click(first)
+        click(second)
+        await flush(root)
+        expect(pending.size).toBe(2)
+        expect(pending.get("src/file.txt")!.id).not.toBe(pending.get("other.txt")!.id)
+        expect(firstRow.nextElementSibling).toBe(secondRow)
+        expect(firstRow.querySelector(".change-file")!.nextElementSibling?.classList.contains("diff-inspector")).toBe(true)
+        expect(secondRow.querySelector(".diff-inspector")).not.toBeNull()
+        const complete = async (path: string) => {
+            const read = pending.get(path)!
+            read.finish(await scenario.api.readFileDiff("repository", read.id, read.request))
+            await flush(root)
+        }
+        await complete("other.txt")
+        const secondViewer = secondRow.querySelector(".pierre-diff")!
+        click(diffRoot(secondRow).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
+        await flush(root)
+        click(first)
+        await flush(root)
+        await complete("src/file.txt")
+        expect(firstRow.querySelector(".diff-inspector")).toBeNull()
+        expect(secondRow.querySelector(".pierre-diff")).toBe(secondViewer)
+        expect(diffRoot(secondRow).querySelectorAll(".diff-line.selected")).toHaveLength(1)
+        click(first)
+        await flush(root)
+        await complete("src/file.txt")
+        expect(container.querySelectorAll(".inspect-commit .diff-inspector")).toHaveLength(2)
+        click(secondRow.querySelector<HTMLButtonElement>("[aria-label='Break out diff']")!)
+        await flush(root)
+        expect(firstRow.querySelector(".diff-inspector")).not.toBeNull()
+        expect(secondRow.querySelector(".diff-inspector")).toBeNull()
+        expect(container.querySelector(".inspection-breakout [aria-label='Diff for other.txt']")).not.toBeNull()
+        click(container.querySelector<HTMLButtonElement>("[aria-label='Close diff column']")!)
+        await flush(root)
+        expect(secondRow.querySelector(".diff-inspector")).not.toBeNull()
+        expect(diffRoot(secondRow).querySelectorAll(".diff-line.selected")).toHaveLength(1)
+        click(container.querySelector<HTMLButtonElement>(".commit-heading")!)
+        await flush(root)
+        expect(container.querySelectorAll(".diff-inspector")).toHaveLength(0)
+        dispose()
+    })
+
     test("reads patches lazily, respects literal selection, and restores only diff layout", async () => {
         const scenario = inspectionScenario()
         let reads = 0
@@ -382,7 +438,7 @@ describe("Working Changes inspection", () => {
         expect(diffRoot(container).querySelector("[aria-label='Select deletion line 1']")).toBeNull()
         click(button(container, "Working Changes"))
         await flush(root)
-        click(button(container, "Select hunk"))
+        click(diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select hunk']")!)
         await flush(root)
         expect(diffRoot(container).querySelectorAll(".diff-line.selected")).toHaveLength(2)
         click(button(container, "Side by side"))
@@ -391,9 +447,7 @@ describe("Working Changes inspection", () => {
         click(button(container, "Break out diff"))
         await flush(root)
         expect(container.querySelector(".branch-column")?.nextElementSibling?.classList.contains("inspection-breakout")).toBe(true)
-        click(button(container, "Focus diff"))
-        await flush(root)
-        expect(container.querySelector(".inspection-breakout.focused")).not.toBeNull()
+        expect(container.textContent).not.toContain("Focus diff")
         click(container.querySelector<HTMLButtonElement>("[aria-label='Close diff column']")!)
         await flush(root)
         expect(container.querySelector(".inspection-breakout")).toBeNull()
@@ -431,9 +485,11 @@ describe("Working Changes inspection", () => {
         await flush(root)
         click(container.querySelector<HTMLButtonElement>("[title='other.txt']")!)
         await flush(root)
+        click(container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
+        await flush(root)
         finish({ ok: true, page: scenario.page })
         await flush(root)
-        expect(container.querySelector(".diff-toolbar strong")?.textContent).toBe("other.txt")
+        expect(container.querySelector(".diff-inspector")?.getAttribute("aria-label")).toBe("Diff for other.txt")
         click(diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
         await flush(root)
         version = "two"
@@ -449,7 +505,8 @@ describe("Working Changes inspection", () => {
         folder.open = false
         folder.dispatchEvent(new Event("toggle"))
         await flush(root)
-        expect(container.querySelector(".diff-inspector")).toBeNull()
+        expect(container.querySelector("[aria-label='Diff for src/file.txt']")).toBeNull()
+        expect(container.querySelector("[aria-label='Diff for other.txt']")).not.toBeNull()
         dispose()
     })
 
@@ -477,16 +534,30 @@ describe("Working Changes inspection", () => {
         }
         const { container, root, dispose } = render(api)
         await flush(root)
-        expect(historyReads).toBe(0)
-        click(container.querySelector<HTMLButtonElement>(".stack-heading")!)
-        await flush(root)
         expect(historyReads).toBe(1)
+        expect(container.querySelector(".stack-heading")?.getAttribute("aria-expanded")).toBe("true")
         click(container.querySelector<HTMLButtonElement>(".commit-heading")!)
         await flush(root)
         click(container.querySelector<HTMLButtonElement>(".inspect-commit [title='src/file.txt']")!)
         await flush(root)
+        expect(container.querySelector(".inspect-commit .file-tree details")).toBeNull()
+        expect(container.querySelector(".inspect-commit .file-tree")?.textContent).toContain("src/file.txt")
+        expect(container.querySelector(".inspect-commit .change-file")?.nextElementSibling?.classList.contains("diff-inspector")).toBe(true)
         expect(diffRoot(container).querySelectorAll(".diff-line").length).toBeLessThanOrEqual(80)
         expect(container.querySelector(".diff-views")).toBeNull()
+        click(container.querySelector<HTMLButtonElement>(".inspect-commit [title='src/file.txt']")!)
+        await flush(root)
+        expect(container.querySelector(".diff-inspector")).toBeNull()
+        click(container.querySelector<HTMLButtonElement>(".inspect-commit [title='src/file.txt']")!)
+        await flush(root)
+        expect(container.querySelector(".diff-inspector")).not.toBeNull()
+        click(container.querySelector<HTMLButtonElement>(".commit-heading")!)
+        await flush(root)
+        expect(container.querySelector(".diff-inspector")).toBeNull()
+        expect(container.querySelector(".commit-heading")?.getAttribute("aria-expanded")).toBe("false")
+        click(container.querySelector<HTMLButtonElement>(".commit-heading")!)
+        await flush(root)
+        expect(container.querySelector(".diff-inspector")).toBeNull()
         click(container.querySelector<HTMLButtonElement>(".stack-heading")!)
         await flush(root)
         expect(container.querySelector(".diff-inspector")).toBeNull()
@@ -532,7 +603,9 @@ function submit(form: HTMLFormElement) {
 }
 
 function button(container: HTMLElement, label: string) {
-    const result = [...container.querySelectorAll<HTMLButtonElement>("button")].find(candidate => candidate.textContent?.trim() == label)
+    const result = [...container.querySelectorAll<HTMLButtonElement>("button")].find(candidate =>
+        candidate.getAttribute("aria-label") == label || candidate.textContent?.trim() == label
+    )
     if (!result)
         throw new Error(`Button not found: ${label}. Rendered: ${container.textContent}`)
     return result

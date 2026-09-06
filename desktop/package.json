@@ -4,8 +4,8 @@
     "type": "module",
     "main": "./out/main/index.js",
     "scripts": {
-        "dev": "electron-vite dev",
-        "dev:inspect": "electron-vite dev --remoteDebuggingPort 9222",
+        "dev": "electron-vite dev --watch",
+        "dev:inspect": "electron-vite dev --watch --remoteDebuggingPort 9222",
         "build": "electron-vite build"
     },
     "dependencies": {

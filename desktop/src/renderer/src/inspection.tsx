@@ -28,6 +28,18 @@ interface HistoryState {
     open: boolean
     generation: number
 }
+interface FileDiffState {
+    showWhitespace: boolean
+    group: string
+    path: string
+    view: DiffView
+    page?: FileDiffPage
+    loading: boolean
+    error?: string
+    selection?: ChangeSelection
+    generation: number
+    notice?: string
+}
 interface ColumnState {
     repositoryId: string
     id: string
@@ -37,16 +49,9 @@ interface ColumnState {
     files: Map<string, FileState>
     history: Map<string, HistoryState>
     requestIds: Set<string>
-    selected?: { group: string; path: string; view: DiffView }
-    diff?: FileDiffPage
-    diffLoading: boolean
-    diffError?: string
-    selection?: ChangeSelection
+    diffs: Map<string, FileDiffState>
     wholeFiles: Map<string, { source: DiffSource; path: string; version: string }>
-    diffGeneration: number
-    notice?: string
-    breakout: boolean
-    focused: boolean
+    breakout?: FileDiffState
     showIgnored: boolean
     filter: string
     status: string
@@ -97,9 +102,11 @@ export function createInspection(options: Options) {
         void options.api.cancelInspection(state.repositoryId, id)
     }
     function suspend(state: ColumnState) {
-        state.selection = undefined
-        state.diffGeneration++
-        state.diffLoading = false
+        for (const diff of state.diffs.values()) {
+            diff.selection = undefined
+            diff.generation++
+            diff.loading = false
+        }
         for (const file of state.files.values()) {
             file.generation++
             file.loading = false
@@ -125,8 +132,10 @@ export function createInspection(options: Options) {
             if (branch && current.open && !current.page)
                 void history(state, branch)
         }
-        if (state.selected && !state.diff)
-            void readDiff(state)
+        for (const diff of state.diffs.values()) {
+            if (!diff.page)
+                void readDiff(state, diff)
+        }
     }
     function requestId(state: ColumnState, suffix: string) {
         const id = `${state.id}:${suffix}`
@@ -148,10 +157,7 @@ export function createInspection(options: Options) {
                 files: new Map(),
                 history: new Map(),
                 requestIds: new Set(),
-                diffLoading: false,
-                diffGeneration: 0,
-                breakout: false,
-                focused: false,
+                diffs: new Map(),
                 showIgnored: false,
                 filter: "",
                 status: "all",
@@ -160,6 +166,12 @@ export function createInspection(options: Options) {
             }
             columns.set(id, state)
             const created = state
+            if (column.kind == "branch") {
+                queueMicrotask(() => {
+                    if (created.alive)
+                        void history(created, column)
+                })
+            }
             if (worktreePath) {
                 queueMicrotask(() => {
                     if (created.alive)
@@ -200,18 +212,22 @@ export function createInspection(options: Options) {
                         state.wholeFiles.delete(id)
                 }
             }
-            if (state.selected?.group == group) {
-                if (!result.inventory.files.some(file => file.path == state.selected!.path && !file.ignored))
-                    clearDiff(state)
+            for (const diff of state.diffs.values()) {
+                if (diff.group != group)
+                    continue
+                if (!result.inventory.files.some(file => file.path == diff.path && !file.ignored))
+                    clearDiff(state, diff)
                 else if (refreshDiff)
-                    void readDiff(state, false, true)
+                    void readDiff(state, diff, false, true)
             }
         } catch (error) {
             if (state.alive && generation == files.generation) {
                 files.error = message(error)
-                if (state.selected?.group == group) {
-                    state.selection = undefined
-                    state.diff = undefined
+                for (const diff of state.diffs.values()) {
+                    if (diff.group == group) {
+                        diff.selection = undefined
+                        diff.page = undefined
+                    }
                 }
             }
         } finally {
@@ -221,62 +237,77 @@ export function createInspection(options: Options) {
             }
         }
     }
-    function clearDiff(state: ColumnState) {
-        state.diffGeneration++
-        cancel(state, requestId(state, "diff"))
-        state.selected = undefined
-        state.diff = undefined
-        state.selection = undefined
-        state.diffError = undefined
-        state.diffLoading = false
+    function diffKey(group: string, path: string) {
+        return JSON.stringify([group, path])
+    }
+    function diffRequestId(state: ColumnState, diff: FileDiffState) {
+        return requestId(state, `diff:${diffKey(diff.group, diff.path)}`)
+    }
+    function clearDiff(state: ColumnState, diff: FileDiffState) {
+        diff.generation++
+        cancel(state, diffRequestId(state, diff))
+        state.diffs.delete(diffKey(diff.group, diff.path))
+        if (state.breakout == diff)
+            state.breakout = undefined
+    }
+    function clearGroup(state: ColumnState, group: string, prefix = "") {
+        for (const diff of state.diffs.values()) {
+            if (diff.group == group && diff.path.startsWith(prefix))
+                clearDiff(state, diff)
+        }
     }
     function choose(state: ColumnState, group: string, file: ChangedFile) {
-        clearDiff(state)
-        state.selected = { group, path: file.path, view: "combined" }
-        state.notice = undefined
-        void readDiff(state)
-    }
-    async function readDiff(state: ColumnState, more = false, refresh = false) {
-        const selected = state.selected
-        const source = selected && state.files.get(selected.group)?.source
-        if (!selected || !source || !state.alive || refresh && state.diffLoading)
+        const id = diffKey(group, file.path)
+        const selected = state.diffs.get(id)
+        if (selected) {
+            clearDiff(state, selected)
+            update()
             return
-        const previous = state.diff
-        const generation = ++state.diffGeneration
-        state.diffLoading = true
-        state.diffError = undefined
+        }
+        const diff: FileDiffState = { group, path: file.path, view: "combined", loading: false, generation: 0, showWhitespace: false }
+        state.diffs.set(id, diff)
+        void readDiff(state, diff)
+    }
+    async function readDiff(state: ColumnState, diff: FileDiffState, more = false, refresh = false) {
+        const source = state.files.get(diff.group)?.source
+        if (!source || !state.alive || refresh && diff.loading)
+            return
+        const previous = diff.page
+        const generation = ++diff.generation
+        diff.loading = true
+        diff.error = undefined
         update()
         try {
-            const result = await options.api.readFileDiff(state.repositoryId, requestId(state, "diff"), {
+            const result = await options.api.readFileDiff(state.repositoryId, diffRequestId(state, diff), {
                 source,
-                path: selected.path,
-                view: selected.view,
+                path: diff.path,
+                view: diff.view,
                 ...(more && previous ? { offset: previous.nextOffset, expectedVersion: previous.version } : {}),
             })
-            if (!state.alive || generation != state.diffGeneration)
+            if (!state.alive || generation != diff.generation)
                 return
             if (!result.ok)
                 throw new Error(result.error.message)
             const page = result.page
             if (previous && previous.version != page.version) {
-                state.selection = undefined
-                state.notice = "File changed. Change Selection cleared."
+                diff.selection = undefined
+                diff.notice = "File changed. Change Selection cleared."
             }
-            state.diff = more && previous
+            diff.page = more && previous
                 ? { ...page, lines: [...previous.lines, ...page.lines] }
                 : refresh && previous?.version == page.version
                 ? previous
                 : page
         } catch (error) {
-            if (state.alive && generation == state.diffGeneration) {
-                state.diffError = message(error)
-                state.selection = undefined
+            if (state.alive && generation == diff.generation) {
+                diff.error = message(error)
+                diff.selection = undefined
                 if (!more)
-                    state.diff = undefined
+                    diff.page = undefined
             }
         } finally {
-            if (generation == state.diffGeneration) {
-                state.diffLoading = false
+            if (generation == diff.generation) {
+                diff.loading = false
                 update()
             }
         }
@@ -327,26 +358,26 @@ export function createInspection(options: Options) {
             void history(state, branch)
         else {
             current.open = !current.open
-            if (!current.open && current.page?.commits.some(commit => commit.objectId == state.selected?.group))
-                clearDiff(state)
+            if (!current.open) {
+                for (const commit of current.page?.commits ?? [])
+                    clearGroup(state, commit.objectId)
+            }
             if (current.open && !current.page)
                 void history(state, branch)
             update()
         }
     }
-    function changeView(state: ColumnState, view: DiffView) {
-        if (!state.selected)
-            return
-        state.selected.view = view
-        state.diff = undefined
-        state.selection = undefined
-        void readDiff(state)
+    function changeView(state: ColumnState, diff: FileDiffState, view: DiffView) {
+        diff.view = view
+        diff.page = undefined
+        diff.selection = undefined
+        void readDiff(state, diff)
     }
-    function selectLines(state: ColumnState, ids: number[]) {
-        const page = state.diff
+    function selectLines(diff: FileDiffState, ids: number[]) {
+        const page = diff.page
         if (!page?.selectable)
             return
-        const selection = state.selection ?? { source: page.source, path: page.file.path, version: page.version, lineIds: [], rename: false }
+        const selection = diff.selection ?? { source: page.source, path: page.file.path, version: page.version, lineIds: [], rename: false }
         const current = new Set(selection.lineIds)
         const remove = ids.every(id => current.has(id))
         for (const id of ids) {
@@ -355,14 +386,15 @@ export function createInspection(options: Options) {
             else
                 current.add(id)
         }
-        state.selection = { ...selection, lineIds: [...current].sort((a, b) => a - b) }
+        diff.selection = { ...selection, lineIds: [...current].sort((a, b) => a - b) }
         update()
     }
     function filterChanged(state: ColumnState) {
-        const selected = state.selected
-        const file = selected && state.files.get(selected.group)?.inventory?.files.find(file => file.path == selected.path)
-        if (file && !matchesFilter(state, file))
-            clearDiff(state)
+        for (const diff of state.diffs.values()) {
+            const file = state.files.get(diff.group)?.inventory?.files.find(file => file.path == diff.path)
+            if (file && !matchesFilter(state, file))
+                clearDiff(state, diff)
+        }
         update()
     }
     function matchesFilter(state: ColumnState, file: ChangedFile) {
@@ -383,24 +415,28 @@ export function createInspection(options: Options) {
                         </button>
                     </p>
                 )}
-                {files.loading && (
-                    <p class="inspection-muted" role="status" mix={inspectionMuted}>
-                        Reading files…
-                    </p>
-                )}
                 {files.inventory && !all.some(file => !file.ignored) && (
                     <p class="inspection-muted" mix={inspectionMuted}>
                         {group == "working" ? "No Working Changes" : "No changes against this parent"}
                     </p>
                 )}
                 <FileTree
+                    flat={group != "working"}
                     files={visible}
-                    selected={state.selected?.group == group ? state.selected.path : undefined}
+                    expanded={new Set([...state.diffs.values()].filter(diff => diff.group == group).map(diff => diff.path))}
+                    controls={file => {
+                        const diff = state.diffs.get(diffKey(group, file.path))
+                        return diff && state.breakout != diff ? renderDiffControls(state, diff) : null
+                    }}
+                    diff={file => {
+                        const diff = state.diffs.get(diffKey(group, file.path))
+                        return diff && state.breakout != diff ? renderDiff(state, diff) : null
+                    }}
                     checked={new Set(state.wholeFiles.keys())}
                     prefix={group}
                     choose={file => choose(state, group, file)}
-                    hide={() => {
-                        clearDiff(state)
+                    hide={path => {
+                        clearGroup(state, group, path)
                         update()
                     }}
                     check={file => {
@@ -425,69 +461,79 @@ export function createInspection(options: Options) {
             </section>
         )
     }
-    function renderDiff(state: ColumnState): RemixNode {
-        const page = state.diff
-        const selected = state.selected
-        if (!selected) {
-            return (
-                <p class="inspection-muted" mix={inspectionMuted}>
-                    Choose a file to inspect its changes.
-                </p>
-            )
-        }
+    function renderDiffControls(state: ColumnState, diff: FileDiffState): RemixNode {
         const layout = options.layout(state.repositoryId, state.id)
         return (
-            <section class="diff-inspector" aria-label={`Diff for ${selected.path}`} mix={diffInspector}>
-                <header class="diff-toolbar" mix={diffToolbar}>
-                    <strong title={selected.path} mix={diffToolbarStrong}>
-                        {selected.path}
-                    </strong>
-                    <div mix={diffToolbarDiv}>
-                        <button
-                            type="button"
-                            aria-pressed={layout == "unified"}
-                            mix={[diffToolbarButton, on("click", () => options.saveLayout(state.repositoryId, state.id, "unified"))]}
-                        >
-                            Unified
-                        </button>
-                        <button
-                            type="button"
-                            aria-pressed={layout == "split"}
-                            mix={[diffToolbarButton, on("click", () => options.saveLayout(state.repositoryId, state.id, "split"))]}
-                        >
-                            Side by side
-                        </button>
-                        {!state.breakout && (
-                            <button
-                                type="button"
-                                mix={[
-                                    diffToolbarButton,
-                                    on("click", () => {
-                                        state.breakout = true
-                                        update()
-                                    }),
-                                ]}
-                            >
-                                Break out diff
-                            </button>
+            <div class="diff-controls" mix={diffToolbarDiv}>
+                <button
+                    type="button"
+                    aria-label="Unified"
+                    title="Unified"
+                    aria-pressed={layout == "unified"}
+                    mix={[diffToolbarButton, on("click", () => options.saveLayout(state.repositoryId, state.id, "unified"))]}
+                >
+                    {diffIcon("unified")}
+                </button>
+                <button
+                    type="button"
+                    aria-label="Side by side"
+                    title="Side by side"
+                    aria-pressed={layout == "split"}
+                    mix={[diffToolbarButton, on("click", () => options.saveLayout(state.repositoryId, state.id, "split"))]}
+                >
+                    {diffIcon("split")}
+                </button>
+                <button
+                    type="button"
+                    aria-label="Show whitespace"
+                    title="Show whitespace"
+                    aria-pressed={diff.showWhitespace}
+                    mix={[
+                        diffToolbarButton,
+                        on("click", () => {
+                            diff.showWhitespace = !diff.showWhitespace
+                            update()
+                        }),
+                    ]}
+                >
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                        <path d="M13 2H6a3.5 3.5 0 0 0 0 7h2M8 2v12M11 2v12" />
+                    </svg>
+                </button>
+                {state.breakout != diff && (
+                    <button
+                        type="button"
+                        aria-label="Break out diff"
+                        title="Break out diff"
+                        mix={[
+                            diffToolbarButton,
+                            on("click", () => {
+                                state.breakout = diff
+                                update()
+                            }),
+                        ]}
+                    >
+                        {diffIcon("breakout")}
+                    </button>
+                )}
+            </div>
+        )
+    }
+    function renderDiff(state: ColumnState, diff: FileDiffState): RemixNode {
+        const page = diff.page
+        const layout = options.layout(state.repositoryId, state.id)
+        return (
+            <section class="diff-inspector" aria-label={`Diff for ${diff.path}`} mix={diffInspector}>
+                {state.breakout == diff && (
+                    <header class="diff-toolbar" mix={diffToolbar}>
+                        {state.breakout == diff && (
+                            <strong title={diff.path} mix={diffToolbarStrong}>
+                                {fileLabel(diff.path)}
+                            </strong>
                         )}
-                        <button
-                            type="button"
-                            aria-pressed={state.focused}
-                            mix={[
-                                diffToolbarButton,
-                                on("click", () => {
-                                    state.focused = !state.focused
-                                    if (state.focused)
-                                        state.breakout = true
-                                    update()
-                                }),
-                            ]}
-                        >
-                            Focus diff
-                        </button>
-                    </div>
-                </header>
+                        {renderDiffControls(state, diff)}
+                    </header>
+                )}
                 {page?.source.kind == "working" && (
                     <div class="diff-views" role="group" aria-label="Comparison" mix={diffViews}>
                         {([
@@ -497,23 +543,23 @@ export function createInspection(options: Options) {
                         ] as DiffView[]).map(view => (
                             <button
                                 type="button"
-                                aria-pressed={selected.view == view}
-                                mix={[diffViewsButton, on("click", () => changeView(state, view))]}
+                                aria-pressed={diff.view == view}
+                                mix={[diffViewsButton, on("click", () => changeView(state, diff, view))]}
                             >
                                 {view == "combined" ? "Working Changes" : view[0].toUpperCase() + view.slice(1)}
                             </button>
                         ))}
                     </div>
                 )}
-                {state.notice && (
+                {diff.notice && (
                     <p class="inspection-notice" role="status" mix={inspectionNotice}>
-                        {state.notice}
+                        {diff.notice}
                     </p>
                 )}
-                {state.diffError && (
+                {diff.error && (
                     <p role="alert" mix={diffInspectorP}>
-                        {state.diffError}{" "}
-                        <button type="button" mix={[diffInspectorButton, on("click", () => readDiff(state))]}>
+                        {diff.error}{" "}
+                        <button type="button" mix={[diffInspectorButton, on("click", () => readDiff(state, diff))]}>
                             Retry diff
                         </button>
                     </p>
@@ -529,15 +575,15 @@ export function createInspection(options: Options) {
                             <label class="rename-selection" mix={renameSelection}>
                                 <input
                                     type="checkbox"
-                                    checked={state.selection?.rename ?? false}
+                                    checked={diff.selection?.rename ?? false}
                                     mix={[
                                         diffInspectorInput,
                                         on("change", event => {
-                                            state.selection = {
+                                            diff.selection = {
                                                 source: page.source,
                                                 path: page.file.path,
                                                 version: page.version,
-                                                lineIds: state.selection?.lineIds ?? [],
+                                                lineIds: diff.selection?.lineIds ?? [],
                                                 rename: event.currentTarget.checked,
                                             }
                                             update()
@@ -551,16 +597,22 @@ export function createInspection(options: Options) {
                                 No net content difference in this view.
                             </p>
                         )}
-                        <DiffLines page={page} layout={layout} selected={state.selection?.lineIds ?? []} select={ids => selectLines(state, ids)} />
-                        {state.selection && (
+                        <DiffLines
+                            page={page}
+                            layout={layout}
+                            showWhitespace={diff.showWhitespace}
+                            selected={diff.selection?.lineIds ?? []}
+                            select={ids => selectLines(diff, ids)}
+                        />
+                        {diff.selection && (
                             <div class="selection-summary" role="status" mix={selectionSummary}>
-                                {state.selection.lineIds.length} lines selected{state.selection.rename ? " · rename selected" : ""}
+                                {diff.selection.lineIds.length} lines selected{diff.selection.rename ? " · rename selected" : ""}
                                 <button
                                     type="button"
                                     mix={[
                                         selectionSummaryButton,
                                         on("click", () => {
-                                            state.selection = undefined
+                                            diff.selection = undefined
                                             update()
                                         }),
                                     ]}
@@ -573,26 +625,26 @@ export function createInspection(options: Options) {
                             <button
                                 type="button"
                                 class="load-diff"
-                                disabled={state.diffLoading}
-                                mix={[loadDiff, on("click", () => readDiff(state, true))]}
+                                disabled={diff.loading}
+                                mix={[loadDiff, on("click", () => readDiff(state, diff, true))]}
                             >
                                 Load more
                             </button>
                         )}
                     </>
                 )}
-                {state.diffLoading && (
-                    <p class="inspection-muted" role="status" mix={inspectionMuted}>
+                {diff.loading && (
+                    <p class="inspection-progress" role="status" mix={inspectionProgress}>
                         Reading diff…{" "}
                         <button
                             type="button"
                             mix={[
                                 inspectionMutedButton,
                                 on("click", () => {
-                                    state.diffGeneration++
-                                    state.diffLoading = false
-                                    state.diffError = "Diff read cancelled."
-                                    cancel(state, requestId(state, "diff"))
+                                    diff.generation++
+                                    diff.loading = false
+                                    diff.error = "Diff read cancelled."
+                                    cancel(state, diffRequestId(state, diff))
                                     update()
                                 }),
                             ]}
@@ -647,7 +699,7 @@ export function createInspection(options: Options) {
                     : undefined
             }
             return (
-                <div class={`column-inspection ${state.focused ? "focused" : ""}`} mix={columnInspection}>
+                <div class="column-inspection" mix={columnInspection}>
                     <div class="inspection-filters" mix={inspectionFilters}>
                         <input
                             aria-label="Filter changed files"
@@ -710,7 +762,6 @@ export function createInspection(options: Options) {
                             {fileList(state, "working", state.files.get("working"))}
                         </section>
                     )}
-                    {!state.breakout && state.selected && renderDiff(state)}
                     <accordion.Context
                         type="multiple"
                         value={stack.filter(branch => state.history.get(branch.id)?.open).map(branch => branch.id)}
@@ -748,19 +799,19 @@ export function createInspection(options: Options) {
                                                                 if (values.includes(commit.objectId) == (files?.open ?? false))
                                                                     continue
                                                                 if (files) {
-                                                                    files.open = !files.open
-                                                                    if (!files.open && state.selected?.group == commit.objectId)
-                                                                        clearDiff(state)
-                                                                    update()
+                                                                    files.open = values.includes(commit.objectId)
+                                                                    if (!files.open)
+                                                                        clearGroup(state, commit.objectId)
                                                                 } else {
                                                                     void readFiles(state, commit.objectId, { kind: "commit", objectId: commit.objectId })
                                                                 }
                                                             }
+                                                            update()
                                                         }}
                                                     >
-                                                        <div mix={accordion.root()}>
+                                                        <div mix={[accordion.root(), inspectionProgressContainer]}>
                                                             {current.loading && (
-                                                                <p class="inspection-muted" mix={inspectionMuted}>
+                                                                <p class="inspection-progress" role="status" mix={inspectionProgress}>
                                                                     Reading commits…
                                                                 </p>
                                                             )}
@@ -776,16 +827,18 @@ export function createInspection(options: Options) {
                                                                 const files = state.files.get(commit.objectId)
                                                                 return (
                                                                     <accordion.ItemContext key={commit.objectId} value={commit.objectId}>
-                                                                        <div class="inspect-commit" mix={accordion.item()}>
+                                                                        <div
+                                                                            class="inspect-commit"
+                                                                            data-expanded={files?.open ? "true" : "false"}
+                                                                            mix={[inspectCommit, accordion.item()]}
+                                                                        >
                                                                             <h4 class="disclosure-heading" mix={disclosureHeading}>
                                                                                 <button
                                                                                     class="commit-heading"
                                                                                     type="button"
                                                                                     mix={[commitHeading, accordion.trigger()]}
                                                                                 >
-                                                                                    <code mix={commitHeadingCode}>
-                                                                                        {commit.objectId.slice(0, 8)}
-                                                                                    </code>
+                                                                                    <span aria-hidden="true">{files?.open ? "▾" : "▸"}</span>
                                                                                     <span mix={commitHeadingSpan}>
                                                                                         {commit.subject}
                                                                                     </span>
@@ -804,7 +857,7 @@ export function createInspection(options: Options) {
                                                                                                     mix={[
                                                                                                         parentForSelect,
                                                                                                         on("change", event => {
-                                                                                                            clearDiff(state)
+                                                                                                            clearGroup(state, commit.objectId)
                                                                                                             void readFiles(state, commit.objectId, {
                                                                                                                 kind: "commit",
                                                                                                                 objectId: commit.objectId,
@@ -872,7 +925,7 @@ export function createInspection(options: Options) {
             if (!state?.breakout)
                 return null
             return (
-                <aside class={`inspection-breakout ${state.focused ? "focused" : ""}`} mix={inspectionBreakout} aria-label={`${state.column.name} diff`}>
+                <aside class="inspection-breakout" mix={inspectionBreakout} aria-label={`${state.column.name} diff`}>
                     <header mix={inspectionBreakoutHeader}>
                         <span>Diff · {state.column.name}</span>
                         <button
@@ -881,8 +934,7 @@ export function createInspection(options: Options) {
                             mix={[
                                 closeDiffColumnButton,
                                 on("click", () => {
-                                    state.breakout = false
-                                    state.focused = false
+                                    state.breakout = undefined
                                     update()
                                 }),
                             ]}
@@ -890,7 +942,7 @@ export function createInspection(options: Options) {
                             ×
                         </button>
                     </header>
-                    {renderDiff(state)}
+                    {renderDiff(state, state.breakout)}
                 </aside>
             )
         },
@@ -901,12 +953,15 @@ function FileTree(
     handle: Handle<
         {
             files: ChangedFile[]
-            selected?: string
+            flat?: boolean
+            expanded: Set<string>
+            diff(file: ChangedFile): RemixNode
+            controls(file: ChangedFile): RemixNode
             checked: Set<string>
             prefix: string
             choose(file: ChangedFile): void
             check(file: ChangedFile): void
-            hide(): void
+            hide(path: string): void
         }
     >,
 ) {
@@ -932,32 +987,34 @@ function FileTree(
         }
         const rows = (files: ChangedFile[]) =>
             files.map(file => (
-                <div class={`change-file ${props.selected == file.path ? "active" : ""}`} mix={changeFile}>
-                    <input
-                        type="checkbox"
-                        aria-label={`Select file ${file.path}`}
-                        checked={props.checked.has(`${props.prefix}:${file.path}`)}
-                        mix={[selectFileInput, on("change", () => props.check(file))]}
-                    />
-                    <button
-                        type="button"
-                        title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
-                        aria-pressed={props.selected == file.path}
-                        mix={[changeFileButton, on("click", () => props.choose(file))]}
-                    >
-                        <span class={`file-status ${file.status.replaceAll(" ", "-")}`} mix={fileStatus}>
-                            {file.conflicted ? "!" : file.status[0].toUpperCase()}
-                        </span>
-                        <span mix={changeFileSpan}>
-                            {file.oldPath ? `${file.oldPath} → ${file.path}` : file.path.split("/").at(-1)}
-                        </span>
-                        {file.staged && (
-                            <small class="staged-badge" mix={stagedBadge}>
-                                staged
-                            </small>
-                        )}
-                        {file.submodule && <small>submodule</small>}
-                    </button>
+                <div key={file.path} class="file-inspection">
+                    <div class={`change-file ${props.expanded.has(file.path) ? "active" : ""}`} mix={changeFile}>
+                        <input
+                            type="checkbox"
+                            aria-label={`Select file ${file.path}`}
+                            checked={props.checked.has(`${props.prefix}:${file.path}`)}
+                            mix={[selectFileInput, on("change", () => props.check(file))]}
+                        />
+                        <button
+                            type="button"
+                            title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
+                            aria-expanded={props.expanded.has(file.path)}
+                            mix={[changeFileButton, on("click", () => props.choose(file))]}
+                        >
+                            <span class={`file-status ${file.status.replaceAll(" ", "-")}`} mix={fileStatus}>
+                                {changeIcon(file.conflicted ? "conflicted" : file.status)}
+                            </span>
+                            {fileLabel(file.path, props.flat || !!file.oldPath, file.oldPath)}
+                            {file.staged && (
+                                <small class="staged-badge" mix={stagedBadge}>
+                                    staged
+                                </small>
+                            )}
+                            {file.submodule && <small>submodule</small>}
+                        </button>
+                        {props.controls(file)}
+                    </div>
+                    {props.diff(file)}
                 </div>
             ))
         const renderDirectory = (directory: Directory, prefix = ""): RemixNode => (
@@ -972,8 +1029,7 @@ function FileTree(
                                     collapsed.delete(path)
                                 else {
                                     collapsed.add(path)
-                                    if (props.selected?.startsWith(path))
-                                        props.hide()
+                                    props.hide(path)
                                 }
                             })]}
                         >
@@ -987,8 +1043,50 @@ function FileTree(
                 {rows(directory.files)}
             </>
         )
-        return <div class="file-tree">{renderDirectory(tree)}</div>
+        return <div class="file-tree">{props.flat ? rows(props.files) : renderDirectory(tree)}</div>
     }
+}
+
+function changeIcon(status: string) {
+    const paths: Record<string, string> = {
+        added: "M8 3v10M3 8h10",
+        deleted: "M3 8h10",
+        modified: "m3 10 7-7 3 3-7 7H3v-3ZM9 4l3 3",
+        renamed: "M2 8h11M9 4l4 4-4 4",
+        copied: "M6 6h7v7H6ZM3 10H2V2h8v1",
+        conflicted: "M8 2 1 14h14L8 2ZM8 6v4M8 11v1",
+    }
+    return (
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" role="img" aria-label={status}>
+            <path d={paths[status] ?? "M8 3v10M3 8h10"} />
+        </svg>
+    )
+}
+
+function fileLabel(path: string, showFolder = true, oldPath?: string) {
+    const separator = path.lastIndexOf("/") + 1
+    const folder = `${oldPath ? `${oldPath} → ` : ""}${showFolder ? path.slice(0, separator) : ""}`
+    return (
+        <span mix={changeFileSpan}>
+            {folder && <span class="file-folder" mix={fileFolder}>{folder}</span>}
+            <span class="file-name" mix={fileName}>{path.slice(separator)}</span>
+        </span>
+    )
+}
+
+function diffIcon(kind: "unified" | "split" | "breakout") {
+    return (
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" aria-hidden="true">
+            {kind == "breakout"
+                ? <path d="M9 2h5v5M14 2 7 9M7 3H2v11h11V9" />
+                : (
+                    <>
+                        <rect x="2" y="2" width="12" height="12" rx="1" />
+                        <path d={kind == "split" ? "M8 2v12M4 5h2M10 5h2M4 8h2M10 8h2" : "M4 5h8M4 8h8M4 11h8"} />
+                    </>
+                )}
+        </svg>
+    )
 }
 
 function message(error: unknown) {
@@ -996,6 +1094,7 @@ function message(error: unknown) {
 }
 
 const changeFileList = css({
+    position: "relative",
     ".file-tree details &": {
         paddingLeft: "14px",
     },
@@ -1026,6 +1125,31 @@ const changeFileListButton = css({
     },
 })
 
+const inspectionProgressContainer = css({
+    position: "relative",
+})
+
+const inspectionProgress = css({
+    position: "absolute",
+    top: "0",
+    right: "0",
+    zIndex: 1,
+    margin: "0",
+    padding: "4px 8px",
+    maxWidth: "100%",
+    boxSizing: "border-box",
+    border: "1px solid var(--line)",
+    borderRadius: "3px",
+    background: "var(--panel)",
+    color: "var(--muted)",
+    fontSize: "12px",
+    overflowWrap: "anywhere",
+    pointerEvents: "none",
+    "& button": {
+        pointerEvents: "auto",
+    },
+})
+
 const inspectionMuted = css({
     margin: "0",
     padding: "8px 10px",
@@ -1035,36 +1159,50 @@ const inspectionMuted = css({
 })
 
 const diffInspector = css({
+    position: "relative",
     borderBlock: "1px solid var(--line-strong)",
     background: "var(--panel)",
     minWidth: "0",
 })
 
 const diffToolbar = css({
-    padding: "8px",
+    position: "sticky",
+    top: "0",
+    zIndex: 5,
+    background: "var(--panel)",
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "4px 6px",
     borderBottom: "1px solid var(--line)",
 })
 
 const diffToolbarStrong = css({
-    display: "block",
-    overflowWrap: "anywhere",
-    marginBottom: "6px",
+    display: "flex",
+    minWidth: "0",
+    flex: "1",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
     font: "12px var(--mono)",
 })
 
 const diffToolbarDiv = css({
+    marginLeft: "auto",
     display: "flex",
-    flexWrap: "wrap",
     gap: "4px",
     flex: "0 0 auto",
 })
 
 const diffToolbarButton = css({
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
     border: "1px solid var(--line)",
     background: "var(--control)",
     color: "var(--text)",
     borderRadius: "3px",
-    padding: "3px 6px",
+    padding: "2px",
     font: "inherit",
     cursor: "pointer",
     fontSize: "11px",
@@ -1075,8 +1213,8 @@ const diffToolbarButton = css({
     "&:hover": {
         background: "var(--control-hover)",
     },
-    minWidth: "26px",
-    minHeight: "26px",
+    width: "22px",
+    height: "22px",
 })
 
 const diffViews = css({
@@ -1140,9 +1278,10 @@ const diffInspectorButton = css({
 
 const diffSummary = css({
     margin: "0",
-    padding: "8px 10px",
+    padding: "4px 10px",
     color: "var(--muted)",
-    fontSize: "12px",
+    fontSize: "11px",
+    lineHeight: "16px",
     overflowWrap: "anywhere",
 })
 
@@ -1235,9 +1374,6 @@ const inspectionMutedButton = css({
 })
 
 const columnInspection = css({
-    "&.focused .stack-inspection": {
-        display: "none",
-    },
     overflow: "auto",
     flex: "1",
     minHeight: "0",
@@ -1370,6 +1506,18 @@ const stackBranchButton = css({
     },
 })
 
+const inspectCommit = css({
+    border: "1px solid transparent",
+    borderLeftWidth: "3px",
+    marginBlock: "2px",
+    borderRadius: "3px",
+    '&[data-expanded="true"]': {
+        borderColor: "var(--line)",
+        borderLeftColor: "var(--accent-edge)",
+        background: "var(--panel)",
+    },
+})
+
 const commitHeading = css({
     border: "0",
     background: "var(--control)",
@@ -1382,19 +1530,12 @@ const commitHeading = css({
     gap: "8px",
     width: "100%",
     textAlign: "left",
-    borderBottom: "1px solid var(--line)",
     "&:hover": {
         background: "var(--control-hover)",
     },
-    '&[aria-pressed="true"]': {
-        background: "var(--accent-wash-strong)",
-        borderColor: "var(--accent-edge)",
+    '&[aria-expanded="true"]': {
+        background: "var(--accent-wash)",
     },
-})
-
-const commitHeadingCode = css({
-    color: "var(--muted)",
-    font: "11px var(--mono)",
 })
 
 const commitHeadingSpan = css({
@@ -1437,12 +1578,6 @@ const bodySelectionSummaryButton = css({
 })
 
 const inspectionBreakout = css({
-    "&.focused": {
-        flexBasis: "min(1000px, 75vw)",
-    },
-    "& .diff-lines": {
-        maxHeight: "calc(100vh - 280px)",
-    },
     flex: "0 0 620px",
     minWidth: "380px",
     overflow: "auto",
@@ -1479,13 +1614,17 @@ const closeDiffColumnButton = css({
 })
 
 const changeFile = css({
+    position: "sticky",
+    top: "0",
+    zIndex: 5,
+    background: "var(--panel)",
     display: "flex",
     gap: "3px",
     alignItems: "center",
     padding: "1px 6px",
     minHeight: "29px",
     "&.active": {
-        background: "var(--accent-wash)",
+        backgroundImage: "linear-gradient(var(--accent-wash), var(--accent-wash))",
     },
     ".file-tree details &": {
         paddingLeft: "14px",
@@ -1519,7 +1658,7 @@ const changeFileButton = css({
     "&:hover": {
         background: "var(--control-hover)",
     },
-    '&[aria-pressed="true"]': {
+    '&[aria-expanded="true"]': {
         background: "var(--accent-wash-strong)",
         borderColor: "var(--accent-edge)",
     },
@@ -1547,11 +1686,24 @@ const fileStatus = css({
 })
 
 const changeFileSpan = css({
-    "&:nth-child(2)": {
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-    },
+    display: "flex",
+    minWidth: "0",
+    maxWidth: "100%",
+    whiteSpace: "nowrap",
+})
+
+const fileFolder = css({
+    color: "var(--muted)",
+    minWidth: "0",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+})
+
+const fileName = css({
+    flex: "0 0 auto",
+    maxWidth: "100%",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
 })
 
 const stagedBadge = css({

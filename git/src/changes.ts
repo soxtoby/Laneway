@@ -216,7 +216,7 @@ async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, reques
     const transformed = ["filter", "working-tree-encoding"].some(name => attrs.has(name) && !["unspecified", "unset"].includes(attrs.get(name)!))
     let selectable = view == "combined" && !file.conflicted
     if (file.oldMode != file.newMode && file.oldMode && file.newMode)
-        summary.push(`File mode ${file.oldMode} → ${file.newMode}`)
+        summary.push(describeModeChange(file.oldMode, file.newMode))
     if (file.oldPath)
         summary.push(`Renamed ${file.oldPath} → ${file.path}`)
     if (custom || file.untracked && transformed) {
@@ -305,6 +305,34 @@ async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, reques
     }
 }
 
+function describeModeChange(before: string, after: string) {
+    const type = (mode: string) => {
+        switch (mode) {
+            case "100644":
+                return "File"
+            case "100755":
+                return "Executable"
+            case "120000":
+                return "Symlink"
+            case "160000":
+                return "Submodule"
+            case "040000":
+                return "Directory"
+            default:
+                return "Unknown type"
+        }
+    }
+    if (before == "000000")
+        return `${type(after)} added`
+    if (after == "000000")
+        return `${type(before)} deleted`
+    if (before == "100644" && after == "100755")
+        return "Executable"
+    if (before == "100755" && after == "100644")
+        return "Not executable"
+    return `${type(before)} → ${type(after)}`
+}
+
 // Retain one page, even when Git produces a multi-gigabyte patch or one huge line.
 function patchCollector(offset: number, plain: boolean) {
     const digest = createHash("sha256")
@@ -316,7 +344,7 @@ function patchCollector(offset: number, plain: boolean) {
     let oldLine = 0, newLine = 0, hunk = -1, count = 0
     const accept = (kind: DiffLine["kind"], text: string, old?: number, next?: number) => {
         const id = count++
-        if (id >= offset && lines.length < 400)
+        if (id >= offset && lines.length < 2000)
             lines.push({ id, kind, text, hunk, ...(old != undefined ? { oldLine: old } : {}), ...(next != undefined ? { newLine: next } : {}) })
     }
     const line = (text: string) => {
@@ -346,7 +374,7 @@ function patchCollector(offset: number, plain: boolean) {
         else if (text.startsWith("Binary files ") || text == "GIT binary patch") {
             binary = true
             summary.push("Binary content changed.")
-        } else if (/^(old mode|new mode|new file mode|deleted file mode|similarity index)/.test(text) && summary.length < 20) {
+        } else if (/^similarity index/.test(text) && summary.length < 20) {
             summary.push(text)
         }
     }
