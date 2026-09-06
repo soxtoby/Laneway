@@ -354,6 +354,44 @@ describe("Remix repository entry renderer", () => {
 })
 
 describe("Working Changes inspection", () => {
+    test("offers a complete commit diff only from an expanded commit", async () => {
+        const scenario = inspectionScenario()
+        let commitInventories = 0
+        let commitDiffs = 0
+        const api = {
+            ...scenario.api,
+            readChanges: async (...args: Parameters<Window["workbench"]["readChanges"]>) => {
+                if (args[2].source.kind == "commit")
+                    commitInventories++
+                return scenario.api.readChanges(...args)
+            },
+            readFileDiff: async (...args: Parameters<Window["workbench"]["readFileDiff"]>) => {
+                if (args[2].source.kind == "commit")
+                    commitDiffs++
+                return scenario.api.readFileDiff(...args)
+            },
+        }
+        const { container, root, dispose } = render(api)
+        await flush(root)
+        const commit = container.querySelector<HTMLButtonElement>(".commit-heading")!
+        expect(commit.getAttribute("aria-expanded")).toBe("false")
+        expect(container.querySelector("[aria-label='Show full diff for commit Inspect changes']")).toBeNull()
+        click(commit)
+        await flush(root)
+        expect(commit.getAttribute("aria-expanded")).toBe("true")
+        click(container.querySelector<HTMLButtonElement>("[aria-label='Show full diff for commit Inspect changes']")!)
+        await flush(root)
+        expect(commit.getAttribute("aria-expanded")).toBe("true")
+        expect(commitInventories).toBe(1)
+        expect(commitDiffs).toBe(2)
+        expect(container.querySelectorAll(".branch-column .diff-inspector")).toHaveLength(0)
+        expect(container.querySelectorAll(".inspection-breakout .diff-inspector")).toHaveLength(2)
+        click(container.querySelector<HTMLButtonElement>("[aria-label='Close diff column']")!)
+        await flush(root)
+        expect(container.querySelectorAll(".diff-inspector")).toHaveLength(0)
+        dispose()
+    })
+
     test("opens file diffs independently beneath their rows and isolates pending reads", async () => {
         const scenario = inspectionScenario()
         const pending = new Map<string, { id: string; finish(result: FileDiffResult): void; request: Parameters<Window["workbench"]["readFileDiff"]>[2] }>()
@@ -397,13 +435,24 @@ describe("Working Changes inspection", () => {
         expect(container.querySelectorAll(".inspect-commit .diff-inspector")).toHaveLength(2)
         click(secondRow.querySelector<HTMLButtonElement>("[aria-label='Break out diff']")!)
         await flush(root)
-        expect(firstRow.querySelector(".diff-inspector")).not.toBeNull()
-        expect(secondRow.querySelector(".diff-inspector")).toBeNull()
+        expect(container.querySelectorAll(".branch-column .diff-inspector")).toHaveLength(0)
         expect(container.querySelector(".inspection-breakout [aria-label='Diff for other.txt']")).not.toBeNull()
+        click(first)
+        await flush(root)
+        expect(container.querySelectorAll(".branch-column .diff-inspector")).toHaveLength(0)
+        expect(container.querySelector(".inspection-breakout [aria-label='Diff for src/file.txt']")).not.toBeNull()
         click(container.querySelector<HTMLButtonElement>("[aria-label='Close diff column']")!)
         await flush(root)
+        expect(firstRow.querySelector(".diff-inspector")).not.toBeNull()
         expect(secondRow.querySelector(".diff-inspector")).not.toBeNull()
         expect(diffRoot(secondRow).querySelectorAll(".diff-line.selected")).toHaveLength(1)
+        click(container.querySelector<HTMLButtonElement>("[aria-label='Show full diff for commit Inspect changes']")!)
+        await flush(root)
+        expect(container.querySelectorAll(".branch-column .diff-inspector")).toHaveLength(0)
+        expect(container.querySelector(".inspection-breakout")?.textContent).toContain("Commit · Inspect changes")
+        expect(container.querySelectorAll(".inspection-breakout .diff-inspector")).toHaveLength(2)
+        click(container.querySelector<HTMLButtonElement>("[aria-label='Close diff column']")!)
+        await flush(root)
         click(container.querySelector<HTMLButtonElement>(".commit-heading")!)
         await flush(root)
         expect(container.querySelectorAll(".diff-inspector")).toHaveLength(0)

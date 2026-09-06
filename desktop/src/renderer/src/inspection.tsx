@@ -40,6 +40,9 @@ interface FileDiffState {
     generation: number
     notice?: string
 }
+type BreakoutState =
+    | { kind: "file"; diff: FileDiffState }
+    | { kind: "commit"; group: string; subject: string; created: Set<string> }
 interface ColumnState {
     repositoryId: string
     id: string
@@ -51,7 +54,7 @@ interface ColumnState {
     requestIds: Set<string>
     diffs: Map<string, FileDiffState>
     wholeFiles: Map<string, { source: DiffSource; path: string; version: string }>
-    breakout?: FileDiffState
+    breakout?: BreakoutState
     showIgnored: boolean
     filter: string
     status: string
@@ -183,10 +186,10 @@ export function createInspection(options: Options) {
         state.graph = graph
         return state
     }
-    async function readFiles(state: ColumnState, group: string, source: DiffSource, refreshDiff = false) {
+    async function readFiles(state: ColumnState, group: string, source: DiffSource, refreshDiff = false, open = true) {
         let files = state.files.get(group)
         if (!files) {
-            files = { source, loading: false, open: true, generation: 0 }
+            files = { source, loading: false, open, generation: 0 }
             state.files.set(group, files)
         }
         if (!state.alive || files.loading && JSON.stringify(files.source) == JSON.stringify(source) && files.includeIgnored == state.showIgnored)
@@ -206,6 +209,8 @@ export function createInspection(options: Options) {
             const previous = files.inventory?.version
             files.inventory = result.inventory
             files.source = result.inventory.source
+            if (state.breakout?.kind == "commit" && state.breakout.group == group)
+                populateCommitBreakout(state, state.breakout)
             if (previous && previous != result.inventory.version) {
                 for (const id of state.wholeFiles.keys()) {
                     if (id.startsWith(`${group}:`))
@@ -246,27 +251,98 @@ export function createInspection(options: Options) {
     function clearDiff(state: ColumnState, diff: FileDiffState) {
         diff.generation++
         cancel(state, diffRequestId(state, diff))
-        state.diffs.delete(diffKey(diff.group, diff.path))
-        if (state.breakout == diff)
+        const id = diffKey(diff.group, diff.path)
+        state.diffs.delete(id)
+        if (state.breakout?.kind == "file" && state.breakout.diff == diff)
             state.breakout = undefined
+        else if (state.breakout?.kind == "commit")
+            state.breakout.created.delete(id)
     }
     function clearGroup(state: ColumnState, group: string, prefix = "") {
         for (const diff of state.diffs.values()) {
             if (diff.group == group && diff.path.startsWith(prefix))
                 clearDiff(state, diff)
         }
+        if (state.breakout?.kind == "commit" && state.breakout.group == group)
+            state.breakout = undefined
+    }
+    function createDiff(state: ColumnState, group: string, path: string) {
+        const diff: FileDiffState = { group, path, view: "combined", loading: false, generation: 0, showWhitespace: false }
+        state.diffs.set(diffKey(group, path), diff)
+        return diff
+    }
+    function closeCommitBreakout(state: ColumnState, keep?: FileDiffState) {
+        const breakout = state.breakout
+        if (breakout?.kind != "commit")
+            return
+        state.breakout = undefined
+        for (const id of breakout.created) {
+            const diff = state.diffs.get(id)
+            if (diff && diff != keep)
+                clearDiff(state, diff)
+        }
+    }
+    function showFileBreakout(state: ColumnState, diff: FileDiffState) {
+        closeCommitBreakout(state, diff)
+        state.breakout = { kind: "file", diff }
+        update()
     }
     function choose(state: ColumnState, group: string, file: ChangedFile) {
         const id = diffKey(group, file.path)
         const selected = state.diffs.get(id)
+        if (state.breakout) {
+            if (state.breakout.kind == "file" && state.breakout.diff == selected)
+                return
+            const diff = selected ?? createDiff(state, group, file.path)
+            showFileBreakout(state, diff)
+            if (!selected)
+                void readDiff(state, diff)
+            return
+        }
         if (selected) {
             clearDiff(state, selected)
             update()
             return
         }
-        const diff: FileDiffState = { group, path: file.path, view: "combined", loading: false, generation: 0, showWhitespace: false }
-        state.diffs.set(id, diff)
+        const diff = createDiff(state, group, file.path)
         void readDiff(state, diff)
+    }
+    async function showCommitBreakout(state: ColumnState, commit: BranchHistoryPage["commits"][number]) {
+        closeCommitBreakout(state)
+        const breakout: Extract<BreakoutState, { kind: "commit" }> = {
+            kind: "commit",
+            group: commit.objectId,
+            subject: commit.subject,
+            created: new Set(),
+        }
+        state.breakout = breakout
+        update()
+        let files = state.files.get(commit.objectId)
+        if (!files?.inventory) {
+            await readFiles(state, commit.objectId, { kind: "commit", objectId: commit.objectId }, false, false)
+            files = state.files.get(commit.objectId)
+        }
+        if (!state.alive || state.breakout != breakout)
+            return
+        populateCommitBreakout(state, breakout)
+        update()
+    }
+    function populateCommitBreakout(state: ColumnState, breakout: Extract<BreakoutState, { kind: "commit" }>) {
+        if (!state.alive || state.breakout != breakout)
+            return
+        const files = state.files.get(breakout.group)
+        for (const file of files?.inventory?.files ?? []) {
+            if (file.ignored)
+                continue
+            const id = diffKey(breakout.group, file.path)
+            let diff = state.diffs.get(id)
+            if (!diff) {
+                diff = createDiff(state, breakout.group, file.path)
+                breakout.created.add(id)
+            }
+            if (!diff.page && !diff.loading)
+                void readDiff(state, diff)
+        }
     }
     async function readDiff(state: ColumnState, diff: FileDiffState, more = false, refresh = false) {
         const source = state.files.get(diff.group)?.source
@@ -405,6 +481,11 @@ export function createInspection(options: Options) {
             return null
         const all = files.inventory?.files ?? []
         const visible = all.filter(file => !file.ignored && matchesFilter(state, file))
+        const expanded = state.breakout?.kind == "file" && state.breakout.diff.group == group
+            ? new Set([state.breakout.diff.path])
+            : state.breakout
+            ? new Set<string>()
+            : new Set([...state.diffs.values()].filter(diff => diff.group == group).map(diff => diff.path))
         return (
             <section class="change-file-list" aria-label={group == "working" ? "Working Changes files" : "Commit files"} mix={changeFileList}>
                 {files.error && (
@@ -423,14 +504,14 @@ export function createInspection(options: Options) {
                 <FileTree
                     flat={group != "working"}
                     files={visible}
-                    expanded={new Set([...state.diffs.values()].filter(diff => diff.group == group).map(diff => diff.path))}
+                    expanded={expanded}
                     controls={file => {
                         const diff = state.diffs.get(diffKey(group, file.path))
-                        return diff && state.breakout != diff ? renderDiffControls(state, diff) : null
+                        return diff && !state.breakout ? renderDiffControls(state, diff) : null
                     }}
                     diff={file => {
                         const diff = state.diffs.get(diffKey(group, file.path))
-                        return diff && state.breakout != diff ? renderDiff(state, diff) : null
+                        return diff && !state.breakout ? renderDiff(state, diff) : null
                     }}
                     checked={new Set(state.wholeFiles.keys())}
                     prefix={group}
@@ -500,7 +581,7 @@ export function createInspection(options: Options) {
                         <path d="M13 2H6a3.5 3.5 0 0 0 0 7h2M8 2v12M11 2v12" />
                     </svg>
                 </button>
-                {state.breakout != diff && (
+                {!state.breakout && (
                     <button
                         type="button"
                         aria-label="Break out diff"
@@ -508,8 +589,7 @@ export function createInspection(options: Options) {
                         mix={[
                             diffToolbarButton,
                             on("click", () => {
-                                state.breakout = diff
-                                update()
+                                showFileBreakout(state, diff)
                             }),
                         ]}
                     >
@@ -522,15 +602,15 @@ export function createInspection(options: Options) {
     function renderDiff(state: ColumnState, diff: FileDiffState): RemixNode {
         const page = diff.page
         const layout = options.layout(state.repositoryId, state.id)
+        const brokenOut = state.breakout?.kind == "file" && state.breakout.diff == diff
+            || state.breakout?.kind == "commit" && state.breakout.group == diff.group
         return (
             <section class="diff-inspector" aria-label={`Diff for ${diff.path}`} mix={diffInspector}>
-                {state.breakout == diff && (
+                {brokenOut && (
                     <header class="diff-toolbar" mix={diffToolbar}>
-                        {state.breakout == diff && (
-                            <strong title={diff.path} mix={diffToolbarStrong}>
-                                {fileLabel(diff.path)}
-                            </strong>
-                        )}
+                        <strong title={diff.path} mix={diffToolbarStrong}>
+                            {fileLabel(diff.path)}
+                        </strong>
                         {renderDiffControls(state, diff)}
                     </header>
                 )}
@@ -843,6 +923,19 @@ export function createInspection(options: Options) {
                                                                                         {commit.subject}
                                                                                     </span>
                                                                                 </button>
+                                                                                {files?.open && (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        aria-label={`Show full diff for commit ${commit.subject}`}
+                                                                                        title="Show full commit diff"
+                                                                                        mix={[
+                                                                                            commitDiffButton,
+                                                                                            on("click", () => void showCommitBreakout(state, commit)),
+                                                                                        ]}
+                                                                                    >
+                                                                                        {commitDiffIcon()}
+                                                                                    </button>
+                                                                                )}
                                                                             </h4>
                                                                             <div hidden={!files?.open} mix={accordion.content()}>
                                                                                 {files?.open && (
@@ -924,17 +1017,22 @@ export function createInspection(options: Options) {
             const state = columns.get(key(repositoryId, columnId))
             if (!state?.breakout)
                 return null
+            const breakout = state.breakout
+            const files = breakout.kind == "commit" ? state.files.get(breakout.group) : undefined
             return (
                 <aside class="inspection-breakout" mix={inspectionBreakout} aria-label={`${state.column.name} diff`}>
                     <header mix={inspectionBreakoutHeader}>
-                        <span>Diff · {state.column.name}</span>
+                        <span>{breakout.kind == "commit" ? `Commit · ${breakout.subject}` : `Diff · ${state.column.name}`}</span>
                         <button
                             type="button"
                             aria-label="Close diff column"
                             mix={[
                                 closeDiffColumnButton,
                                 on("click", () => {
-                                    state.breakout = undefined
+                                    if (state.breakout?.kind == "commit")
+                                        closeCommitBreakout(state)
+                                    else
+                                        state.breakout = undefined
                                     update()
                                 }),
                             ]}
@@ -942,7 +1040,18 @@ export function createInspection(options: Options) {
                             ×
                         </button>
                     </header>
-                    {renderDiff(state, state.breakout)}
+                    {breakout.kind == "file"
+                        ? renderDiff(state, breakout.diff)
+                        : (
+                            <div class="commit-diff">
+                                {files?.error && <p role="alert" mix={changeFileListP}>{files.error}</p>}
+                                {files?.loading && <p role="status" mix={changeFileListP}>Reading commit…</p>}
+                                {files?.inventory?.files.filter(file => !file.ignored).map(file => {
+                                    const diff = state.diffs.get(diffKey(breakout.group, file.path))
+                                    return diff ? <div class="commit-diff-file">{renderDiff(state, diff)}</div> : null
+                                })}
+                            </div>
+                        )}
                 </aside>
             )
         },
@@ -1085,6 +1194,14 @@ function diffIcon(kind: "unified" | "split" | "breakout") {
                         <path d={kind == "split" ? "M8 2v12M4 5h2M10 5h2M4 8h2M10 8h2" : "M4 5h8M4 8h8M4 11h8"} />
                     </>
                 )}
+        </svg>
+    )
+}
+
+function commitDiffIcon() {
+    return (
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" aria-hidden="true">
+            <path d="M3 2h7l3 3v9H3zM10 2v3h3M5 8h6M5 11h6" />
         </svg>
     )
 }
@@ -1469,6 +1586,9 @@ const commitStickyHeading = css({
     top: "0",
     zIndex: 7,
     height: "32px",
+    display: "flex",
+    background: "var(--control)",
+    borderRadius: "3px",
 })
 
 const stackHeading = css({
@@ -1489,6 +1609,24 @@ const stackHeading = css({
     '&[aria-pressed="true"]': {
         background: "var(--accent-wash-strong)",
         borderColor: "var(--accent-edge)",
+    },
+})
+
+const commitDiffButton = css({
+    width: "32px",
+    height: "32px",
+    flex: "0 0 32px",
+    display: "grid",
+    placeItems: "center",
+    padding: 0,
+    border: "0",
+    borderRadius: "3px",
+    background: "var(--control)",
+    color: "var(--muted)",
+    cursor: "pointer",
+    "&:hover": {
+        background: "var(--control-hover)",
+        color: "var(--text)",
     },
 })
 
@@ -1534,6 +1672,8 @@ const commitHeading = css({
     font: "inherit",
     cursor: "pointer",
     display: "flex",
+    flex: "1 1 auto",
+    minWidth: 0,
     gap: "8px",
     width: "100%",
     textAlign: "left",

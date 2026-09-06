@@ -207,6 +207,7 @@ async function checkRenderer() {
     secondFile.querySelector<HTMLButtonElement>("[aria-label='Break out diff']")!.click()
     await settle()
     const breakout = element(".inspection-breakout")
+    const inlineDiffsHiddenAfterBreakout = !document.querySelector(".branch-column .diff-inspector")
     breakout.scrollTop = breakout.scrollHeight
     breakout.scrollLeft = breakout.scrollWidth
     breakout.dispatchEvent(new Event("scroll"))
@@ -215,6 +216,10 @@ async function checkRenderer() {
     breakoutCode.scrollLeft = breakoutCode.scrollWidth
     const breakoutDiffScroll = breakout.scrollTop > 0 && breakout.scrollLeft == 0 && breakoutCode.scrollLeft > 0
         && !!breakout.querySelector(".pierre-diff")!.shadowRoot!.querySelector("[data-line='500']")
+    commitFiles[0].click()
+    await settle()
+    const breakoutSwitchedTo = element(".inspection-breakout .diff-inspector").getAttribute("aria-label")
+    const breakoutSwitched = breakoutSwitchedTo == "Diff for src/example.ts" && !document.querySelector(".branch-column .diff-inspector")
     element("[aria-label='Close diff column']").click()
     await settle()
     outer.scrollTop = 0
@@ -283,6 +288,9 @@ async function checkRenderer() {
         noInnerVerticalScroll,
         outerDiffScroll,
         breakoutDiffScroll,
+        inlineDiffsHiddenAfterBreakout,
+        breakoutSwitched,
+        breakoutSwitchedTo,
         newlineNotice,
         stickyFileRow,
         stickyCommitRow,
