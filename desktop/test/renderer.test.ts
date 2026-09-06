@@ -32,9 +32,19 @@ beforeAll(async () => {
         "MouseEvent",
         "KeyboardEvent",
         "SubmitEvent",
+        "customElements",
+        "ResizeObserver",
+        "IntersectionObserver",
+        "MutationObserver",
+        "HTMLPreElement",
+        "Document",
+        "SVGElement",
     ]
     browserGlobal.window = browserWindow
     browserGlobal.document = browserWindow.document
+    Object.defineProperty(globalThis, "requestAnimationFrame", { configurable: true, value: browserWindow.requestAnimationFrame.bind(browserWindow) })
+    Object.defineProperty(globalThis, "cancelAnimationFrame", { configurable: true, value: browserWindow.cancelAnimationFrame.bind(browserWindow) })
+    Object.defineProperty(globalThis, "getComputedStyle", { configurable: true, value: browserWindow.getComputedStyle.bind(browserWindow) })
     for (const name of globals)
         Object.defineProperty(globalThis, name, { configurable: true, value: browserGlobal[name] })
     // Happy DOM does not parse CSS layers. These tests exercise DOM behavior;
@@ -362,19 +372,19 @@ describe("Working Changes inspection", () => {
         click(container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
         await flush(root)
         expect(reads).toBe(1)
-        click(container.querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
+        click(diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
         await flush(root)
-        expect(container.querySelectorAll(".diff-line.selected")).toHaveLength(1)
-        expect(container.querySelector(".diff-line.addition.selected")).toBeNull()
+        expect(diffRoot(container).querySelectorAll(".diff-line.selected")).toHaveLength(1)
+        expect(diffRoot(container).querySelector(".diff-line.addition.selected")).toBeNull()
         click(button(container, "Staged"))
         await flush(root)
-        expect(container.querySelector(".diff-line.selected")).toBeNull()
-        expect(container.querySelector("[aria-label='Select deletion line 1']")).toBeNull()
+        expect(diffRoot(container).querySelector(".diff-line.selected")).toBeNull()
+        expect(diffRoot(container).querySelector("[aria-label='Select deletion line 1']")).toBeNull()
         click(button(container, "Working Changes"))
         await flush(root)
         click(button(container, "Select hunk"))
         await flush(root)
-        expect(container.querySelectorAll(".diff-line.selected")).toHaveLength(2)
+        expect(diffRoot(container).querySelectorAll(".diff-line.selected")).toHaveLength(2)
         click(button(container, "Side by side"))
         await flush(root)
         expect(scenario.saved().repositories[0].columns[0].diffLayout).toBe("split")
@@ -395,7 +405,7 @@ describe("Working Changes inspection", () => {
         click(restarted.container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
         await flush(restarted.root)
         expect(restarted.container.querySelector(".diff-lines.split")).not.toBeNull()
-        expect(restarted.container.querySelector(".diff-line.selected")).toBeNull()
+        expect(diffRoot(restarted.container).querySelector(".diff-line.selected")).toBeNull()
         restarted.dispose()
     })
 
@@ -424,16 +434,16 @@ describe("Working Changes inspection", () => {
         finish({ ok: true, page: scenario.page })
         await flush(root)
         expect(container.querySelector(".diff-toolbar strong")?.textContent).toBe("other.txt")
-        click(container.querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
+        click(diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
         await flush(root)
         version = "two"
         click(container.querySelector<HTMLButtonElement>("[aria-label='Refresh Working Changes']")!)
         await flush(root)
         expect(container.textContent).toContain("Change Selection cleared")
-        expect(container.querySelector(".diff-line.selected")).toBeNull()
+        expect(diffRoot(container).querySelector(".diff-line.selected")).toBeNull()
         click(container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
         await flush(root)
-        click(container.querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
+        click(diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
         await flush(root)
         const folder = container.querySelector<HTMLDetailsElement>(".file-tree details")!
         folder.open = false
@@ -475,7 +485,7 @@ describe("Working Changes inspection", () => {
         await flush(root)
         click(container.querySelector<HTMLButtonElement>(".inspect-commit [title='src/file.txt']")!)
         await flush(root)
-        expect(container.querySelectorAll(".diff-line").length).toBeLessThanOrEqual(80)
+        expect(diffRoot(container).querySelectorAll(".diff-line").length).toBeLessThanOrEqual(80)
         expect(container.querySelector(".diff-views")).toBeNull()
         click(container.querySelector<HTMLButtonElement>(".stack-heading")!)
         await flush(root)
@@ -526,4 +536,8 @@ function button(container: HTMLElement, label: string) {
     if (!result)
         throw new Error(`Button not found: ${label}. Rendered: ${container.textContent}`)
     return result
+}
+
+function diffRoot(container: Element): ShadowRoot | Element {
+    return container.querySelector(".pierre-diff")?.shadowRoot ?? container
 }

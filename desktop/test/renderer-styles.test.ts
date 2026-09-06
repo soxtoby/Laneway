@@ -38,6 +38,10 @@ test("Remix renderer styles and controls work under production CSP in Electron",
         expect({ exitCode, error: result.error }, errors).toEqual({ exitCode: 0, error: undefined })
         expect(result).toMatchObject({
             noticePosition: "static",
+            literalSelection: true,
+            alignedSplit: true,
+            diffLineHeight: 24,
+            syntaxHighlighted: true,
             rowHeight: 24,
             lightBackground: "rgb(255, 255, 255)",
             darkBackground: "rgb(33, 38, 33)",

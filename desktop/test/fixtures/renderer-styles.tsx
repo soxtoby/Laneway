@@ -6,6 +6,9 @@ async function checkRenderer() {
     const violations: string[] = []
     document.addEventListener("securitypolicyviolation", event => violations.push(`${event.violatedDirective}: ${event.blockedURI}`))
     const scenario = inspectionScenario()
+    scenario.page.file.path = "src/example.ts"
+    scenario.page.lines[1].text = "const oldValue = 1"
+    scenario.page.lines[2].text = "const newValue = 2"
     const readHistory = scenario.api.readBranchHistory
     scenario.api.readBranchHistory = async (...args) => {
         const result = await readHistory(...args)
@@ -35,6 +38,24 @@ async function checkRenderer() {
     await settle()
     element(".change-file button").click()
     await settle()
+    const diffShadow = element(".pierre-diff").shadowRoot!
+    const deletion = diffShadow.querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!
+    deletion.click()
+    await settle()
+    const literalSelection = diffShadow.querySelectorAll(".diff-line.selected").length == 1
+        && !diffShadow.querySelector(".addition.selected")
+    const splitButton = [...document.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.trim() == "Side by side")!
+    splitButton.click()
+    await settle()
+    const oldLine = diffShadow.querySelector<HTMLElement>("[data-deletions] [data-line]")!
+    const newLine = diffShadow.querySelector<HTMLElement>("[data-additions] [data-line]")!
+    const alignedSplit = oldLine.getBoundingClientRect().top == newLine.getBoundingClientRect().top
+        && newLine.getBoundingClientRect().left > oldLine.getBoundingClientRect().left
+    const diffLineHeight = oldLine.getBoundingClientRect().height
+    // Highlighting completes asynchronously after the initial plain render.
+    for (let attempt = 0; attempt < 50 && !diffShadow.querySelector("[data-line] span[style]"); attempt++)
+        await new Promise(resolve => setTimeout(resolve, 20))
+    const syntaxHighlighted = !!diffShadow.querySelector("[data-line] span[style]")
     const noticePosition = getComputedStyle(element(".diff-line.notice")).position
     const rowHeight = element(".diff-line.notice").getBoundingClientRect().height
     const lightBackground = getComputedStyle(element(".diff-inspector")).backgroundColor
@@ -102,6 +123,10 @@ async function checkRenderer() {
     root.dispose()
     return {
         noticePosition,
+        literalSelection,
+        alignedSplit,
+        diffLineHeight,
+        syntaxHighlighted,
         rowHeight,
         lightBackground,
         darkBackground,

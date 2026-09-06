@@ -12,6 +12,7 @@
         "@git-workbench/git": "workspace:*",
         "@git-workbench/settings": "workspace:*",
         "@git-workbench/shared": "workspace:*",
+        "@pierre/diffs": "^1.4.1",
         "remix": "next"
     },
     "devDependencies": {
