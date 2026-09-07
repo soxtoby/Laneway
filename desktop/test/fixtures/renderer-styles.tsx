@@ -176,10 +176,16 @@ async function checkRenderer() {
     const independentDiffs = !firstFile.querySelector(".diff-inspector") && secondViewer != null && secondFile.querySelector(".pierre-diff") == secondViewer
     commitFiles[1].click()
     await settle()
-    scenario.page.lines = Array.from(
+    const largeLines = Array.from(
         { length: 500 },
-        (_, id) => ({ id, kind: "addition", text: `line ${id + 1} ${"long content ".repeat(30)}`, newLine: id + 1, hunk: 0 }),
+        (_, id) => ({ id, kind: "addition" as const, text: `line ${id + 1} ${"long content ".repeat(30)}`, newLine: id + 1, hunk: 0 }),
     )
+    // Keep the scrolling payload separate from the TypeScript highlighting fixture.
+    const readDiff = scenario.api.readFileDiff
+    scenario.api.readFileDiff = async (...args) => {
+        const result = await readDiff(...args)
+        return result.ok && args[2].path == "other.txt" ? { ...result, page: { ...result.page, lines: largeLines } } : result
+    }
     commitFiles[1].click()
     await settle()
     const longDiff = secondFile.querySelector<HTMLElement>(".pierre-diff")!
@@ -220,6 +226,7 @@ async function checkRenderer() {
     await settle()
     const breakoutSwitchedTo = element(".inspection-breakout .diff-inspector").getAttribute("aria-label")
     const breakoutSwitched = breakoutSwitchedTo == "Diff for src/example.ts" && !document.querySelector(".branch-column .diff-inspector")
+        && breakout.querySelector(".pierre-diff")!.shadowRoot!.querySelectorAll("[data-line]").length == 2
     element("[aria-label='Close diff column']").click()
     await settle()
     outer.scrollTop = 0
