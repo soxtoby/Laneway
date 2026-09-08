@@ -152,165 +152,169 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                         addRepository={options.addRepository}
                     />
                     <section class="graph-desk" mix={graphDesk}>
-                        <header class="graph-toolbar" mix={graphToolbar}>
-                            <div mix={graphToolbarDiv}>
-                                <p class="eyebrow" mix={eyebrow}>
-                                    Branch Graph
-                                </p>
-                                <h1 mix={graphToolbarH1}>
-                                    {baseName(active.info.mainWorktree)}
-                                </h1>
-                            </div>
-                            <div class="graph-actions" mix={graphActions}>
-                                <button
-                                    type="button"
-                                    class={state.showAll ? "active" : ""}
-                                    aria-pressed={state.showAll}
-                                    mix={[graphActionsButton, on("click", () => toggleAll(active.id))]}
-                                >
-                                    {state.showAll ? "Involved only" : "Show all"}
-                                </button>
-                                <button
-                                    class={`refresh-button ${state.refreshing ? "refreshing" : ""}`}
-                                    type="button"
-                                    aria-label={state.refreshing ? "Refreshing Branch Graph" : "Refresh Branch Graph"}
-                                    aria-busy={state.refreshing}
-                                    title={state.refreshing ? "Refreshing Branch Graph" : "Refresh Branch Graph"}
-                                    disabled={state.loading || state.refreshing}
-                                    mix={[refreshButton, on("click", () => read(active.id, true, true))]}
-                                >
-                                    <span aria-hidden="true" mix={refreshButtonSpan}>
-                                        ↻
-                                    </span>
-                                </button>
-                                <button
-                                    type="button"
-                                    aria-label="Branch Graph settings"
-                                    title="Branch Graph settings"
-                                    mix={[
-                                        branchGraphSettingsButton,
-                                        on("click", () => {
-                                            state.showSettings = !state.showSettings
-                                            void options.update()
-                                        }),
-                                    ]}
-                                >
-                                    ⚙
-                                </button>
-                            </div>
-                        </header>
-                        {state.showSettings && graph && (
-                            <GraphSettings
-                                graph={graph}
-                                state={state}
-                                apply={settings => applyGraphSettings(active.id, settings)}
-                                close={() => {
-                                    state.showSettings = false
-                                    void options.update()
-                                }}
-                            />
-                        )}
-                        {graph?.limited.length
-                            ? (
-                                <div class="graph-limit" mix={graphLimit}>
-                                    Limited evidence: {graph.limited.join(", ")}. No implicit fetch performed.
-                                </div>
-                            )
-                            : null}
-                        {!graph && state.loading && <GraphProgress />}
-                        {!graph && state.error && <GraphError message={state.error} retry={() => read(active.id, false, true)} />}
-                        {graph && (
-                            <div class="graph-layout" mix={graphLayout}>
-                                <section class="graph-panel" aria-label="Branch Graph" mix={graphPanel}>
-                                    <GraphSummary graph={graph} visibleCount={visibleBranches.length} />
-                                    <BaseUnresolved
-                                        branches={visibleBranches}
-                                        selections={state.baseCandidateSelections}
-                                        choose={(branchId, candidateId) => {
-                                            state.baseCandidateSelections[branchId] = candidateId
-                                            void options.update()
-                                        }}
-                                    />
-                                    <div
-                                        class="graph-rows"
-                                        role="listbox"
-                                        aria-label="Branches and graph nodes"
-                                        tabIndex={0}
-                                        mix={[
-                                            graphRows,
-                                            on("keydown", event => graphKeydown(event, active.id, layout.rows)),
-                                            on("scroll", event => {
-                                                state.graphScrollTop = event.currentTarget.scrollTop
-                                                state.graphViewportHeight = event.currentTarget.clientHeight
-                                                void options.update()
-                                            }),
-                                        ]}
-                                    >
-                                        {nodeWindow.before > 0 && (
-                                            <div class="graph-spacer" aria-hidden="true" style={{ height: `${nodeWindow.before}px` }} mix={graphSpacer}>
-                                            </div>
-                                        )}
-                                        {nodeWindow.nodes.map(row =>
-                                            row.node.kind == "branch"
-                                                ? (
-                                                    <BranchRow
-                                                        branch={row.node.branch}
-                                                        rail={<GraphRail row={row} />}
-                                                        selected={state.selectedId == row.node.id}
-                                                        select={() => selectNode(active.id, row.node.id)}
-                                                        open={() => openBranch(active.id, row.node.id)}
-                                                        selectMarker={marker => selectMarker(active.id, row.node.id, marker)}
-                                                    />
-                                                )
-                                                : (
-                                                    <SimpleNodeRow
-                                                        id={row.node.id}
-                                                        kind={row.node.kind}
-                                                        name={row.node.name}
-                                                        title={row.node.title}
-                                                        rail={<GraphRail row={row} />}
-                                                        selected={state.selectedId == row.node.id}
-                                                        select={() => selectNode(active.id, row.node.id)}
-                                                    />
-                                                )
-                                        )}
-                                        {nodeWindow.after > 0 && (
-                                            <div class="graph-spacer" aria-hidden="true" style={{ height: `${nodeWindow.after}px` }} mix={graphSpacer}>
-                                            </div>
-                                        )}
+                        <div class="graph-layout" mix={graphLayout}>
+                            <div class="graph-sidebar" mix={graphSidebar}>
+                                <header class="graph-toolbar" mix={graphToolbar}>
+                                    <div mix={graphToolbarDiv}>
+                                        <p class="eyebrow" mix={eyebrow}>
+                                            Branch Graph
+                                        </p>
+                                        <h1 mix={graphToolbarH1}>
+                                            {baseName(active.info.mainWorktree)}
+                                        </h1>
                                     </div>
-                                    {graph.unassignedStashes.length > 0 && (
-                                        <details class="unassigned-markers" mix={unassignedMarkers}>
-                                            <summary mix={unassignedMarkersSummary}>
-                                                {graph.unassignedStashes.length} unassigned stashes
-                                            </summary>
-                                            {graph.unassignedStashes.map(marker => (
-                                                <button
-                                                    type="button"
-                                                    title={marker.tooltip}
-                                                    mix={[
-                                                        unassignedMarkersButton,
-                                                        on("click", () => {
-                                                            state.marker = marker
-                                                            void options.update()
-                                                        }),
-                                                    ]}
-                                                >
-                                                    {marker.label}
-                                                </button>
-                                            ))}
-                                        </details>
-                                    )}
-                                    {state.marker && (
-                                        <MarkerDetails
-                                            marker={state.marker}
+                                    <div class="graph-actions" mix={graphActions}>
+                                        <button
+                                            type="button"
+                                            class={state.showAll ? "active" : ""}
+                                            aria-pressed={state.showAll}
+                                            mix={[graphActionsButton, on("click", () => toggleAll(active.id))]}
+                                        >
+                                            {state.showAll ? "Involved only" : "Show all"}
+                                        </button>
+                                        <button
+                                            class={`refresh-button ${state.refreshing ? "refreshing" : ""}`}
+                                            type="button"
+                                            aria-label={state.refreshing ? "Refreshing Branch Graph" : "Refresh Branch Graph"}
+                                            aria-busy={state.refreshing}
+                                            title={state.refreshing ? "Refreshing Branch Graph" : "Refresh Branch Graph"}
+                                            disabled={state.loading || state.refreshing}
+                                            mix={[refreshButton, on("click", () => read(active.id, true, true))]}
+                                        >
+                                            <span aria-hidden="true" mix={refreshButtonSpan}>
+                                                ↻
+                                            </span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            aria-label="Branch Graph settings"
+                                            title="Branch Graph settings"
+                                            mix={[
+                                                branchGraphSettingsButton,
+                                                on("click", () => {
+                                                    state.showSettings = !state.showSettings
+                                                    void options.update()
+                                                }),
+                                            ]}
+                                        >
+                                            ⚙
+                                        </button>
+                                    </div>
+                                    {state.showSettings && graph && (
+                                        <GraphSettings
+                                            graph={graph}
+                                            state={state}
+                                            apply={settings => applyGraphSettings(active.id, settings)}
                                             close={() => {
-                                                state.marker = undefined
+                                                state.showSettings = false
                                                 void options.update()
                                             }}
                                         />
                                     )}
-                                </section>
+                                </header>
+                                {graph?.limited.length
+                                    ? (
+                                        <div class="graph-limit" mix={graphLimit}>
+                                            Limited evidence: {graph.limited.join(", ")}. No implicit fetch performed.
+                                        </div>
+                                    )
+                                    : null}
+                                {!graph && state.loading && <GraphProgress />}
+                                {!graph && state.error && <GraphError message={state.error} retry={() => read(active.id, false, true)} />}
+                                {graph && (
+                                    <section class="graph-panel" aria-label="Branch Graph" mix={graphPanel}>
+                                        <GraphSummary graph={graph} visibleCount={visibleBranches.length} />
+                                        <BaseUnresolved
+                                            branches={visibleBranches}
+                                            selections={state.baseCandidateSelections}
+                                            choose={(branchId, candidateId) => {
+                                                state.baseCandidateSelections[branchId] = candidateId
+                                                void options.update()
+                                            }}
+                                        />
+                                        <div
+                                            class="graph-rows"
+                                            role="listbox"
+                                            aria-label="Branches and graph nodes"
+                                            tabIndex={0}
+                                            mix={[
+                                                graphRows,
+                                                on("keydown", event => graphKeydown(event, active.id, layout.rows)),
+                                                on("scroll", event => {
+                                                    state.graphScrollTop = event.currentTarget.scrollTop
+                                                    state.graphViewportHeight = event.currentTarget.clientHeight
+                                                    void options.update()
+                                                }),
+                                            ]}
+                                        >
+                                            {nodeWindow.before > 0 && (
+                                                <div class="graph-spacer" aria-hidden="true" style={{ height: `${nodeWindow.before}px` }} mix={graphSpacer}>
+                                                </div>
+                                            )}
+                                            {nodeWindow.nodes.map(row =>
+                                                row.node.kind == "branch"
+                                                    ? (
+                                                        <BranchRow
+                                                            branch={row.node.branch}
+                                                            rail={<GraphRail row={row} />}
+                                                            selected={state.selectedId == row.node.id}
+                                                            select={() => selectNode(active.id, row.node.id)}
+                                                            open={() => openBranch(active.id, row.node.id)}
+                                                            selectMarker={marker => selectMarker(active.id, row.node.id, marker)}
+                                                        />
+                                                    )
+                                                    : (
+                                                        <SimpleNodeRow
+                                                            id={row.node.id}
+                                                            kind={row.node.kind}
+                                                            name={row.node.name}
+                                                            title={row.node.title}
+                                                            rail={<GraphRail row={row} />}
+                                                            selected={state.selectedId == row.node.id}
+                                                            select={() => selectNode(active.id, row.node.id)}
+                                                        />
+                                                    )
+                                            )}
+                                            {nodeWindow.after > 0 && (
+                                                <div class="graph-spacer" aria-hidden="true" style={{ height: `${nodeWindow.after}px` }} mix={graphSpacer}>
+                                                </div>
+                                            )}
+                                        </div>
+                                        {graph.unassignedStashes.length > 0 && (
+                                            <details class="unassigned-markers" mix={unassignedMarkers}>
+                                                <summary mix={unassignedMarkersSummary}>
+                                                    {graph.unassignedStashes.length} unassigned stashes
+                                                </summary>
+                                                {graph.unassignedStashes.map(marker => (
+                                                    <button
+                                                        type="button"
+                                                        title={marker.tooltip}
+                                                        mix={[
+                                                            unassignedMarkersButton,
+                                                            on("click", () => {
+                                                                state.marker = marker
+                                                                void options.update()
+                                                            }),
+                                                        ]}
+                                                    >
+                                                        {marker.label}
+                                                    </button>
+                                                ))}
+                                            </details>
+                                        )}
+                                        {state.marker && (
+                                            <MarkerDetails
+                                                marker={state.marker}
+                                                close={() => {
+                                                    state.marker = undefined
+                                                    void options.update()
+                                                }}
+                                            />
+                                        )}
+                                    </section>
+                                )}
+                            </div>
+                            {graph && (
                                 <BranchColumns
                                     graph={graph}
                                     state={state}
@@ -325,8 +329,8 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                     commitMove={branchId => commitColumnMove(active.id, branchId)}
                                     resize={(branchId, width) => resizeColumn(active.id, branchId, width)}
                                 />
-                            </div>
-                        )}
+                            )}
+                        </div>
                     </section>
                 </section>
             )
@@ -1497,12 +1501,15 @@ const graphDesk = css({
 })
 
 const graphToolbar = css({
+    position: "relative",
+    flexShrink: "0",
+    flexWrap: "wrap",
     minHeight: "38px",
     padding: "0 8px 0 12px",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: "16px",
+    gap: "4px 8px",
     borderBottom: "1px solid var(--line)",
     background: "var(--panel-deep)",
 })
@@ -1629,13 +1636,22 @@ const graphLayout = css({
     },
 })
 
+const graphSidebar = css({
+    minWidth: "0",
+    minHeight: "0",
+    display: "flex",
+    flexDirection: "column",
+    borderRight: "1px solid var(--line)",
+    background: "var(--panel)",
+})
+
 const graphPanel = css({
+    flex: "1 1 auto",
     position: "relative",
     minWidth: "0",
     minHeight: "0",
     display: "grid",
     gridTemplateRows: "auto auto minmax(0, 1fr) auto",
-    borderRight: "1px solid var(--line)",
     background: "var(--panel)",
 })
 
@@ -2190,8 +2206,8 @@ const columnDivider = css({
 const graphSettings = css({
     position: "absolute",
     zIndex: "6",
-    top: "42px",
-    right: "10px",
+    top: "calc(100% + 4px)",
+    right: "8px",
     width: "min(400px, calc(100% - 20px))",
     padding: "14px",
     border: "1px solid var(--line-strong)",

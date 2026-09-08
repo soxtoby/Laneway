@@ -332,6 +332,12 @@ async function checkRenderer() {
 
     element("button[aria-label='Branch Graph settings']").click()
     await settle()
+    const settingsBounds = element(".graph-settings").getBoundingClientRect()
+    const settingsButtonBounds = element("button[aria-label='Branch Graph settings']").getBoundingClientRect()
+    const graphSettingsAnchored = settingsBounds.left <= settingsButtonBounds.left
+        && settingsBounds.right >= settingsButtonBounds.right
+        && settingsBounds.top >= settingsButtonBounds.bottom
+        && settingsBounds.top - settingsButtonBounds.bottom <= 16
     const radio = element<HTMLInputElement>("input[type='radio']")
     const radioChecked = radio.checked && radio.getBoundingClientRect().width > 0
     const radioBackground = getComputedStyle(radio).backgroundColor
@@ -374,6 +380,7 @@ async function checkRenderer() {
     const graphScrollDrift = await checkBranchGraphScroll()
     return {
         graphScrollDrift,
+        graphSettingsAnchored,
         compactSplit,
         balancedMetadata,
         compactUnified,
