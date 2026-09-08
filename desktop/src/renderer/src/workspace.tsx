@@ -11,6 +11,7 @@ export interface EntryActions {
 export function WorkbenchHeader(
     handle: Handle<{
         busy: boolean
+        openLens?(): void
         appearance: Appearance
         openSettings(): void
         toggleAppearance(): void
@@ -31,6 +32,11 @@ export function WorkbenchHeader(
                     Git Workbench
                 </span>
             </div>
+            {handle.props.openLens && (
+                <button class="lens-button" type="button" mix={[lensButton, on("click", handle.props.openLens)]}>
+                    <span>⌕</span>Command Lens<kbd>Ctrl K</kbd>
+                </button>
+            )}
             <div class="header-actions" mix={headerActions}>
                 <button
                     class="icon-button"
@@ -122,9 +128,9 @@ function EntryCard(handle: Handle<{ title: string; description: string; disabled
 
 const masthead = css({
     padding: "0 8px 0 8px",
-    display: "flex",
+    display: "grid",
     alignItems: "center",
-    justifyContent: "space-between",
+    gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)",
     gap: "16px",
     borderBottom: "1px solid var(--line)",
     background: "var(--panel-deep)",
@@ -190,6 +196,8 @@ const brandSpan = css({
 })
 
 const headerActions = css({
+    gridColumn: "3",
+    justifySelf: "end",
     display: "flex",
     alignItems: "center",
     gap: "4px",
@@ -326,3 +334,39 @@ const entryCardSpan = css({
     color: "var(--muted)",
     fontSize: "12px",
 })
+
+const lensButton = css({
+    width: "clamp(180px, 28vw, 360px)",
+    height: "28px",
+    padding: "0 8px",
+    display: "grid",
+    gridTemplateColumns: "auto 1fr auto",
+    alignItems: "center",
+    gap: "7px",
+    overflow: "hidden",
+    color: "var(--muted)",
+    textAlign: "left",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "4px",
+    background: "var(--control)",
+    fontSize: "12px",
+    whiteSpace: "nowrap",
+    "&:hover": {
+        color: "var(--text)",
+        background: "var(--control-hover)",
+    },
+})
+
+export function RepositoryRailToggle(handle: Handle<{ collapsed: boolean; toggle(): void }>) {
+    return () => (
+        <button
+            type="button"
+            aria-label={handle.props.collapsed ? "Expand repository sidebar" : "Collapse repository sidebar"}
+            title={handle.props.collapsed ? "Expand repository sidebar" : "Collapse repository sidebar"}
+            aria-expanded={!handle.props.collapsed}
+            mix={[iconButton, on("click", handle.props.toggle)]}
+        >
+            {handle.props.collapsed ? "»" : "«"}
+        </button>
+    )
+}

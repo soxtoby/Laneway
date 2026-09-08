@@ -58,6 +58,46 @@ async function checkRenderer() {
         throw new Error("Opening column filter did not focus its textbox")
     element<HTMLButtonElement>('[aria-label="Close file filter"]').click()
     await settle()
+    element<HTMLButtonElement>('[aria-label="Collapse repository sidebar"]').click()
+    await settle()
+    const repositoryNav = element('nav[aria-label="Open repositories"]')
+    const repositoryButton = element(".repository-item")
+    if ([...document.querySelectorAll(".repository-item > span:nth-child(2)")].some(node => getComputedStyle(node).display != "none"))
+        throw new Error("Collapsed repository labels are still visible")
+    const repoRect = repositoryButton.getBoundingClientRect()
+    const navRect = repositoryNav.getBoundingClientRect()
+    const iconRect = element(".repository-item > span:first-child").getBoundingClientRect()
+    const addRect = element(".rail-add").getBoundingClientRect()
+    if (repoRect.right > navRect.right || repositoryNav.scrollWidth > repositoryNav.clientWidth)
+        throw new Error("Collapsed repository buttons overflow the sidebar")
+    if (
+        Math.abs((iconRect.left + iconRect.right) - (repoRect.left + repoRect.right)) > 2
+        || Math.abs((addRect.left + addRect.right) - (repoRect.left + repoRect.right)) > 2
+    ) {
+        throw new Error(
+            `Collapsed alignment: ${
+                JSON.stringify({
+                    repo: repoRect.toJSON(),
+                    icon: iconRect.toJSON(),
+                    add: addRect.toJSON(),
+                    padding: getComputedStyle(repositoryButton).padding,
+                    columns: getComputedStyle(repositoryButton).gridTemplateColumns,
+                })
+            }`,
+        )
+    }
+    repositoryButton.focus()
+    if (parseFloat(getComputedStyle(repositoryButton).outlineOffset) > -2)
+        throw new Error("Repository focus outline is clipped by the navigation viewport")
+    element<HTMLButtonElement>('[aria-label="Expand repository sidebar"]').click()
+    await settle()
+    if (
+        !element(".rail-add").textContent?.includes("Add repository")
+        || Math.abs(element(".rail-add").getBoundingClientRect().width - element(".repository-item").getBoundingClientRect().width) > 1
+    ) {
+        throw new Error("Expanded Add repository must be a labeled full-width button")
+    }
+
     const graphRows = [...document.querySelectorAll<HTMLElement>(".graph-row")]
     const branchGraphConnected = graphRows.length == 3 && graphRows.every((row, index) => {
         const rail = row.querySelector("svg")!

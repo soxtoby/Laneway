@@ -5,7 +5,7 @@ import { errorMessage, FatalError, Notice, type NoticeState } from "./feedback"
 import { activateSelectionsOnMouseDown } from "./mouse-activation"
 import { createRepositoryEntry, type RepositoryEntry } from "./repository-entry"
 import { createGitSettings, type GitSettings } from "./settings"
-import { Welcome, WorkbenchHeader, WorkbenchStatus } from "./workspace"
+import { RepositoryRailToggle, Welcome, WorkbenchHeader, WorkbenchStatus } from "./workspace"
 
 type AppState = Awaited<ReturnType<Window["workbench"]["getState"]>>
 
@@ -20,6 +20,7 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
     let notice: NoticeState | undefined
     let fatalError: string | undefined
     let repositoryOrderBeforeDrag: string[] | undefined
+    let railCollapsed = false
     let appearance: Appearance = "light"
 
     handle.queueTask(() => void bootstrap())
@@ -43,15 +44,23 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
         const busy = openingRepository || repositoryEntry.busy
         return (
             <>
-                <main class="shell" mix={shell}>
-                    <WorkbenchHeader busy={busy} appearance={appearance} openSettings={gitSettings.open} toggleAppearance={() => void toggleAppearance()} />
+                <main class={`shell ${railCollapsed ? "rail-collapsed" : ""}`} mix={shell}>
+                    <WorkbenchHeader
+                        openLens={branchWorkspace.openLens}
+                        busy={busy}
+                        appearance={appearance}
+                        openSettings={gitSettings.open}
+                        toggleAppearance={() => void toggleAppearance()}
+                    />
                     {active?.status == "available"
                         ? (
-                            branchWorkspace.render(active, currentWorkspace)
+                            branchWorkspace.render(active, currentWorkspace, railCollapsed, toggleRail)
                         )
                         : active?.status == "missing"
                         ? (
                             <MissingRepository
+                                railCollapsed={railCollapsed}
+                                toggleRail={toggleRail}
                                 repository={active}
                                 workspace={currentWorkspace}
                                 select={selectRepository}
@@ -99,6 +108,11 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
                 )}
             </>
         )
+    }
+
+    function toggleRail() {
+        railCollapsed = !railCollapsed
+        void handle.update()
     }
 
     async function bootstrap() {
@@ -325,6 +339,8 @@ function MissingRepository(
             previewMove(id: string, targetId: string): void
             commitOrder(): void
             cancelMove(): void
+            railCollapsed: boolean
+            toggleRail(): void
             addRepository(): void
         }
     >,
@@ -333,21 +349,10 @@ function MissingRepository(
         <section class="workspace missing-repository" mix={workspace}>
             <aside class="repository-rail" mix={repositoryRail}>
                 <div class="rail-heading" mix={railHeading}>
+                    <RepositoryRailToggle collapsed={handle.props.railCollapsed} toggle={handle.props.toggleRail} />
                     <p class="eyebrow" mix={eyebrow}>
                         Open repositories
                     </p>
-                    <span mix={railHeadingSpan}>
-                        {handle.props.workspace.repositories.length}
-                    </span>
-                    <button
-                        class="rail-add"
-                        type="button"
-                        aria-label="Add repository"
-                        title="Add repository"
-                        mix={[railAdd, on("click", handle.props.addRepository)]}
-                    >
-                        +
-                    </button>
                 </div>
                 <nav aria-label="Open repositories" mix={openRepositoriesNav}>
                     {handle.props.workspace.repositories.map((repository, index) => (
@@ -384,25 +389,41 @@ function MissingRepository(
                             ]}
                         >
                             <button
-                                class={`repository-item ${repository.id == handle.props.repository.id ? "active" : ""}`}
+                                class={`repository-item ${handle.props.railCollapsed ? "collapsed" : ""} ${
+                                    repository.id == handle.props.repository.id ? "active" : ""
+                                }`}
                                 type="button"
+                                title={repository.path}
+                                aria-label={repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name}
                                 data-mousedown-activate
                                 mix={[repositoryItem, on("click", () => handle.props.select(repository.id))]}
                             >
                                 <span mix={repositoryItemSpan}>
                                     {initials(repository.path)}
                                 </span>
-                                <span mix={repositoryItemSpan}>
-                                    <strong mix={repositoryItemStrong}>
-                                        {repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name}
-                                    </strong>
-                                    <small mix={repositoryItemSmall}>
-                                        {repository.status == "available" ? repository.info.selectedWorktree : "Unavailable"}
-                                    </small>
-                                </span>
+                                {!handle.props.railCollapsed && (
+                                    <span mix={repositoryItemSpan}>
+                                        <strong mix={repositoryItemStrong}>
+                                            {repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name}
+                                        </strong>
+                                        <small mix={repositoryItemSmall}>
+                                            {repository.status == "available" ? repository.info.selectedWorktree : "Unavailable"}
+                                        </small>
+                                    </span>
+                                )}
                             </button>
                         </div>
                     ))}
+                    <button
+                        class={`rail-add ${handle.props.railCollapsed ? "collapsed" : ""}`}
+                        type="button"
+                        aria-label="Add repository"
+                        title="Add repository"
+                        mix={[railAdd, on("click", handle.props.addRepository)]}
+                    >
+                        <span aria-hidden="true">+</span>
+                        {!handle.props.railCollapsed && <span class="rail-add-label">Add repository</span>}
+                    </button>
                 </nav>
             </aside>
             <div class="missing-copy" mix={missingCopy}>
@@ -450,6 +471,9 @@ const bootstrapStateP = css({
 })
 
 const shell = css({
+    "&.rail-collapsed": { "--rail": "52px" },
+    "&.rail-collapsed .rail-heading": { padding: "2px 0 6px", justifyContent: "center" },
+    "&.rail-collapsed .rail-heading .eyebrow": { display: "none" },
     width: "100%",
     height: "100%",
     display: "grid",
@@ -507,6 +531,7 @@ const workspace = css({
 })
 
 const repositoryRail = css({
+    minWidth: "0",
     minHeight: "0",
     padding: "6px",
     display: "grid",
@@ -537,23 +562,24 @@ const eyebrow = css({
     textOverflow: "ellipsis",
 })
 
-const railHeadingSpan = css({
-    color: "var(--faint)",
-    fontSize: "11px",
-})
-
 const railAdd = css({
-    width: "22px",
-    height: "22px",
+    "&.collapsed": { gridTemplateColumns: "24px", padding: "0", gap: "0", justifyContent: "center", textAlign: "center", height: "38px" },
+    margin: "6px 0 0",
+    width: "100%",
+    height: "32px",
+    gridTemplateColumns: "24px minmax(0, 1fr)",
+    gap: "8px",
+    textAlign: "left",
+    outlineOffset: "-2px",
     flex: "0 0 auto",
-    padding: "0",
+    padding: "0 6px",
     display: "grid",
-    placeItems: "center",
+    alignItems: "center",
     color: "var(--muted)",
     border: "1px solid var(--line-strong)",
     borderRadius: "4px",
     background: "var(--control)",
-    fontSize: "14px",
+    fontSize: "12px",
     lineHeight: "1",
     "&:hover:not(:disabled)": {
         color: "var(--text)",
@@ -562,6 +588,9 @@ const railAdd = css({
 })
 
 const openRepositoriesNav = css({
+    gridTemplateColumns: "minmax(0, 1fr)",
+    minWidth: "0",
+    overflowX: "hidden",
     minHeight: "0",
     display: "grid",
     alignContent: "start",
@@ -570,6 +599,9 @@ const openRepositoriesNav = css({
 })
 
 const repositoryItem = css({
+    "&.collapsed": { gridTemplateColumns: "24px", padding: "5px 0", gap: "0", justifyContent: "center", height: "38px" },
+    minWidth: "0",
+    outlineOffset: "-2px",
     width: "100%",
     padding: "5px 6px",
     display: "grid",
@@ -604,7 +636,7 @@ const repositoryItemSpan = css({
         fontSize: "10px",
         fontWeight: "600",
     },
-    "&:last-child": {
+    "&:nth-child(2)": {
         minWidth: "0",
         display: "grid",
         alignContent: "center",

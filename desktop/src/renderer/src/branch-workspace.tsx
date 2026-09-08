@@ -6,6 +6,7 @@ import { graphLineColor, graphRowHeight, type GraphRowLayout, layoutBranchGraph 
 import { CommandLens } from "./command-lens"
 import { errorMessage, type NoticeState } from "./feedback"
 import { createInspection } from "./inspection"
+import { RepositoryRailToggle } from "./workspace"
 
 interface RepositoryGraphState {
     graph?: BranchGraph
@@ -51,7 +52,8 @@ interface BranchWorkspaceOptions {
 export interface BranchWorkspace {
     activate(repositoryId: string): void
     deactivate(): void
-    render(active: AvailableOpenRepository, workspace: Workspace): RemixNode
+    render(active: AvailableOpenRepository, workspace: Workspace, railCollapsed?: boolean, toggleRail?: () => void): RemixNode
+    openLens(): void
     renderLens(workspace: Workspace): RemixNode
 }
 
@@ -107,6 +109,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
     }, { once: true })
 
     return {
+        openLens,
         activate(repositoryId) {
             activeRepositoryId = repositoryId
             inspection.retainRepositories(options.workspace().repositories.map(repository => repository.id))
@@ -118,7 +121,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             inspection.retainRepositories(options.workspace().repositories.map(repository => repository.id))
             inspection.activate()
         },
-        render(active, workspace) {
+        render(active, workspace, railCollapsed = false, toggleRail = () => {}) {
             currentWorkspace = workspace
             const state = stateFor(active.id)
             inspection.retain(active.id, state.openedBranchIds)
@@ -135,6 +138,8 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             return (
                 <section class="workspace graph-workspace" mix={workspaceStyle} aria-live="polite">
                     <RepositoryRail
+                        railCollapsed={railCollapsed}
+                        toggleRail={toggleRail}
                         active={active}
                         workspace={workspace}
                         busy={state.loading}
@@ -145,7 +150,6 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                         commitRepositoryOrder={options.commitRepositoryOrder}
                         cancelRepositoryMove={options.cancelRepositoryMove}
                         addRepository={options.addRepository}
-                        openLens={openLens}
                     />
                     <section class="graph-desk" mix={graphDesk}>
                         <header class="graph-toolbar" mix={graphToolbar}>
@@ -775,6 +779,8 @@ let draggingRepositoryId: string | undefined
 function RepositoryRail(
     handle: Handle<
         {
+            railCollapsed: boolean
+            toggleRail(): void
             active: AvailableOpenRepository
             workspace: Workspace
             busy: boolean
@@ -785,7 +791,6 @@ function RepositoryRail(
             commitRepositoryOrder(): void
             cancelRepositoryMove(): void
             addRepository(): void
-            openLens(): void
         }
     >,
 ) {
@@ -794,22 +799,10 @@ function RepositoryRail(
         return (
             <aside class="repository-rail graph-rail" mix={repositoryRail}>
                 <div class="rail-heading" mix={railHeading}>
+                    <RepositoryRailToggle collapsed={props.railCollapsed} toggle={props.toggleRail} />
                     <p class="eyebrow" mix={repositoryRailEyebrow}>
                         Open repositories
                     </p>
-                    <span mix={railHeadingSpan}>
-                        {props.workspace.repositories.length}
-                    </span>
-                    <button
-                        class="rail-add"
-                        type="button"
-                        aria-label="Add repository"
-                        title="Add repository"
-                        disabled={props.busy}
-                        mix={[railAdd, on("click", props.addRepository)]}
-                    >
-                        +
-                    </button>
                 </div>
                 <nav aria-label="Open repositories" mix={openRepositoriesNav}>
                     {props.workspace.repositories.map((repository, index) => (
@@ -848,39 +841,55 @@ function RepositoryRail(
                             ]}
                         >
                             <button
-                                class={`repository-item ${repository.id == props.active.id ? "active" : ""} ${repository.status}`}
+                                class={`repository-item ${props.railCollapsed ? "collapsed" : ""} ${
+                                    repository.id == props.active.id ? "active" : ""
+                                } ${repository.status}`}
                                 type="button"
                                 disabled={props.busy}
+                                title={repository.path}
+                                aria-label={repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name}
                                 data-mousedown-activate
                                 mix={[repositoryItem, on("click", () => props.selectRepository(repository.id))]}
                             >
                                 <span mix={repositoryItemSpan}>
                                     {initials(repository.path)}
                                 </span>
-                                <span mix={repositoryItemSpan}>
-                                    <strong mix={repositoryItemStrong}>
-                                        {repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name}
-                                    </strong>
-                                    <small mix={repositoryItemSmall}>
-                                        {repository.status == "available" ? repository.info.selectedWorktree : "Unavailable"}
-                                    </small>
-                                </span>
+                                {!props.railCollapsed && (
+                                    <span mix={repositoryItemSpan}>
+                                        <strong mix={repositoryItemStrong}>
+                                            {repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name}
+                                        </strong>
+                                        <small mix={repositoryItemSmall}>
+                                            {repository.status == "available" ? repository.info.selectedWorktree : "Unavailable"}
+                                        </small>
+                                    </span>
+                                )}
                             </button>
-                            <button
-                                class="repository-close"
-                                type="button"
-                                aria-label={`Close ${repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name}`}
-                                title="Close repository"
-                                mix={[repositoryClose, on("click", () => props.closeRepository(repository.id))]}
-                            >
-                                ×
-                            </button>
+                            {!props.railCollapsed && (
+                                <button
+                                    class="repository-close"
+                                    type="button"
+                                    aria-label={`Close ${repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name}`}
+                                    title="Close repository"
+                                    mix={[repositoryClose, on("click", () => props.closeRepository(repository.id))]}
+                                >
+                                    ×
+                                </button>
+                            )}
                         </div>
                     ))}
+                    <button
+                        class={`rail-add ${props.railCollapsed ? "collapsed" : ""}`}
+                        type="button"
+                        aria-label="Add repository"
+                        title="Add repository"
+                        disabled={props.busy}
+                        mix={[railAdd, on("click", props.addRepository)]}
+                    >
+                        <span aria-hidden="true">+</span>
+                        {!props.railCollapsed && <span class="rail-add-label">Add repository</span>}
+                    </button>
                 </nav>
-                <button class="lens-button" type="button" mix={[lensButton, on("click", props.openLens)]}>
-                    <span>⌕</span>Command Lens<kbd>Ctrl K</kbd>
-                </button>
             </aside>
         )
     }
@@ -1671,6 +1680,7 @@ const unassignedMarkersButton = css({
 })
 
 const repositoryRail = css({
+    minWidth: "0",
     minHeight: "0",
     padding: "6px",
     display: "grid",
@@ -1701,23 +1711,24 @@ const repositoryRailEyebrow = css({
     textOverflow: "ellipsis",
 })
 
-const railHeadingSpan = css({
-    color: "var(--faint)",
-    fontSize: "11px",
-})
-
 const railAdd = css({
-    width: "22px",
-    height: "22px",
+    "&.collapsed": { gridTemplateColumns: "24px", padding: "0", gap: "0", justifyContent: "center", textAlign: "center", height: "38px" },
+    margin: "6px 0 0",
+    width: "100%",
+    height: "32px",
+    gridTemplateColumns: "24px minmax(0, 1fr)",
+    gap: "8px",
+    textAlign: "left",
+    outlineOffset: "-2px",
     flex: "0 0 auto",
-    padding: "0",
+    padding: "0 6px",
     display: "grid",
-    placeItems: "center",
+    alignItems: "center",
     color: "var(--muted)",
     border: "1px solid var(--line-strong)",
     borderRadius: "4px",
     background: "var(--control)",
-    fontSize: "14px",
+    fontSize: "12px",
     lineHeight: "1",
     "&:hover:not(:disabled)": {
         color: "var(--text)",
@@ -1726,6 +1737,9 @@ const railAdd = css({
 })
 
 const openRepositoriesNav = css({
+    gridTemplateColumns: "minmax(0, 1fr)",
+    minWidth: "0",
+    overflowX: "hidden",
     minHeight: "0",
     display: "grid",
     alignContent: "start",
@@ -1738,6 +1752,9 @@ const repositoryRow = css({
 })
 
 const repositoryItem = css({
+    "&.collapsed": { gridTemplateColumns: "24px", padding: "5px 0", gap: "0", justifyContent: "center", height: "38px" },
+    minWidth: "0",
+    outlineOffset: "-2px",
     width: "100%",
     padding: "5px 6px",
     display: "grid",
@@ -1773,7 +1790,7 @@ const repositoryItemSpan = css({
         fontSize: "10px",
         fontWeight: "600",
     },
-    "&:last-child": {
+    "&:nth-child(2)": {
         minWidth: "0",
         display: "grid",
         alignContent: "center",
@@ -1817,27 +1834,6 @@ const repositoryClose = css({
     "&:hover": {
         color: "var(--text)",
         background: "var(--hover)",
-    },
-})
-
-const lensButton = css({
-    height: "28px",
-    padding: "0 8px",
-    display: "grid",
-    gridTemplateColumns: "auto 1fr auto",
-    alignItems: "center",
-    gap: "7px",
-    overflow: "hidden",
-    color: "var(--muted)",
-    textAlign: "left",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "4px",
-    background: "var(--control)",
-    fontSize: "12px",
-    whiteSpace: "nowrap",
-    "&:hover": {
-        color: "var(--text)",
-        background: "var(--control-hover)",
     },
 })
 

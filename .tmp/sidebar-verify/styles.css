@@ -1,0 +1,331 @@
+@layer base, rmx-reset, rmx;
+
+/* Shared theme, document defaults, and native control baseline. Feature styles use css(). */
+@layer base {
+    :root {
+        color-scheme: light;
+        font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+        font-synthesis: none;
+        --mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+        --canvas: #f4f5f4;
+        --panel: #ffffff;
+        --panel-deep: #ebedea;
+        --field: #ffffff;
+        --raised: #ffffff;
+        --text: #1b1e1b;
+        --muted: #5b615b;
+        --faint: #7d837d;
+        --line: #e1e4e1;
+        --line-strong: #c6cac6;
+        --control: #fbfcfb;
+        --control-hover: #f2f4f2;
+        --accent: #4d7c1f;
+        --graph-line-lightness: 38%;
+        --accent-hover: #43701a;
+        --accent-ink: #ffffff;
+        --accent-wash: rgb(77 124 31 / 8%);
+        --accent-wash-strong: rgb(77 124 31 / 14%);
+        --accent-edge: rgb(77 124 31 / 45%);
+        --warning: #8a5a10;
+        --warning-wash: rgb(138 90 16 / 8%);
+        --warning-edge: rgb(138 90 16 / 38%);
+        --warning-raised: #fdf8ef;
+        --danger: #b3261e;
+        --danger-wash: rgb(179 38 30 / 7%);
+        --danger-edge: rgb(179 38 30 / 34%);
+        --hover: rgb(16 20 16 / 5%);
+        --scrim: rgb(24 28 24 / 28%);
+        --shadow-popover: 0 8px 24px rgb(20 24 20 / 14%);
+        --shadow-dialog: 0 18px 48px rgb(20 24 20 / 22%);
+        --toolbar: 40px;
+        --status: 24px;
+        --rail: 224px;
+    }
+
+    :root[data-appearance="dark"] {
+        color-scheme: dark;
+        --canvas: #1a1e1b;
+        --panel: #212621;
+        --panel-deep: #161a17;
+        --field: #141715;
+        --raised: #272d28;
+        --text: #e7ebe5;
+        --muted: #a0a8a0;
+        --faint: #7f877f;
+        --line: #313832;
+        --line-strong: #48504a;
+        --control: #262c27;
+        --control-hover: #2e352f;
+        --accent: #b6d95f;
+        --graph-line-lightness: 70%;
+        --accent-hover: #c6e678;
+        --accent-ink: #14180e;
+        --accent-wash: rgb(182 217 95 / 10%);
+        --accent-wash-strong: rgb(182 217 95 / 16%);
+        --accent-edge: rgb(182 217 95 / 45%);
+        --warning: #e0a95e;
+        --warning-wash: rgb(224 169 94 / 10%);
+        --warning-edge: rgb(224 169 94 / 42%);
+        --warning-raised: #241d12;
+        --danger: #f08a80;
+        --danger-wash: rgb(240 138 128 / 10%);
+        --danger-edge: rgb(240 138 128 / 38%);
+        --hover: rgb(255 255 255 / 5%);
+        --scrim: rgb(0 0 0 / 55%);
+        --shadow-popover: 0 10px 30px rgb(0 0 0 / 46%);
+        --shadow-dialog: 0 20px 60px rgb(0 0 0 / 58%);
+    }
+
+    * {
+        box-sizing: border-box;
+    }
+
+    html,
+    body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+    }
+
+    body {
+        color: var(--text);
+        background: var(--canvas);
+        cursor: default;
+        font-size: 13px;
+        user-select: none;
+    }
+
+    body.busy {
+        cursor: progress;
+    }
+
+    #app {
+        height: 100%;
+        overflow: hidden;
+    }
+
+    :where(p, dd, code, small, strong, input, .selectable) {
+        user-select: text;
+    }
+
+    button,
+    button :where(*),
+    [draggable="true"] :where(*) {
+        user-select: none;
+    }
+
+    :where(*) {
+        scrollbar-width: thin;
+        scrollbar-color: var(--line-strong) transparent;
+    }
+
+    button,
+    input {
+        font: inherit;
+    }
+
+    button {
+        color: inherit;
+        cursor: default;
+    }
+
+    button:focus-visible,
+    input:focus-visible,
+    [tabindex]:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: -2px;
+    }
+
+    button:disabled {
+        cursor: default;
+        opacity: 0.42;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+        margin-top: 0;
+    }
+
+    code,
+    .mono {
+        font-family: var(--mono);
+    }
+
+    .eyebrow,
+    label,
+    dt {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0;
+        text-transform: none;
+    }
+
+    .eyebrow {
+        margin: 0 0 6px;
+    }
+
+    .workspace {
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        background: var(--canvas);
+    }
+
+    kbd {
+        padding: 1px 4px;
+        color: var(--faint);
+        border: 1px solid var(--line);
+        border-radius: 3px;
+        background: var(--panel);
+        font-family: var(--mono);
+        font-size: 10px;
+    }
+
+    dialog {
+        width: min(560px, calc(100vw - 48px));
+        max-height: calc(100vh - 48px);
+        padding: 0;
+        overflow: auto;
+        color: var(--text);
+        border: 1px solid var(--line-strong);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: var(--shadow-dialog);
+    }
+
+    dialog::backdrop {
+        background: var(--scrim);
+    }
+
+    input:not([type="checkbox"]):not([type="radio"]) {
+        width: 100%;
+        min-width: 0;
+        height: 30px;
+        padding: 0 9px;
+        color: var(--text);
+        border: 1px solid var(--line-strong);
+        border-radius: 4px;
+        outline: 0;
+        background: var(--field);
+        font-family: var(--mono);
+        font-size: 12px;
+    }
+
+    input:not([type="checkbox"]):not([type="radio"]):hover {
+        border-color: var(--faint);
+    }
+
+    input:not([type="checkbox"]):not([type="radio"]):focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px var(--accent-wash-strong);
+    }
+
+    .field-note {
+        margin: 6px 0 0;
+        color: var(--faint);
+        font-size: 12px;
+        line-height: 1.45;
+    }
+
+    .dialog-actions {
+        margin-top: 16px;
+        padding: 10px 14px;
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        border-top: 1px solid var(--line);
+        background: var(--panel-deep);
+    }
+
+    .dialog-actions button {
+        min-height: 28px;
+        padding: 0 14px;
+        border-radius: 4px;
+        font-size: 13px;
+        font-weight: 500;
+        letter-spacing: 0;
+        text-transform: none;
+    }
+
+    .text-button,
+    .secondary-button {
+        color: var(--text);
+        border: 1px solid var(--line-strong);
+        background: var(--control);
+    }
+
+    .text-button:hover:not(:disabled),
+    .secondary-button:hover:not(:disabled) {
+        background: var(--control-hover);
+    }
+
+    .primary-button {
+        color: var(--accent-ink);
+        border: 1px solid var(--accent);
+        background: var(--accent);
+        font-weight: 600;
+    }
+
+    .primary-button:hover:not(:disabled) {
+        border-color: var(--accent-hover);
+        background: var(--accent-hover);
+    }
+
+    dt {
+        margin: 0;
+    }
+
+    dd {
+        margin: 0;
+    }
+
+    @keyframes graph-spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    @keyframes progress-sweep {
+        from {
+            transform: translateX(-5%);
+        }
+
+        to {
+            transform: translateX(290%);
+        }
+    }
+
+    @keyframes notice-in {
+        from {
+            opacity: 0;
+            transform: translateY(6px);
+        }
+    }
+
+    @media (max-width: 1080px) {
+        :root {
+            --rail: 176px;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+            scroll-behavior: auto !important;
+            transition-duration: 0.01ms !important;
+            animation-duration: 0.01ms !important;
+        }
+    }
+
+    @media (forced-colors: active) {
+        .workspace,
+        dialog {
+            box-shadow: none;
+        }
+    }
+}
