@@ -39,6 +39,8 @@ export function activateSelectionsOnMouseDown(document: Document, signal: AbortS
         activated = true
         if (!event.defaultPrevented)
             control.focus({ preventScroll: true })
+        // Focus is already assigned; native mousedown focus would override focus moved by the action.
+        event.preventDefault()
         control.dispatchEvent(
             new MouseEvent("click", {
                 bubbles: true,

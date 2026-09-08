@@ -58,6 +58,9 @@ interface ColumnState {
     breakout?: BreakoutState
     showIgnored: boolean
     filter: string
+    filterOpen: boolean
+    filterInput?: HTMLInputElement
+    filterButton?: HTMLButtonElement
     status: string
     alive: boolean
 }
@@ -165,6 +168,7 @@ export function createInspection(options: Options) {
                 cachedDiffs: new Map(),
                 showIgnored: false,
                 filter: "",
+                filterOpen: false,
                 status: "all",
                 wholeFiles: new Map(),
                 alive: true,
@@ -527,6 +531,7 @@ export function createInspection(options: Options) {
                 )}
                 <FileTree
                     flat
+                    filter={state.filter}
                     files={visible}
                     expanded={expanded}
                     controls={file => {
@@ -761,7 +766,57 @@ export function createInspection(options: Options) {
             </section>
         )
     }
+    async function openFilter(state: ColumnState, render: Options["update"]) {
+        state.filterOpen = true
+        await render()
+        if (state.alive && state.filterOpen)
+            state.filterInput?.focus({ preventScroll: true })
+    }
+    function closeFilter(state: ColumnState) {
+        state.filterOpen = false
+        state.filter = ""
+        state.status = "all"
+        filterChanged(state)
+        state.filterButton?.focus({ preventScroll: true })
+    }
     return {
+        filterKeydown(repositoryId: string, columnId: string, event: KeyboardEvent, render: Options["update"]) {
+            const state = columns.get(key(repositoryId, columnId))
+            if (!state)
+                return
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() == "f") {
+                event.preventDefault()
+                event.stopPropagation()
+                void openFilter(state, render)
+            } else if (event.key == "Escape" && state.filterOpen) {
+                event.preventDefault()
+                event.stopPropagation()
+                closeFilter(state)
+            }
+        },
+        filterControl(repositoryId: string, column: Column, graph: BranchGraph, render: Options["update"], worktreePath?: string): RemixNode {
+            const state = stateFor(repositoryId, column, graph, worktreePath)
+            return (
+                <button
+                    type="button"
+                    aria-label="Filter files"
+                    title="Filter files (Ctrl+F)"
+                    aria-expanded={state.filterOpen}
+                    mix={[
+                        filterToggleButton,
+                        ref(element => {
+                            state.filterButton = element
+                        }),
+                        on("click", () => openFilter(state, render)),
+                    ]}
+                >
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                        <circle cx="6.5" cy="6.5" r="4.5" />
+                        <path d="m10 10 4 4" />
+                    </svg>
+                </button>
+            )
+        },
         retainRepositories(ids: string[]) {
             for (const [id, state] of columns) {
                 if (!ids.includes(state.repositoryId)) {
@@ -804,38 +859,51 @@ export function createInspection(options: Options) {
                     : undefined
             }
             return (
-                <div class="column-inspection" mix={columnInspection}>
-                    <div class="inspection-filters" mix={inspectionFilters}>
-                        <input
-                            aria-label="Filter changed files"
-                            placeholder="Filter files…"
-                            value={state.filter}
-                            mix={[
-                                filterChangedFilesInput,
-                                on("input", event => {
-                                    state.filter = event.currentTarget.value
-                                    filterChanged(state)
-                                }),
-                            ]}
-                        />
-                        <select
-                            aria-label="Filter change status"
-                            value={state.status}
-                            mix={[
-                                filterChangeStatusSelect,
-                                on("change", event => {
-                                    state.status = event.currentTarget.value
-                                    filterChanged(state)
-                                }),
-                            ]}
-                        >
-                            {["all", "added", "modified", "deleted", "renamed", "copied", "type changed", "conflicted"].map(status => (
-                                <option value={status}>{status}</option>
-                            ))}
-                        </select>
-                    </div>
+                <div class={`column-inspection ${state.filterOpen ? "filter-open" : ""}`} mix={columnInspection}>
+                    {state.filterOpen && (
+                        <div class="inspection-filters" mix={inspectionFilters}>
+                            <input
+                                aria-label="Filter changed files"
+                                placeholder="Filter files…"
+                                value={state.filter}
+                                mix={[
+                                    filterChangedFilesInput,
+                                    ref(element => {
+                                        state.filterInput = element
+                                    }),
+                                    on("input", event => {
+                                        state.filter = event.currentTarget.value
+                                        filterChanged(state)
+                                    }),
+                                ]}
+                            />
+                            <select
+                                aria-label="Filter change status"
+                                value={state.status}
+                                mix={[
+                                    filterChangeStatusSelect,
+                                    on("change", event => {
+                                        state.status = event.currentTarget.value
+                                        filterChanged(state)
+                                    }),
+                                ]}
+                            >
+                                {["all", "added", "modified", "deleted", "renamed", "copied", "type changed", "conflicted"].map(status => (
+                                    <option value={status}>{status}</option>
+                                ))}
+                            </select>
+                            <button
+                                type="button"
+                                aria-label="Close file filter"
+                                title="Close and clear filter (Escape)"
+                                mix={[filterToggleButton, on("click", () => closeFilter(state))]}
+                            >
+                                ×
+                            </button>
+                        </div>
+                    )}
                     {state.worktreePath && (
-                        <section class="working-changes">
+                        <section class="working-changes" mix={workingChanges}>
                             <header mix={workingChangesHeader}>
                                 <h3 mix={workingChangesH3}>
                                     Working Changes
@@ -872,7 +940,7 @@ export function createInspection(options: Options) {
                         value={stack.filter(branch => state.history.get(branch.id)?.open).map(branch => branch.id)}
                         onValueChange={values => {
                             for (const branch of stack) {
-                                if (values.includes(branch.id) != (state.history.get(branch.id)?.open ?? false))
+                                if (branch.id != column.id && values.includes(branch.id) != (state.history.get(branch.id)?.open ?? false))
                                     toggleHistory(state, branch)
                             }
                         }}
@@ -880,18 +948,22 @@ export function createInspection(options: Options) {
                         <div class="stack-inspection" mix={accordion.root()}>
                             {stack.map(branch => {
                                 const current = state.history.get(branch.id)
+                                const columnBranch = branch.id == column.id
                                 return (
                                     <accordion.ItemContext key={branch.id} value={branch.id} disabled={branch.base.status != "known"}>
                                         <section class="stack-branch" mix={[stackBranch, accordion.item()]}>
-                                            <h3 class="disclosure-heading" mix={disclosureHeading}>
-                                                <button class="stack-heading" type="button" mix={[stackHeading, accordion.trigger()]}>
-                                                    <span>{current?.open ? "▾" : "▸"} {branch.name}</span>
-                                                    <small mix={stackHeadingSmall}>
-                                                        {branch.base.status == "known" ? "Unique commits" : "Base unresolved"}
-                                                    </small>
-                                                </button>
-                                            </h3>
-                                            <div hidden={!current?.open} mix={accordion.content()}>
+                                            {!columnBranch && (
+                                                <h3 class="disclosure-heading" mix={disclosureHeading}>
+                                                    <button class="stack-heading" type="button" mix={[stackHeading, accordion.trigger()]}>
+                                                        <span>{current?.open ? "▾" : "▸"} {branch.name}</span>
+                                                        <small mix={stackHeadingSmall}>
+                                                            {branch.base.status == "known" ? "Unique commits" : "Base unresolved"}
+                                                        </small>
+                                                    </button>
+                                                </h3>
+                                            )}
+                                            {columnBranch && branch.base.status != "known" && <p>Base unresolved</p>}
+                                            <div hidden={!columnBranch && !current?.open} mix={columnBranch ? [] : accordion.content()}>
                                                 {current?.open && (
                                                     <accordion.Context
                                                         type="multiple"
@@ -1088,6 +1160,7 @@ function FileTree(
         {
             files: ChangedFile[]
             flat?: boolean
+            filter?: string
             expanded: Set<string>
             diff(file: ChangedFile): RemixNode
             controls(file: ChangedFile): RemixNode
@@ -1138,7 +1211,7 @@ function FileTree(
                             <span class={`file-status ${file.status.replaceAll(" ", "-")}`} mix={fileStatus}>
                                 {changeIcon(file.conflicted ? "conflicted" : file.status)}
                             </span>
-                            {fileLabel(file.path, props.flat || !!file.oldPath, file.oldPath)}
+                            {fileLabel(file.path, props.flat || !!file.oldPath, file.oldPath, props.filter)}
                             {file.staged && (
                                 <small class="staged-badge" mix={stagedBadge}>
                                     staged
@@ -1197,16 +1270,44 @@ function changeIcon(status: string) {
     )
 }
 
-function fileLabel(path: string, showFolder = true, oldPath?: string) {
+function fileLabel(path: string, showFolder = true, oldPath?: string, filter = "") {
     const separator = path.lastIndexOf("/") + 1
     const folder = `${oldPath ? `${oldPath} → ` : ""}${showFolder ? path.slice(0, separator) : ""}`
+    const label = folder + path.slice(separator)
+    const matches: number[] = []
+    if (filter) {
+        const lower = label.toLowerCase()
+        const query = filter.toLowerCase()
+        for (let index = lower.indexOf(query); index >= 0; index = lower.indexOf(query, index + query.length))
+            matches.push(index)
+    }
+    function highlight(start: number, end: number): RemixNode {
+        const parts: RemixNode[] = []
+        let cursor = start
+        for (const match of matches) {
+            const from = Math.max(start, match)
+            const to = Math.min(end, match + filter.length)
+            if (from >= to)
+                continue
+            parts.push(label.slice(cursor, from), <mark mix={filterMatch}>{label.slice(from, to)}</mark>)
+            cursor = to
+        }
+        parts.push(label.slice(cursor, end))
+        return parts
+    }
     return (
         <span mix={changeFileSpan}>
-            {folder && <span class="file-folder" mix={fileFolder}>{folder}</span>}
-            <span class="file-name" mix={fileName}>{path.slice(separator)}</span>
+            {folder && <span class="file-folder" mix={fileFolder}>{highlight(0, folder.length)}</span>}
+            <span class="file-name" mix={fileName}>{highlight(folder.length, label.length)}</span>
         </span>
     )
 }
+
+const filterMatch = css({
+    color: "var(--text)",
+    background: "var(--accent-wash-strong)",
+    boxShadow: "inset 0 -1px var(--accent-edge)",
+})
 
 function diffIcon(kind: "unified" | "split" | "breakout") {
     return (
@@ -1516,34 +1617,77 @@ const inspectionMutedButton = css({
 })
 
 const columnInspection = css({
+    "--filter-height": "0px",
+    "&.filter-open": { "--filter-height": "52px" },
     overflow: "auto",
     flex: "1",
     minHeight: "0",
 })
 
 const inspectionFilters = css({
+    position: "sticky",
+    top: "6px",
+    zIndex: 8,
+    height: "40px",
+    margin: "6px 8px",
+    boxSizing: "border-box",
+    background: "var(--panel)",
     display: "flex",
+    alignItems: "center",
     gap: "4px",
-    padding: "8px",
-    borderBottom: "1px solid var(--line)",
+    padding: "4px 8px",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "6px",
+    boxShadow: "var(--shadow-popover)",
+})
+
+const filterToggleButton = css({
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flex: "0 0 auto",
+    width: "26px",
+    height: "26px",
+    padding: "0",
+    border: "0",
+    borderRadius: "3px",
+    background: "transparent",
+    color: "var(--muted)",
+    cursor: "pointer",
+    "&:hover": { background: "var(--control-hover)", color: "var(--text)" },
+    '&[aria-expanded="true"]': { background: "var(--accent-wash)", color: "var(--accent)" },
 })
 
 const filterChangedFilesInput = css({
+    height: "28px",
+    minHeight: "28px",
+    boxSizing: "border-box",
+    font: "inherit",
     width: "100%",
     minWidth: "40px",
     color: "var(--text)",
     background: "var(--field)",
     border: "1px solid var(--line)",
-    padding: "5px",
+    padding: "0 7px",
     borderRadius: "3px",
 })
 
 const filterChangeStatusSelect = css({
+    height: "28px",
+    minHeight: "28px",
+    boxSizing: "border-box",
+    font: "inherit",
     color: "var(--text)",
     background: "var(--field)",
     border: "1px solid var(--line)",
-    padding: "5px",
+    padding: "0 7px",
     borderRadius: "3px",
+})
+
+const workingChanges = css({
+    marginBottom: "8px",
+    background: "var(--panel)",
+    borderBottom: "1px solid var(--line-strong)",
 })
 
 const workingChangesHeader = css({
@@ -1551,7 +1695,7 @@ const workingChangesHeader = css({
     alignItems: "center",
     justifyContent: "space-between",
     padding: "8px 10px",
-    background: "var(--panel-deep)",
+    background: "var(--accent-wash)",
     borderBottom: "1px solid var(--line)",
 })
 
@@ -1608,7 +1752,7 @@ const disclosureHeading = css({
 
 const commitStickyHeading = css({
     position: "sticky",
-    top: "0",
+    top: "var(--filter-height, 0px)",
     zIndex: 7,
     height: "32px",
     display: "flex",
@@ -1824,7 +1968,7 @@ const closeDiffColumnButton = css({
 
 const changeFile = css({
     position: "sticky",
-    top: "0",
+    top: "var(--filter-height, 0px)",
     zIndex: 5,
     background: "var(--panel)",
     display: "flex",
@@ -1833,7 +1977,7 @@ const changeFile = css({
     padding: "1px 6px",
     minHeight: "29px",
     ".inspect-commit &": {
-        top: "32px",
+        top: "calc(var(--filter-height, 0px) + 32px)",
         zIndex: 6,
         paddingLeft: "28px",
     },

@@ -1119,6 +1119,7 @@ function BranchColumns(
                                 }),
                                 on("focusin", () => props.focus(column.id)),
                                 on("keydown", event => {
+                                    props.inspection.filterKeydown(props.repositoryId, column.id, event, handle.update)
                                     if (event.ctrlKey && event.shiftKey && (event.key == "<" || event.key == ">")) {
                                         event.preventDefault()
                                         props.move(column.id, event.key == "<" ? -1 : 1)
@@ -1169,6 +1170,7 @@ function BranchColumns(
                                     </p>
                                 </div>
                                 <div mix={branchColumnDiv}>
+                                    {props.inspection.filterControl(props.repositoryId, column, props.graph, handle.update, props.worktreePath(column.id))}
                                     <button
                                         type="button"
                                         title={props.state.maximizedBranchId ? "Restore columns" : "Maximize column"}

@@ -52,6 +52,12 @@ async function checkRenderer() {
         node.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }))
     }
     await settle()
+    await new Promise<void>(resolve => element<HTMLButtonElement>('[aria-label="Filter files"]').addEventListener("click", () => resolve(), { once: true }))
+    await settle()
+    if (document.activeElement != element('[aria-label="Filter changed files"]'))
+        throw new Error("Opening column filter did not focus its textbox")
+    element<HTMLButtonElement>('[aria-label="Close file filter"]').click()
+    await settle()
     const graphRows = [...document.querySelectorAll<HTMLElement>(".graph-row")]
     const branchGraphConnected = graphRows.length == 3 && graphRows.every((row, index) => {
         const rail = row.querySelector("svg")!
@@ -147,9 +153,8 @@ async function checkRenderer() {
         && darkGraphColors.every((color, index) => color != "none" && color != lightGraphColors[index])
     const linkedAfterRender = [...diffShadow.querySelectorAll<HTMLElement>("[data-code]")].every(pane => pane.scrollLeft == 100)
 
-    const branchTrigger = element(".stack-heading:not(:disabled)")
-    const branchPanel = element(`#${CSS.escape(branchTrigger.getAttribute("aria-controls")!)}`)
-    const branchExpanded = branchTrigger.getAttribute("aria-expanded") == "true" && !branchPanel.hidden
+    const branchPanel = element(".stack-branch > div")
+    const branchExpanded = !element(".stack-branch").querySelector(".stack-heading") && !branchPanel.hidden
     element(".commit-heading").click()
     await settle()
     const commitTrigger = element(".commit-heading")

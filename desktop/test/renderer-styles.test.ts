@@ -34,7 +34,8 @@ test("Remix renderer styles and controls work under production CSP in Electron",
             child.on("error", reject)
             child.on("close", resolve)
         })
-        expect(exitCode, errors || "Electron exited before completing the renderer checks (20-second timeout).").toBe(0)
+        const failure = exitCode == 0 ? "" : await readFile(join(directory, "result.json"), "utf8").catch(() => "")
+        expect(exitCode, failure || errors || "Electron exited before completing the renderer checks (20-second timeout).").toBe(0)
         const result = JSON.parse(await readFile(join(directory, "result.json"), "utf8"))
         expect({ exitCode, error: result.error }, errors).toEqual({ exitCode: 0, error: undefined })
         expect(result).toMatchObject({

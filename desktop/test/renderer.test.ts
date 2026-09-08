@@ -369,6 +369,44 @@ describe("Remix repository entry renderer", () => {
 })
 
 describe("Working Changes inspection", () => {
+    test("opens column filtering on demand and clears it with Escape", async () => {
+        const { container, root, dispose } = render(inspectionScenario().api)
+        await flush(root)
+        const column = container.querySelector<HTMLElement>(".branch-column")!
+        const search = column.querySelector<HTMLButtonElement>('[aria-label="Filter files"]')!
+        expect(column.querySelector(".inspection-filters")).toBeNull()
+        click(search)
+        await flush(root)
+        const input = column.querySelector<HTMLInputElement>('[aria-label="Filter changed files"]')!
+        expect(document.activeElement).toBe(input)
+        input.value = "SRC/FI"
+        input.dispatchEvent(new Event("input", { bubbles: true }))
+        await flush(root)
+        expect([...column.querySelectorAll(".working-changes mark")].map(mark => mark.textContent).join("")).toBe("src/fi")
+        click(column.querySelector<HTMLButtonElement>(".commit-heading")!)
+        await flush(root)
+        expect([...column.querySelectorAll(".inspect-commit mark")].map(mark => mark.textContent).join("")).toBe("src/fi")
+        input.value = "no-matching-file"
+        input.dispatchEvent(new Event("input", { bubbles: true }))
+        await flush(root)
+        expect(column.querySelector(".working-changes .change-file")).toBeNull()
+        search.focus()
+        click(search)
+        await flush(root)
+        expect(document.activeElement == input).toBe(true)
+        expect(input.value).toBe("no-matching-file")
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+        await flush(root)
+        expect(column.querySelector(".inspection-filters")).toBeNull()
+        expect(column.querySelector(".working-changes .change-file")).not.toBeNull()
+        expect(column.querySelectorAll("mark").length).toBe(0)
+        expect(document.activeElement).toBe(search)
+        column.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true, cancelable: true }))
+        await flush(root)
+        expect(column.querySelector<HTMLInputElement>('[aria-label="Filter changed files"]')?.value).toBe("")
+        expect(document.activeElement).toBe(column.querySelector('[aria-label="Filter changed files"]'))
+        dispose()
+    })
     test("expands and selects on mousedown without toggling again on mouseup", async () => {
         const scenario = inspectionScenario()
         const { container, root, dispose } = render(scenario.api)
@@ -724,7 +762,7 @@ describe("Working Changes inspection", () => {
         const { container, root, dispose } = render(api)
         await flush(root)
         expect(historyReads).toBe(1)
-        expect(container.querySelector(".stack-heading")?.getAttribute("aria-expanded")).toBe("true")
+        expect(container.querySelector(".stack-branch")?.querySelector(".stack-heading") == null).toBe(true)
         click(container.querySelector<HTMLButtonElement>(".commit-heading")!)
         await flush(root)
         click(container.querySelector<HTMLButtonElement>(".inspect-commit [title='src/file.txt']")!)
@@ -745,9 +783,6 @@ describe("Working Changes inspection", () => {
         expect(container.querySelector(".diff-inspector")).toBeNull()
         expect(container.querySelector(".commit-heading")?.getAttribute("aria-expanded")).toBe("false")
         click(container.querySelector<HTMLButtonElement>(".commit-heading")!)
-        await flush(root)
-        expect(container.querySelector(".diff-inspector")).toBeNull()
-        click(container.querySelector<HTMLButtonElement>(".stack-heading")!)
         await flush(root)
         expect(container.querySelector(".diff-inspector")).toBeNull()
         dispose()
