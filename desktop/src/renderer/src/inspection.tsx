@@ -502,7 +502,7 @@ export function createInspection(options: Options) {
                     </p>
                 )}
                 <FileTree
-                    flat={group != "working"}
+                    flat
                     files={visible}
                     expanded={expanded}
                     controls={file => {
@@ -614,7 +614,7 @@ export function createInspection(options: Options) {
                         {renderDiffControls(state, diff)}
                     </header>
                 )}
-                {page?.source.kind == "working" && (
+                {page?.source.kind == "working" && (page.file.staged || page.file.conflicted) && (
                     <div class="diff-views" role="group" aria-label="Comparison" mix={diffViews}>
                         {([
                             "combined",

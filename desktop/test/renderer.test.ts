@@ -562,9 +562,8 @@ describe("Working Changes inspection", () => {
         await flush(root)
         click(diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
         await flush(root)
-        const folder = container.querySelector<HTMLDetailsElement>(".file-tree details")!
-        folder.open = false
-        folder.dispatchEvent(new Event("toggle"))
+        expect(container.querySelector(".file-tree details")).toBeNull()
+        click(container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
         await flush(root)
         expect(container.querySelector("[aria-label='Diff for src/file.txt']")).toBeNull()
         expect(container.querySelector("[aria-label='Diff for other.txt']")).not.toBeNull()
