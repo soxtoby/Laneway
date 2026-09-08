@@ -233,10 +233,13 @@ describe("Remix repository entry renderer", () => {
         expect(container.textContent).toContain("other/team")
 
         const feature = container.querySelector<HTMLElement>("[data-node-id='branch:refs/heads/feature/workbench']")!
-        click(feature)
+        feature.dispatchEvent(new MouseEvent("mousedown", { button: 0, detail: 1, bubbles: true, cancelable: true }))
         root.flush()
         expect(feature.classList.contains("selected")).toBe(true)
         expect(container.querySelector(".branch-column")).toBeNull()
+        feature.dispatchEvent(new MouseEvent("click", { detail: 1, bubbles: true, cancelable: true }))
+        root.flush()
+        expect(feature.classList.contains("selected")).toBe(true)
 
         click(feature.querySelector<HTMLButtonElement>(".open-branch")!)
         await flush(root)
@@ -366,6 +369,132 @@ describe("Remix repository entry renderer", () => {
 })
 
 describe("Working Changes inspection", () => {
+    test("expands and selects on mousedown without toggling again on mouseup", async () => {
+        const scenario = inspectionScenario()
+        const { container, root, dispose } = render(scenario.api)
+        await flush(root)
+        const down = (element: HTMLElement, button = 0) =>
+            element.dispatchEvent(new MouseEvent("mousedown", { button, detail: 1, bubbles: true, cancelable: true, composed: true }))
+        const release = (element: HTMLElement) => {
+            element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, composed: true }))
+            element.dispatchEvent(new MouseEvent("click", { detail: 1, bubbles: true, cancelable: true, composed: true }))
+        }
+        const file = container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!
+        down(file)
+        await flush(root)
+        expect(file.getAttribute("aria-expanded")).toBe("true")
+        release(file)
+        await flush(root)
+        expect(file.getAttribute("aria-expanded")).toBe("true")
+        const checkbox = container.querySelector<HTMLInputElement>("[aria-label='Select file src/file.txt']")!
+        down(checkbox)
+        await flush(root)
+        expect(checkbox.checked).toBe(true)
+        release(checkbox)
+        await flush(root)
+        expect(checkbox.checked).toBe(true)
+        const line = diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!
+        down(line)
+        await flush(root)
+        expect(diffRoot(container).querySelectorAll(".diff-line.selected")).toHaveLength(1)
+        release(line)
+        await flush(root)
+        expect(diffRoot(container).querySelectorAll(".diff-line.selected")).toHaveLength(1)
+        down(file, 2)
+        await flush(root)
+        expect(file.getAttribute("aria-expanded")).toBe("true")
+        click(file)
+        await flush(root)
+        expect(file.getAttribute("aria-expanded")).toBe("false")
+        const commit = container.querySelector<HTMLButtonElement>(".commit-heading")!
+        down(commit)
+        await flush(root)
+        expect(commit.getAttribute("aria-expanded")).toBe("true")
+        release(commit)
+        await flush(root)
+        expect(commit.getAttribute("aria-expanded")).toBe("true")
+        down(commit)
+        await flush(root)
+        expect(commit.getAttribute("aria-expanded")).toBe("false")
+        const ignored = container.querySelector<HTMLInputElement>(".ignored-toggle input")!
+        const label = ignored.closest("label")!
+        down(label)
+        await flush(root)
+        expect(ignored.checked).toBe(true)
+        release(label)
+        await flush(root)
+        expect(ignored.checked).toBe(true)
+        ignored.disabled = true
+        down(label)
+        await flush(root)
+        expect(ignored.checked).toBe(true)
+        dispose()
+    })
+
+    test("reopens working snapshots immediately and discards them when the file list changes", async () => {
+        const scenario = inspectionScenario()
+        let reads = 0
+        let version = "one"
+        const { container, root, dispose } = render({
+            ...scenario.api,
+            readChanges: async (...args) => {
+                const result = await scenario.api.readChanges(...args)
+                return result.ok ? { ...result, inventory: { ...result.inventory, version } } : result
+            },
+            readFileDiff: async (...args) => {
+                reads++
+                expect(args[2].inventoryVersion).toBe(version)
+                return scenario.api.readFileDiff(...args)
+            },
+        })
+        await flush(root)
+        const file = () => container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!
+        click(file())
+        await flush(root)
+        click(diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
+        await flush(root)
+        click(file())
+        await flush(root)
+        click(file())
+        await flush(root)
+        expect(reads).toBe(1)
+        expect(diffRoot(container).querySelectorAll(".diff-line.selected")).toHaveLength(0)
+        click(file())
+        await flush(root)
+        version = "two"
+        click(container.querySelector<HTMLButtonElement>("[aria-label='Refresh Working Changes']")!)
+        await flush(root)
+        click(file())
+        await flush(root)
+        expect(reads).toBe(2)
+        dispose()
+    })
+
+    test("reopens a committed file without another diff read", async () => {
+        const scenario = inspectionScenario()
+        let reads = 0
+        const { container, root, dispose } = render({
+            ...scenario.api,
+            readFileDiff: async (...args) => {
+                reads++
+                return scenario.api.readFileDiff(...args)
+            },
+        })
+        await flush(root)
+        click(container.querySelector<HTMLButtonElement>(".commit-heading")!)
+        await flush(root)
+        const file = () => container.querySelector<HTMLButtonElement>(".inspect-commit [title='src/file.txt']")!
+        click(file())
+        await flush(root)
+        click(file())
+        await flush(root)
+        click(file())
+        await flush(root)
+        expect(reads).toBe(1)
+        expect(container.querySelector(".diff-inspector")).not.toBeNull()
+        dispose()
+    })
+
     test("offers a complete commit diff only from an expanded commit", async () => {
         const scenario = inspectionScenario()
         let commitInventories = 0

@@ -4,7 +4,7 @@ import { constants } from "node:fs"
 import { access, lstat, mkdir, readdir, readFile, realpath } from "node:fs/promises"
 import { delimiter, isAbsolute, resolve } from "node:path"
 import { type BranchGraphReadCache, startBranchGraphRead, startBranchHistoryRead } from "./branch-graph"
-import { startChangesRead, startFileDiffRead } from "./changes"
+import { type ChangesReadCache, startChangesRead, startFileDiffRead } from "./changes"
 
 const minimumGitVersion = [2, 41, 0] as const
 const credentialPattern = /([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]+)(?::[^\s/@]*)?@/gi
@@ -277,22 +277,25 @@ export async function connectRepository(path: string, git?: GitSelection, requir
 
 export class RepositoryGit {
     private branchGraphCache: BranchGraphReadCache | undefined
+    private readonly changesCache: ChangesReadCache = new Map()
 
     constructor(readonly descriptor: RepositoryDescriptor) {}
 
     startReadChanges(request: ChangesRequest) {
         return startChangesRead(
             this.descriptor,
-            (cwd, args, onOutput) => startGitProcess({ installation: this.descriptor.git, cwd, args, readOnly: true, onOutput }),
+            (cwd, args, onOutput, input) => startGitProcess({ installation: this.descriptor.git, cwd, args, readOnly: true, onOutput, input }),
             request,
+            this.changesCache,
         )
     }
 
     startReadFileDiff(request: FileDiffRequest) {
         return startFileDiffRead(
             this.descriptor,
-            (cwd, args, onOutput) => startGitProcess({ installation: this.descriptor.git, cwd, args, readOnly: true, onOutput }),
+            (cwd, args, onOutput, input) => startGitProcess({ installation: this.descriptor.git, cwd, args, readOnly: true, onOutput, input }),
             request,
+            this.changesCache,
         )
     }
 

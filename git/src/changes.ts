@@ -10,7 +10,17 @@ interface Command {
     cancel(): void
     wasCancelled(): boolean
 }
-type StartCommand = (cwd: string, args: string[], onOutput?: (chunk: Buffer) => void) => Command
+type StartCommand = (cwd: string, args: string[], onOutput?: (chunk: Buffer) => void, input?: string) => Command
+
+interface ChangesSnapshot {
+    inventory: ChangesInventory
+    cwd: string
+    headId: string
+    indexPath?: string
+    attributes: Map<string, string>
+}
+
+export type ChangesReadCache = Map<string, ChangesSnapshot>
 
 function operation(start: StartCommand) {
     const active = new Set<Command>()
@@ -26,9 +36,9 @@ function operation(start: StartCommand) {
             for (const command of active)
                 command.cancel()
         },
-        async run(cwd: string, args: string[], onOutput?: (chunk: Buffer) => void, accepted = [0]) {
+        async run(cwd: string, args: string[], onOutput?: (chunk: Buffer) => void, accepted = [0], input?: string) {
             check()
-            const command = start(cwd, args, onOutput)
+            const command = start(cwd, args, onOutput, input)
             active.add(command)
             const result = await command.result.finally(() => active.delete(command))
             check()
@@ -42,14 +52,39 @@ function operation(start: StartCommand) {
 }
 type Reader = ReturnType<typeof operation>
 
-export function startChangesRead(descriptor: RepositoryDescriptor, start: StartCommand, request: ChangesRequest): GitTask<ChangesInventory> {
+export function startChangesRead(
+    descriptor: RepositoryDescriptor,
+    start: StartCommand,
+    request: ChangesRequest,
+    cache?: ChangesReadCache,
+): GitTask<ChangesInventory> {
     const reader = operation(start)
-    return { cancel: reader.cancel, result: inventory(descriptor, reader, request) }
+    const result = readSnapshot(descriptor, reader, request).then(snapshot => {
+        reader.check()
+        if (cache) {
+            const key = snapshotKey(snapshot.inventory.source, snapshot.inventory.version)
+            cache.delete(key)
+            cache.set(key, snapshot)
+            if (cache.size > 16)
+                cache.delete(cache.keys().next().value!)
+        }
+        return snapshot.inventory
+    })
+    return { cancel: reader.cancel, result }
 }
 
-export function startFileDiffRead(descriptor: RepositoryDescriptor, start: StartCommand, request: FileDiffRequest): GitTask<FileDiffPage> {
+export function startFileDiffRead(
+    descriptor: RepositoryDescriptor,
+    start: StartCommand,
+    request: FileDiffRequest,
+    cache?: ChangesReadCache,
+): GitTask<FileDiffPage> {
     const reader = operation(start)
-    return { cancel: reader.cancel, result: fileDiff(descriptor, reader, request) }
+    return { cancel: reader.cancel, result: fileDiff(descriptor, reader, request, cache) }
+}
+
+function snapshotKey(source: DiffSource, version: string) {
+    return JSON.stringify([source.kind, source.kind == "working" ? source.worktreePath : [source.objectId, source.parentId], version])
 }
 
 async function directory(descriptor: RepositoryDescriptor, reader: Reader, source: DiffSource) {
@@ -69,25 +104,32 @@ async function directory(descriptor: RepositoryDescriptor, reader: Reader, sourc
     return path
 }
 
-async function inventory(descriptor: RepositoryDescriptor, reader: Reader, request: ChangesRequest): Promise<ChangesInventory> {
+async function readSnapshot(descriptor: RepositoryDescriptor, reader: Reader, request: ChangesRequest): Promise<ChangesSnapshot> {
     const cwd = await directory(descriptor, reader, request.source)
     if (request.source.kind == "working") {
         const headBefore = await head(reader, cwd)
-        const args = [
-            "status",
-            "--porcelain=v2",
-            "-z",
-            "--untracked-files=all",
-            "--ignore-submodules=none",
-            ...(request.includeIgnored ? ["--ignored=matching"] : []),
-        ]
-        const status = await reader.run(cwd, args)
-        const headAfter = await head(reader, cwd)
+        const status = await workingStatus(reader, cwd, request.includeIgnored)
+        const files = parseStatus(status)
+        const [headAfter, attributes, stamps, indexPath] = await Promise.all([
+            head(reader, cwd),
+            readAttributes(reader, cwd, request.source, files),
+            Promise.all(files.filter(file => !file.ignored).map(file => stamp(resolve(cwd, file.path)))),
+            reader.run(cwd, ["rev-parse", "--path-format=absolute", "--git-path", "index"]),
+        ])
         if (headBefore != headAfter)
             throw stale()
-        const files = parseStatus(status)
-        const stamps = await Promise.all(files.filter(file => !file.ignored).map(file => stamp(resolve(cwd, file.path))))
-        return { source: request.source, version: hash(headBefore + status + JSON.stringify(stamps)), parents: [], files }
+        return {
+            inventory: {
+                source: request.source,
+                version: hash(headBefore + status + JSON.stringify(stamps) + JSON.stringify([...attributes])),
+                parents: [],
+                files,
+            },
+            cwd,
+            headId: headBefore,
+            indexPath: indexPath.trim(),
+            attributes,
+        }
     }
     const commit = request.source.objectId
     const parents = (await reader.run(cwd, ["show", "-s", "--format=%P", commit, "--"])).trim().split(" ").filter(Boolean)
@@ -109,7 +151,34 @@ async function inventory(descriptor: RepositoryDescriptor, reader: Reader, reque
         ...(parentId ? [parentId, commit] : [commit]),
         "--",
     ])
-    return { source, version: hash(JSON.stringify(source) + output), parents, files: parseRaw(output) }
+    const files = parseRaw(output)
+    const attributes = await readAttributes(reader, cwd, source, files)
+    return {
+        inventory: { source, version: hash(JSON.stringify(source) + output + JSON.stringify([...attributes])), parents, files },
+        cwd,
+        headId: "",
+        attributes,
+    }
+}
+
+async function readAttributes(reader: Reader, cwd: string, source: DiffSource, files: ChangedFile[]) {
+    const paths = files.filter(file => !file.ignored).map(file => file.path)
+    const attributes = new Map<string, string>()
+    if (!paths.length)
+        return attributes
+    const output = await reader.run(
+        cwd,
+        ["check-attr", "-z", ...(source.kind == "commit" ? [`--source=${source.objectId}`] : []), "--all", "--stdin"],
+        undefined,
+        [0],
+        paths.join("\0") + "\0",
+    )
+    const values = output.split("\0")
+    for (let i = 0; i + 2 < values.length; i += 3) {
+        const path = values[i]
+        attributes.set(path, (attributes.get(path) ?? "") + `${path}\0${values[i + 1]}\0${values[i + 2]}\0`)
+    }
+    return attributes
 }
 
 function parseStatus(output: string): ChangedFile[] {
@@ -181,33 +250,32 @@ function parseRaw(output: string): ChangedFile[] {
     return files.sort((left, right) => left.path.localeCompare(right.path))
 }
 
-async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, request: FileDiffRequest): Promise<FileDiffPage> {
+async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, request: FileDiffRequest, cache?: ChangesReadCache): Promise<FileDiffPage> {
     validatePath(request.path)
     if (request.offset != undefined && (!Number.isSafeInteger(request.offset) || request.offset < 0))
         throw new GitError("git.command-failed", "Invalid diff page.")
-    const current = await inventory(descriptor, reader, { source: request.source, includeIgnored: true })
-    const file = current.files.find(file => file.path == request.path)
-    if (!file || file.ignored)
-        throw new GitError("git.command-failed", "This file no longer has inspectable changes. Refresh the file list.")
-    const source = current.source
-    const cwd = source.kind == "working" ? source.worktreePath : descriptor.selectedWorktree
+    const cached = request.expectedVersion == undefined && request.inventoryVersion
+        ? cache?.get(snapshotKey(request.source, request.inventoryVersion))
+        : undefined
+    const snapshot = cached ?? await readSnapshot(descriptor, reader, { source: request.source })
+    const { cwd, headId } = snapshot
+    const source = snapshot.inventory.source
+    if (request.expectedVersion != undefined && !snapshot.inventory.files.some(file => file.path == request.path && !file.ignored))
+        throw stale()
+    const file = changedFile(snapshot.inventory.files, request.path)
+    const attributes = snapshot.attributes.get(file.path) ?? ""
     const view = request.view ?? "combined"
     const stage = { base: 1, ours: 2, theirs: 3 }[view as "base" | "ours" | "theirs"]
     if (source.kind == "commit" && view != "combined" || stage && !file.conflicted)
         throw new GitError("git.command-failed", "This comparison is unavailable for the selected file.")
-    const before = source.kind == "working" ? await workingIdentity(reader, cwd, file) : current.version
+    const before = request.expectedVersion != undefined && source.kind == "working" ? await workingIdentity(reader, cwd, file) : undefined
+    if (before && (before.headId != headId || before.attributes != attributes))
+        throw stale()
+    const evidence = source.kind == "working"
+        ? await Promise.all([snapshot.indexPath!, file.path, ...(file.oldPath ? [file.oldPath] : [])].map(path => stamp(resolve(cwd, path))))
+        : undefined
     const collector = patchCollector(request.offset ?? 0, Boolean(stage))
     const summary = collector.summary
-    const attributes = await reader.run(cwd, [
-        "check-attr",
-        "-z",
-        ...(source.kind == "commit" ? [`--source=${source.objectId}`] : []),
-        "diff",
-        "filter",
-        "working-tree-encoding",
-        "--",
-        file.path,
-    ])
     const values = attributes.split("\0")
     const attrs = new Map<string, string>()
     for (let i = 0; i + 2 < values.length; i += 3)
@@ -260,7 +328,6 @@ async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, reques
             await safeFile(cwd, file.path)
             await reader.run(cwd, ["diff", "--no-index", ...flags, "--", process.platform == "win32" ? "NUL" : "/dev/null", file.path], collector.write, [0, 1])
         } else {
-            const headId = await head(reader, cwd)
             const revisions = view == "staged" ? ["--cached", ...(headId ? [headId] : [])] : view == "unstaged" ? [] : headId ? [headId] : ["--cached"]
             // An unborn HEAD has no tree. For its combined diff read the worktree against an empty file.
             if (!headId && view == "combined") {
@@ -279,11 +346,11 @@ async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, reques
         }
     }
     const collected = collector.finish()
-    if (source.kind == "working" && before != await workingIdentity(reader, cwd, file))
+    if (before && before.identity != (await workingIdentity(reader, cwd, file)).identity)
         throw stale()
     reader.check()
-    const version = hash(JSON.stringify(source) + before + view + attributes + collected.digest)
-    if (request.expectedVersion && version != request.expectedVersion)
+    const version = hash(JSON.stringify(source) + JSON.stringify(file) + headId + view + attributes + JSON.stringify(evidence) + collected.digest)
+    if (request.expectedVersion != undefined && version != request.expectedVersion)
         throw stale()
     if (file.submodule) {
         summary.push(`Submodule ${file.submodule}. Inspect its repository for internal changes.`)
@@ -303,6 +370,26 @@ async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, reques
         summary,
         selectable: selectable && !collected.binary && !collected.oversized,
     }
+}
+
+function changedFile(files: ChangedFile[], path: string) {
+    const file = files.find(file => file.path == path)
+    if (!file || file.ignored)
+        throw new GitError("git.command-failed", "This file no longer has inspectable changes. Refresh the file list.")
+    return file
+}
+
+function workingStatus(reader: Reader, cwd: string, includeIgnored = false, paths: string[] = []) {
+    return reader.run(cwd, [
+        "status",
+        "--porcelain=v2",
+        "-z",
+        "--untracked-files=all",
+        "--ignore-submodules=none",
+        ...(includeIgnored ? ["--ignored=matching"] : []),
+        "--",
+        ...paths,
+    ])
 }
 
 function describeModeChange(before: string, after: string) {
@@ -438,17 +525,13 @@ async function workingIdentity(reader: Reader, cwd: string, file: ChangedFile) {
         head(reader, cwd),
         reader.run(cwd, ["rev-parse", "--path-format=absolute", "--git-path", "index"]),
         reader.run(cwd, ["check-attr", "-z", "--all", "--", file.path]),
-        reader.run(cwd, [
-            "status",
-            "--porcelain=v2",
-            "-z",
-            "--untracked-files=all",
-            "--ignore-submodules=none",
-            "--",
-            ...[file.oldPath, file.path].filter((path): path is string => Boolean(path)),
-        ]),
+        workingStatus(reader, cwd, false, [file.oldPath, file.path].filter((path): path is string => Boolean(path))),
     ])
-    return JSON.stringify([headId, await stamp(indexPath.trim()), await stamp(resolve(cwd, file.path)), attributes, status])
+    return {
+        headId,
+        attributes,
+        identity: JSON.stringify([headId, await stamp(indexPath.trim()), await stamp(resolve(cwd, file.path)), attributes, status]),
+    }
 }
 async function stamp(path: string) {
     try {

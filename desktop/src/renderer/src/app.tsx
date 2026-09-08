@@ -2,6 +2,7 @@ import type { Appearance, EntryProgress, Workspace } from "@git-workbench/shared
 import { css, type Handle, on } from "remix/ui"
 import { type BranchWorkspace, createBranchWorkspace } from "./branch-workspace"
 import { errorMessage, FatalError, Notice, type NoticeState } from "./feedback"
+import { activateSelectionsOnMouseDown } from "./mouse-activation"
 import { createRepositoryEntry, type RepositoryEntry } from "./repository-entry"
 import { createGitSettings, type GitSettings } from "./settings"
 import { Welcome, WorkbenchHeader, WorkbenchStatus } from "./workspace"
@@ -9,6 +10,7 @@ import { Welcome, WorkbenchHeader, WorkbenchStatus } from "./workspace"
 type AppState = Awaited<ReturnType<Window["workbench"]["getState"]>>
 
 export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
+    activateSelectionsOnMouseDown(document, handle.signal)
     let initial: AppState | undefined
     let workspace: Workspace | undefined
     let repositoryEntry: RepositoryEntry | undefined
@@ -384,6 +386,7 @@ function MissingRepository(
                             <button
                                 class={`repository-item ${repository.id == handle.props.repository.id ? "active" : ""}`}
                                 type="button"
+                                data-mousedown-activate
                                 mix={[repositoryItem, on("click", () => handle.props.select(repository.id))]}
                             >
                                 <span mix={repositoryItemSpan}>

@@ -64,7 +64,23 @@ async function checkRenderer() {
     const lightGraphColors = graphColors()
     const branchGraphColors = lightGraphColors[0] == lightGraphColors[1] && lightGraphColors[0] != lightGraphColors[2]
         && new Set([...graphRows[0].querySelectorAll("path")].map(path => getComputedStyle(path).stroke)).size == 2
-    element(".change-file button").click()
+    const fileButton = element(".change-file button")
+    fileButton.dispatchEvent(new MouseEvent("mousedown", { button: 0, detail: 1, bubbles: true, cancelable: true, composed: true }))
+    await settle()
+    const expandedOnMouseDown = fileButton.getAttribute("aria-expanded") == "true"
+    fileButton.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, composed: true }))
+    fileButton.dispatchEvent(new MouseEvent("click", { detail: 1, bubbles: true, cancelable: true, composed: true }))
+    await settle()
+    const noSecondToggle = fileButton.getAttribute("aria-expanded") == "true"
+    const selectedFile = element<HTMLInputElement>(".change-file input[type=checkbox]")
+    selectedFile.dispatchEvent(new MouseEvent("mousedown", { button: 0, detail: 1, bubbles: true, cancelable: true, composed: true }))
+    await settle()
+    const selectedOnMouseDown = selectedFile.checked
+    selectedFile.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, composed: true }))
+    selectedFile.dispatchEvent(new MouseEvent("click", { detail: 1, bubbles: true, cancelable: true, composed: true }))
+    await settle()
+    const noSecondSelection = selectedFile.checked
+    selectedFile.click()
     await settle()
     const diffShadow = element(".pierre-diff").shadowRoot!
     const metadata = element(".diff-summary")
@@ -192,6 +208,16 @@ async function checkRenderer() {
     const endingRowsAligned = endingRows.length == 2 && endingRows[0].top == endingRows[1].top && endingRows.every(row => row.height == 24)
     compactDiff.closest(".file-inspection")!.querySelector<HTMLButtonElement>("[aria-label='Unified']")!.click()
     await settle()
+    const largeLines = Array.from(
+        { length: 500 },
+        (_, id) => ({ id, kind: "addition" as const, text: `line ${id + 1} ${"long content ".repeat(30)}`, newLine: id + 1, hunk: 0 }),
+    )
+    // Establish committed content before its first read; reopening reuses the snapshot.
+    const readDiff = scenario.api.readFileDiff
+    scenario.api.readFileDiff = async (...args) => {
+        const result = await readDiff(...args)
+        return result.ok && args[2].path == "other.txt" ? { ...result, page: { ...result.page, lines: largeLines } } : result
+    }
     const commitFiles = [...document.querySelectorAll<HTMLButtonElement>(".inspect-commit .change-file > button")]
     commitFiles[1].click()
     await settle()
@@ -206,16 +232,6 @@ async function checkRenderer() {
     const independentDiffs = !firstFile.querySelector(".diff-inspector") && secondViewer != null && secondFile.querySelector(".pierre-diff") == secondViewer
     commitFiles[1].click()
     await settle()
-    const largeLines = Array.from(
-        { length: 500 },
-        (_, id) => ({ id, kind: "addition" as const, text: `line ${id + 1} ${"long content ".repeat(30)}`, newLine: id + 1, hunk: 0 }),
-    )
-    // Keep the scrolling payload separate from the TypeScript highlighting fixture.
-    const readDiff = scenario.api.readFileDiff
-    scenario.api.readFileDiff = async (...args) => {
-        const result = await readDiff(...args)
-        return result.ok && args[2].path == "other.txt" ? { ...result, page: { ...result.page, lines: largeLines } } : result
-    }
     commitFiles[1].click()
     await settle()
     const longDiff = secondFile.querySelector<HTMLElement>(".pierre-diff")!
@@ -318,6 +334,10 @@ async function checkRenderer() {
         compactUnified,
         inlineDiff,
         flatFiles,
+        expandedOnMouseDown,
+        noSecondToggle,
+        selectedOnMouseDown,
+        noSecondSelection,
         hunkSelected,
         distinctLineEndings,
         endingsStayOnRow,

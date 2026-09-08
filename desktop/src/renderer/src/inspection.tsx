@@ -53,6 +53,7 @@ interface ColumnState {
     history: Map<string, HistoryState>
     requestIds: Set<string>
     diffs: Map<string, FileDiffState>
+    cachedDiffs: Map<string, FileDiffPage>
     wholeFiles: Map<string, { source: DiffSource; path: string; version: string }>
     breakout?: BreakoutState
     showIgnored: boolean
@@ -161,6 +162,7 @@ export function createInspection(options: Options) {
                 history: new Map(),
                 requestIds: new Set(),
                 diffs: new Map(),
+                cachedDiffs: new Map(),
                 showIgnored: false,
                 filter: "",
                 status: "all",
@@ -267,7 +269,16 @@ export function createInspection(options: Options) {
             state.breakout = undefined
     }
     function createDiff(state: ColumnState, group: string, path: string) {
-        const diff: FileDiffState = { group, path, view: "combined", loading: false, generation: 0, showWhitespace: false }
+        const files = state.files.get(group)
+        const diff: FileDiffState = {
+            group,
+            path,
+            view: "combined",
+            page: files?.error ? undefined : state.cachedDiffs.get(JSON.stringify([files?.source, files?.inventory?.version, path])),
+            loading: false,
+            generation: 0,
+            showWhitespace: false,
+        }
         state.diffs.set(diffKey(group, path), diff)
         return diff
     }
@@ -295,7 +306,7 @@ export function createInspection(options: Options) {
                 return
             const diff = selected ?? createDiff(state, group, file.path)
             showFileBreakout(state, diff)
-            if (!selected)
+            if (!selected && !diff.page)
                 void readDiff(state, diff)
             return
         }
@@ -305,7 +316,10 @@ export function createInspection(options: Options) {
             return
         }
         const diff = createDiff(state, group, file.path)
-        void readDiff(state, diff)
+        if (diff.page)
+            update()
+        else
+            void readDiff(state, diff)
     }
     async function showCommitBreakout(state: ColumnState, commit: BranchHistoryPage["commits"][number]) {
         closeCommitBreakout(state)
@@ -345,7 +359,9 @@ export function createInspection(options: Options) {
         }
     }
     async function readDiff(state: ColumnState, diff: FileDiffState, more = false, refresh = false) {
-        const source = state.files.get(diff.group)?.source
+        const files = state.files.get(diff.group)
+        const source = files?.source
+        const inventoryVersion = files?.inventory?.version
         if (!source || !state.alive || refresh && diff.loading)
             return
         const previous = diff.page
@@ -358,6 +374,7 @@ export function createInspection(options: Options) {
                 source,
                 path: diff.path,
                 view: diff.view,
+                inventoryVersion,
                 ...(more && previous ? { offset: previous.nextOffset, expectedVersion: previous.version } : {}),
             })
             if (!state.alive || generation != diff.generation)
@@ -365,6 +382,13 @@ export function createInspection(options: Options) {
             if (!result.ok)
                 throw new Error(result.error.message)
             const page = result.page
+            if (diff.view == "combined" && !more && page.lines.reduce((length, line) => length + line.text.length, 0) <= 128_000) {
+                const id = JSON.stringify([source, inventoryVersion, diff.path])
+                state.cachedDiffs.delete(id)
+                state.cachedDiffs.set(id, page)
+                if (state.cachedDiffs.size > 16)
+                    state.cachedDiffs.delete(state.cachedDiffs.keys().next().value!)
+            }
             if (previous && previous.version != page.version) {
                 diff.selection = undefined
                 diff.notice = "File changed. Change Selection cleared."
@@ -689,6 +713,7 @@ export function createInspection(options: Options) {
                                 {diff.selection.lineIds.length} lines selected{diff.selection.rename ? " · rename selected" : ""}
                                 <button
                                     type="button"
+                                    data-mousedown-activate
                                     mix={[
                                         selectionSummaryButton,
                                         on("click", () => {

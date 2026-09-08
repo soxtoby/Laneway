@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { resolve } from "node:path"
+import { startChangesRead, startFileDiffRead } from "../src/changes"
 import { openRepository } from "../src/index"
 
 const roots: string[] = []
@@ -34,6 +35,75 @@ const changed = (lines: { kind: string; text: string }[]) =>
     lines.filter(line => ["addition", "deletion"].includes(line.kind)).map(line => [line.kind, line.text])
 
 describe("Working Changes and committed diff reads", () => {
+    test("validates source edits even when Git normalizes them to the same displayed patch", async () => {
+        const { path, api, source } = await repository()
+        await writeFile(resolve(path, ".gitattributes"), "file.txt text eol=lf\n")
+        git(path, "add", ".gitattributes")
+        git(path, "commit", "-qm", "normalize line endings")
+        await writeFile(resolve(path, "file.txt"), "working\n")
+        const inventory = await api.startReadChanges({ source }).result
+        const request = { source, path: "file.txt", inventoryVersion: inventory.version }
+        const preview = await api.startReadFileDiff(request).result
+        await writeFile(resolve(path, "file.txt"), "working\r\n")
+        const current = await api.startReadFileDiff({ source, path: "file.txt" }).result
+        expect(changed(current.lines)).toEqual(changed(preview.lines))
+        await expect(api.startReadFileDiff({ ...request, expectedVersion: preview.version }).result).rejects.toThrow("source changed")
+    })
+
+    test("expands snapshots with one Git read and validates freshness only when requested", async () => {
+        const { path, api, source } = await repository()
+        await writeFile(resolve(path, "file.txt"), "working\n")
+        const commands: string[][] = []
+        let editDuringRead = false
+        const start: Parameters<typeof startFileDiffRead>[1] = (cwd, args, onOutput, input) => {
+            commands.push(args)
+            const child = Bun.spawn([api.descriptor.git.path, "-c", "diff.autoRefreshIndex=false", ...args], {
+                cwd,
+                env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_LITERAL_PATHSPECS: "1", GIT_NO_LAZY_FETCH: "1" },
+                stdout: "pipe",
+                stderr: "pipe",
+                stdin: "pipe",
+            })
+            if (input != undefined)
+                child.stdin.write(input)
+            child.stdin.end()
+            let cancelled = false
+            const result = Promise.all([child.exited, new Response(child.stdout).arrayBuffer(), new Response(child.stderr).arrayBuffer()])
+                .then(async ([exitCode, stdout, stderr]) => {
+                    onOutput?.(Buffer.from(stdout))
+                    if (editDuringRead && args[0] == "diff")
+                        await writeFile(resolve(path, "file.txt"), "changed during read\n")
+                    return { exitCode, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) }
+                })
+            return {
+                result,
+                cancel() {
+                    cancelled = true
+                    child.kill()
+                },
+                wasCancelled: () => cancelled,
+            }
+        }
+        const cache = new Map()
+        const inventory = await startChangesRead(api.descriptor, start, { source }, cache).result
+        commands.length = 0
+        const request = { source, path: "file.txt", inventoryVersion: inventory.version }
+        const page = await startFileDiffRead(api.descriptor, start, request, cache).result
+        expect(changed(page.lines)).toContainEqual(["addition", "working"])
+        expect(commands.map(args => args[0])).toEqual(["diff"])
+        const validated = await startFileDiffRead(api.descriptor, start, { ...request, expectedVersion: page.version }, cache).result
+        expect(validated.version).toBe(page.version)
+        editDuringRead = true
+        await expect(startFileDiffRead(api.descriptor, start, { ...request, expectedVersion: page.version }, cache).result).rejects.toThrow("source changed")
+        editDuringRead = false
+        await expect(startFileDiffRead(api.descriptor, start, { ...request, expectedVersion: page.version }, cache).result).rejects.toThrow("source changed")
+        const commit = { kind: "commit" as const, objectId: git(path, "rev-parse", "HEAD") }
+        const committed = await startChangesRead(api.descriptor, start, { source: commit }, cache).result
+        commands.length = 0
+        await startFileDiffRead(api.descriptor, start, { source: committed.source, path: "file.txt", inventoryVersion: committed.version }, cache).result
+        expect(commands.map(args => args[0])).toEqual(["diff-tree"])
+    })
+
     test("summarizes dirty submodules without changing their index", async () => {
         const { path, api, source } = await repository()
         const child = await repository()

@@ -158,7 +158,12 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                 </h1>
                             </div>
                             <div class="graph-actions" mix={graphActions}>
-                                <button type="button" class={state.showAll ? "active" : ""} mix={[graphActionsButton, on("click", () => toggleAll(active.id))]}>
+                                <button
+                                    type="button"
+                                    class={state.showAll ? "active" : ""}
+                                    aria-pressed={state.showAll}
+                                    mix={[graphActionsButton, on("click", () => toggleAll(active.id))]}
+                                >
                                     {state.showAll ? "Involved only" : "Show all"}
                                 </button>
                                 <button
@@ -846,6 +851,7 @@ function RepositoryRail(
                                 class={`repository-item ${repository.id == props.active.id ? "active" : ""} ${repository.status}`}
                                 type="button"
                                 disabled={props.busy}
+                                data-mousedown-activate
                                 mix={[repositoryItem, on("click", () => props.selectRepository(repository.id))]}
                             >
                                 <span mix={repositoryItemSpan}>
@@ -979,6 +985,7 @@ function BranchRow(
                         {branch.markers.map(marker => (
                             <button
                                 class="marker-button"
+                                data-mousedown-activate
                                 type="button"
                                 title={marker.tooltip}
                                 mix={[
@@ -1001,6 +1008,7 @@ function BranchRow(
                 </span>
                 <button
                     class="open-branch"
+                    data-mousedown-activate
                     type="button"
                     mix={[
                         openBranch,

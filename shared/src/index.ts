@@ -463,6 +463,8 @@ export interface FileDiffRequest {
     path: string
     view?: DiffView
     offset?: number
+    inventoryVersion?: string
+    // Bypass preview snapshots and validate fresh content before using a selection or extending a page.
     expectedVersion?: string
 }
 
@@ -511,5 +513,6 @@ export const FileDiffRequestSchema = z.object({
     path: z.string().min(1),
     view: z.enum(["combined", "staged", "unstaged", "base", "ours", "theirs"]).optional(),
     offset: z.number().int().nonnegative().optional(),
+    inventoryVersion: z.string().optional(),
     expectedVersion: z.string().optional(),
 })
