@@ -332,6 +332,15 @@ export interface BranchGraphBranchNode {
     tags: string[]
     primary: boolean
     remoteOnly: boolean
+    merged: boolean
+}
+
+export interface BranchGraphPoint {
+    objectId: string
+    /** Owning branch, tag, or virtual branch; used to filter its connecting line. */
+    lineId: string
+    /** Older waypoints in Git parent order, with ordinary commits compressed out. */
+    parentIds: string[]
 }
 
 export interface BranchGraphTagNode {
@@ -368,6 +377,7 @@ export interface BranchGraph {
     authorIdentities: AuthorIdentitySettings
     effectiveAuthorEmail?: string
     branches: BranchGraphBranchNode[]
+    history: BranchGraphPoint[]
     tags: BranchGraphTagNode[]
     virtualBranches: BranchGraphVirtualBranch[]
     unassignedStashes: BranchGraphMarker[]

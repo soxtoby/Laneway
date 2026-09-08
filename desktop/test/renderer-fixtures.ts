@@ -132,6 +132,7 @@ export function branchGraph(repositoryId: string) {
         tags: [],
         primary: true,
         remoteOnly: false,
+        merged: false,
     }
     const branch = (name: string, involvement: "involved" | "uninvolved") => ({
         ...main,
@@ -155,6 +156,11 @@ export function branchGraph(repositoryId: string) {
         authorIdentities: { primary: "developer@example.test", secondary: [] },
         effectiveAuthorEmail: "developer@example.test",
         branches: [main, branch("feature/workbench", "involved"), branch("other/team", "uninvolved")],
+        history: [{ objectId: "2".repeat(40), lineId: "branch:refs/heads/feature/workbench", parentIds: [main.tip] }, {
+            objectId: "3".repeat(40),
+            lineId: "branch:refs/heads/other/team",
+            parentIds: [main.tip],
+        }, { objectId: main.tip, lineId: main.id, parentIds: [] }],
         tags: [],
         virtualBranches: [],
         unassignedStashes: [],

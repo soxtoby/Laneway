@@ -6,6 +6,20 @@ async function checkRenderer() {
     const violations: string[] = []
     document.addEventListener("securitypolicyviolation", event => violations.push(`${event.violatedDirective}: ${event.blockedURI}`))
     const scenario = inspectionScenario()
+    const readGraph = scenario.api.readBranchGraph
+    scenario.api.readBranchGraph = async (...args) => {
+        const result = await readGraph(...args)
+        if (result.ok) {
+            const [main, feature] = result.graph.branches
+            result.graph.tags = [{ kind: "tag", id: "tag:waypoint", name: "waypoint", objectId: "tagged", parentBranchId: feature.id, tooltip: "Tag waypoint" }]
+            result.graph.history = [{ objectId: feature.tip, lineId: feature.id, parentIds: ["tagged"] }, {
+                objectId: "tagged",
+                lineId: feature.id,
+                parentIds: [main.tip],
+            }, { objectId: main.tip, lineId: main.id, parentIds: [] }]
+        }
+        return result
+    }
     scenario.page.summary = ["File deleted"]
     scenario.page.file.path = "src/example.ts"
     scenario.page.lines[1].text = `\tconst oldValue = 1 // ${"old content ".repeat(30)}`
@@ -37,6 +51,14 @@ async function checkRenderer() {
         node.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }))
     }
     await settle()
+    const graphRows = [...document.querySelectorAll<HTMLElement>(".graph-row")]
+    const branchGraphConnected = graphRows.length == 3 && graphRows.every((row, index) => {
+        const rail = row.querySelector("svg")!
+        return rail.getBoundingClientRect().top == row.getBoundingClientRect().top
+            && rail.getBoundingClientRect().height == 40
+            && (index == 0 || graphRows[index - 1].getBoundingClientRect().bottom == row.getBoundingClientRect().top)
+            && rail.querySelectorAll("path").length > 0
+    }) && graphRows[0].querySelector("circle")!.getAttribute("cx") != graphRows[2].querySelector("circle")!.getAttribute("cx")
     element(".change-file button").click()
     await settle()
     const diffShadow = element(".pierre-diff").shadowRoot!
@@ -321,6 +343,7 @@ async function checkRenderer() {
         branchExpanded,
         commitExpanded,
         commitGraph,
+        branchGraphConnected,
         commitDiffClear,
         commitCollapsed,
         accordionKeyboard,

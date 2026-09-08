@@ -226,6 +226,7 @@ describe("Remix repository entry renderer", () => {
         await flush(root)
         expect(container.textContent).toContain("feature/workbench")
         expect(container.textContent).not.toContain("other/team")
+        expect(container.querySelector(".graph-row svg path")).not.toBeNull()
 
         click(button(container, "Show all"))
         root.flush()
@@ -267,6 +268,11 @@ describe("Remix repository entry renderer", () => {
                 tip: index.toString(16).padStart(40, "0"),
             })),
         ]
+        graph.history = [...graph.branches.slice(1).map(branch => ({ objectId: branch.tip, lineId: branch.id, parentIds: [graph.branches[0].tip] })), {
+            objectId: graph.branches[0].tip,
+            lineId: graph.branches[0].id,
+            parentIds: [],
+        }]
         const api = fakeWorkbench({
             getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
             readBranchGraph: async () => ({ ok: true, graph }),
@@ -276,6 +282,12 @@ describe("Remix repository entry renderer", () => {
         await flush(root)
         expect(container.querySelectorAll(".graph-row").length).toBeLessThan(30)
         expect(container.querySelector(".graph-spacer")).not.toBeNull()
+        const rows = container.querySelector<HTMLElement>(".graph-rows")!
+        rows.scrollTop = 1600
+        rows.dispatchEvent(new Event("scroll", { bubbles: true }))
+        root.flush()
+        expect(container.querySelectorAll(".graph-row").length).toBeLessThan(30)
+        expect(container.querySelector(".graph-row svg path[d='M 13 0 V 40']")).not.toBeNull()
         dispose()
     })
 

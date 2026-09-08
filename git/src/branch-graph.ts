@@ -1,5 +1,6 @@
 import type { AuthorIdentitySettings, BranchGraph, BranchGraphBase, BranchGraphBranchNode, BranchGraphMarker, BranchGraphReadOptions, BranchGraphTagNode, BranchGraphVirtualBranch, BranchGraphWorktree, BranchHistoryCommit, BranchHistoryPage, BranchHistoryRequest } from "@git-workbench/shared"
 import { basename } from "node:path"
+import { graphHistory } from "./graph-history"
 import { GitError, type GitTask, redactGitText, type RepositoryDescriptor } from "./index"
 
 interface CommandResult {
@@ -259,7 +260,7 @@ async function buildGraph(
         ).map(branch => branch.id),
     )
     includeBaseRelationships(branches, included)
-    let visibleBranches = branches.filter(branch => included.has(branch.id))
+    const visibleBranches = branches.filter(branch => included.has(branch.id)).sort(compareBranches)
 
     attachStashes(visibleBranches, evidence.stashes)
     const { branchTags, tagNodes } = placeTags(evidence.refs, visibleBranches, topology)
@@ -270,11 +271,15 @@ async function buildGraph(
     }
 
     const primary = visibleBranches.find(branch => branch.primary)
-    const referencedBases = new Set(
-        visibleBranches.flatMap(branch => branch.base.status == "known" ? [branch.base.branchId] : branch.base.candidates.map(candidate => candidate.branchId)),
-    )
-    visibleBranches = filterMergedInactive(visibleBranches, primary, referencedBases, topology)
-        .sort(compareBranches)
+    for (const branch of visibleBranches)
+        branch.merged = Boolean(primary && branch.id != primary.id && topology.isAncestor(branch.tip, primary.tip))
+    const virtualBranches = createVirtualBranches(evidence.worktrees)
+    const history = graphHistory(topology.commits, [
+        ...[...visibleBranches].sort((left, right) => Number(right.primary) - Number(left.primary))
+            .map(branch => ({ objectId: branch.tip, lineId: branch.id, connect: !branch.primary })),
+        ...tagNodes.map(tag => ({ objectId: tag.objectId, lineId: tag.parentBranchId ?? tag.id, connect: false })),
+        ...virtualBranches.map(branch => ({ objectId: branch.objectId, lineId: branch.id, connect: false })),
+    ])
 
     return {
         verification,
@@ -287,8 +292,9 @@ async function buildGraph(
             authorIdentities,
             effectiveAuthorEmail,
             branches: visibleBranches.map(withoutInternals),
+            history,
             tags: tagNodes.filter(tag => !tag.parentBranchId || visibleBranches.some(branch => branch.id == tag.parentBranchId)),
-            virtualBranches: createVirtualBranches(evidence.worktrees),
+            virtualBranches,
             unassignedStashes: unassignedStashes(visibleBranches, evidence.stashes),
             limited: [
                 ...(descriptor.shallow ? ["shallow" as const] : []),
@@ -366,6 +372,7 @@ function createBranches(refs: RefRecord[], worktrees: BranchGraphWorktree[], pri
             tags: [],
             primary: primaryRef ? allRefs.includes(primaryRef) : false,
             remoteOnly: local.length == 0,
+            merged: false,
             sourceUpstreams,
         }
     })
@@ -510,26 +517,6 @@ function placeTags(refs: RefRecord[], branches: MutableBranch[], topology: Graph
         })
     }
     return { branchTags, tagNodes: tagNodes.sort((left, right) => naturalCompare(left.name, right.name)) }
-}
-
-function filterMergedInactive(
-    branches: MutableBranch[],
-    primary: MutableBranch | undefined,
-    referencedBases: Set<string>,
-    topology: GraphTopology,
-) {
-    if (!primary)
-        return branches
-    const result: MutableBranch[] = []
-    for (const branch of branches) {
-        const merged = branch.id != primary.id
-            && branch.checkedOut.length == 0
-            && !referencedBases.has(branch.id)
-            && topology.isAncestor(branch.tip, primary.tip)
-        if (!merged)
-            result.push(branch)
-    }
-    return result
 }
 
 function createVirtualBranches(worktrees: BranchGraphWorktree[]): BranchGraphVirtualBranch[] {

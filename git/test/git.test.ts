@@ -126,6 +126,7 @@ describe("system Git", () => {
             expect(runGit(repository, "config", "user.email", "primary@example.invalid").exitCode).toBe(0)
             await commitFile(repository, "README.md", "initial\n", "Initial")
             const mainTip = gitText(repository, "rev-parse", "HEAD")
+            expect(runGit(repository, "remote", "add", "upstream", ".").exitCode).toBe(0)
             expect(runGit(repository, "update-ref", "refs/remotes/upstream/main", mainTip).exitCode).toBe(0)
             expect(runGit(repository, "symbolic-ref", "refs/remotes/upstream/HEAD", "refs/remotes/upstream/main").exitCode).toBe(0)
             expect(runGit(repository, "config", "branch.main.remote", "upstream").exitCode).toBe(0)
@@ -177,6 +178,20 @@ describe("system Git", () => {
             expect(history.commits).toHaveLength(1)
             expect(history.commits[0]).toMatchObject({ objectId: tip, subject: "Second tip commit" })
             expect(history.nextOffset).toBe(1)
+
+            expect(runGit(repository, "checkout", "-q", "main").exitCode).toBe(0)
+            expect(runGit(repository, "merge", "--no-ff", "feature/tip", "-m", "Merge feature").exitCode).toBe(0)
+            const mergeTip = gitText(repository, "rev-parse", "HEAD")
+            const mergedGraph = await opened.startReadBranchGraph({
+                authorIdentities: { primary: "primary@example.invalid", secondary: ["secondary@example.invalid"] },
+                selectedRemote: "upstream",
+                remotePatterns: [],
+            }).result
+            expect(mergedGraph.branches.find(branch => branch.refs.includes("refs/heads/feature/tip"))?.merged).toBe(true)
+            expect(mergedGraph.history.find(point => point.objectId == mergeTip)?.parentIds).toEqual([mainTip, tip])
+            expect(mergedGraph.history.find(point => point.objectId == tip)?.parentIds).toEqual([taggedCommit])
+            expect(mergedGraph.history.find(point => point.objectId == taggedCommit)?.parentIds).toEqual([baseTip])
+            expect(mergedGraph.history.find(point => point.objectId == baseTip)?.parentIds).toEqual([mainTip])
         })
     }
 

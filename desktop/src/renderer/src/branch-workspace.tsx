@@ -2,6 +2,7 @@ import type { AvailableOpenRepository, BranchGraph, BranchGraphBranchNode, Branc
 import type { DiffLayout } from "@git-workbench/shared"
 import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 import radio from "remix/ui/radio"
+import { graphRowHeight, type GraphRowLayout, layoutBranchGraph } from "./branch-graph-layout"
 import { CommandLens } from "./command-lens"
 import { errorMessage, type NoticeState } from "./feedback"
 import { createInspection } from "./inspection"
@@ -123,13 +124,11 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             inspection.retain(active.id, state.openedBranchIds)
             const graph = state.graph
             const visibleBranches = graph ? branchesForDisplay(graph, state.showAll, state.collapsedBranchIds) : []
-            const displayNodes = graph ? nodesForDisplay(graph, visibleBranches) : []
-            const selectableIds = displayNodes.map(node => node.id)
-            const nodeWindow = windowNodes(displayNodes, state.graphScrollTop, state.graphViewportHeight)
+            const layout = graph ? layoutBranchGraph(graph, visibleBranches) : { rows: [], width: 26 }
+            const selectableIds = layout.rows.map(row => row.node.id)
+            const nodeWindow = windowNodes(layout.rows, state.graphScrollTop, state.graphViewportHeight)
             if (
-                state.selectedId && !visibleBranches.some(branch => branch.id == state.selectedId)
-                && !graph?.tags.some(tag => tag.id == state.selectedId)
-                && !graph?.virtualBranches.some(branch => branch.id == state.selectedId)
+                state.selectedId && !selectableIds.includes(state.selectedId)
             ) {
                 state.selectedId = undefined
             }
@@ -230,7 +229,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                         tabIndex={0}
                                         mix={[
                                             graphRows,
-                                            on("keydown", event => graphKeydown(event, active.id, selectableIds)),
+                                            on("keydown", event => graphKeydown(event, active.id, layout.rows)),
                                             on("scroll", event => {
                                                 state.graphScrollTop = event.currentTarget.scrollTop
                                                 state.graphViewportHeight = event.currentTarget.clientHeight
@@ -242,26 +241,27 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                             <div class="graph-spacer" aria-hidden="true" style={{ height: `${nodeWindow.before}px` }} mix={graphSpacer}>
                                             </div>
                                         )}
-                                        {nodeWindow.nodes.map(node =>
-                                            node.kind == "branch"
+                                        {nodeWindow.nodes.map(row =>
+                                            row.node.kind == "branch"
                                                 ? (
                                                     <BranchRow
-                                                        branch={node.branch}
-                                                        index={node.branchIndex}
-                                                        selected={state.selectedId == node.id}
-                                                        select={() => selectNode(active.id, node.id)}
-                                                        open={() => openBranch(active.id, node.id)}
-                                                        selectMarker={marker => selectMarker(active.id, node.id, marker)}
+                                                        branch={row.node.branch}
+                                                        rail={<GraphRail row={row} />}
+                                                        selected={state.selectedId == row.node.id}
+                                                        select={() => selectNode(active.id, row.node.id)}
+                                                        open={() => openBranch(active.id, row.node.id)}
+                                                        selectMarker={marker => selectMarker(active.id, row.node.id, marker)}
                                                     />
                                                 )
                                                 : (
                                                     <SimpleNodeRow
-                                                        id={node.id}
-                                                        kind={node.kind}
-                                                        name={node.name}
-                                                        title={node.title}
-                                                        selected={state.selectedId == node.id}
-                                                        select={() => selectNode(active.id, node.id)}
+                                                        id={row.node.id}
+                                                        kind={row.node.kind}
+                                                        name={row.node.name}
+                                                        title={row.node.title}
+                                                        rail={<GraphRail row={row} />}
+                                                        selected={state.selectedId == row.node.id}
+                                                        select={() => selectNode(active.id, row.node.id)}
                                                     />
                                                 )
                                         )}
@@ -636,7 +636,8 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         }
     }
 
-    function graphKeydown(event: KeyboardEvent, repositoryId: string, nodeIds: string[]) {
+    function graphKeydown(event: KeyboardEvent, repositoryId: string, rows: GraphRowLayout[]) {
+        const nodeIds = rows.map(row => row.node.id)
         const state = stateFor(repositoryId)
         const index = nodeIds.findIndex(id => id == state.selectedId)
         if (event.key == "ArrowDown" || event.key == "ArrowUp") {
@@ -646,7 +647,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             if (nodeIds[nextIndex]) {
                 const nextId = nodeIds[nextIndex]
                 state.selectedId = nextId
-                const nodeIndex = nodeIds.indexOf(nextId)
+                const nodeIndex = rows.findIndex(row => row.node.id == nextId)
                 if (nodeIndex >= 0) {
                     const top = nodeIndex * graphRowHeight
                     if (top < state.graphScrollTop)
@@ -712,26 +713,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
     }
 }
 
-type DisplayNode =
-    | { kind: "branch"; id: string; branch: BranchGraphBranchNode; branchIndex: number }
-    | { kind: "tag" | "worktree"; id: string; name: string; title: string }
-
-const graphRowHeight = 40
-
-function nodesForDisplay(graph: BranchGraph, branches: BranchGraphBranchNode[]): DisplayNode[] {
-    return [
-        ...branches.flatMap((branch, branchIndex): DisplayNode[] => [
-            { kind: "branch", id: branch.id, branch, branchIndex },
-            ...graph.tags.filter(tag => tag.parentBranchId == branch.id).map(tag => ({ kind: "tag" as const, id: tag.id, name: tag.name, title: tag.tooltip })),
-        ]),
-        ...graph.tags.filter(tag =>
-            !tag.parentBranchId
-        ).map(tag => ({ kind: "tag" as const, id: tag.id, name: tag.name, title: tag.tooltip })),
-        ...graph.virtualBranches.map(branch => ({ kind: "worktree" as const, id: branch.id, name: branch.name, title: branch.tooltip })),
-    ]
-}
-
-function windowNodes(nodes: DisplayNode[], scrollTop: number, viewportHeight: number) {
+function windowNodes(nodes: GraphRowLayout[], scrollTop: number, viewportHeight: number) {
     const overscan = 6
     const maximumScrollTop = Math.max(0, nodes.length * graphRowHeight - viewportHeight)
     const effectiveScrollTop = Math.min(scrollTop, maximumScrollTop)
@@ -750,15 +732,23 @@ function branchesForDisplay(graph: BranchGraph, showAll: boolean, collapsedBranc
     if (showAll)
         branches = graph.branches
     else {
-        const structural = new Set(graph.branches.filter(branch => branch.primary || branch.checkedOut.length > 0).map(branch => branch.id))
-        for (const branch of graph.branches.filter(branch => branch.involvement == "involved")) {
-            structural.add(branch.id)
-            if (branch.base.status == "known")
-                structural.add(branch.base.branchId)
-            else
-                branch.base.candidates.forEach(candidate => structural.add(candidate.branchId))
+        const structural = new Set(
+            graph.branches.filter(branch => branch.primary || branch.checkedOut.length > 0 || branch.involvement == "involved").map(branch => branch.id),
+        )
+        let changed = true
+        while (changed) {
+            changed = false
+            for (const branch of graph.branches.filter(branch => structural.has(branch.id))) {
+                const baseIds = branch.base.status == "known" ? [branch.base.branchId] : branch.base.candidates.map(candidate => candidate.branchId)
+                for (const id of baseIds) {
+                    if (!structural.has(id)) {
+                        structural.add(id)
+                        changed = true
+                    }
+                }
+            }
         }
-        branches = graph.branches.filter(branch => branch.involvement == "involved" || structural.has(branch.id))
+        branches = graph.branches.filter(branch => structural.has(branch.id))
     }
     const collapsed = new Set(collapsedBranchIds)
     return branches.filter(branch => {
@@ -943,7 +933,7 @@ function BaseUnresolved(
 
 function BranchRow(
     handle: Handle<
-        { branch: BranchGraphBranchNode; index: number; selected: boolean; select(): void; open(): void; selectMarker(marker: BranchGraphMarker): void }
+        { branch: BranchGraphBranchNode; rail: RemixNode; selected: boolean; select(): void; open(): void; selectMarker(marker: BranchGraphMarker): void }
     >,
 ) {
     return () => {
@@ -957,59 +947,58 @@ function BranchRow(
                 data-node-id={branch.id}
                 mix={[graphRow, on("click", props.select)]}
             >
-                <span class="lane" aria-hidden="true" mix={lane}>
-                    <i style={{ "--lane": props.index % 4 }} mix={laneI}>
-                    </i>
-                    <b mix={laneB}>
-                    </b>
-                </span>
+                {props.rail}
                 <span class="branch-copy" mix={branchCopy}>
-                    <strong mix={branchCopyStrong}>
+                    <strong title={branch.name} mix={branchCopyStrong}>
                         {branch.name}
                     </strong>
-                    <small mix={branchCopySmall}>
-                        {branch.primary
-                            ? "Primary"
-                            : branch.remoteOnly
-                            ? "Remote only"
-                            : branch.involvement == "involved"
-                            ? "Involved"
-                            : branch.involvement == "unknown"
-                            ? "Involvement unknown"
-                            : "Other branch"}
-                    </small>
+                    <span class="branch-details" mix={branchDetails}>
+                        <small mix={branchCopySmall}>
+                            {branch.primary
+                                ? "Primary"
+                                : branch.merged
+                                ? "Merged"
+                                : branch.remoteOnly
+                                ? "Remote only"
+                                : branch.involvement == "involved"
+                                ? "Involved"
+                                : branch.involvement == "unknown"
+                                ? "Involvement unknown"
+                                : "Other branch"}
+                        </small>
+                        {branch.checkedOut.map(worktree => (
+                            <span class="worktree-chip" title={worktree.path} mix={worktreeChip}>
+                                ⌂ {worktree.name}
+                            </span>
+                        ))}
+                        {branch.tags.map(tag => (
+                            <span class="tag-chip" mix={tagChip}>
+                                ⌑ {tag}
+                            </span>
+                        ))}
+                        {branch.markers.map(marker => (
+                            <button
+                                class="marker-button"
+                                type="button"
+                                title={marker.tooltip}
+                                mix={[
+                                    markerButton,
+                                    on("click", event => {
+                                        event.stopPropagation()
+                                        props.selectMarker(marker)
+                                    }),
+                                ]}
+                            >
+                                ◆
+                            </button>
+                        ))}
+                        {(branch.ahead > 0 || branch.behind > 0) && (
+                            <span class="divergence" mix={divergence}>
+                                ↑{branch.ahead} ↓{branch.behind}
+                            </span>
+                        )}
+                    </span>
                 </span>
-                {branch.checkedOut.map(worktree => (
-                    <span class="worktree-chip" title={worktree.path} mix={worktreeChip}>
-                        ⌂ {worktree.name}
-                    </span>
-                ))}
-                {branch.tags.map(tag => (
-                    <span class="tag-chip" mix={tagChip}>
-                        ⌑ {tag}
-                    </span>
-                ))}
-                {branch.markers.map(marker => (
-                    <button
-                        class="marker-button"
-                        type="button"
-                        title={marker.tooltip}
-                        mix={[
-                            markerButton,
-                            on("click", event => {
-                                event.stopPropagation()
-                                props.selectMarker(marker)
-                            }),
-                        ]}
-                    >
-                        ◆
-                    </button>
-                ))}
-                {(branch.ahead > 0 || branch.behind > 0) && (
-                    <span class="divergence" mix={divergence}>
-                        ↑{branch.ahead} ↓{branch.behind}
-                    </span>
-                )}
                 <button
                     class="open-branch"
                     type="button"
@@ -1028,20 +1017,21 @@ function BranchRow(
     }
 }
 
-function SimpleNodeRow(handle: Handle<{ id: string; kind: "tag" | "worktree"; name: string; title: string; selected: boolean; select(): void }>) {
+function SimpleNodeRow(
+    handle: Handle<{ id: string; kind: "tag" | "worktree"; name: string; title: string; rail: RemixNode; selected: boolean; select(): void }>,
+) {
     return () => (
         <button
             class={`graph-row simple ${handle.props.selected ? "selected" : ""}`}
             data-node-id={handle.props.id}
             role="option"
+            tabIndex={-1}
             aria-selected={handle.props.selected}
             type="button"
             title={handle.props.title}
             mix={[graphRow, on("click", handle.props.select)]}
         >
-            <span class="node-icon" mix={nodeIcon}>
-                {handle.props.kind == "tag" ? "⌑" : "⌂"}
-            </span>
+            {handle.props.rail}
             <span class="branch-copy" mix={branchCopy}>
                 <strong mix={branchCopyStrong}>
                     {handle.props.name}
@@ -1051,6 +1041,22 @@ function SimpleNodeRow(handle: Handle<{ id: string; kind: "tag" | "worktree"; na
                 </small>
             </span>
         </button>
+    )
+}
+
+function GraphRail(handle: Handle<{ row: GraphRowLayout }>) {
+    return () => (
+        <svg
+            class="graph-rail-lines"
+            aria-hidden="true"
+            width={handle.props.row.width}
+            height={40}
+            viewBox={`0 0 ${handle.props.row.width} 40`}
+            mix={graphRailLines}
+        >
+            {handle.props.row.paths.map(path => <path d={path} fill="none" stroke="var(--accent)" stroke-width="2" />)}
+            <circle cx={handle.props.row.x} cy={20} r={4} fill="var(--panel)" stroke="var(--accent)" stroke-width="2" />
+        </svg>
     )
 }
 
@@ -1895,52 +1901,25 @@ const graphRow = css({
     gap: "6px",
     color: "var(--text)",
     textAlign: "left",
-    border: "1px solid transparent",
+    border: "0",
     borderRadius: "4px",
     background: "transparent",
     "&.selected": {
-        borderColor: "var(--accent-edge)",
         background: "var(--accent-wash-strong)",
         boxShadow: "inset 2px 0 var(--accent)",
     },
     "&.simple": {
-        paddingLeft: "8px",
-        border: "1px solid transparent",
+        paddingLeft: "0",
     },
     "&:hover": {
         background: "var(--hover)",
     },
 })
 
-const lane = css({
-    position: "relative",
-    width: "26px",
-    height: "34px",
-    flex: "0 0 26px",
-    "&::before": {
-        position: "absolute",
-        top: "-4px",
-        bottom: "-4px",
-        left: "13px",
-        width: "1px",
-        content: '""',
-        background: "var(--line-strong)",
-    },
-})
-
-const laneI = css({
-    display: "none",
-})
-
-const laneB = css({
-    position: "absolute",
-    top: "13px",
-    left: "10px",
-    width: "7px",
-    height: "7px",
-    border: "2px solid var(--accent)",
-    borderRadius: "50%",
-    background: "var(--panel)",
+const graphRailLines = css({
+    flexShrink: "0",
+    overflow: "hidden",
+    alignSelf: "center",
 })
 
 const branchCopy = css({
@@ -1964,6 +1943,19 @@ const branchCopySmall = css({
     fontSize: "10px",
     letterSpacing: "0",
     textTransform: "none",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+})
+
+const branchDetails = css({
+    minWidth: "0",
+    height: "18px",
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    overflow: "hidden",
+    "& button": { minHeight: "16px", padding: "0 3px" },
 })
 
 const worktreeChip = css({
@@ -2032,12 +2024,6 @@ const openBranch = css({
         borderColor: "var(--line-strong)",
         background: "var(--control)",
     },
-})
-
-const nodeIcon = css({
-    width: "24px",
-    color: "var(--warning)",
-    textAlign: "center",
 })
 
 const columnEmpty = css({
