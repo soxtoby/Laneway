@@ -2,7 +2,7 @@ import type { AvailableOpenRepository, BranchGraph, BranchGraphBranchNode, Branc
 import type { DiffLayout } from "@git-workbench/shared"
 import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 import radio from "remix/ui/radio"
-import { graphRowHeight, type GraphRowLayout, layoutBranchGraph } from "./branch-graph-layout"
+import { graphLineColor, graphRowHeight, type GraphRowLayout, layoutBranchGraph } from "./branch-graph-layout"
 import { CommandLens } from "./command-lens"
 import { errorMessage, type NoticeState } from "./feedback"
 import { createInspection } from "./inspection"
@@ -1054,8 +1054,8 @@ function GraphRail(handle: Handle<{ row: GraphRowLayout }>) {
             viewBox={`0 0 ${handle.props.row.width} 40`}
             mix={graphRailLines}
         >
-            {handle.props.row.paths.map(path => <path d={path} fill="none" stroke="var(--accent)" stroke-width="2" />)}
-            <circle cx={handle.props.row.x} cy={20} r={4} fill="var(--panel)" stroke="var(--accent)" stroke-width="2" />
+            {handle.props.row.paths.map(path => <path d={path.d} fill="none" stroke={graphLineColor(path.color)} stroke-width="2" />)}
+            <circle cx={handle.props.row.x} cy={20} r={4} fill="var(--panel)" stroke={graphLineColor(handle.props.row.color)} stroke-width="2" />
         </svg>
     )
 }
@@ -1624,6 +1624,9 @@ const graphRows = css({
     minHeight: "0",
     padding: "3px",
     overflow: "auto",
+    // Virtual rows and spacers already preserve position; browser anchoring
+    // otherwise compensates for their replacement and moves the viewport.
+    overflowAnchor: "none",
     outline: "0",
     "&:focus-visible": {
         boxShadow: "inset 0 0 0 2px var(--accent)",

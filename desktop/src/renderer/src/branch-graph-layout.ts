@@ -9,7 +9,13 @@ export interface GraphRowLayout {
     objectId: string
     x: number
     width: number
-    paths: string[]
+    color: number
+    paths: Array<{ d: string; color: number }>
+}
+
+export function graphLineColor(color: number) {
+    const hues = [100, 215, 28, 275, 175, 345, 50, 315]
+    return color == 0 ? "var(--accent)" : `hsl(${hues[color] ?? (color * 137.508 + 100) % 360} 65% var(--graph-line-lightness))`
 }
 
 export const graphRowHeight = 40
@@ -57,34 +63,52 @@ export function layoutBranchGraph(graph: BranchGraph, branches: BranchGraphBranc
         ],
     }))
     const primaryTip = branches.find(branch => branch.primary)?.tip
-    const lanes: Array<string | undefined> = primaryTip && included.has(primaryTip) ? [primaryTip] : []
-    const events: Array<{ node?: GraphNode; objectId: string; x: number; segments: Array<{ fromX: number; toX: number; top: number; bottom: number }> }> = []
+    const lanes: Array<{ objectId: string; color: number } | undefined> = primaryTip && included.has(primaryTip) ? [{ objectId: primaryTip, color: 0 }] : []
+    const events: Array<
+        {
+            node?: GraphNode
+            objectId: string
+            x: number
+            color: number
+            segments: Array<{ fromX: number; toX: number; top: number; bottom: number; color: number }>
+        }
+    > = []
+    let reservedColors = new Set<number>()
     let width = 26
     const allocate = (objectId: string) => {
-        const existing = lanes.indexOf(objectId)
+        const existing = lanes.findIndex(lane => lane?.objectId == objectId)
         if (existing >= 0)
             return existing
         const available = lanes.indexOf(undefined)
         const lane = available < 0 ? lanes.length : available
-        lanes[lane] = objectId
+        let color = 0
+        while (reservedColors.has(color))
+            color++
+        reservedColors.add(color)
+        lanes[lane] = { objectId, color }
         width = Math.max(width, laneX(lane) + 13)
         return lane
     }
     for (const point of points) {
-        const incoming = lanes.indexOf(point.objectId)
+        // A departing line keeps its color through this event's joining curve.
+        reservedColors = new Set(lanes.flatMap(lane => lane ? [lane.color] : []))
+        const incoming = lanes.findIndex(lane => lane?.objectId == point.objectId)
         const lane = incoming < 0 ? allocate(point.objectId) : incoming
+        const color = lanes[lane]!.color
         const x = laneX(lane)
         const nodes = labels.get(point.objectId) ?? [undefined]
         for (const [index, node] of nodes.entries()) {
-            const segments = lanes.flatMap((target, other) => target && other != lane ? [{ fromX: laneX(other), toX: laneX(other), top: 0, bottom: 40 }] : [])
+            const segments = lanes.flatMap((target, other) =>
+                target && other != lane ? [{ fromX: laneX(other), toX: laneX(other), top: 0, bottom: 40, color: target.color }] : []
+            )
             if (incoming >= 0 && events.length > 0 || index > 0)
-                segments.push({ fromX: x, toX: x, top: 0, bottom: 20 })
+                segments.push({ fromX: x, toX: x, top: 0, bottom: 20, color })
             if (index < nodes.length - 1)
-                segments.push({ fromX: x, toX: x, top: 20, bottom: 40 })
+                segments.push({ fromX: x, toX: x, top: 20, bottom: 40, color })
             else {
                 lanes[lane] = undefined
                 for (const [parentIndex, parent] of point.parentIds.entries()) {
-                    const existing = lanes.indexOf(parent)
+                    const existing = lanes.findIndex(lane => lane?.objectId == parent)
                     if (parentIndex == 0 && existing >= 0 && history.get(parent)?.lineId == point.lineId) {
                         // Keep a branch's own rail straight when another line already
                         // reaches its next waypoint; bring that line into this lane.
@@ -92,25 +116,25 @@ export function layoutBranchGraph(graph: BranchGraph, branches: BranchGraphBranc
                         const through = segments.find(segment => segment.fromX == otherX && segment.top == 0 && segment.bottom == 40)
                         if (through) {
                             through.bottom = 20
-                            segments.push({ fromX: otherX, toX: x, top: 20, bottom: 40 })
+                            segments.push({ fromX: otherX, toX: x, top: 20, bottom: 40, color: through.color })
                         }
                         lanes[existing] = undefined
                     }
-                    if (parentIndex == 0 && !lanes.includes(parent))
-                        lanes[lane] = parent
+                    if (parentIndex == 0 && !lanes.some(lane => lane?.objectId == parent))
+                        lanes[lane] = { objectId: parent, color }
                     const parentLane = allocate(parent)
                     const parentX = laneX(parentLane)
-                    segments.push({ fromX: x, toX: parentX, top: 20, bottom: 40 })
+                    segments.push({ fromX: x, toX: parentX, top: 20, bottom: 40, color: parentIndex == 0 ? color : lanes[parentLane]!.color })
                 }
             }
-            events.push({ node, objectId: point.objectId, x, segments })
+            events.push({ node, objectId: point.objectId, x, color, segments })
         }
     }
     // Unborn heads and unavailable objects have no verified ancestry to draw.
     for (const [objectId, nodes] of labels) {
         if (!history.has(objectId)) {
             for (const node of nodes)
-                events.push({ node, objectId, x: laneX(0), segments: [] })
+                events.push({ node, objectId, x: laneX(0), color: 0, segments: [] })
         }
     }
     // Forks and merges are bends between branch/tag rows, never commit nodes.
@@ -119,7 +143,7 @@ export function layoutBranchGraph(graph: BranchGraph, branches: BranchGraphBranc
     for (const [index, event] of events.entries()) {
         if (event.node) {
             centers.set(index, rows.length * graphRowHeight + 20)
-            rows.push({ node: event.node, objectId: event.objectId, x: event.x, width: event.x + 13, paths: [] })
+            rows.push({ node: event.node, objectId: event.objectId, x: event.x, width: event.x + 13, color: event.color, paths: [] })
         }
     }
     if (rows.length == 0)
@@ -131,7 +155,7 @@ export function layoutBranchGraph(graph: BranchGraph, branches: BranchGraphBranc
         for (let event = before + 1; event < after; event++)
             centers.set(event, top + (bottom - top) * (event - before) / (after - before))
     }
-    const verticals = rows.map(() => new Map<number, Array<{ start: number; end: number }>>())
+    const verticals = rows.map(() => new Map<string, { x: number; color: number; ranges: Array<{ start: number; end: number }> }>())
     for (const [index, event] of events.entries()) {
         const center = centers.get(index)!
         const top = index == 0 ? 0 : (centers.get(index - 1)! + center) / 2
@@ -148,21 +172,23 @@ export function layoutBranchGraph(graph: BranchGraph, branches: BranchGraphBranc
                 const end = to - offset
                 rows[row].width = Math.max(rows[row].width, segment.fromX + 13, segment.toX + 13)
                 if (segment.fromX == segment.toX) {
-                    const ranges = verticals[row].get(segment.fromX) ?? []
-                    ranges.push({ start: Math.max(0, start), end: Math.min(graphRowHeight, end) })
-                    verticals[row].set(segment.fromX, ranges)
+                    const key = `${segment.fromX}:${segment.color}`
+                    const column = verticals[row].get(key) ?? { x: segment.fromX, color: segment.color, ranges: [] }
+                    column.ranges.push({ start: Math.max(0, start), end: Math.min(graphRowHeight, end) })
+                    verticals[row].set(key, column)
                 } else {
-                    rows[row].paths.push(
-                        `M ${segment.fromX} ${start} C ${segment.fromX} ${start + (end - start) * .6} ${segment.toX} ${
+                    rows[row].paths.push({
+                        d: `M ${segment.fromX} ${start} C ${segment.fromX} ${start + (end - start) * .6} ${segment.toX} ${
                             start + (end - start) * .4
                         } ${segment.toX} ${end}`,
-                    )
+                        color: segment.color,
+                    })
                 }
             }
         }
     }
     for (const [index, columns] of verticals.entries()) {
-        for (const [x, ranges] of columns) {
+        for (const { x, color, ranges } of columns.values()) {
             const joined: typeof ranges = []
             for (const range of ranges.sort((left, right) => left.start - right.start)) {
                 const previous = joined.at(-1)
@@ -171,7 +197,7 @@ export function layoutBranchGraph(graph: BranchGraph, branches: BranchGraphBranc
                 else
                     joined.push({ ...range })
             }
-            rows[index].paths.push(...joined.map(range => `M ${x} ${range.start} V ${range.end}`))
+            rows[index].paths.push(...joined.map(range => ({ d: `M ${x} ${range.start} V ${range.end}`, color })))
         }
     }
     return { rows, width }

@@ -20,6 +20,7 @@
         --control: #fbfcfb;
         --control-hover: #f2f4f2;
         --accent: #4d7c1f;
+        --graph-line-lightness: 38%;
         --accent-hover: #43701a;
         --accent-ink: #ffffff;
         --accent-wash: rgb(77 124 31 / 8%);
@@ -56,6 +57,7 @@
         --control: #262c27;
         --control-hover: #2e352f;
         --accent: #b6d95f;
+        --graph-line-lightness: 70%;
         --accent-hover: #c6e678;
         --accent-ink: #14180e;
         --accent-wash: rgb(182 217 95 / 10%);

@@ -38,6 +38,7 @@ test("Remix renderer styles and controls work under production CSP in Electron",
         const result = JSON.parse(await readFile(join(directory, "result.json"), "utf8"))
         expect({ exitCode, error: result.error }, errors).toEqual({ exitCode: 0, error: undefined })
         expect(result).toMatchObject({
+            graphScrollDrift: 0,
             compactSplit: true,
             balancedMetadata: true,
             compactUnified: true,
@@ -80,6 +81,8 @@ test("Remix renderer styles and controls work under production CSP in Electron",
             commitExpanded: true,
             commitGraph: true,
             branchGraphConnected: true,
+            branchGraphColors: true,
+            branchGraphThemeColors: true,
             commitDiffClear: true,
             commitCollapsed: true,
             accordionKeyboard: true,

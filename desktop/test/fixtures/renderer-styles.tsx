@@ -1,6 +1,7 @@
 import { createRoot } from "remix/ui"
 import { WorkbenchApp } from "../../src/renderer/src/app"
 import { inspectionScenario } from "../renderer-fixtures"
+import { checkBranchGraphScroll } from "./branch-graph-scroll"
 
 async function checkRenderer() {
     const violations: string[] = []
@@ -59,6 +60,10 @@ async function checkRenderer() {
             && (index == 0 || graphRows[index - 1].getBoundingClientRect().bottom == row.getBoundingClientRect().top)
             && rail.querySelectorAll("path").length > 0
     }) && graphRows[0].querySelector("circle")!.getAttribute("cx") != graphRows[2].querySelector("circle")!.getAttribute("cx")
+    const graphColors = () => [...document.querySelectorAll(".graph-row circle")].map(node => getComputedStyle(node).stroke)
+    const lightGraphColors = graphColors()
+    const branchGraphColors = lightGraphColors[0] == lightGraphColors[1] && lightGraphColors[0] != lightGraphColors[2]
+        && new Set([...graphRows[0].querySelectorAll("path")].map(path => getComputedStyle(path).stroke)).size == 2
     element(".change-file button").click()
     await settle()
     const diffShadow = element(".pierre-diff").shadowRoot!
@@ -121,6 +126,9 @@ async function checkRenderer() {
     element("button[aria-label='Switch to dark appearance']").click()
     await settle()
     const darkBackground = getComputedStyle(element(".diff-inspector")).backgroundColor
+    const darkGraphColors = graphColors()
+    const branchGraphThemeColors = darkGraphColors[0] == darkGraphColors[1] && darkGraphColors[0] != darkGraphColors[2]
+        && darkGraphColors.every((color, index) => color != "none" && color != lightGraphColors[index])
     const linkedAfterRender = [...diffShadow.querySelectorAll<HTMLElement>("[data-code]")].every(pane => pane.scrollLeft == 100)
 
     const branchTrigger = element(".stack-heading:not(:disabled)")
@@ -302,7 +310,9 @@ async function checkRenderer() {
         && document.querySelectorAll(".branch-column").length == columnCount
     const stylesheets = document.adoptedStyleSheets.length
     root.dispose()
+    const graphScrollDrift = await checkBranchGraphScroll()
     return {
+        graphScrollDrift,
         compactSplit,
         balancedMetadata,
         compactUnified,
@@ -344,6 +354,8 @@ async function checkRenderer() {
         commitExpanded,
         commitGraph,
         branchGraphConnected,
+        branchGraphColors,
+        branchGraphThemeColors,
         commitDiffClear,
         commitCollapsed,
         accordionKeyboard,
