@@ -190,7 +190,8 @@ function parseColumn(value: unknown, restoring = false): WorkspaceColumn | undef
     const diffLayout = record.diffLayout == "split" || record.diffLayout == "unified" ? record.diffLayout as DiffLayout : undefined
     const worktreePath = nonEmptyString(record.worktreePath) ? record.worktreePath : undefined
     if (
-        !restoring && ((record.diffLayout !== undefined && diffLayout === undefined)
+        !restoring && ((record.collapsed !== undefined && typeof record.collapsed != "boolean")
+            || (record.diffLayout !== undefined && diffLayout === undefined)
             || (record.worktreePath !== undefined && worktreePath === undefined))
     ) {
         return undefined
@@ -202,6 +203,7 @@ function parseColumn(value: unknown, restoring = false): WorkspaceColumn | undef
             ref: record.ref,
             lastSeenObjectId: record.lastSeenObjectId,
             width: record.width,
+            ...(record.collapsed === true ? { collapsed: true } : {}),
             ...(diffLayout ? { diffLayout } : {}),
             ...(worktreePath ? { worktreePath } : {}),
         }
@@ -213,6 +215,7 @@ function parseColumn(value: unknown, restoring = false): WorkspaceColumn | undef
             worktreePath: record.worktreePath,
             lastSeenObjectId: record.lastSeenObjectId,
             width: record.width,
+            ...(record.collapsed === true ? { collapsed: true } : {}),
             ...(diffLayout ? { diffLayout } : {}),
         }
     }

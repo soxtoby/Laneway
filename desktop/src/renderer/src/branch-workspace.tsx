@@ -20,6 +20,8 @@ interface RepositoryGraphState {
     showSettings: boolean
     patterns: string
     marker?: BranchGraphMarker
+    graphCollapsed: boolean
+    collapsedColumnIds: string[]
     collapsedBranchIds: string[]
     remoteRefreshed: boolean
     baseCandidateSelections: Record<string, string>
@@ -53,6 +55,8 @@ export interface BranchWorkspace {
     activate(repositoryId: string): void
     deactivate(): void
     render(active: AvailableOpenRepository, workspace: Workspace, railCollapsed?: boolean, toggleRail?: () => void): RemixNode
+    graphCollapsed(repositoryId: string): boolean
+    toggleGraph(repositoryId: string): void
     openLens(): void
     renderLens(workspace: Workspace): RemixNode
 }
@@ -109,6 +113,13 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
     }, { once: true })
 
     return {
+        graphCollapsed: repositoryId => stateFor(repositoryId).graphCollapsed,
+        toggleGraph(repositoryId) {
+            const state = stateFor(repositoryId)
+            state.graphCollapsed = !state.graphCollapsed
+            state.showSettings = false
+            void options.update()
+        },
         openLens,
         activate(repositoryId) {
             activeRepositoryId = repositoryId
@@ -152,8 +163,8 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                         addRepository={options.addRepository}
                     />
                     <section class="graph-desk" mix={graphDesk}>
-                        <div class="graph-layout" mix={graphLayout}>
-                            <div class="graph-sidebar" mix={graphSidebar}>
+                        <div class={`graph-layout ${state.graphCollapsed ? "graph-collapsed" : ""}`} mix={graphLayout}>
+                            <div class={`graph-sidebar ${state.graphCollapsed ? "collapsed" : ""}`} mix={graphSidebar}>
                                 <header class="graph-toolbar" mix={graphToolbar}>
                                     <div mix={graphToolbarDiv}>
                                         <p class="eyebrow" mix={eyebrow}>
@@ -322,6 +333,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                     repositoryId={active.id}
                                     worktreePath={id => backingPath(active.id, id)}
                                     close={branchId => closeBranch(active.id, branchId)}
+                                    collapse={branchId => collapseColumn(active.id, branchId)}
                                     maximize={branchId => maximizeBranch(active.id, branchId)}
                                     focus={branchId => focusColumn(active.id, branchId)}
                                     move={(branchId, delta) => moveColumn(active.id, branchId, delta)}
@@ -370,6 +382,8 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                 focusRestored: false,
                 showSettings: false,
                 patterns: "",
+                graphCollapsed: false,
+                collapsedColumnIds: saved?.columns.filter(column => column.collapsed).map(column => column.id) ?? [],
                 collapsedBranchIds: [],
                 remoteRefreshed: false,
                 baseCandidateSelections: {},
@@ -418,6 +432,14 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                     state.widths[column.id] ??= 380
                 const savedRepository = options.workspace().repositories.find(repository => repository.id == repositoryId)
                 if (savedRepository?.status == "available") {
+                    const worktreePaths = new Set([
+                        ...result.graph.branches.flatMap(branch => branch.checkedOut.map(worktree => worktree.path)),
+                        ...result.graph.virtualBranches.map(branch => branch.worktree.path),
+                    ])
+                    const removedWorktreeColumns = new Set(
+                        savedRepository.columns.filter(column => column.worktreePath && !worktreePaths.has(column.worktreePath)).map(column => column.id),
+                    )
+                    state.openedBranchIds = state.openedBranchIds.filter(id => !removedWorktreeColumns.has(id))
                     for (const savedColumn of savedRepository.columns.filter(column => column.kind == "branch" && column.worktreePath)) {
                         const current = result.graph.branches.find(branch => branch.checkedOut.some(worktree => worktree.path == savedColumn.worktreePath))
                             ?? result.graph.virtualBranches.find(branch => branch.worktree.path == savedColumn.worktreePath)
@@ -425,6 +447,8 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                             const savedIndex = state.openedBranchIds.indexOf(savedColumn.id)
                             state.openedBranchIds.splice(savedIndex + 1, 0, current.id)
                             state.widths[current.id] = state.widths[savedColumn.id] ?? 380
+                            if (state.collapsedColumnIds.includes(savedColumn.id))
+                                state.collapsedColumnIds.push(current.id)
                         }
                     }
                 }
@@ -439,6 +463,14 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                     }
                     savedRepository.layoutInitialized = true
                 }
+                for (const column of [...result.graph.branches.filter(branch => branch.checkedOut.length > 0), ...result.graph.virtualBranches]) {
+                    if (!state.openedBranchIds.includes(column.id))
+                        state.openedBranchIds.push(column.id)
+                    state.widths[column.id] ??= 380
+                }
+                state.openedBranchIds = [...new Set(state.openedBranchIds)]
+                if (!state.focusedColumnId || !state.openedBranchIds.includes(state.focusedColumnId))
+                    state.focusedColumnId = state.openedBranchIds[0]
                 state.baseCandidateSelections = Object.fromEntries(
                     Object.entries(state.baseCandidateSelections).filter(([branchId, candidateId]) => {
                         const branch = result.graph.branches.find(candidate => candidate.id == branchId)
@@ -506,6 +538,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         const state = stateFor(repositoryId)
         if (!state.openedBranchIds.includes(branchId))
             state.openedBranchIds.push(branchId)
+        state.collapsedColumnIds = state.collapsedColumnIds.filter(id => id != branchId)
         state.selectedId = branchId
         state.focusedColumnId = branchId
         state.widths[branchId] ??= 380
@@ -515,8 +548,24 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         )
     }
 
+    function collapseColumn(repositoryId: string, branchId: string) {
+        const state = stateFor(repositoryId)
+        state.collapsedColumnIds = state.collapsedColumnIds.includes(branchId)
+            ? state.collapsedColumnIds.filter(id => id != branchId)
+            : [...state.collapsedColumnIds, branchId]
+        state.maximizedBranchId = undefined
+        void persist(repositoryId).then(() => options.update()).then(() => {
+            const column = [...document.querySelectorAll<HTMLElement>("[data-column-id]")].find(element => element.dataset.columnId == branchId)
+            ;(column?.querySelector<HTMLElement>(".expand-column") ?? column)?.focus()
+        })
+    }
+
     function closeBranch(repositoryId: string, branchId: string) {
         const state = stateFor(repositoryId)
+        if (backingPath(repositoryId, branchId)) {
+            collapseColumn(repositoryId, branchId)
+            return
+        }
         const index = state.openedBranchIds.indexOf(branchId)
         state.openedBranchIds = state.openedBranchIds.filter(id => id != branchId)
         if (state.maximizedBranchId == branchId)
@@ -607,6 +656,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                     ref: branch.preferredRef,
                     lastSeenObjectId: branch.tip,
                     width: state.widths[id] ?? 380,
+                    collapsed: state.collapsedColumnIds.includes(id),
                     diffLayout: state.diffLayouts[id] ?? "unified",
                     ...(backingPath(repositoryId, id) ? { worktreePath: backingPath(repositoryId, id) } : {}),
                 }]
@@ -619,6 +669,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                     worktreePath: virtual.worktree.path,
                     lastSeenObjectId: virtual.objectId,
                     width: state.widths[id] ?? 380,
+                    collapsed: state.collapsedColumnIds.includes(id),
                     diffLayout: state.diffLayouts[id] ?? "unified",
                 }]
                 : []
@@ -718,8 +769,10 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         if (result.repositoryId != activeRepositoryId)
             await options.selectRepository(result.repositoryId)
         activeRepositoryId = result.repositoryId
-        if (result.kind == "branch")
+        if (result.kind == "branch") {
+            stateFor(result.repositoryId).graphCollapsed = false
             selectNode(result.repositoryId, result.nodeId)
+        }
         closeLens()
         await options.update()
         document.querySelector<HTMLElement>(".graph-rows")?.focus()
@@ -1090,6 +1143,7 @@ function BranchColumns(
             repositoryId: string
             worktreePath(id: string): string | undefined
             close(branchId: string): void
+            collapse(branchId: string): void
             maximize(branchId: string): void
             focus(branchId: string): void
             move(branchId: string, delta: number): void
@@ -1122,14 +1176,16 @@ function BranchColumns(
                 {visible.map(column => (
                     <>
                         <article
-                            class="branch-column"
+                            class={`branch-column ${props.state.collapsedColumnIds.includes(column.id) ? "collapsed" : ""}`}
                             data-column-id={column.id}
+                            style={{
+                                width: props.state.maximizedBranchId
+                                    ? "100%"
+                                    : `${props.state.collapsedColumnIds.includes(column.id) ? 52 : props.state.widths[column.id] ?? 380}px`,
+                            }}
                             tabIndex={-1}
                             mix={[
                                 branchColumn,
-                                ref(element => {
-                                    element.style.width = `${props.state.widths[column.id] ?? 380}px`
-                                }),
                                 on("focusin", () => props.focus(column.id)),
                                 on("keydown", event => {
                                     props.inspection.filterKeydown(props.repositoryId, column.id, event, handle.update)
@@ -1140,73 +1196,111 @@ function BranchColumns(
                                 }),
                             ]}
                         >
-                            <header
-                                draggable={!props.state.maximizedBranchId}
-                                title="Drag to reorder · Ctrl+< / Ctrl+>"
-                                mix={[
-                                    branchColumnHeader,
-                                    on("dragstart", event => {
-                                        props.state.draggingColumnId = column.id
-                                        props.state.dragOriginalIds = [...props.state.openedBranchIds]
-                                        event.dataTransfer?.setData("text/plain", column.id)
-                                    }),
-                                    on("dragover", event => {
-                                        event.preventDefault()
-                                        if (props.state.draggingColumnId)
-                                            props.previewMove(props.state.draggingColumnId, column.id)
-                                    }),
-                                    on("drop", event => {
-                                        event.preventDefault()
-                                        const source = props.state.draggingColumnId
-                                        if (source)
-                                            props.commitMove(source)
-                                    }),
-                                    on("dragend", () => {
-                                        if (props.state.draggingColumnId && props.state.dragOriginalIds) {
-                                            props.state.openedBranchIds = props.state.dragOriginalIds
-                                            void handle.update()
-                                        }
-                                        props.state.draggingColumnId = undefined
-                                        props.state.dragOriginalIds = undefined
-                                    }),
-                                ]}
-                            >
-                                <div mix={branchColumnDiv}>
-                                    <span class="column-kind" mix={columnKind}>
-                                        {column.kind == "branch" ? "Branch" : "Virtual"}
-                                    </span>
-                                    <h2 mix={branchColumnH2}>
-                                        {column.name}
-                                    </h2>
-                                    <p mix={branchColumnP}>
-                                        {column.kind == "branch" ? column.preferredRef : shortOid(column.objectId)}
-                                    </p>
-                                </div>
-                                <div mix={branchColumnDiv}>
-                                    {props.inspection.filterControl(props.repositoryId, column, props.graph, handle.update, props.worktreePath(column.id))}
+                            {props.state.collapsedColumnIds.includes(column.id)
+                                ? (
                                     <button
+                                        class="expand-column"
                                         type="button"
-                                        title={props.state.maximizedBranchId ? "Restore columns" : "Maximize column"}
-                                        mix={[branchColumnButton, on("click", () => props.maximize(column.id))]}
+                                        title={props.worktreePath(column.id) ?? column.name}
+                                        aria-label={`Expand ${column.name}`}
+                                        mix={[collapsedColumnButton, on("click", () => props.collapse(column.id))]}
                                     >
-                                        {props.state.maximizedBranchId ? "↙" : "↗"}
+                                        <span aria-hidden="true">»</span>
+                                        <span>{column.name}</span>
+                                        <span>{props.inspection.workingSummary(props.repositoryId, column, props.graph, props.worktreePath(column.id))}</span>
                                     </button>
-                                    <button type="button" title="Close column" mix={[branchColumnButton, on("click", () => props.close(column.id))]}>
-                                        ×
-                                    </button>
-                                </div>
-                            </header>
-                            {props.worktreePath(column.id) && (
-                                <div class="column-worktree" mix={columnWorktree}>
-                                    ⌂ {props.worktreePath(column.id)}
-                                </div>
-                            )}
-                            {props.inspection.body(props.repositoryId, column, props.graph, props.worktreePath(column.id))}
-                            {!props.state.maximizedBranchId && (
-                                <ColumnDivider branchId={column.id} width={props.state.widths[column.id] ?? 380} resize={props.resize} />
-                            )}
+                                )
+                                : (
+                                    <>
+                                        <header
+                                            draggable={!props.state.maximizedBranchId}
+                                            title="Drag to reorder · Ctrl+< / Ctrl+>"
+                                            mix={[
+                                                branchColumnHeader,
+                                                on("dragstart", event => {
+                                                    props.state.draggingColumnId = column.id
+                                                    props.state.dragOriginalIds = [...props.state.openedBranchIds]
+                                                    event.dataTransfer?.setData("text/plain", column.id)
+                                                }),
+                                                on("dragover", event => {
+                                                    event.preventDefault()
+                                                    if (props.state.draggingColumnId)
+                                                        props.previewMove(props.state.draggingColumnId, column.id)
+                                                }),
+                                                on("drop", event => {
+                                                    event.preventDefault()
+                                                    const source = props.state.draggingColumnId
+                                                    if (source)
+                                                        props.commitMove(source)
+                                                }),
+                                                on("dragend", () => {
+                                                    if (props.state.draggingColumnId && props.state.dragOriginalIds) {
+                                                        props.state.openedBranchIds = props.state.dragOriginalIds
+                                                        void handle.update()
+                                                    }
+                                                    props.state.draggingColumnId = undefined
+                                                    props.state.dragOriginalIds = undefined
+                                                }),
+                                            ]}
+                                        >
+                                            <button
+                                                type="button"
+                                                title="Collapse column"
+                                                aria-label={`Collapse ${column.name}`}
+                                                mix={[branchColumnButton, on("click", () => props.collapse(column.id))]}
+                                            >
+                                                «
+                                            </button>
+                                            <div mix={branchColumnDiv}>
+                                                <span class="column-kind" mix={columnKind}>
+                                                    {column.kind == "branch" ? "Branch" : "Virtual"}
+                                                </span>
+                                                <h2 mix={branchColumnH2}>
+                                                    {column.name}
+                                                </h2>
+                                                <p mix={branchColumnP}>
+                                                    {column.kind == "branch" ? column.preferredRef : shortOid(column.objectId)}
+                                                </p>
+                                            </div>
+                                            <div mix={branchColumnDiv}>
+                                                {props.inspection.filterControl(
+                                                    props.repositoryId,
+                                                    column,
+                                                    props.graph,
+                                                    handle.update,
+                                                    props.worktreePath(column.id),
+                                                )}
+                                                <button
+                                                    type="button"
+                                                    title={props.state.maximizedBranchId ? "Restore columns" : "Maximize column"}
+                                                    mix={[branchColumnButton, on("click", () => props.maximize(column.id))]}
+                                                >
+                                                    {props.state.maximizedBranchId ? "↙" : "↗"}
+                                                </button>
+                                                {!props.worktreePath(column.id) && (
+                                                    <button
+                                                        type="button"
+                                                        title="Close column"
+                                                        mix={[branchColumnButton, on("click", () => props.close(column.id))]}
+                                                    >
+                                                        ×
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </header>
+                                        {props.worktreePath(column.id) && (
+                                            <div class="column-worktree" mix={columnWorktree}>
+                                                ⌂ {props.worktreePath(column.id)}
+                                            </div>
+                                        )}
+                                        {props.inspection.body(props.repositoryId, column, props.graph, props.worktreePath(column.id))}
+                                        {!props.state.maximizedBranchId && (
+                                            <ColumnDivider branchId={column.id} width={props.state.widths[column.id] ?? 380} resize={props.resize} />
+                                        )}
+                                    </>
+                                )}
                         </article>
-                        {props.inspection.breakout(props.repositoryId, column.id)}
+                        {!props.state.collapsedColumnIds.includes(column.id) && props.inspection.breakout(props.repositoryId, column.id)}
                     </>
                 ))}
             </section>
@@ -1625,6 +1719,7 @@ const graphLimit = css({
 })
 
 const graphLayout = css({
+    "&.graph-collapsed": { gridTemplateColumns: "minmax(0, 1fr)" },
     minWidth: "0",
     minHeight: "0",
     display: "grid",
@@ -1637,6 +1732,7 @@ const graphLayout = css({
 })
 
 const graphSidebar = css({
+    "&.collapsed": { display: "none" },
     minWidth: "0",
     minHeight: "0",
     display: "flex",
@@ -2083,7 +2179,21 @@ const branchColumns = css({
     },
 })
 
+const collapsedColumnButton = css({
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    writingMode: "vertical-rl",
+    padding: "12px",
+    color: "var(--text)",
+    background: "var(--panel-deep)",
+    border: "0",
+    cursor: "pointer",
+    "&:hover": { background: "var(--raised)" },
+})
+
 const branchColumn = css({
+    "&.collapsed": { minWidth: "52px", gridTemplateRows: "minmax(0, 1fr)" },
     position: "relative",
     width: "380px",
     minWidth: "310px",
@@ -2105,7 +2215,7 @@ const branchColumn = css({
 
 const branchColumnHeader = css({
     minHeight: "44px",
-    padding: "7px 8px 7px 11px",
+    padding: "7px 8px 7px 0",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
@@ -2121,11 +2231,10 @@ const branchColumnHeader = css({
 })
 
 const branchColumnDiv = css({
-    "&:first-child": {
-        minWidth: "0",
-        display: "grid",
-        gap: "1px",
-    },
+    minWidth: "0",
+    display: "grid",
+    flex: "1 1 auto",
+    gap: "1px",
     "&:last-child": {
         display: "flex",
         flex: "0 0 auto",

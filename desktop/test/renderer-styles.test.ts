@@ -40,6 +40,11 @@ test("Remix renderer styles and controls work under production CSP in Electron",
         expect({ exitCode, error: result.error }, errors).toEqual({ exitCode: 0, error: undefined })
         expect(result).toMatchObject({
             graphScrollDrift: 0,
+            collapsedColumnCompact: true,
+            columnToggleStable: true,
+            expandedWidthRestored: true,
+            graphFullyHidden: true,
+            graphRestored: true,
             graphSettingsAnchored: true,
             compactSplit: true,
             balancedMetadata: true,

@@ -175,6 +175,7 @@ export interface RepositoryInfo {
 }
 
 export interface BranchWorkspaceColumn {
+    collapsed?: boolean
     diffLayout?: DiffLayout
     kind: "branch"
     id: string
@@ -185,6 +186,7 @@ export interface BranchWorkspaceColumn {
 }
 
 export interface VirtualBranchWorkspaceColumn {
+    collapsed?: boolean
     diffLayout?: DiffLayout
     kind: "virtual"
     id: string

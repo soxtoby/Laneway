@@ -385,6 +385,55 @@ describe("Remix repository entry renderer", () => {
     })
 })
 
+test("retains worktree columns and restores collapse in place across restart", async () => {
+    const scenario = inspectionScenario()
+    const initial = await scenario.api.getState()
+    const graphResult = await scenario.api.readBranchGraph(initial.workspace.activeRepositoryId!, false)
+    if (!graphResult.ok)
+        throw new Error("Missing graph")
+    const graph = graphResult.graph
+    const branch = graph.branches[1]
+    const main = graph.branches[0]
+    main.checkedOut = [{ path: "D:/other", name: "other", head: main.tip, main: false }]
+    let view = render(scenario.api)
+    await flush(view.root)
+    expect([...view.container.querySelectorAll("[data-column-id]")].map(node => node.getAttribute("data-column-id"))).toEqual([branch.id, main.id])
+    const column = view.container.querySelector<HTMLElement>(".branch-column")!
+    expect(column.querySelector('[title="Close column"]')).toBeNull()
+    const divider = column.querySelector<HTMLElement>('[role="separator"]')!
+    divider.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))
+    await flush(view.root)
+    click(column.querySelector<HTMLButtonElement>('[title="Collapse column"]')!)
+    await flush(view.root)
+    expect(column.classList.contains("collapsed")).toBe(true)
+    expect(column.textContent).toContain("2 changed files")
+    const saved = (await scenario.api.getState()).workspace.repositories[0].columns
+    expect(saved.map(column => column.id)).toEqual([branch.id, main.id])
+    expect(saved[0]).toMatchObject({ collapsed: true, width: 390 })
+    view.dispose()
+    view = render(scenario.api)
+    await flush(view.root)
+    const restored = view.container.querySelector<HTMLElement>(".branch-column")!
+    expect(restored.classList.contains("collapsed")).toBe(true)
+    click(restored.querySelector<HTMLButtonElement>(".expand-column")!)
+    await flush(view.root)
+    expect(restored.classList.contains("collapsed")).toBe(false)
+    expect(restored.style.width).toBe("390px")
+    const toggle = view.container.querySelector<HTMLButtonElement>('[aria-label="Toggle Branch Graph"]')!
+    click(toggle)
+    await flush(view.root)
+    expect(toggle.getAttribute("aria-expanded")).toBe("false")
+    expect(view.container.querySelector(".graph-layout")?.classList.contains("graph-collapsed")).toBe(true)
+    click(toggle)
+    await flush(view.root)
+    expect(toggle.getAttribute("aria-expanded")).toBe("true")
+    main.checkedOut = []
+    click(view.container.querySelector<HTMLButtonElement>('[aria-label="Refresh Branch Graph"]')!)
+    await flush(view.root)
+    expect((await scenario.api.getState()).workspace.repositories[0].columns.map(column => column.id)).toEqual([branch.id])
+    view.dispose()
+})
+
 describe("Working Changes inspection", () => {
     test("opens column filtering on demand and clears it with Escape", async () => {
         const { container, root, dispose } = render(inspectionScenario().api)

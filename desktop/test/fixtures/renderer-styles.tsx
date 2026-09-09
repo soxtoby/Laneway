@@ -375,11 +375,35 @@ async function checkRenderer() {
     const activatedBranch = !document.querySelector(".command-lens")
         && element(".graph-row.selected").dataset.nodeId == "branch:refs/heads/feature/workbench"
         && document.querySelectorAll(".branch-column").length == columnCount
+    const columnBeforeCollapse = element(".branch-column").getBoundingClientRect()
+    const collapseButton = element(".branch-column [title='Collapse column']")
+    const collapseButtonLeft = collapseButton.getBoundingClientRect().left
+    collapseButton.click()
+    await settle()
+    const collapsedBounds = element(".branch-column").getBoundingClientRect()
+    const expandButtonLeft = element(".expand-column").getBoundingClientRect().left
+    const collapsedColumnCompact = collapsedBounds.width == 52 && collapsedBounds.left == columnBeforeCollapse.left
+    const columnToggleStable = collapseButtonLeft == expandButtonLeft
+    element(".expand-column").click()
+    await settle()
+    const expandedWidthRestored = element(".branch-column").getBoundingClientRect().width == columnBeforeCollapse.width
+    element("[aria-label='Toggle Branch Graph']").click()
+    await settle()
+    const graphFullyHidden = element(".graph-sidebar").getBoundingClientRect().width == 0
+        && element(".branch-columns").getBoundingClientRect().left == element(".graph-desk").getBoundingClientRect().left
+    element("[aria-label='Toggle Branch Graph']").click()
+    await settle()
+    const graphRestored = element(".graph-sidebar").getBoundingClientRect().width > 0
     const stylesheets = document.adoptedStyleSheets.length
     root.dispose()
     const graphScrollDrift = await checkBranchGraphScroll()
     return {
         graphScrollDrift,
+        collapsedColumnCompact,
+        columnToggleStable,
+        expandedWidthRestored,
+        graphFullyHidden,
+        graphRestored,
         graphSettingsAnchored,
         compactSplit,
         balancedMetadata,

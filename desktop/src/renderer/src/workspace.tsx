@@ -12,6 +12,8 @@ export function WorkbenchHeader(
     handle: Handle<{
         busy: boolean
         openLens?(): void
+        toggleGraph?(): void
+        graphCollapsed?: boolean
         appearance: Appearance
         openSettings(): void
         toggleAppearance(): void
@@ -38,6 +40,16 @@ export function WorkbenchHeader(
                 </button>
             )}
             <div class="header-actions" mix={headerActions}>
+                {handle.props.toggleGraph && (
+                    <button
+                        type="button"
+                        aria-label="Toggle Branch Graph"
+                        aria-expanded={!handle.props.graphCollapsed}
+                        mix={[lensButton, on("click", handle.props.toggleGraph)]}
+                    >
+                        Branches
+                    </button>
+                )}
                 <button
                     class="icon-button"
                     type="button"

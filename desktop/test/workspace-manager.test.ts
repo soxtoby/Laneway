@@ -40,6 +40,7 @@ describe("Workspace manager", () => {
             lastSeenObjectId: "1".repeat(40),
             width: 470,
             diffLayout: "split",
+            collapsed: true,
             worktreePath: repositoryPath,
         }, {
             kind: "virtual",
@@ -85,6 +86,7 @@ describe("Workspace manager", () => {
             { ...column, width: 309 },
             { ...column, width: NaN },
             { ...column, diffLayout: "invalid" },
+            { ...column, collapsed: "true" },
             { ...column, worktreePath: 42 },
             { ...column, worktreePath: " " },
             { ...column, kind: "virtual", worktreePath: "" },

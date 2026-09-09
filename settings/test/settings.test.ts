@@ -28,7 +28,15 @@ describe("Workspace State", () => {
                 open: true,
                 layoutInitialized: true,
                 focusedColumnId: "branch:main",
-                columns: [{ kind: "branch", id: "branch:main", ref: "refs/heads/main", lastSeenObjectId: "1".repeat(40), width: 420, diffLayout: "split" }],
+                columns: [{
+                    kind: "branch",
+                    id: "branch:main",
+                    ref: "refs/heads/main",
+                    lastSeenObjectId: "1".repeat(40),
+                    width: 420,
+                    collapsed: true,
+                    diffLayout: "split",
+                }],
             }],
             activeRepositoryId: "repository-1",
         }, path)

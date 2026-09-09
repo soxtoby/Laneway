@@ -47,6 +47,10 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
                 <main class={`shell ${railCollapsed ? "rail-collapsed" : ""}`} mix={shell}>
                     <WorkbenchHeader
                         openLens={branchWorkspace.openLens}
+                        toggleGraph={active?.status == "available"
+                            ? () => branchWorkspace!.toggleGraph(active.id)
+                            : undefined}
+                        graphCollapsed={active?.status == "available" && branchWorkspace.graphCollapsed(active.id)}
                         busy={busy}
                         appearance={appearance}
                         openSettings={gitSettings.open}

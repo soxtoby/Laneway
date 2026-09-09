@@ -780,6 +780,17 @@ export function createInspection(options: Options) {
         state.filterButton?.focus({ preventScroll: true })
     }
     return {
+        workingSummary(repositoryId: string, column: Column, graph: BranchGraph, worktreePath?: string) {
+            if (!worktreePath)
+                return "Branch"
+            const files = stateFor(repositoryId, column, graph, worktreePath).files.get("working")
+            if (files?.error)
+                return "Working Changes unavailable"
+            if (!files?.inventory)
+                return "Reading Working Changes…"
+            const count = files.inventory.files.filter(file => !file.ignored).length
+            return count ? `${count} changed ${count == 1 ? "file" : "files"}` : "Clean"
+        },
         filterKeydown(repositoryId: string, columnId: string, event: KeyboardEvent, render: Options["update"]) {
             const state = columns.get(key(repositoryId, columnId))
             if (!state)

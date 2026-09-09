@@ -21,11 +21,11 @@ The global keyboard-first search and navigation surface. Selecting a branch loca
 _Avoid_: Command palette, branch switcher
 
 **Workspace Column**:
-A resizable view of an Active Stack ending at one branch. It may be branch-only, or worktree-backed with Working Changes; closing the view never removes its filesystem worktree.
+A resizable view of an Active Stack ending at one branch. It may be branch-only, or worktree-backed with Working Changes; every Registered Worktree retains a column that can be collapsed in place; branch-only columns can be closed. Removing a worktree removes its column. Collapsing preserves column order and expanded width.
 _Avoid_: Worktree column
 
 **Workspace State**:
-The persisted presentation of repositories and Workspace Columns, including their order, size, focus, and each column's unified or side-by-side diff preference. Workbench restores it after restart but does not restore broken-out diffs, focused inspection, selected files, selected changes, or scroll positions; Git facts are always recomputed.
+The persisted presentation of repositories and Workspace Columns, including their order, size, collapse state, focus, and each column's unified or side-by-side diff preference. Workbench restores it after restart but does not restore broken-out diffs, focused inspection, selected files, selected changes, or scroll positions; Git facts are always recomputed.
 _Avoid_: Repository cache, persisted Git state
 
 **Open Repository**:
