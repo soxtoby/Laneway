@@ -439,6 +439,61 @@ test("retains worktree columns and restores collapse in place across restart", a
 })
 
 describe("Working Changes inspection", () => {
+    test("pages unresolved branch commits before offering a continuation branch", async () => {
+        const scenario = inspectionScenario()
+        const graphResult = await scenario.api.readBranchGraph((await scenario.api.getState()).workspace.activeRepositoryId!, false)
+        if (!graphResult.ok)
+            throw new Error("Missing graph")
+        const graph = graphResult.graph
+        const branch = graph.branches[1]
+        const candidates = [graph.branches[0], graph.branches[2]]
+        branch.base = {
+            status: "ambiguous",
+            candidates: candidates.map(candidate => ({
+                branchId: candidate.id,
+                name: candidate.name,
+                ref: candidate.preferredRef,
+                tip: candidate.tip,
+            })),
+        }
+        const requests: Parameters<Window["workbench"]["readBranchHistory"]>[1][] = []
+        scenario.api.readBranchHistory = async (_repositoryId, request) => {
+            requests.push(request)
+            return {
+                ok: true,
+                page: {
+                    branchRef: request.branchRef,
+                    tip: request.tip,
+                    baseTips: request.baseTips,
+                    commits: request.offset ? [] : [{
+                        objectId: branch.tip,
+                        parentIds: [graph.branches[0].tip],
+                        subject: "Inspect changes",
+                        authorName: "Test",
+                        authorEmail: "test@example.test",
+                        authoredAt: 1788566400,
+                    }],
+                    ...(request.offset ? {} : { nextOffset: 1 }),
+                },
+            }
+        }
+
+        const { container, root, dispose } = render(scenario.api)
+        await flush(root)
+        expect(requests[0]).toMatchObject({ limit: 50, baseTips: candidates.map(candidate => candidate.tip) })
+        expect(container.querySelector("[aria-label='Branch after feature/workbench']")).toBeNull()
+        click(button(container, "Load more"))
+        await flush(root)
+        const continuation = container.querySelector<HTMLSelectElement>("[aria-label='Branch after feature/workbench']")!
+        expect(continuation).not.toBeNull()
+        expect([...continuation.options].map(option => option.textContent)).toEqual(["Choose branch…", "main", "other/team"])
+        continuation.value = graph.branches[0].id
+        continuation.dispatchEvent(new Event("change", { bubbles: true }))
+        await flush(root)
+        expect(container.querySelector(".stack-heading")?.textContent).toContain("main")
+        dispose()
+    })
+
     test("opens column filtering on demand and clears it with Escape", async () => {
         const { container, root, dispose } = render(inspectionScenario().api)
         await flush(root)

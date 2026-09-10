@@ -172,7 +172,7 @@ describe("system Git", () => {
             const history = await opened.startReadBranchHistory({
                 branchRef: "refs/heads/feature/tip",
                 tip,
-                baseTip,
+                baseTips: [baseTip],
                 limit: 1,
             }).result
             expect(history.commits).toHaveLength(1)
@@ -226,8 +226,43 @@ describe("system Git", () => {
         expect(feature.upstreamTip).toBe(remoteTip)
         expect(feature).toMatchObject({ ahead: 1, behind: 1 })
         expect(feature.base.status).toBe("ambiguous")
-        if (feature.base.status == "ambiguous")
+        if (feature.base.status == "ambiguous") {
             expect(feature.base.candidates.map(candidate => candidate.name)).toEqual(expect.arrayContaining(["candidate/left", "candidate/right", "main"]))
+            const history = await (await openRepository(repository)).startReadBranchHistory({
+                branchRef: feature.preferredRef,
+                tip: feature.tip,
+                baseTips: feature.base.candidates.map(candidate => candidate.tip),
+                limit: 50,
+            }).result
+            expect(history.commits.map(commit => commit.objectId)).toEqual([localTip])
+            expect(history.nextOffset).toBeUndefined()
+        }
+    })
+
+    test("reads branch history along the first parent of merge commits", async () => {
+        const repository = await temporaryDirectory("workbench-graph-first-parent-")
+        expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.name", "Workbench Test").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.email", "workbench@example.invalid").exitCode).toBe(0)
+        await commitFile(repository, "README.md", "initial\n", "Initial")
+        const baseTip = gitText(repository, "rev-parse", "HEAD")
+        expect(runGit(repository, "checkout", "-q", "-b", "side").exitCode).toBe(0)
+        await commitFile(repository, "side.txt", "side\n", "Side work")
+        const sideTip = gitText(repository, "rev-parse", "HEAD")
+        expect(runGit(repository, "checkout", "-q", "-b", "feature", baseTip).exitCode).toBe(0)
+        await commitFile(repository, "feature.txt", "feature\n", "Feature work")
+        const featureCommit = gitText(repository, "rev-parse", "HEAD")
+        expect(runGit(repository, "merge", "--no-ff", "side", "-m", "Merge side").exitCode).toBe(0)
+        const mergeTip = gitText(repository, "rev-parse", "HEAD")
+
+        const history = await (await openRepository(repository)).startReadBranchHistory({
+            branchRef: "refs/heads/feature",
+            tip: mergeTip,
+            baseTips: [baseTip],
+            limit: 50,
+        }).result
+        expect(history.commits.map(commit => commit.objectId)).toEqual([mergeTip, featureCommit])
+        expect(history.commits.map(commit => commit.objectId)).not.toContain(sideTip)
     })
 
     test("reads a many-branch graph in under one second", async () => {

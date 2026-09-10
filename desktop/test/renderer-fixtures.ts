@@ -60,7 +60,7 @@ export function inspectionScenario() {
             page: {
                 branchRef: branch.preferredRef,
                 tip: branch.tip,
-                baseTip: graph.branches[0].tip,
+                baseTips: [graph.branches[0].tip],
                 commits: [{
                     objectId: branch.tip,
                     parentIds: [graph.branches[0].tip],

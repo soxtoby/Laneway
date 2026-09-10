@@ -397,7 +397,7 @@ export interface BranchHistoryRequest {
     requestId?: string
     branchRef: string
     tip: string
-    baseTip: string
+    baseTips: string[]
     offset?: number
     limit?: number
 }
@@ -414,7 +414,7 @@ export interface BranchHistoryCommit {
 export interface BranchHistoryPage {
     branchRef: string
     tip: string
-    baseTip: string
+    baseTips: string[]
     commits: BranchHistoryCommit[]
     nextOffset?: number
 }

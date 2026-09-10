@@ -51,6 +51,7 @@ interface ColumnState {
     worktreePath?: string
     files: Map<string, FileState>
     history: Map<string, HistoryState>
+    baseSelections: Map<string, string>
     requestIds: Set<string>
     diffs: Map<string, FileDiffState>
     cachedDiffs: Map<string, FileDiffPage>
@@ -163,6 +164,7 @@ export function createInspection(options: Options) {
                 worktreePath,
                 files: new Map(),
                 history: new Map(),
+                baseSelections: new Map(),
                 requestIds: new Set(),
                 diffs: new Map(),
                 cachedDiffs: new Map(),
@@ -417,10 +419,8 @@ export function createInspection(options: Options) {
         }
     }
     async function history(state: ColumnState, branch: BranchGraphBranchNode, more = false) {
-        const base = branch.base.status == "known" ? branch.base.tip : undefined
-        if (!base)
-            return
-        const historyKey = `${branch.tip}:${base}`
+        const baseTips = branch.base.status == "known" ? [branch.base.tip] : branch.base.candidates.map(candidate => candidate.tip)
+        const historyKey = `${branch.tip}:${baseTips.join(":")}`
         let current = state.history.get(branch.id)
         if (!current || current.key != historyKey) {
             current = { key: historyKey, loading: false, open: true, generation: 0 }
@@ -437,8 +437,8 @@ export function createInspection(options: Options) {
                 requestId: requestId(state, `history:${branch.id}`),
                 branchRef: branch.preferredRef,
                 tip: branch.tip,
-                baseTip: base,
-                limit: 30,
+                baseTips,
+                limit: 50,
                 ...(more ? { offset: current.page?.nextOffset } : {}),
             })
             if (!state.alive || state.history.get(branch.id) != current || current.generation != generation)
@@ -458,7 +458,8 @@ export function createInspection(options: Options) {
     }
     function toggleHistory(state: ColumnState, branch: BranchGraphBranchNode) {
         const current = state.history.get(branch.id)
-        if (!current || current.key != `${branch.tip}:${branch.base.status == "known" ? branch.base.tip : ""}`)
+        const baseTips = branch.base.status == "known" ? [branch.base.tip] : branch.base.candidates.map(candidate => candidate.tip)
+        if (!current || current.key != `${branch.tip}:${baseTips.join(":")}`)
             void history(state, branch)
         else {
             current.open = !current.open
@@ -865,9 +866,11 @@ export function createInspection(options: Options) {
             while (branch && !stack.some(item => item.id == branch!.id)) {
                 stack.push(branch)
                 const last = stack.at(-1)!
-                branch = last.base.status == "known"
-                    ? graph.branches.find(item => item.id == (last.base.status == "known" ? last.base.branchId : ""))
-                    : undefined
+                const selection = state.baseSelections.get(last.id)
+                const nextId = last.base.status == "known"
+                    ? last.base.branchId
+                    : last.base.candidates.some(candidate => candidate.branchId == selection) ? selection : undefined
+                branch = graph.branches.find(item => item.id == nextId)
             }
             return (
                 <div class={`column-inspection ${state.filterOpen ? "filter-open" : ""}`} mix={columnInspection}>
@@ -961,19 +964,18 @@ export function createInspection(options: Options) {
                                 const current = state.history.get(branch.id)
                                 const columnBranch = branch.id == column.id
                                 return (
-                                    <accordion.ItemContext key={branch.id} value={branch.id} disabled={branch.base.status != "known"}>
+                                    <accordion.ItemContext key={branch.id} value={branch.id}>
                                         <section class="stack-branch" mix={[stackBranch, accordion.item()]}>
                                             {!columnBranch && (
                                                 <h3 class="disclosure-heading" mix={disclosureHeading}>
                                                     <button class="stack-heading" type="button" mix={[stackHeading, accordion.trigger()]}>
                                                         <span>{current?.open ? "▾" : "▸"} {branch.name}</span>
                                                         <small mix={stackHeadingSmall}>
-                                                            {branch.base.status == "known" ? "Unique commits" : "Base unresolved"}
+                                                            {branch.base.status == "known" ? "Unique commits" : "Commits"}
                                                         </small>
                                                     </button>
                                                 </h3>
                                             )}
-                                            {columnBranch && branch.base.status != "known" && <p>Base unresolved</p>}
                                             <div hidden={!columnBranch && !current?.open} mix={columnBranch ? [] : accordion.content()}>
                                                 {current?.open && (
                                                     <accordion.Context
@@ -1089,8 +1091,32 @@ export function createInspection(options: Options) {
                                                                     disabled={current.loading}
                                                                     mix={[stackBranchButton, on("click", () => history(state, branch, true))]}
                                                                 >
-                                                                    More commits
+                                                                    Load more
                                                                 </button>
+                                                            )}
+                                                            {current.page && current.page.nextOffset == undefined && branch.base.status == "ambiguous" && (
+                                                                <label class="base-continuation" mix={mergeParent}>
+                                                                    Continue with<select
+                                                                        aria-label={`Branch after ${branch.name}`}
+                                                                        value={state.baseSelections.get(branch.id) ?? ""}
+                                                                        mix={[
+                                                                            parentForSelect,
+                                                                            on("change", event => {
+                                                                                const selection = event.currentTarget.value
+                                                                                if (selection)
+                                                                                    state.baseSelections.set(branch.id, selection)
+                                                                                else
+                                                                                    state.baseSelections.delete(branch.id)
+                                                                                update()
+                                                                            }),
+                                                                        ]}
+                                                                    >
+                                                                        <option value="">Choose branch…</option>
+                                                                        {branch.base.candidates.map(candidate => (
+                                                                            <option value={candidate.branchId}>{candidate.name}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                </label>
                                                             )}
                                                         </div>
                                                     </accordion.Context>

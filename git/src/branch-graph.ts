@@ -786,7 +786,8 @@ async function readPrimaryBranch(runner: GraphRunner, refs: RefRecord[], remote:
 
 async function readHistoryPage(descriptor: RepositoryDescriptor, runner: GraphRunner, request: BranchHistoryRequest): Promise<BranchHistoryPage> {
     validateObjectId(descriptor, request.tip)
-    validateObjectId(descriptor, request.baseTip)
+    for (const baseTip of request.baseTips)
+        validateObjectId(descriptor, baseTip)
     const before = optionalText(await runner.run(["rev-parse", "--verify", "--quiet", request.branchRef], [0, 1]))
     if (before != request.tip)
         throw new GitError("git.command-failed", "The branch moved before Workbench could expand its commits. Refresh the Branch Graph and try again.")
@@ -797,10 +798,12 @@ async function readHistoryPage(descriptor: RepositoryDescriptor, runner: GraphRu
             "log",
             "--use-mailmap",
             "--topo-order",
+            "--first-parent",
             `--skip=${offset}`,
             `--max-count=${limit + 1}`,
             "--format=%H%x00%P%x00%aN%x00%aE%x00%at%x00%s",
-            `${request.baseTip}..${request.tip}`,
+            request.tip,
+            ...(request.baseTips.length > 0 ? ["--not", ...request.baseTips] : []),
         ]),
     )
     const commits = parseHistory(output)
@@ -810,7 +813,7 @@ async function readHistoryPage(descriptor: RepositoryDescriptor, runner: GraphRu
     return {
         branchRef: request.branchRef,
         tip: request.tip,
-        baseTip: request.baseTip,
+        baseTips: request.baseTips,
         commits: commits.slice(0, limit),
         ...(commits.length > limit ? { nextOffset: offset + limit } : {}),
     }
