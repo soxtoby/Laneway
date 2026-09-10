@@ -5,7 +5,7 @@ import { errorMessage, FatalError, Notice, type NoticeState } from "./feedback"
 import { activateSelectionsOnMouseDown } from "./mouse-activation"
 import { createRepositoryEntry, type RepositoryEntry } from "./repository-entry"
 import { createGitSettings, type GitSettings } from "./settings"
-import { RepositoryRailToggle, Welcome, WorkbenchHeader, WorkbenchStatus } from "./workspace"
+import { RepositoryRailToggle, Welcome, WorkbenchHeader } from "./workspace"
 
 type AppState = Awaited<ReturnType<Window["workbench"]["getState"]>>
 
@@ -82,10 +82,6 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
                                 openInitialize={repositoryEntry.openInitialize}
                             />
                         )}
-                    <WorkbenchStatus
-                        settings={gitSettings.current}
-                        engine={initial.engine.state == "ready" ? `Engine ${initial.engine.version}` : "Engine unavailable"}
-                    />
                 </main>
                 {repositoryEntry.render()}
                 {gitSettings.render()}
@@ -479,7 +475,7 @@ const shell = css({
     width: "100%",
     height: "100%",
     display: "grid",
-    gridTemplateRows: "var(--toolbar) minmax(0, 1fr) var(--status)",
+    gridTemplateRows: "var(--toolbar) minmax(0, 1fr)",
     overflow: "hidden",
 })
 
@@ -494,7 +490,7 @@ const workspaceRecovery = css({
     position: "fixed",
     zIndex: "20",
     right: "14px",
-    bottom: "calc(var(--status) + 12px)",
+    bottom: "12px",
     left: "14px",
     padding: "11px 12px",
     display: "flex",

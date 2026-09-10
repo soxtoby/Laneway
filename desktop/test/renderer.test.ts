@@ -372,6 +372,10 @@ describe("Remix repository entry renderer", () => {
         const { container, root, dispose } = render(api)
 
         await flush(root)
+        expect(container.querySelector(".status-bar")).toBeNull()
+        const columnHeaders = [...container.querySelectorAll(".branch-column > header")].map(header => header.textContent).join(" ")
+        expect(columnHeaders).not.toContain("refs/heads/")
+        expect(columnHeaders).not.toContain(main.tip.slice(0, 8))
         const mainColumn = container.querySelector<HTMLElement>(`[data-column-id='${main.id}']`)!
         mainColumn.querySelector("button")!.dispatchEvent(new KeyboardEvent("keydown", { key: ">", ctrlKey: true, shiftKey: true, bubbles: true }))
         await flush(root)

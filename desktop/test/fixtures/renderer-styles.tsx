@@ -95,6 +95,12 @@ async function checkRenderer() {
         throw new Error("Repository focus outline is clipped by the navigation viewport")
     element<HTMLButtonElement>('[aria-label="Expand repository sidebar"]').click()
     await settle()
+    const expandedFooter = element(".rail-footer")
+    const expandedToggle = element('[aria-label="Collapse repository sidebar"]')
+    const footerStyle = getComputedStyle(expandedFooter)
+    const footerContentWidth = expandedFooter.clientWidth - parseFloat(footerStyle.paddingLeft) - parseFloat(footerStyle.paddingRight)
+    if (Math.abs(expandedToggle.getBoundingClientRect().width - footerContentWidth) > 1)
+        throw new Error("Expanded repository sidebar toggle is not full width")
     if (
         !element(".rail-add").textContent?.includes("Add repository")
         || Math.abs(element(".rail-add").getBoundingClientRect().width - element(".repository-item").getBoundingClientRect().width) > 1

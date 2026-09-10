@@ -52,7 +52,7 @@ const notice = css({
     position: "fixed",
     zIndex: "30",
     right: "14px",
-    bottom: "calc(var(--status) + 12px)",
+    bottom: "12px",
     width: "min(460px, calc(100vw - 28px))",
     padding: "11px 12px",
     display: "grid",

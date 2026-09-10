@@ -1268,9 +1268,6 @@ function BranchColumns(
                                                 <h2 mix={branchColumnH2}>
                                                     {column.name}
                                                 </h2>
-                                                <p mix={branchColumnP}>
-                                                    {column.kind == "branch" ? column.preferredRef : shortOid(column.objectId)}
-                                                </p>
                                             </div>
                                             <div mix={branchColumnDiv}>
                                                 {props.inspection.filterControl(
@@ -2301,16 +2298,6 @@ const branchColumnH2 = css({
     overflow: "hidden",
     fontSize: "13px",
     fontWeight: "600",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-})
-
-const branchColumnP = css({
-    margin: "0",
-    overflow: "hidden",
-    color: "var(--faint)",
-    fontFamily: "var(--mono)",
-    fontSize: "10px",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
 })

@@ -62,22 +62,6 @@ export function WorkbenchHeader(
     )
 }
 
-export function WorkbenchStatus(handle: Handle<{ settings: GitSettingsState; engine: string }>) {
-    return () => (
-        <footer class="status-bar" mix={statusBar}>
-            <span class={`pulse ${handle.props.settings.error ? "error" : ""}`} mix={pulse}>
-            </span>
-            <span>{handle.props.settings.git ? `Git ${handle.props.settings.git.version}` : "Git unavailable"}</span>
-            <span class="status-path" title={handle.props.settings.git?.path ?? ""} mix={statusPath}>
-                {handle.props.settings.git?.path ?? ""}
-            </span>
-            <span class="status-spacer" mix={statusSpacer}>
-            </span>
-            <span>{handle.props.engine}</span>
-        </footer>
-    )
-}
-
 export function Welcome(handle: Handle<EntryActions & { settings: GitSettingsState }>) {
     return () => (
         <section class="workspace welcome" mix={workspace} aria-live="polite">
@@ -225,46 +209,6 @@ const iconButton = css({
     },
 })
 
-const statusBar = css({
-    minWidth: "0",
-    padding: "0 10px",
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-    overflow: "hidden",
-    color: "var(--muted)",
-    borderTop: "1px solid var(--line)",
-    background: "var(--panel-deep)",
-    fontSize: "11px",
-    whiteSpace: "nowrap",
-})
-
-const pulse = css({
-    width: "7px",
-    height: "7px",
-    flex: "0 0 auto",
-    borderRadius: "50%",
-    background: "var(--accent)",
-    "@media (forced-colors: active)": {
-        background: "Highlight",
-    },
-    "&.error": {
-        background: "var(--danger)",
-    },
-})
-
-const statusPath = css({
-    minWidth: "0",
-    overflow: "hidden",
-    fontFamily: "var(--mono)",
-    fontSize: "11px",
-    textOverflow: "ellipsis",
-})
-
-const statusSpacer = css({
-    flex: "1 1 auto",
-})
-
 const workspace = css({
     padding: "24px",
     display: "grid",
@@ -360,13 +304,19 @@ const lensButton = css({
 export function RepositoryRailToggle(handle: Handle<{ collapsed: boolean; toggle(): void }>) {
     return () => (
         <button
+            class={`repository-rail-toggle ${handle.props.collapsed ? "collapsed" : ""}`}
             type="button"
             aria-label={handle.props.collapsed ? "Expand repository sidebar" : "Collapse repository sidebar"}
             title={handle.props.collapsed ? "Expand repository sidebar" : "Collapse repository sidebar"}
             aria-expanded={!handle.props.collapsed}
-            mix={[iconButton, on("click", handle.props.toggle)]}
+            mix={[iconButton, repositoryRailToggle, on("click", handle.props.toggle)]}
         >
             {handle.props.collapsed ? "»" : "«"}
         </button>
     )
 }
+
+const repositoryRailToggle = css({
+    "&.collapsed": { width: "28px" },
+    width: "100%",
+})
