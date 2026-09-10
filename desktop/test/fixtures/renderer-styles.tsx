@@ -60,6 +60,10 @@ async function checkRenderer() {
     await settle()
     element<HTMLButtonElement>('[aria-label="Collapse repository sidebar"]').click()
     await settle()
+    const rail = element(".repository-rail").getBoundingClientRect()
+    const railToggle = element('[aria-label="Expand repository sidebar"]').getBoundingClientRect()
+    if (rail.bottom - railToggle.bottom > 16)
+        throw new Error("Repository sidebar toggle is not at the bottom")
     const repositoryNav = element('nav[aria-label="Open repositories"]')
     const repositoryButton = element(".repository-item")
     if ([...document.querySelectorAll(".repository-item > span:nth-child(2)")].some(node => getComputedStyle(node).display != "none"))
@@ -378,6 +382,7 @@ async function checkRenderer() {
     const columnBeforeCollapse = element(".branch-column").getBoundingClientRect()
     const collapseButton = element(".branch-column [title='Collapse column']")
     const collapseButtonLeft = collapseButton.getBoundingClientRect().left
+    const columnCollapseStillAtLeft = collapseButtonLeft == columnBeforeCollapse.left
     collapseButton.click()
     await settle()
     const collapsedBounds = element(".branch-column").getBoundingClientRect()
@@ -387,11 +392,20 @@ async function checkRenderer() {
     element(".expand-column").click()
     await settle()
     const expandedWidthRestored = element(".branch-column").getBoundingClientRect().width == columnBeforeCollapse.width
-    element("[aria-label='Toggle Branch Graph']").click()
+    const hideGraphButton = element("[aria-label='Hide Branch Graph']")
+    const hideGraphButtonCompact = hideGraphButton.getBoundingClientRect().width < 40
+    const hideGraphButtonInRail = hideGraphButton.closest(".repository-rail") != null
+    const branchToggleHasIcon = hideGraphButton.querySelector("svg") != null
+    hideGraphButton.click()
     await settle()
+    const showGraphButton = element("[aria-label='Show Branch Graph']")
+    const showGraphBounds = showGraphButton.getBoundingClientRect()
+    const showGraphButtonCompact = showGraphBounds.width < 40
+    const graphToggleStaysInRail = hideGraphButtonInRail && showGraphButton.closest(".repository-rail") != null
+        && showGraphButton == hideGraphButton
     const graphFullyHidden = element(".graph-sidebar").getBoundingClientRect().width == 0
         && element(".branch-columns").getBoundingClientRect().left == element(".graph-desk").getBoundingClientRect().left
-    element("[aria-label='Toggle Branch Graph']").click()
+    showGraphButton.click()
     await settle()
     const graphRestored = element(".graph-sidebar").getBoundingClientRect().width > 0
     const stylesheets = document.adoptedStyleSheets.length
@@ -401,9 +415,14 @@ async function checkRenderer() {
         graphScrollDrift,
         collapsedColumnCompact,
         columnToggleStable,
+        columnCollapseStillAtLeft,
         expandedWidthRestored,
         graphFullyHidden,
         graphRestored,
+        hideGraphButtonCompact,
+        showGraphButtonCompact,
+        branchToggleHasIcon,
+        graphToggleStaysInRail,
         graphSettingsAnchored,
         compactSplit,
         balancedMetadata,

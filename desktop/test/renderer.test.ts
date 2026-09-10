@@ -231,7 +231,8 @@ describe("Remix repository entry renderer", () => {
         root.flush()
         expect(container.querySelector(".shell")?.classList.contains("rail-collapsed")).toBe(true)
         expect(container.querySelector(".repository-close")).toBeNull()
-        expect(container.querySelector(".rail-heading > button")?.getAttribute("aria-label")).toBe("Expand repository sidebar")
+        expect(container.querySelector(".rail-footer > button")?.getAttribute("aria-label")).toBe("Expand repository sidebar")
+        expect(container.querySelector(".rail-heading svg")).not.toBeNull()
         expect(container.querySelector("nav[aria-label='Open repositories']")?.lastElementChild?.getAttribute("aria-label")).toBe("Add repository")
         expect(container.querySelector(".repository-item")?.getAttribute("title")).toBe(repository.selectedWorktree)
         click(container.querySelector<HTMLButtonElement>("[aria-label='Expand repository sidebar']")!)
@@ -243,7 +244,7 @@ describe("Remix repository entry renderer", () => {
         window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
         root.flush()
 
-        expect(container.querySelector(".rail-heading")?.textContent?.replace(/\s+/g, " ").trim()).toBe("«Open repositories")
+        expect(container.querySelector(".rail-heading")?.textContent?.replace(/\s+/g, " ").trim()).toBe("Open repositories")
 
         click(button(container, "Show all"))
         root.flush()
@@ -419,14 +420,13 @@ test("retains worktree columns and restores collapse in place across restart", a
     await flush(view.root)
     expect(restored.classList.contains("collapsed")).toBe(false)
     expect(restored.style.width).toBe("390px")
-    const toggle = view.container.querySelector<HTMLButtonElement>('[aria-label="Toggle Branch Graph"]')!
-    click(toggle)
+    click(view.container.querySelector<HTMLButtonElement>('[aria-label="Hide Branch Graph"]')!)
     await flush(view.root)
-    expect(toggle.getAttribute("aria-expanded")).toBe("false")
     expect(view.container.querySelector(".graph-layout")?.classList.contains("graph-collapsed")).toBe(true)
-    click(toggle)
+    expect(view.container.querySelector('[aria-label="Show Branch Graph"]')).not.toBeNull()
+    click(view.container.querySelector<HTMLButtonElement>('[aria-label="Show Branch Graph"]')!)
     await flush(view.root)
-    expect(toggle.getAttribute("aria-expanded")).toBe("true")
+    expect(view.container.querySelector('[aria-label="Show Branch Graph"]')).toBeNull()
     main.checkedOut = []
     click(view.container.querySelector<HTMLButtonElement>('[aria-label="Refresh Branch Graph"]')!)
     await flush(view.root)

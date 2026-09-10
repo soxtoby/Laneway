@@ -55,8 +55,6 @@ export interface BranchWorkspace {
     activate(repositoryId: string): void
     deactivate(): void
     render(active: AvailableOpenRepository, workspace: Workspace, railCollapsed?: boolean, toggleRail?: () => void): RemixNode
-    graphCollapsed(repositoryId: string): boolean
-    toggleGraph(repositoryId: string): void
     openLens(): void
     renderLens(workspace: Workspace): RemixNode
 }
@@ -113,13 +111,6 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
     }, { once: true })
 
     return {
-        graphCollapsed: repositoryId => stateFor(repositoryId).graphCollapsed,
-        toggleGraph(repositoryId) {
-            const state = stateFor(repositoryId)
-            state.graphCollapsed = !state.graphCollapsed
-            state.showSettings = false
-            void options.update()
-        },
         openLens,
         activate(repositoryId) {
             activeRepositoryId = repositoryId
@@ -161,6 +152,12 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                         commitRepositoryOrder={options.commitRepositoryOrder}
                         cancelRepositoryMove={options.cancelRepositoryMove}
                         addRepository={options.addRepository}
+                        graphCollapsed={state.graphCollapsed}
+                        toggleGraph={() => {
+                            state.graphCollapsed = !state.graphCollapsed
+                            state.showSettings = false
+                            void options.update()
+                        }}
                     />
                     <section class="graph-desk" mix={graphDesk}>
                         <div class={`graph-layout ${state.graphCollapsed ? "graph-collapsed" : ""}`} mix={graphLayout}>
@@ -848,6 +845,8 @@ function RepositoryRail(
             commitRepositoryOrder(): void
             cancelRepositoryMove(): void
             addRepository(): void
+            graphCollapsed: boolean
+            toggleGraph(): void
         }
     >,
 ) {
@@ -856,7 +855,15 @@ function RepositoryRail(
         return (
             <aside class="repository-rail graph-rail" mix={repositoryRail}>
                 <div class="rail-heading" mix={railHeading}>
-                    <RepositoryRailToggle collapsed={props.railCollapsed} toggle={props.toggleRail} />
+                    <button
+                        type="button"
+                        aria-label={props.graphCollapsed ? "Show Branch Graph" : "Hide Branch Graph"}
+                        aria-expanded={!props.graphCollapsed}
+                        title={props.graphCollapsed ? "Show Branch Graph" : "Hide Branch Graph"}
+                        mix={[graphPanelToggleButton, on("click", props.toggleGraph)]}
+                    >
+                        {branchGraphIcon()}
+                    </button>
                     <p class="eyebrow" mix={repositoryRailEyebrow}>
                         Open repositories
                     </p>
@@ -947,6 +954,9 @@ function RepositoryRail(
                         {!props.railCollapsed && <span class="rail-add-label">Add repository</span>}
                     </button>
                 </nav>
+                <div class="rail-footer" mix={railFooter}>
+                    <RepositoryRailToggle collapsed={props.railCollapsed} toggle={props.toggleRail} />
+                </div>
             </aside>
         )
     }
@@ -1579,6 +1589,17 @@ function initials(path: string) {
     return (words.length > 1 ? words[0][0] + words[1][0] : words[0]?.slice(0, 2) ?? "GW").toUpperCase()
 }
 
+function branchGraphIcon() {
+    return (
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="4" cy="3" r="2" />
+            <circle cx="12" cy="5" r="2" />
+            <circle cx="4" cy="13" r="2" />
+            <path d="M4 5v6M6 8h2a4 4 0 0 0 4-4" />
+        </svg>
+    )
+}
+
 const workspaceStyle = css({
     height: "100%",
     display: "grid",
@@ -1643,6 +1664,23 @@ const graphActions = css({
         gap: "8px",
         overflow: "hidden",
     },
+})
+
+const graphPanelToggleButton = css({
+    minWidth: "26px",
+    minHeight: "26px",
+    padding: "0 7px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "var(--text)",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "4px",
+    background: "var(--raised)",
+    font: "inherit",
+    cursor: "pointer",
+    "&:hover": { borderColor: "var(--accent)", background: "var(--panel)" },
+    "&:focus-visible": { outline: "2px solid var(--accent)", outlineOffset: "1px" },
 })
 
 const graphActionsButton = css({
@@ -1800,6 +1838,13 @@ const repositoryRail = css({
     gap: "6px",
     borderRight: "1px solid var(--line)",
     background: "var(--panel-deep)",
+})
+
+const railFooter = css({
+    padding: "6px 2px 2px",
+    display: "flex",
+    justifyContent: "flex-end",
+    borderTop: "1px solid var(--line)",
 })
 
 const railHeading = css({
@@ -2168,6 +2213,7 @@ const columnEmptyP = css({
 })
 
 const branchColumns = css({
+    position: "relative",
     minWidth: "0",
     minHeight: "0",
     display: "flex",

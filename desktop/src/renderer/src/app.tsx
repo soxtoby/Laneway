@@ -47,10 +47,6 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
                 <main class={`shell ${railCollapsed ? "rail-collapsed" : ""}`} mix={shell}>
                     <WorkbenchHeader
                         openLens={branchWorkspace.openLens}
-                        toggleGraph={active?.status == "available"
-                            ? () => branchWorkspace!.toggleGraph(active.id)
-                            : undefined}
-                        graphCollapsed={active?.status == "available" && branchWorkspace.graphCollapsed(active.id)}
                         busy={busy}
                         appearance={appearance}
                         openSettings={gitSettings.open}
@@ -353,7 +349,6 @@ function MissingRepository(
         <section class="workspace missing-repository" mix={workspace}>
             <aside class="repository-rail" mix={repositoryRail}>
                 <div class="rail-heading" mix={railHeading}>
-                    <RepositoryRailToggle collapsed={handle.props.railCollapsed} toggle={handle.props.toggleRail} />
                     <p class="eyebrow" mix={eyebrow}>
                         Open repositories
                     </p>
@@ -429,6 +424,9 @@ function MissingRepository(
                         {!handle.props.railCollapsed && <span class="rail-add-label">Add repository</span>}
                     </button>
                 </nav>
+                <div class="rail-footer" mix={railFooter}>
+                    <RepositoryRailToggle collapsed={handle.props.railCollapsed} toggle={handle.props.toggleRail} />
+                </div>
             </aside>
             <div class="missing-copy" mix={missingCopy}>
                 <p class="eyebrow" mix={missingRepositoryEyebrow}>
@@ -483,6 +481,13 @@ const shell = css({
     display: "grid",
     gridTemplateRows: "var(--toolbar) minmax(0, 1fr) var(--status)",
     overflow: "hidden",
+})
+
+const railFooter = css({
+    padding: "6px 2px 2px",
+    display: "flex",
+    justifyContent: "flex-end",
+    borderTop: "1px solid var(--line)",
 })
 
 const workspaceRecovery = css({
