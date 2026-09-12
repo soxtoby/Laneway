@@ -2,9 +2,57 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { resolve } from "node:path"
+import { startFileHistoryRead } from "../src/file-history"
 import { openRepository } from "../src/index"
 
 const roots: string[] = []
+test("sparse file history batches metadata and stops at a bounded revision window without loading diffs", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "workbench-history-sparse-"))
+    roots.push(root)
+    git(root, "init", "-q", "--initial-branch=main")
+    git(root, "config", "log.showRoot", "false")
+    const commits = Array.from(
+        { length: 2205 },
+        (_, index) =>
+            `commit refs/heads/main\ncommitter History Test <history@example.test> ${1700000000 + index} +0000\ndata ${
+                `commit ${index}`.length
+            }\ncommit ${index}\n`
+            + (index == 0 ? "M 100644 inline sparse[1].txt\ndata 5\nfile\n" : "")
+            + "\n",
+    ).join("")
+    const imported = Bun.spawnSync(["git", "fast-import", "--quiet"], { cwd: root, stdin: Buffer.from(commits), stderr: "pipe" })
+    expect(imported.exitCode).toBe(0)
+    const api = await openRepository(root)
+    const calls: string[][] = []
+    const start = (cwd: string, args: string[]) => {
+        calls.push(args)
+        // A process per scanned commit is the regression, regardless of machine speed.
+        if (calls.length > 6)
+            throw new Error("History exceeded its metadata command budget")
+        expect(args).not.toContain("--find-copies-harder")
+        expect(args).not.toContain("--patch")
+        const child = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" })
+        return {
+            result: Promise.all([child.exited, new Response(child.stdout).arrayBuffer(), new Response(child.stderr).arrayBuffer()])
+                .then(([exitCode, stdout, stderr]) => ({ exitCode, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) })),
+            cancel() {
+                child.kill()
+            },
+        }
+    }
+    const request = { source: { kind: "commit" as const, objectId: git(root, "rev-parse", "HEAD") }, path: "sparse[1].txt" }
+    const page = await startFileHistoryRead(api.descriptor, start, request).result
+    expect(page.entries).toEqual([])
+    expect(page.cursor).toBeDefined()
+    calls.length = 0
+    const next = await startFileHistoryRead(api.descriptor, start, { ...request, cursor: page.cursor }).result
+    expect(next.entries).toEqual([])
+    expect(next.cursor).toBeDefined()
+    calls.length = 0
+    const last = await startFileHistoryRead(api.descriptor, start, { ...request, cursor: next.cursor }).result
+    expect(last.entries.map(entry => entry.subject)).toEqual(["commit 0"])
+    expect(last.cursor).toBeUndefined()
+})
 test("copy ties require a validated choice; related evidence is ranked and Primary history is protected", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "workbench-history-evidence-"))
     roots.push(root)
@@ -82,6 +130,9 @@ for (const format of ["sha1", "sha256"]) {
         const api = await openRepository(root)
         const source = { kind: "branch" as const, ref: "refs/heads/main" }
         const page = await api.startReadFileHistory({ source, path: "after.txt" }).result
+        const small = await api.startReadFileHistory({ source, path: "after.txt", limit: 2 }).result
+        expect(small.entries.map(entry => entry.subject)).toEqual(["edit 40", "edit 39"])
+        expect(small.cursor?.objectId).toBe(page.entries[2].objectId)
         expect(page.entries).toHaveLength(40)
         expect(page.cursor).toBeDefined()
         const next = await api.startReadFileHistory({ source, path: "after.txt", cursor: page.cursor }).result

@@ -1,7 +1,7 @@
 import { type FileHistoryEntry, type FileHistoryPage, type FileHistoryRequest, FileHistoryRequestSchema } from "@git-workbench/shared"
 import { realpath } from "node:fs/promises"
 import { GitError, type GitTask, type RepositoryDescriptor } from "./index"
-import { parseFileChanges, rankRelatedFiles } from "./related-files"
+import { type FileChange, parseFileChanges, rankRelatedFiles } from "./related-files"
 
 type Command = { result: Promise<{ exitCode: number; stdout: Buffer; stderr: Buffer }>; cancel(): void }
 type Start = (cwd: string, args: string[]) => Command
@@ -13,7 +13,7 @@ export function startFileHistoryRead(descriptor: RepositoryDescriptor, start: St
     async function run(cwd: string, args: string[], optional = false) {
         if (cancelled)
             throw new GitError("git.cancelled", "History read cancelled.")
-        active = start(cwd, ["-c", "core.quotepath=false", ...args])
+        active = start(cwd, ["-c", "core.quotepath=false", "--literal-pathspecs", ...args])
         const result = await active.result
         if (cancelled)
             throw new GitError("git.cancelled", "History read cancelled.")
@@ -120,25 +120,94 @@ export function startFileHistoryRead(descriptor: RepositoryDescriptor, start: St
             const working = parseFileChanges(await run(cwd, ["diff", "--no-ext-diff", "--no-textconv", "--name-status", "-z", "-M", tip, "--"]))
             path = working.find(change => change.path == path)?.previousPath ?? path
         }
-        for (let scanned = 0; objectId && scanned < 200 && entries.length < 40; scanned++) {
-            const metadata = (await run(cwd, ["show", "-s", "--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%s", objectId])).trimEnd().split("\0")
-            const [oid, parents, authorName, authorEmail, authoredAt, subject] = metadata
+        // Bound the revision walk before filtering by path: log -n with a path alone
+        // can scan the entire repository history to find enough matching commits.
+        // Keep the first response small; amortize process startup across larger
+        // continuation windows once the column can already show results.
+        const scanLimit = request.cursor ? 2000 : 200
+        const metadata = objectId
+            ? (await run(cwd, [
+                "log",
+                "--no-patch",
+                "--first-parent",
+                `--max-count=${scanLimit}`,
+                "-z",
+                "--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%s",
+                objectId,
+                "--",
+            ]))
+                .split("\0")
+            : []
+        const commits: Array<Omit<FileHistoryEntry, "path" | "status">> = []
+        for (let index = 0; index + 5 < metadata.length; index += 6) {
+            const [oid, parents, authorName, authorEmail, authoredAt, subject] = metadata.slice(index, index + 6)
             const parentIds = parents ? parents.split(" ") : []
-            const fields =
-                (await run(cwd, [
-                    "diff-tree",
-                    "--root",
-                    "--no-commit-id",
-                    "-r",
-                    "-z",
-                    "--name-status",
-                    "-M",
-                    "-C",
-                    "--find-copies-harder",
-                    ...(parentIds[0] ? [parentIds[0], oid] : [oid]),
-                    "--",
-                ])).split("\0")
-            const match = parseFileChanges(fields.join("\0")).find(change => change.path == path)
+            commits.push({ objectId: oid, parentIds, authorName, authorEmail, authoredAt: Number(authoredAt), subject, followedParent: parentIds[0] })
+        }
+        const boundary = commits.at(-1)?.followedParent
+        const commitIds = new Set(commits.map(commit => commit.objectId))
+        let changes = new Map<string, FileChange>()
+        let scannedPath: string | undefined
+        for (const commit of commits) {
+            const { objectId: oid, parentIds } = commit
+            if (entries.length == (request.limit ?? 40))
+                break
+            if (scannedPath != path) {
+                // Tree metadata only, restricted to this literal file. Never compute
+                // whole-repository copy similarity for ordinary edits/unrelated commits.
+                const fields =
+                    (await run(cwd, [
+                        "log",
+                        "--first-parent",
+                        "--full-history",
+                        "--diff-merges=first-parent",
+                        "--format=%H",
+                        "-z",
+                        "--name-status",
+                        "--root",
+                        "--no-renames",
+                        "--no-ext-diff",
+                        "--no-textconv",
+                        oid,
+                        ...(boundary ? [`^${boundary}`] : []),
+                        "--",
+                        path,
+                    ])).split("\0")
+                changes = new Map()
+                let current = ""
+                for (let index = 0; index < fields.length; index++) {
+                    const field = fields[index].trim()
+                    if (commitIds.has(field))
+                        current = field
+                    else if (/^[ADMT]$/.test(field)) {
+                        const changedPath = fields[++index]
+                        if (changedPath == path)
+                            changes.set(current, { status: field, path: changedPath })
+                    }
+                }
+                scannedPath = path
+            }
+            let match = changes.get(oid)
+            // Only an addition can introduce a different predecessor path. Keep the
+            // existing explicit ambiguity rules, but pay for evidence at that boundary only.
+            if (match?.status == "A" && parentIds[0]) {
+                match = parseFileChanges(
+                    await run(cwd, [
+                        "diff-tree",
+                        "--root",
+                        "--no-commit-id",
+                        "-r",
+                        "-z",
+                        "--name-status",
+                        "-M",
+                        "-C",
+                        "--find-copies-harder",
+                        parentIds[0],
+                        oid,
+                        "--",
+                    ]),
+                ).find(change => change.path == path) ?? match
+            }
             if (match) {
                 let candidates: string[] | undefined
                 if (match.previousPath && parentIds[0]) {
@@ -160,13 +229,7 @@ export function startFileHistoryRead(descriptor: RepositoryDescriptor, start: St
                     }
                 }
                 entries.push({
-                    objectId: oid,
-                    parentIds,
-                    authorName,
-                    authorEmail,
-                    authoredAt: Number(authoredAt),
-                    subject,
-                    followedParent: parentIds[0],
+                    ...commit,
                     ...match,
                     candidates,
                     composable: eligible.has(oid),

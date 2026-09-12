@@ -17,6 +17,7 @@ beforeAll(async () => {
         "window",
         "document",
         "Node",
+        "NodeFilter",
         "Element",
         "HTMLElement",
         "HTMLDialogElement",
@@ -1141,6 +1142,87 @@ describe("Working Changes inspection", () => {
     })
 })
 
+test("sparse File History fills a page of matching commits, stays lazy, and retains progress on refresh", async () => {
+    const scenario = inspectionScenario()
+    const cursors: Array<string | undefined> = []
+    let releaseScan: (() => void) | undefined
+    let releaseMore: (() => void) | undefined
+    let cancellations = 0
+    scenario.api.cancelInspection = async () => {
+        cancellations++
+        return true
+    }
+    let patches = 0
+    const readDiff = scenario.api.readFileDiff
+    scenario.api.readFileDiff = (...args) => {
+        patches++
+        return readDiff(...args)
+    }
+    scenario.api.readFileHistory = async (_repo, _id, request) => {
+        cursors.push(request.cursor?.objectId)
+        const offset = !request.cursor ? 0 : Number(request.cursor.objectId[0]) - 2
+        if (offset == 1) {
+            await new Promise<void>(resolve => {
+                releaseScan = resolve
+            })
+        }
+        if (offset == 3) {
+            await new Promise<void>(resolve => {
+                releaseMore = resolve
+            })
+        }
+        return {
+            ok: true,
+            page: {
+                tip: "2".repeat(40),
+                entries: Array.from({ length: offset == 0 ? 1 : offset == 1 ? 0 : 39 }, (_, index) => ({
+                    objectId: (index + offset + 10).toString(16).padStart(40, "0"),
+                    parentIds: [],
+                    authorName: "Test",
+                    authorEmail: "test@example.test",
+                    authoredAt: 1,
+                    subject: `File commit ${index + offset}`,
+                    status: "M",
+                    path: request.path,
+                })),
+                cursor: { objectId: String(offset + 3).repeat(40), path: request.path },
+            },
+        }
+    }
+    const { container, root, dispose } = render(scenario.api)
+    try {
+        await flush(root)
+        container.querySelector<HTMLElement>(".change-file")!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }))
+        await flush(root)
+        click(button(container, "File history"))
+        await flush(root)
+        const history = container.querySelector<HTMLElement>(".file-history")!
+        expect(history.querySelectorAll(".history-entry")).toHaveLength(1)
+        expect(cursors).toEqual([undefined, "3".repeat(40)])
+        releaseScan!()
+        await flush(root)
+        expect(history.querySelectorAll(".history-entry")).toHaveLength(40)
+        expect(cursors).toEqual([undefined, "3".repeat(40), "4".repeat(40)])
+        window.dispatchEvent(new Event("focus"))
+        await flush(root)
+        expect(cursors.at(-1)).toBeUndefined()
+        expect(history.querySelectorAll(".history-entry")).toHaveLength(40)
+        expect(patches).toBe(0)
+        click(button(history, "Load more history"))
+        await flush(root)
+        expect(cursors.at(-1)).toBe("5".repeat(40))
+        click(history.querySelector<HTMLButtonElement>("[aria-label='Close file history']")!)
+        await flush(root)
+        expect(cancellations).toBeGreaterThan(0)
+        releaseMore!()
+        await flush(root)
+        expect(container.querySelector(".file-history")).toBeNull()
+        expect(cursors.at(-1)).toBe("5".repeat(40))
+    } finally {
+        dispose()
+    }
+})
+
 test("File History shares file inspection, opens blame origins, reuses inputs and closes descendants", async () => {
     const scenario = inspectionScenario()
     const oid = "2".repeat(40)
@@ -1181,17 +1263,36 @@ test("File History shares file inspection, opens blame origins, reuses inputs an
         await menu()
         const history = container.querySelector<HTMLElement>(".file-history")!
         expect(history).not.toBeNull()
-        expect(history.textContent).toContain("Following parent 1")
+        expect(history.textContent).not.toContain("Following parent 1")
         expect(history.textContent).toContain("Working Changes")
         await menu()
         expect(container.querySelectorAll(".file-history")).toHaveLength(1)
         expect(reads).toBe(1)
         click(button(history, "History commit"))
         await flush(root)
-        click(history.querySelector<HTMLButtonElement>(".change-file button")!)
-        await flush(root)
         expect(history.querySelector(".pierre-diff")).not.toBeNull()
         expect(history.querySelector("input[type='checkbox']")).not.toBeNull()
+        const commitRow = history.querySelector<HTMLElement>(".history-entry .change-file")!
+        expect(history.querySelectorAll(".change-file")).toHaveLength(1)
+        for (const label of ["Unified", "Side by side", "Show whitespace"]) {
+            const control = commitRow.querySelector<HTMLButtonElement>(`[aria-label='${label}']`)!
+            expect(control).not.toBeNull()
+            click(control)
+            await flush(root)
+            expect(control.getAttribute("aria-pressed")).toBe("true")
+            expect(button(history, "History commit").getAttribute("aria-expanded")).toBe("true")
+        }
+        click(button(history, "History commit"))
+        await flush(root)
+        expect(history.querySelector(".pierre-diff")).toBeNull()
+        click(button(history, "History commit"))
+        await flush(root)
+        expect(history.querySelector(".pierre-diff")).not.toBeNull()
+        const historyMenu = async () => {
+            commitRow.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }))
+            await flush(root)
+        }
+        await historyMenu()
         click(button(history, "Complete commit diff"))
         await flush(root)
         const commit = container.querySelector<HTMLElement>(".trail-commit")!
@@ -1209,6 +1310,7 @@ test("File History shares file inspection, opens blame origins, reuses inputs an
         click(commit.querySelector<HTMLButtonElement>("[aria-label='Close commit diff']")!)
         await flush(root)
         expect(container.querySelectorAll(".file-history")).toHaveLength(1)
+        await historyMenu()
         click(button(history, "Blame context"))
         await flush(root)
         click(history.querySelector<HTMLButtonElement>(".blame-line button")!)

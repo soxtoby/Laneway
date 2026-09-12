@@ -1,5 +1,6 @@
 import type { FileHistoryEntry, FileHistoryPage, FileHistorySource } from "@git-workbench/shared"
 import { css, on, type RemixNode } from "remix/ui"
+import { InspectionItem } from "./file-list"
 
 export interface FileHistoryState {
     kind: "history"
@@ -51,30 +52,51 @@ export function createFileHistories(
         state.loading = true
         state.error = undefined
         update()
+        const target = (more ? state.page!.entries.length : 0) + 40
+        let append = more
         try {
-            const result = await options.api.readFileHistory(state.repositoryId, id, {
-                source: state.source,
-                path: state.path,
-                choices: state.choices,
-                composition,
-                ...(more ? { cursor: state.page?.cursor } : {}),
-            })
-            if (!state.alive || generation != state.generation)
-                return
-            if (!result.ok)
-                throw new Error(result.error.message)
-            if (more)
-                result.page.entries = [...state.page!.entries, ...result.page.entries]
-            const changed = !!state.page && (state.page.tip != result.page.tip || state.readKey != readKey)
-            if (!more && !changed && state.page && state.page.entries.length > result.page.entries.length)
-                return
-            state.readKey = readKey
-            state.page = result.page
-            if (changed)
-                options.changed?.(state)
-            for (const oid of state.expanded) {
-                if (oid != "working" && !state.page.entries.some(entry => entry.objectId == oid))
-                    state.expanded.delete(oid)
+            while (state.alive && generation == state.generation && !options.signal.aborted) {
+                const result = await options.api.readFileHistory(state.repositoryId, id, {
+                    source: state.source,
+                    path: state.path,
+                    choices: state.choices,
+                    composition,
+                    limit: Math.min(40, target - (append ? state.page!.entries.length : 0)),
+                    ...(append ? { cursor: state.page?.cursor } : {}),
+                })
+                if (!state.alive || generation != state.generation)
+                    return
+                if (!result.ok)
+                    throw new Error(result.error.message)
+                const changed = !!state.page && (state.page.tip != result.page.tip || state.readKey != readKey)
+                // A moving source invalidates the continuation. Restart at its new tip
+                // instead of combining pages from different histories.
+                if (append && changed) {
+                    append = false
+                    continue
+                }
+                if (append)
+                    result.page.entries = [...state.page!.entries, ...result.page.entries]
+                // Empty scan windows still advance the cursor. A first-page refresh
+                // must not rewind that progress just because no matching rows were added.
+                if (!append && !changed && state.page && state.page.entries.length >= result.page.entries.length) {
+                    if (!state.page.cursor || state.page.entries.length >= target)
+                        return
+                    append = true
+                    continue
+                }
+                state.readKey = readKey
+                state.page = result.page
+                if (changed)
+                    options.changed?.(state)
+                for (const oid of state.expanded) {
+                    if (oid != "working" && !state.page.entries.some(entry => entry.objectId == oid))
+                        state.expanded.delete(oid)
+                }
+                update()
+                if (!state.page.cursor || state.page.entries.length >= target)
+                    return
+                append = true
             }
         } catch (error) {
             if (state.alive && generation == state.generation)
@@ -160,6 +182,8 @@ export function createFileHistories(
             open(source: FileHistorySource, path: string): void
             toggle(entry?: FileHistoryEntry): void
             files(entry?: FileHistoryEntry): RemixNode
+            controls(entry: FileHistoryEntry): RemixNode
+            selection(entry: FileHistoryEntry): { checked: boolean; check(): void } | undefined
             commit(entry: FileHistoryEntry): void
         }): RemixNode {
             const source = state.source
@@ -201,19 +225,24 @@ export function createFileHistories(
                         </section>
                     )}
                     {state.page?.entries.map(entry => (
-                        <section key={entry.objectId} class="history-entry">
-                            <button
-                                type="button"
-                                class="history-commit"
-                                aria-expanded={state.expanded.has(entry.objectId)}
-                                title={`${entry.objectId} · ${entry.authorName}`}
-                                mix={on("click", () => actions.toggle(entry))}
-                            >
-                                {entry.subject}
-                            </button>
-                            {entry.parentIds.length > 1 && <small>Following parent 1 · {entry.followedParent?.slice(0, 8)}</small>}
-                            {entry.previousPath && <small>{entry.previousPath} → {entry.path}</small>}
-                            {entry.candidates && (
+                        <InspectionItem
+                            key={entry.objectId}
+                            class="history-entry"
+                            title={`${entry.subject}\n${entry.objectId} · ${entry.authorName}\n${
+                                entry.previousPath ? `${entry.previousPath} → ` : ""
+                            }${entry.path}`}
+                            label={<span class="history-subject">{entry.subject}</span>}
+                            expanded={state.expanded.has(entry.objectId)}
+                            choose={() => actions.toggle(entry)}
+                            controls={actions.controls(entry)}
+                            {...actions.selection(entry)}
+                            checkLabel={`Select file ${entry.path}`}
+                            actions={[{ label: "Blame context", run: () => blame(state, entry) }, {
+                                label: "Complete commit diff",
+                                run: () => actions.commit(entry),
+                            }]}
+                        >
+                            {state.expanded.has(entry.objectId) && entry.candidates && (
                                 <label>
                                     Follow copy origin
                                     <select
@@ -234,13 +263,9 @@ export function createFileHistories(
                                 </label>
                             )}
                             {state.expanded.has(entry.objectId) && (
-                                <div>
-                                    <button type="button" mix={on("click", () => blame(state, entry))}>Blame context</button>
-                                    <button type="button" mix={on("click", () => actions.commit(entry))}>Complete commit diff</button>
-                                    {actions.files(entry)}
-                                </div>
+                                actions.files(entry)
                             )}
-                        </section>
+                        </InspectionItem>
                     ))}
                     {state.page && !state.page.entries.length && !state.page.cursor && <p>No committed history.</p>}
                     {state.page?.cursor && <button type="button" disabled={state.loading} mix={on("click", () => read(state, true))}>Load more history</button>}
@@ -310,6 +335,7 @@ const historyColumn = css({
     "& > header strong": { flex: 1, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" },
     "& .history-commit": { width: "100%", textAlign: "left", padding: "8px", border: 0, borderBottom: "1px solid var(--line)" },
     "& .change-file": { top: "44px" },
+    "& .history-subject": { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 },
     "& small": { color: "var(--muted)", display: "block", padding: "4px 8px" },
     "& button": { color: "var(--text)", background: "var(--control)", cursor: "pointer", font: "inherit" },
     "& p": { margin: "8px", fontSize: "12px" },

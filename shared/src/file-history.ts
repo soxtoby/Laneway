@@ -11,6 +11,7 @@ const path = z.string().min(1).refine(value => !value.includes("\0") && !value.i
 export const FileHistoryRequestSchema = z.object({
     source: FileHistorySourceSchema,
     path,
+    limit: z.number().int().min(1).max(40).optional(),
     cursor: z.object({ objectId, path }).optional(),
     blame: z.object({ objectId, path, offset: z.number().int().nonnegative().optional() }).optional(),
     related: z.object({ objectId, path, parentId: objectId.optional(), offset: z.number().int().nonnegative().optional() }).optional(),

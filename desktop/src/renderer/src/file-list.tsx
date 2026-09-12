@@ -1,6 +1,45 @@
 import type { ChangedFile } from "@git-workbench/shared"
 import { css, type Handle, on, type RemixNode } from "remix/ui"
 
+export function InspectionItem(
+    handle: Handle<{
+        class?: string
+        title: string
+        label: RemixNode
+        expanded: boolean
+        actions: FileAction[]
+        controls?: RemixNode
+        children?: RemixNode
+        checked?: boolean
+        checkLabel?: string
+        check?(): void
+        choose(): void
+    }>,
+) {
+    return () => {
+        const props = handle.props
+        return (
+            <FileMenu class={`file-inspection ${props.class ?? ""}`} actions={props.actions}>
+                <div class={`change-file ${props.expanded ? "active" : ""}`} mix={changeFile}>
+                    {props.check && (
+                        <input
+                            type="checkbox"
+                            aria-label={props.checkLabel}
+                            checked={props.checked}
+                            mix={[selectFileInput, on("change", () => props.check?.())]}
+                        />
+                    )}
+                    <button type="button" title={props.title} aria-expanded={props.expanded} mix={[changeFileButton, on("click", props.choose)]}>
+                        {props.label}
+                    </button>
+                    {props.controls}
+                </div>
+                {props.children}
+            </FileMenu>
+        )
+    }
+}
+
 export function FileTree(
     handle: Handle<
         {
@@ -41,22 +80,20 @@ export function FileTree(
         }
         const rows = (files: ChangedFile[]) =>
             files.map(file => (
-                <FileMenu key={file.path} class="file-inspection" actions={props.actions?.(file) ?? []}>
-                    <div class={`change-file ${props.expanded.has(file.path) ? "active" : ""}`} mix={changeFile}>
-                        {props.check && (
-                            <input
-                                type="checkbox"
-                                aria-label={`Select file ${file.path}`}
-                                checked={props.checked?.has(`${props.prefix}:${file.path}`) ?? false}
-                                mix={[selectFileInput, on("change", () => props.check?.(file))]}
-                            />
-                        )}
-                        <button
-                            type="button"
-                            title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
-                            aria-expanded={props.expanded.has(file.path)}
-                            mix={[changeFileButton, on("click", () => props.choose(file))]}
-                        >
+                <InspectionItem
+                    key={file.path}
+                    actions={props.actions?.(file) ?? []}
+                    title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
+                    expanded={props.expanded.has(file.path)}
+                    checked={props.checked?.has(`${props.prefix}:${file.path}`) ?? false}
+                    checkLabel={`Select file ${file.path}`}
+                    check={props.check
+                        ? () => props.check?.(file)
+                        : undefined}
+                    choose={() => props.choose(file)}
+                    controls={props.controls(file)}
+                    label={
+                        <>
                             <span class={`file-status ${file.status.replaceAll(" ", "-")}`} mix={fileStatus}>
                                 {changeIcon(file.conflicted ? "conflicted" : file.status)}
                             </span>
@@ -67,11 +104,11 @@ export function FileTree(
                                 </small>
                             )}
                             {file.submodule && <small>submodule</small>}
-                        </button>
-                        {props.controls(file)}
-                    </div>
+                        </>
+                    }
+                >
                     {props.diff(file)}
-                </FileMenu>
+                </InspectionItem>
             ))
         const renderDirectory = (directory: Directory, prefix = ""): RemixNode => (
             <>

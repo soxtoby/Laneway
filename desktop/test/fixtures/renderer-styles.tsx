@@ -13,18 +13,18 @@ async function checkRenderer() {
             ? { entries: [], related: [{ path: "other.txt", objectId: "2".repeat(40), evidence: "shared lines", score: 2 }] }
             : {
                 tip: "2".repeat(40),
-                entries: [{
-                    objectId: "2".repeat(40),
+                entries: Array.from({ length: 30 }, (_, index) => ({
+                    objectId: index == 0 ? "2".repeat(40) : (index + 10).toString(16).padStart(40, "0"),
                     parentIds: ["1".repeat(40)],
                     followedParent: "1".repeat(40),
-                    subject: "Trace file changes",
+                    subject: "Trace file changes with a long commit subject that must stay on one line ".repeat(3),
                     authorName: "Test",
                     authorEmail: "test@example.test",
                     authoredAt: 1,
                     path: request.path,
                     status: "M",
                     composable: true,
-                }],
+                })),
             },
     })
     let holdComparison = false
@@ -521,7 +521,69 @@ async function checkRenderer() {
     element("[aria-label='File actions'] [role='menuitem']").click()
     await settle()
     const fileHistory = element(".file-history")
-    element(".file-history .history-commit").click()
+    const historyRow = element(".file-history .history-entry .change-file")
+    historyRow.querySelector<HTMLButtonElement>("button")!.click()
+    await settle()
+    const historySubject = element(".file-history .history-subject")
+    const historySingleLine = getComputedStyle(historySubject).whiteSpace == "nowrap"
+        && historySubject.scrollWidth > historySubject.clientWidth
+        && historyRow.getBoundingClientRect().height < 40
+    fileHistory.scrollTop = 40
+    await settle()
+    const historyStickyRow = getComputedStyle(historyRow).position == "sticky"
+        && Math.abs(historyRow.getBoundingClientRect().top - element(".file-history > header").getBoundingClientRect().bottom) < 2
+    const historyDirectDiff = !!fileHistory.querySelector(".pierre-diff")
+        && !!historyRow.querySelector("[aria-label='Show whitespace']")
+        && fileHistory.querySelectorAll(".change-file").length == 30
+        && !fileHistory.textContent!.includes("Following parent 1")
+    const readHistoryPatch = scenario.api.readFileDiff
+    const addedCommit = (39).toString(16).padStart(40, "0")
+    scenario.api.readFileDiff = async (...args) => {
+        const result = await readHistoryPatch(...args)
+        return result.ok && args[2].source.kind == "commit" && args[2].source.objectId == addedCommit
+            ? {
+                ...result,
+                page: {
+                    ...result.page,
+                    lines: [
+                        { id: 0, kind: "hunk", text: "@@ -0,0 +1,300 @@", hunk: 0 },
+                        ...Array.from(
+                            { length: 300 },
+                            (_, index) => ({
+                                id: index + 1,
+                                kind: "addition" as const,
+                                text: `const addedLine${index + 1} = ${index + 1};`,
+                                newLine: index + 1,
+                                hunk: 0,
+                            }),
+                        ),
+                    ],
+                },
+            }
+            : result
+    }
+    const addedRow = [...fileHistory.querySelectorAll<HTMLElement>(".history-entry")].at(-1)!
+    addedRow.querySelector<HTMLButtonElement>(".change-file > button")!.click()
+    await settle()
+    let historyAddedFileScroll = true
+    for (const layout of ["Unified", "Side by side"]) {
+        addedRow.querySelector<HTMLButtonElement>(`[aria-label='${layout}']`)!.click()
+        await settle()
+        fileHistory.scrollTop = fileHistory.scrollHeight
+        fileHistory.dispatchEvent(new Event("scroll"))
+        await settle()
+        const addedShadow = addedRow.querySelector(".pierre-diff")!.shadowRoot!
+        historyAddedFileScroll &&= addedShadow.textContent!.includes("addedLine300")
+            && [...addedShadow.querySelectorAll("[data-code]")].every(pane => pane.querySelectorAll("[data-line]").length <= 80)
+        fileHistory.scrollTop = 0
+        fileHistory.dispatchEvent(new Event("scroll"))
+        await settle()
+        historyAddedFileScroll &&= addedShadow.textContent!.includes("addedLine1 =")
+    }
+    addedRow.querySelector<HTMLButtonElement>(".change-file > button")!.click()
+    fileHistory.scrollTop = 40
+    await settle()
+    historyRow.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 500, clientY: 180 }))
     await settle()
     const complete = [...fileHistory.querySelectorAll("button")].find(button => button.textContent == "Complete commit diff")!
     complete.click()
@@ -533,6 +595,7 @@ async function checkRenderer() {
     element(".trail-commit .related-file").click()
     await settle()
     const historyTrail = document.querySelectorAll(".file-history").length == 2
+        && historySingleLine && historyStickyRow && historyDirectDiff
         && trail.querySelectorAll(".change-file").length == 2
         && trail.querySelector(".related-file")!.textContent!.includes("shared lines")
         && getComputedStyle(element(".file-history > header")).position == "sticky"
@@ -548,6 +611,10 @@ async function checkRenderer() {
     const graphScrollDrift = await checkBranchGraphScroll()
     return {
         historyTrail,
+        historySingleLine,
+        historyStickyRow,
+        historyDirectDiff,
+        historyAddedFileScroll,
         historyTrailClosed,
         comparisonControls,
         comparisonStickyHeader,

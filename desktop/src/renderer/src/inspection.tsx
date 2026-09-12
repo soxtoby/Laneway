@@ -1461,13 +1461,27 @@ export function createInspection(options: Options) {
                                 const source: DiffSource = entry
                                     ? { kind: "commit", objectId: entry.objectId, parentId: entry.followedParent }
                                     : { kind: "working", worktreePath: host.worktreePath! }
-                                void readFiles(host, group, source)
+                                void readFiles(host, group, source).then(() => {
+                                    if (!entry || !host.alive || !history.expanded.has(group))
+                                        return
+                                    const file = host.files.get(group)?.inventory?.files.find(file => file.path == entry.path)
+                                    if (file && !host.diffs.has(diffKey(group, file.path)))
+                                        choose(host, group, file)
+                                })
                             }
                             update()
                         },
                         files(entry) {
                             const group = entry?.objectId ?? "working"
                             const files = host.files.get(group)
+                            if (entry) {
+                                const diff = host.diffs.get(diffKey(group, entry.path))
+                                return diff ? renderDiff(host, diff) : files?.error
+                                    ? <p role="alert">{files.error}</p>
+                                    : files?.loading
+                                    ? <p role="status">Reading diff…</p>
+                                    : null
+                            }
                             return fileList(
                                 host,
                                 group,
@@ -1476,11 +1490,31 @@ export function createInspection(options: Options) {
                                         ...files,
                                         inventory: {
                                             ...files.inventory,
-                                            files: files.inventory.files.filter(file => file.path == (entry?.path ?? history.path)),
+                                            files: files.inventory.files.filter(file => file.path == history.path),
                                         },
                                     }
                                     : files,
                             )
+                        },
+                        controls(entry) {
+                            const diff = host.diffs.get(diffKey(entry.objectId, entry.path))
+                            return diff ? renderDiffControls(host, diff) : null
+                        },
+                        selection(entry) {
+                            const inventory = host.files.get(entry.objectId)?.inventory
+                            if (!inventory || !selectable(host, entry.objectId))
+                                return undefined
+                            const id = `${entry.objectId}:${entry.path}`
+                            return {
+                                checked: host.wholeFiles.has(id),
+                                check() {
+                                    if (host.wholeFiles.has(id))
+                                        host.wholeFiles.delete(id)
+                                    else
+                                        host.wholeFiles.set(id, { source: inventory.source, path: entry.path, version: inventory.version })
+                                    update()
+                                },
+                            }
                         },
                     })
                 }

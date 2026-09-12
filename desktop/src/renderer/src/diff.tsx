@@ -151,7 +151,11 @@ export function DiffLines(
     function render(force = false) {
         if (!viewer)
             return
-        const container = host.closest<HTMLElement>(".column-inspection, .inspection-breakout")
+        // Follow the actual vertical viewport, including source-linked columns.
+        // A list of column classes leaves new hosts stuck on the first 80 lines.
+        let container = host.parentElement
+        while (container && !["auto", "scroll", "overlay"].includes(getComputedStyle(container).overflowY))
+            container = container.parentElement
         if (container != scrollContainer) {
             scrollContainer?.removeEventListener("scroll", scroll)
             scrollContainer = container
