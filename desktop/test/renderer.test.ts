@@ -690,10 +690,46 @@ describe("Working Changes inspection", () => {
         expect(commitDiffs).toBe(2)
         expect(container.querySelectorAll(".branch-column .diff-inspector")).toHaveLength(0)
         expect(container.querySelectorAll(".inspection-breakout .diff-inspector")).toHaveLength(2)
+        const auxiliaryId = container.querySelector<HTMLElement>(".inspection-breakout")!.dataset.auxiliaryId
+        click(container.querySelector<HTMLButtonElement>("[aria-label='Show full diff for commit Inspect changes']")!)
+        await flush(root)
+        expect(container.querySelector<HTMLElement>(".inspection-breakout")!.dataset.auxiliaryId).toBe(auxiliaryId)
+        expect(commitDiffs).toBe(2)
         click(container.querySelector<HTMLButtonElement>("[aria-label='Close diff column']")!)
         await flush(root)
         expect(container.querySelectorAll(".diff-inspector")).toHaveLength(0)
         dispose()
+    })
+
+    test("disposes pending commit breakout reads with its source and restores no auxiliary columns", async () => {
+        const scenario = inspectionScenario()
+        const pending = new Map<string, (result: FileDiffResult) => void>()
+        const cancelled: string[] = []
+        const api = {
+            ...scenario.api,
+            readFileDiff: async (_repositoryId: string, id: string) => new Promise<FileDiffResult>(resolve => pending.set(id, resolve)),
+            cancelInspection: async (_repositoryId: string, id: string) => {
+                cancelled.push(id)
+                return true
+            },
+        }
+        const { container, root, dispose } = render(api)
+        await flush(root)
+        click(container.querySelector<HTMLButtonElement>(".commit-heading")!)
+        await flush(root)
+        click(container.querySelector<HTMLButtonElement>("[aria-label='Show full diff for commit Inspect changes']")!)
+        await flush(root)
+        expect(pending.size).toBe(2)
+        dispose()
+        for (const [id, finish] of pending) {
+            expect(cancelled).toContain(id)
+            finish({ ok: true, page: scenario.page })
+        }
+        const restarted = render(scenario.api)
+        await flush(restarted.root)
+        expect(restarted.container.querySelector(".inspection-breakout")).toBeNull()
+        expect(restarted.container.querySelector(".diff-inspector")).toBeNull()
+        restarted.dispose()
     })
 
     test("opens file diffs independently beneath their rows and isolates pending reads", async () => {
@@ -800,10 +836,20 @@ describe("Working Changes inspection", () => {
         click(button(container, "Break out diff"))
         await flush(root)
         expect(container.querySelector(".branch-column")?.nextElementSibling?.classList.contains("inspection-breakout")).toBe(true)
+        const breakout = container.querySelector<HTMLElement>(".inspection-breakout")!
+        expect(document.activeElement).toBe(breakout)
+        expect(breakout.dataset.sourceColumnId).toBe(container.querySelector<HTMLElement>(".branch-column")!.dataset.columnId)
+        expect(breakout.querySelector(".auxiliary-source")?.textContent).toContain("From ")
+        const auxiliaryId = breakout.dataset.auxiliaryId
+        click(container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
+        await flush(root)
+        expect(container.querySelector<HTMLElement>(".inspection-breakout")!.dataset.auxiliaryId).toBe(auxiliaryId)
+        expect(scenario.saved().repositories[0].columns).toHaveLength(1)
         expect(container.textContent).not.toContain("Focus diff")
         click(container.querySelector<HTMLButtonElement>("[aria-label='Close diff column']")!)
         await flush(root)
         expect(container.querySelector(".inspection-breakout")).toBeNull()
+        expect(document.activeElement).toBe(container.querySelector(".branch-column"))
         expect(container.querySelector(".branch-column .diff-inspector")).not.toBeNull()
         dispose()
         const restarted = render(api)

@@ -1,6 +1,7 @@
 import type { BranchGraph, BranchGraphBranchNode, BranchGraphVirtualBranch, BranchHistoryPage, ChangedFile, ChangeSelection, ChangesInventory, DiffLayout, DiffSource, DiffView, FileDiffPage } from "@git-workbench/shared"
 import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 import * as accordion from "remix/ui/accordion/primitives"
+import { AuxiliaryColumns } from "./auxiliary-columns"
 import { DiffLines } from "./diff"
 
 type Column = BranchGraphBranchNode | BranchGraphVirtualBranch
@@ -68,6 +69,7 @@ interface ColumnState {
 
 export function createInspection(options: Options) {
     const columns = new Map<string, ColumnState>()
+    const auxiliary = new AuxiliaryColumns<BreakoutState>()
     let activeRepositoryId: string | undefined
     const key = (repositoryId: string, id: string) => JSON.stringify([repositoryId, id])
     const update = () => {
@@ -128,6 +130,7 @@ export function createInspection(options: Options) {
     }
     function dispose(state: ColumnState) {
         state.alive = false
+        auxiliary.close(key(state.repositoryId, state.id))
         suspend(state)
     }
     function resume(state: ColumnState) {
@@ -156,6 +159,7 @@ export function createInspection(options: Options) {
         if (!state || state.worktreePath != worktreePath) {
             if (state)
                 dispose(state)
+            auxiliary.addRoot(id)
             state = {
                 repositoryId,
                 id: column.id,
@@ -174,6 +178,30 @@ export function createInspection(options: Options) {
                 status: "all",
                 wholeFiles: new Map(),
                 alive: true,
+                get breakout() {
+                    return auxiliary.descendants(id).find(column => column.sourceId == id)?.value
+                },
+                set breakout(value: BreakoutState | undefined) {
+                    const previous = auxiliary.descendants(id).find(column => column.sourceId == id)
+                    if (previous?.value == value)
+                        return
+                    if (previous)
+                        auxiliary.close(previous.id)
+                    if (value) {
+                        auxiliary.open(id, value.kind == "file" ? diffKey(value.diff.group, value.diff.path) : value.group, () => ({
+                            value,
+                            dispose() {
+                                if (value.kind == "commit") {
+                                    for (const diffId of value.created) {
+                                        const diff = created.diffs.get(diffId)
+                                        if (diff)
+                                            clearDiff(created, diff)
+                                    }
+                                }
+                            },
+                        }), previous?.width)
+                    }
+                },
             }
             columns.set(id, state)
             const created = state
@@ -292,24 +320,33 @@ export function createInspection(options: Options) {
         const breakout = state.breakout
         if (breakout?.kind != "commit")
             return
+        if (keep)
+            breakout.created.delete(diffKey(keep.group, keep.path))
         state.breakout = undefined
-        for (const id of breakout.created) {
-            const diff = state.diffs.get(id)
-            if (diff && diff != keep)
-                clearDiff(state, diff)
-        }
+    }
+    function focusBreakout(state: ColumnState) {
+        const column = auxiliary.descendants(key(state.repositoryId, state.id))[0]
+        if (!column)
+            return
+        auxiliary.focusedId = column.id
+        void options.update().then(signal => {
+            if (!signal.aborted && auxiliary.focusedId == column.id)
+                document.querySelector<HTMLElement>(`[data-auxiliary-id="${column.id}"]`)?.focus()
+        })
     }
     function showFileBreakout(state: ColumnState, diff: FileDiffState) {
         closeCommitBreakout(state, diff)
         state.breakout = { kind: "file", diff }
-        update()
+        focusBreakout(state)
     }
     function choose(state: ColumnState, group: string, file: ChangedFile) {
         const id = diffKey(group, file.path)
         const selected = state.diffs.get(id)
         if (state.breakout) {
-            if (state.breakout.kind == "file" && state.breakout.diff == selected)
+            if (state.breakout.kind == "file" && state.breakout.diff == selected) {
+                focusBreakout(state)
                 return
+            }
             const diff = selected ?? createDiff(state, group, file.path)
             showFileBreakout(state, diff)
             if (!selected && !diff.page)
@@ -328,6 +365,10 @@ export function createInspection(options: Options) {
             void readDiff(state, diff)
     }
     async function showCommitBreakout(state: ColumnState, commit: BranchHistoryPage["commits"][number]) {
+        if (state.breakout?.kind == "commit" && state.breakout.group == commit.objectId) {
+            focusBreakout(state)
+            return
+        }
         closeCommitBreakout(state)
         const breakout: Extract<BreakoutState, { kind: "commit" }> = {
             kind: "commit",
@@ -336,7 +377,7 @@ export function createInspection(options: Options) {
             created: new Set(),
         }
         state.breakout = breakout
-        update()
+        focusBreakout(state)
         let files = state.files.get(commit.objectId)
         if (!files?.inventory) {
             await readFiles(state, commit.objectId, { kind: "commit", objectId: commit.objectId }, false, false)
@@ -869,7 +910,9 @@ export function createInspection(options: Options) {
                 const selection = state.baseSelections.get(last.id)
                 const nextId = last.base.status == "known"
                     ? last.base.branchId
-                    : last.base.candidates.some(candidate => candidate.branchId == selection) ? selection : undefined
+                    : last.base.candidates.some(candidate => candidate.branchId == selection)
+                    ? selection
+                    : undefined
                 branch = graph.branches.find(item => item.id == nextId)
             }
             return (
@@ -1152,11 +1195,22 @@ export function createInspection(options: Options) {
             if (!state?.breakout)
                 return null
             const breakout = state.breakout
+            const auxiliaryColumn = auxiliary.descendants(key(repositoryId, columnId))[0]!
             const files = breakout.kind == "commit" ? state.files.get(breakout.group) : undefined
             return (
-                <aside class="inspection-breakout" mix={inspectionBreakout} aria-label={`${state.column.name} diff`}>
+                <aside
+                    class="inspection-breakout"
+                    data-auxiliary-id={auxiliaryColumn.id}
+                    data-source-column-id={columnId}
+                    tabIndex={-1}
+                    mix={inspectionBreakout}
+                    aria-label={`${state.column.name} diff`}
+                >
                     <header mix={inspectionBreakoutHeader}>
-                        <span>{breakout.kind == "commit" ? `Commit · ${breakout.subject}` : `Diff · ${state.column.name}`}</span>
+                        <span>
+                            {breakout.kind == "commit" ? `Commit · ${breakout.subject}` : `Diff · ${state.column.name}`}
+                            <small class="auxiliary-source">From {state.column.name}</small>
+                        </span>
                         <button
                             type="button"
                             aria-label="Close diff column"
@@ -1167,7 +1221,12 @@ export function createInspection(options: Options) {
                                         closeCommitBreakout(state)
                                     else
                                         state.breakout = undefined
-                                    update()
+                                    void options.update().then(signal => {
+                                        if (!signal.aborted) {
+                                            Array.from(document.querySelectorAll<HTMLElement>(".branch-column"))
+                                                .find(element => element.dataset.columnId == columnId)?.focus()
+                                        }
+                                    })
                                 }),
                             ]}
                         >
@@ -1973,6 +2032,9 @@ const inspectionBreakout = css({
     overflow: "auto",
     background: "var(--panel)",
     border: "1px solid var(--line-strong)",
+    borderLeft: "3px solid var(--accent-edge)",
+    "&:focus-visible": { outline: "2px solid var(--accent-edge)", outlineOffset: "-2px" },
+    "& .auxiliary-source": { display: "block", fontSize: "10px", color: "var(--muted)" },
 })
 
 const inspectionBreakoutHeader = css({

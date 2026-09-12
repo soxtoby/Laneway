@@ -314,6 +314,10 @@ async function checkRenderer() {
     secondFile.querySelector<HTMLButtonElement>("[aria-label='Break out diff']")!.click()
     await settle()
     const breakout = element(".inspection-breakout")
+    const auxiliarySourceVisible = !!breakout.querySelector(".auxiliary-source")
+        && getComputedStyle(breakout).borderLeftWidth == "3px"
+        && breakout.previousElementSibling?.classList.contains("branch-column")
+        && document.activeElement == breakout
     const inlineDiffsHiddenAfterBreakout = !document.querySelector(".branch-column .diff-inspector")
     breakout.scrollTop = breakout.scrollHeight
     breakout.scrollLeft = breakout.scrollWidth
@@ -448,6 +452,7 @@ async function checkRenderer() {
         noInnerVerticalScroll,
         outerDiffScroll,
         breakoutDiffScroll,
+        auxiliarySourceVisible,
         inlineDiffsHiddenAfterBreakout,
         breakoutSwitched,
         breakoutSwitchedTo,

@@ -141,11 +141,11 @@ A commit reachable from a detached worktree's HEAD but from no branch or tag. Re
 _Avoid_: Detached commit, orphan commit
 
 **History Trail**:
-A file-focused investigation expressed as evidence-linked File History Columns and Commit Diff Columns. It may continue through another file changed by a candidate commit, but never claims Git stores canonical cross-file provenance.
+A file-focused investigation expressed as an evidence-linked tree of File History Columns and Commit Diff Columns. It follows mutable source identities, preserves immutable commit sources, and may branch through another file changed by a candidate commit without claiming Git stores canonical cross-file provenance.
 _Avoid_: File log
 
 **File History Column**:
-A read-only auxiliary column anchored to one file and a pinned committed revision, optionally preceded by current Working Changes. It exposes the commits that changed the file and may continue a History Trail through evidence-linked files.
+A source-linked auxiliary column anchored to one file and either a mutable branch or worktree identity or an immutable commit. Mutable sources update with repository state; only a worktree source includes its current Working Changes. It exposes the commits that changed the file and may continue a History Trail through evidence-linked files.
 _Avoid_: File log column, History Workspace Column
 
 **Commit Diff Column**:
@@ -229,9 +229,9 @@ An AI-assisted Workbench Operation that may split, squash, reorder, and reword c
 _Avoid_: Restack, AI refactoring
 
 **Branch Comparison**:
-A snapshot diff between the tips of two selected branches. A branch's unique changes are inspected by expanding its commits.
+An ordered live diff from one branch identity to another, recomputed when either tip moves. It follows an explicit Workbench branch rename; an external replacement requires user confirmation. A branch's unique changes are inspected by expanding its commits.
 _Avoid_: Three-dot diff
 
 **Branch Comparison Column**:
-A read-only auxiliary column showing a Branch Comparison between two pinned branch tips. Unique commits remain part of the compared branch's Active Stack.
+A read-only source-linked auxiliary column showing a Branch Comparison between two branch identities. Unique commits remain part of the compared branch's Active Stack.
 _Avoid_: Comparison Workspace Column, Three-dot Diff Column
