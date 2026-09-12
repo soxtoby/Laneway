@@ -7,6 +7,26 @@ async function checkRenderer() {
     const violations: string[] = []
     document.addEventListener("securitypolicyviolation", event => violations.push(`${event.violatedDirective}: ${event.blockedURI}`))
     const scenario = inspectionScenario()
+    scenario.api.readFileHistory = async (_repository, _requestId, request) => ({
+        ok: true,
+        page: request.related
+            ? { entries: [], related: [{ path: "other.txt", objectId: "2".repeat(40), evidence: "shared lines", score: 2 }] }
+            : {
+                tip: "2".repeat(40),
+                entries: [{
+                    objectId: "2".repeat(40),
+                    parentIds: ["1".repeat(40)],
+                    followedParent: "1".repeat(40),
+                    subject: "Trace file changes",
+                    authorName: "Test",
+                    authorEmail: "test@example.test",
+                    authoredAt: 1,
+                    path: request.path,
+                    status: "M",
+                    composable: true,
+                }],
+            },
+    })
     let holdComparison = false
     let finishComparison: (() => void) | undefined
     let finishComparisonPatch: (() => void) | undefined
@@ -496,6 +516,30 @@ async function checkRenderer() {
     const comparisonStickyHeader = getComputedStyle(header).position == "sticky" && header.getBoundingClientRect().top == headerTop
     const comparisonHeaderOnlyClose = header.querySelectorAll("button").length == 1
         && header.querySelector("button")?.getAttribute("aria-label") == "Close comparison"
+    comparisonRow.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 500, clientY: 180 }))
+    await settle()
+    element("[aria-label='File actions'] [role='menuitem']").click()
+    await settle()
+    const fileHistory = element(".file-history")
+    element(".file-history .history-commit").click()
+    await settle()
+    const complete = [...fileHistory.querySelectorAll("button")].find(button => button.textContent == "Complete commit diff")!
+    complete.click()
+    await settle()
+    const trail = element(".trail-commit")
+    const related = [...trail.querySelectorAll("button")].find(button => button.textContent == "Find related files")!
+    related.click()
+    await settle()
+    element(".trail-commit .related-file").click()
+    await settle()
+    const historyTrail = document.querySelectorAll(".file-history").length == 2
+        && trail.querySelectorAll(".change-file").length == 2
+        && trail.querySelector(".related-file")!.textContent!.includes("shared lines")
+        && getComputedStyle(element(".file-history > header")).position == "sticky"
+        && getComputedStyle(element(".trail-commit > header")).position == "sticky"
+    element(".file-history [aria-label='Close file history']").click()
+    await settle()
+    const historyTrailClosed = !document.querySelector(".file-history, .trail-commit")
     element("[aria-label='Close comparison']").click()
     await settle()
     const comparisonClosed = !document.querySelector(".branch-comparison")
@@ -503,6 +547,8 @@ async function checkRenderer() {
     root.dispose()
     const graphScrollDrift = await checkBranchGraphScroll()
     return {
+        historyTrail,
+        historyTrailClosed,
         comparisonControls,
         comparisonStickyHeader,
         comparisonHeaderOnlyClose,

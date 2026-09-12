@@ -6,6 +6,7 @@ import { type BranchComparisonState, createBranchComparisons } from "./branch-co
 import { DiffLines } from "./diff"
 import { DiffControls } from "./diff-controls"
 import { fileLabel, FileTree } from "./file-list"
+import { FileMenu } from "./file-menu"
 
 type Column = BranchGraphBranchNode | BranchGraphVirtualBranch
 interface Options {
@@ -72,18 +73,26 @@ interface ColumnState {
     unavailable?: boolean
     auxiliaryId?: string
     transientLayout?: DiffLayout
+    selectionRoot?: ColumnState
+    composable?: Set<string>
+    compositionKey?: string
 }
 
 export function createInspection(options: Options) {
     const columns = new Map<string, ColumnState>()
-    const auxiliary = new AuxiliaryColumns<BreakoutState | BranchComparisonState | FileHistoryState>()
+    const auxiliary = new AuxiliaryColumns<BreakoutState | BranchComparisonState | FileHistoryState | TrailCommitState>()
+    const trailCommits = createTrailCommits(options)
     const comparisons = createBranchComparisons(options)
     const histories = createFileHistories({
         ...options,
+        composition(history) {
+            return compositionFor(historyHosts.get(history))
+        },
         changed(history) {
             const host = historyHosts.get(history)
             if (!host)
                 return
+            host.compositionKey = JSON.stringify(compositionFor(host))
             for (const group of host.files.keys()) {
                 if (group != "working" && !history.page?.entries.some(entry => entry.objectId == group)) {
                     clearGroup(host, group)
@@ -95,7 +104,7 @@ export function createInspection(options: Options) {
                 diff.selection = undefined
         },
     })
-    const historyHosts = new Map<FileHistoryState, ColumnState>()
+    const historyHosts = new Map<FileHistoryState | TrailCommitState, ColumnState>()
     let activeRepositoryId: string | undefined
     const key = (repositoryId: string, id: string) => JSON.stringify([repositoryId, id])
     const update = () => {
@@ -123,6 +132,9 @@ export function createInspection(options: Options) {
         if (document.visibilityState != "visible") {
             comparisons.activate()
             histories.suspend()
+            trailCommits.suspend()
+            for (const host of historyHosts.values())
+                suspend(host)
             for (const state of columns.values())
                 suspend(state)
         } else {
@@ -146,6 +158,16 @@ export function createInspection(options: Options) {
     function cancel(state: ColumnState, id: string) {
         void options.api.cancelInspection(state.repositoryId, id)
     }
+    function compositionFor(host?: ColumnState) {
+        const root = host?.selectionRoot
+        const primary = root?.graph.branches.find(branch => branch.primary)
+        const branch = root?.graph.branches.find(branch => branch.id == root.column.id)
+        return branch && !branch.remoteOnly && primary ? { tip: branch.tip, primaryTip: primary.tip } : undefined
+    }
+    function selectable(state: ColumnState, group: string) {
+        return !state.auxiliaryId || group == "working"
+            || state.compositionKey == JSON.stringify(compositionFor(state)) && !!state.composable?.has(group)
+    }
     function openHistory(owner: ColumnState, sourceId: string, source: FileHistorySource, path: string) {
         const node = auxiliary.open(sourceId, JSON.stringify(["history", source, path]), () => {
             const value = histories.create(owner.repositoryId, source, path)
@@ -164,8 +186,11 @@ export function createInspection(options: Options) {
                 filter: "",
                 filterOpen: false,
                 transientLayout: "unified",
+                selectionRoot: owner.selectionRoot ?? owner,
+                composable: new Set(),
             }
             historyHosts.set(value, host)
+            host.compositionKey = JSON.stringify(compositionFor(host))
             return {
                 value,
                 dispose() {
@@ -177,6 +202,47 @@ export function createInspection(options: Options) {
             }
         })
         if (node.value.kind == "history")
+            historyHosts.get(node.value)!.auxiliaryId = node.id
+        void options.update().then(signal => {
+            if (!signal.aborted)
+                document.querySelector<HTMLElement>(`[data-auxiliary-id="${node.id}"]`)?.focus()
+        })
+    }
+    function openTrailCommit(owner: ColumnState, sourceId: string, entry: FileHistoryEntry) {
+        const node = auxiliary.open(sourceId, JSON.stringify(["trail-commit", entry.objectId, entry.followedParent]), () => {
+            const value = trailCommits.create(owner.repositoryId, entry)
+            const host: ColumnState = {
+                ...owner,
+                id: `trail:${crypto.randomUUID()}`,
+                auxiliaryId: undefined,
+                breakout: undefined,
+                worktreePath: undefined,
+                files: new Map(),
+                diffs: new Map(),
+                requestIds: new Set(),
+                wholeFiles: new Map(),
+                cachedDiffs: new Map(),
+                history: new Map(),
+                transientLayout: "unified",
+                filter: "",
+                filterOpen: false,
+                selectionRoot: owner.selectionRoot ?? owner,
+                composable: new Set(entry.composable ? [entry.objectId] : []),
+            }
+            historyHosts.set(value, host)
+            host.compositionKey = JSON.stringify(compositionFor(host))
+            void readFiles(host, entry.objectId, { kind: "commit", objectId: entry.objectId, parentId: entry.followedParent })
+            return {
+                value,
+                dispose() {
+                    trailCommits.dispose(value)
+                    host.alive = false
+                    suspend(host)
+                    historyHosts.delete(value)
+                },
+            }
+        })
+        if (node.value.kind == "trail-commit")
             historyHosts.get(node.value)!.auxiliaryId = node.id
         void options.update().then(signal => {
             if (!signal.aborted)
@@ -685,15 +751,31 @@ export function createInspection(options: Options) {
                         clearGroup(state, group, path)
                         update()
                     }}
-                    check={file => {
-                        const id = `${group}:${file.path}`
-                        if (state.wholeFiles.has(id))
-                            state.wholeFiles.delete(id)
-                        else if (files.inventory)
-                            state.wholeFiles.set(id, { source: files.inventory.source, path: file.path, version: files.inventory.version })
-                        update()
-                    }}
+                    check={selectable(state, group)
+                        ? file => {
+                            const id = `${group}:${file.path}`
+                            if (state.wholeFiles.has(id))
+                                state.wholeFiles.delete(id)
+                            else if (files.inventory)
+                                state.wholeFiles.set(id, { source: files.inventory.source, path: file.path, version: files.inventory.version })
+                            update()
+                        }
+                        : undefined}
                 />
+                {state.auxiliaryId && state.wholeFiles.size > 0 && (
+                    <p role="status">
+                        {state.wholeFiles.size} files selected
+                        <button
+                            type="button"
+                            mix={on("click", () => {
+                                state.wholeFiles.clear()
+                                update()
+                            })}
+                        >
+                            Clear files
+                        </button>
+                    </p>
+                )}
                 {group == "working" && state.showIgnored && (
                     <details>
                         <summary>Ignored files · {all.filter(file => file.ignored).length}</summary>
@@ -731,7 +813,8 @@ export function createInspection(options: Options) {
         )
     }
     function renderDiff(state: ColumnState, diff: FileDiffState): RemixNode {
-        const page = diff.page
+        const eligible = selectable(state, diff.group)
+        const page = diff.page && !eligible ? { ...diff.page, selectable: false } : diff.page
         const layout = state.transientLayout ?? options.layout(state.repositoryId, state.id)
         const brokenOut = state.breakout?.kind == "file" && state.breakout.diff == diff
             || state.breakout?.kind == "commit" && state.breakout.group == diff.group
@@ -739,9 +822,26 @@ export function createInspection(options: Options) {
             <section class="diff-inspector" aria-label={`Diff for ${diff.path}`} mix={diffInspector}>
                 {brokenOut && (
                     <header class="diff-toolbar" mix={diffToolbar}>
-                        <strong title={diff.path} mix={diffToolbarStrong}>
-                            {fileLabel(diff.path)}
-                        </strong>
+                        <FileMenu
+                            class="diff-file-menu"
+                            actions={page
+                                ? [{
+                                    label: "File history",
+                                    run: () => {
+                                        const sourceId = auxiliary.descendants(key(state.repositoryId, state.id)).find(node => node.value == state.breakout)?.id
+                                            ?? key(state.repositoryId, state.id)
+                                        if (page.source.kind == "working")
+                                            openHistory(state, sourceId, { kind: "worktree", worktreePath: page.source.worktreePath }, diff.path)
+                                        else if (page.source.kind == "commit")
+                                            openHistory(state, sourceId, { kind: "commit", objectId: page.source.objectId }, diff.path)
+                                    },
+                                }]
+                                : []}
+                        >
+                            <strong title={diff.path} mix={diffToolbarStrong}>
+                                {fileLabel(diff.path)}
+                            </strong>
+                        </FileMenu>
                         {renderDiffControls(state, diff)}
                     </header>
                 )}
@@ -782,7 +882,7 @@ export function createInspection(options: Options) {
                                 {text}
                             </p>
                         ))}
-                        {page.file.oldPath && page.view == "combined" && (
+                        {page.file.oldPath && page.view == "combined" && page.selectable && (
                             <label class="rename-selection" mix={renameSelection}>
                                 <input
                                     type="checkbox"
@@ -812,10 +912,13 @@ export function createInspection(options: Options) {
                             page={page}
                             layout={layout}
                             showWhitespace={diff.showWhitespace}
-                            selected={diff.selection?.lineIds ?? []}
-                            select={ids => selectLines(diff, ids)}
+                            selected={eligible ? diff.selection?.lineIds ?? [] : []}
+                            select={ids => {
+                                if (eligible)
+                                    selectLines(diff, ids)
+                            }}
                         />
-                        {diff.selection && (
+                        {eligible && diff.selection && (
                             <div class="selection-summary" role="status" mix={selectionSummary}>
                                 {diff.selection.lineIds.length} lines selected{diff.selection.rename ? " · rename selected" : ""}
                                 <button
@@ -942,6 +1045,9 @@ export function createInspection(options: Options) {
             comparisons.activate(repositoryId)
             if (activeRepositoryId != repositoryId) {
                 histories.suspend()
+                trailCommits.suspend()
+                for (const host of historyHosts.values())
+                    suspend(host)
                 for (const state of columns.values()) {
                     if (state.repositoryId == activeRepositoryId)
                         suspend(state)
@@ -1305,11 +1411,39 @@ export function createInspection(options: Options) {
             if (!state)
                 return null
             return auxiliary.descendants(key(repositoryId, columnId)).map(auxiliaryColumn => {
+                if (auxiliaryColumn.value.kind == "trail-commit") {
+                    const commit = auxiliaryColumn.value
+                    const host = historyHosts.get(commit)!
+                    host.graph = state.graph
+                    return trailCommits.render(commit, auxiliaryColumn.id, auxiliaryColumn.sourceId, {
+                        close() {
+                            auxiliary.close(auxiliaryColumn.id)
+                            update()
+                        },
+                        files() {
+                            return fileList(host, commit.entry.objectId, host.files.get(commit.entry.objectId))
+                        },
+                        parent(parentId) {
+                            for (const child of auxiliary.descendants(auxiliaryColumn.id).filter(child => child.sourceId == auxiliaryColumn.id))
+                                auxiliary.close(child.id)
+                            clearGroup(host, commit.entry.objectId)
+                            host.wholeFiles.clear()
+                            void readFiles(host, commit.entry.objectId, { kind: "commit", objectId: commit.entry.objectId, parentId })
+                        },
+                        open(source, path) {
+                            openHistory(host, auxiliaryColumn.id, source, path)
+                        },
+                    })
+                }
                 if (auxiliaryColumn.value.kind == "history") {
                     const history = auxiliaryColumn.value
                     const host = historyHosts.get(history)!
+                    host.composable = new Set(history.error ? [] : history.page?.entries.filter(entry => entry.composable).map(entry => entry.objectId))
                     host.graph = state.graph
                     return histories.render(history, auxiliaryColumn.id, auxiliaryColumn.sourceId, {
+                        commit(entry) {
+                            openTrailCommit(host, auxiliaryColumn.id, entry)
+                        },
                         close() {
                             auxiliary.close(auxiliaryColumn.id)
                             update()
@@ -1512,6 +1646,7 @@ const diffInspector = css({
 })
 
 const diffToolbar = css({
+    "& .diff-file-menu": { flex: 1, minWidth: 0 },
     position: "sticky",
     top: "0",
     zIndex: 5,
@@ -2042,4 +2177,6 @@ const closeDiffColumnButton = css({
     minHeight: "26px",
 })
 import type { FileHistorySource } from "@git-workbench/shared"
+import type { FileHistoryEntry } from "@git-workbench/shared"
 import { createFileHistories, type FileHistoryState } from "./file-history"
+import { createTrailCommits, type TrailCommitState } from "./trail-commit"

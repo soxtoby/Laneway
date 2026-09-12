@@ -13,6 +13,9 @@ export const FileHistoryRequestSchema = z.object({
     path,
     cursor: z.object({ objectId, path }).optional(),
     blame: z.object({ objectId, path, offset: z.number().int().nonnegative().optional() }).optional(),
+    related: z.object({ objectId, path, parentId: objectId.optional(), offset: z.number().int().nonnegative().optional() }).optional(),
+    choices: z.array(z.object({ objectId, path, previousPath: path })).max(100).optional(),
+    composition: z.object({ tip: objectId, primaryTip: objectId }).optional(),
 })
 export type FileHistorySource = z.infer<typeof FileHistorySourceSchema>
 export type FileHistoryRequest = z.infer<typeof FileHistoryRequestSchema>
@@ -21,6 +24,8 @@ export interface FileHistoryEntry extends BranchHistoryCommit {
     previousPath?: string
     followedParent?: string
     status: string
+    candidates?: string[]
+    composable?: boolean
 }
 export interface BlameLine {
     objectId: string
@@ -38,5 +43,13 @@ export interface FileHistoryPage {
     blame?: BlameLine[]
     nextBlameOffset?: number
     notice?: string
+    related?: RelatedFile[]
+    nextRelatedOffset?: number
+}
+export interface RelatedFile {
+    path: string
+    objectId: string
+    evidence: "rename/copy" | "shared lines" | "changed together"
+    score: number
 }
 export type FileHistoryResult = { ok: true; page: FileHistoryPage } | { ok: false; error: EntryError }

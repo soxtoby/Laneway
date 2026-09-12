@@ -1,6 +1,7 @@
 import { type FileHistoryEntry, type FileHistoryPage, type FileHistoryRequest, FileHistoryRequestSchema } from "@git-workbench/shared"
 import { realpath } from "node:fs/promises"
 import { GitError, type GitTask, type RepositoryDescriptor } from "./index"
+import { parseFileChanges, rankRelatedFiles } from "./related-files"
 
 type Command = { result: Promise<{ exitCode: number; stdout: Buffer; stderr: Buffer }>; cancel(): void }
 type Start = (cwd: string, args: string[]) => Command
@@ -38,6 +39,50 @@ export function startFileHistoryRead(descriptor: RepositoryDescriptor, start: St
         } else {
             tip = request.source.objectId
         }
+        if (request.related) {
+            const { objectId, path, offset = 0 } = request.related
+            const parents = (await run(cwd, ["show", "-s", "--format=%P", objectId])).trim().split(" ").filter(Boolean)
+            const parentId = request.related.parentId ?? parents[0]
+            if (parentId && !parents.includes(parentId))
+                throw new GitError("git.command-failed", "Selected parent does not belong to this commit.")
+            const changes = parseFileChanges(
+                await run(cwd, [
+                    "diff-tree",
+                    "--root",
+                    "--no-commit-id",
+                    "-r",
+                    "-z",
+                    "--name-status",
+                    "-M",
+                    "-C",
+                    "--find-copies-harder",
+                    ...(parentId ? [parentId, objectId] : [objectId]),
+                    "--",
+                ]),
+            )
+            const contents = new Map<string, string>()
+            for (const change of [{ path, status: "" }, ...changes.slice(0, 100)]) {
+                const oid = change.status == "D" ? parentId : objectId
+                if (!oid)
+                    continue
+                const size = Number((await run(cwd, ["cat-file", "-s", `${oid}:${change.path}`], true)).trim())
+                if (!size || size > 128_000)
+                    continue
+                const text = await run(cwd, ["show", `${oid}:${change.path}`], true)
+                if (!text.includes("\0"))
+                    contents.set(change.path, text)
+            }
+            const related = rankRelatedFiles(path, objectId, parentId, changes, contents)
+            return {
+                tip,
+                entries: [],
+                related: related.slice(offset, offset + 50),
+                ...(offset + 50 < related.length ? { nextRelatedOffset: offset + 50 } : {}),
+                ...(changes.length > 100
+                    ? { notice: "Content evidence is limited to the first 100 changed files; remaining files use co-change evidence." }
+                    : {}),
+            }
+        }
         if (request.blame) {
             const { objectId, path, offset = 0 } = request.blame
             const content = await run(cwd, ["show", `${objectId}:${path}`], true)
@@ -64,8 +109,17 @@ export function startFileHistoryRead(descriptor: RepositoryDescriptor, start: St
             return { tip, entries: [], blame, ...(end < count ? { nextBlameOffset: end } : {}) }
         }
         const entries: FileHistoryEntry[] = []
+        const eligible = new Set(
+            request.composition
+                ? (await run(cwd, ["rev-list", "--max-count=10000", request.composition.tip, "--not", request.composition.primaryTip])).trim().split("\n")
+                : [],
+        )
         let objectId = request.cursor?.objectId ?? tip
         let path = request.cursor?.path ?? request.path
+        if (!request.cursor && request.source.kind == "worktree" && tip) {
+            const working = parseFileChanges(await run(cwd, ["diff", "--no-ext-diff", "--no-textconv", "--name-status", "-z", "-M", tip, "--"]))
+            path = working.find(change => change.path == path)?.previousPath ?? path
+        }
         for (let scanned = 0; objectId && scanned < 200 && entries.length < 40; scanned++) {
             const metadata = (await run(cwd, ["show", "-s", "--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%s", objectId])).trimEnd().split("\0")
             const [oid, parents, authorName, authorEmail, authoredAt, subject] = metadata
@@ -84,15 +138,27 @@ export function startFileHistoryRead(descriptor: RepositoryDescriptor, start: St
                     ...(parentIds[0] ? [parentIds[0], oid] : [oid]),
                     "--",
                 ])).split("\0")
-            let match: { status: string; previousPath?: string } | undefined
-            for (let i = 0; i < fields.length - 1;) {
-                const status = fields[i++]
-                const before = fields[i++]
-                const after = /^[RC]/.test(status) ? fields[i++] : before
-                if (after == path)
-                    match = { status, ...(/^[RC]/.test(status) ? { previousPath: before } : {}) }
-            }
+            const match = parseFileChanges(fields.join("\0")).find(change => change.path == path)
             if (match) {
+                let candidates: string[] | undefined
+                if (match.previousPath && parentIds[0]) {
+                    const blob = (await run(cwd, ["rev-parse", "--verify", `${oid}:${path}`])).trim()
+                    const tree = (await run(cwd, ["ls-tree", "-r", "-z", parentIds[0]])).split("\0")
+                    const exact = tree.flatMap(record => {
+                        const tab = record.indexOf("\t")
+                        return record.slice(0, tab).split(" ")[2] == blob ? [record.slice(tab + 1)] : []
+                    })
+                    if (exact.length > 1 || !match.status.endsWith("100")) {
+                        candidates = exact.length ? exact : [match.previousPath]
+                        const choice = request.choices?.find(choice =>
+                            choice.objectId == oid && choice.path == path && candidates!.includes(choice.previousPath)
+                        )
+                        if (choice)
+                            match.previousPath = choice.previousPath
+                        else
+                            match.previousPath = undefined
+                    }
+                }
                 entries.push({
                     objectId: oid,
                     parentIds,
@@ -100,10 +166,15 @@ export function startFileHistoryRead(descriptor: RepositoryDescriptor, start: St
                     authorEmail,
                     authoredAt: Number(authoredAt),
                     subject,
-                    path,
                     followedParent: parentIds[0],
                     ...match,
+                    candidates,
+                    composable: eligible.has(oid),
                 })
+                if (candidates && !match.previousPath) {
+                    objectId = ""
+                    break
+                }
                 if (match.previousPath)
                     path = match.previousPath
                 else if (match.status == "A") {

@@ -1149,7 +1149,7 @@ test("File History shares file inspection, opens blame origins, reuses inputs an
         reads++
         return {
             ok: true,
-            page: request.blame
+            page: request.related ? { entries: [], related: [{ path: "other.txt", objectId: oid, evidence: "shared lines", score: 2 }] } : request.blame
                 ? { entries: [], blame: [{ objectId: "1".repeat(40), path: "other.txt", originalLine: 1, line: 1, author: "Test", text: "origin" }] }
                 : {
                     tip: oid,
@@ -1159,6 +1159,7 @@ test("File History shares file inspection, opens blame origins, reuses inputs an
                         followedParent: "1".repeat(40),
                         path: request.path,
                         status: "M",
+                        composable: request.source.kind != "commit",
                         subject: "History commit",
                         authorName: "Test",
                         authorEmail: "test@example.test",
@@ -1190,6 +1191,24 @@ test("File History shares file inspection, opens blame origins, reuses inputs an
         click(history.querySelector<HTMLButtonElement>(".change-file button")!)
         await flush(root)
         expect(history.querySelector(".pierre-diff")).not.toBeNull()
+        expect(history.querySelector("input[type='checkbox']")).not.toBeNull()
+        click(button(history, "Complete commit diff"))
+        await flush(root)
+        const commit = container.querySelector<HTMLElement>(".trail-commit")!
+        expect(commit.querySelectorAll(".change-file")).toHaveLength(2)
+        const parent = commit.querySelector<HTMLSelectElement>("[aria-label='Commit diff parent']")!
+        parent.value = "3".repeat(40)
+        parent.dispatchEvent(new Event("change", { bubbles: true }))
+        await flush(root)
+        click(button(commit, "Find related files"))
+        await flush(root)
+        expect(commit.textContent).toContain("shared lines")
+        click(commit.querySelector<HTMLButtonElement>(".related-file")!)
+        await flush(root)
+        expect(container.querySelectorAll(".file-history")).toHaveLength(2)
+        click(commit.querySelector<HTMLButtonElement>("[aria-label='Close commit diff']")!)
+        await flush(root)
+        expect(container.querySelectorAll(".file-history")).toHaveLength(1)
         click(button(history, "Blame context"))
         await flush(root)
         click(history.querySelector<HTMLButtonElement>(".blame-line button")!)

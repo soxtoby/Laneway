@@ -13,10 +13,18 @@ export interface FileHistoryState {
     requests: Set<string>
     alive: boolean
     expanded: Set<string>
+    choices: Array<{ objectId: string; path: string; previousPath: string }>
+    readKey?: string
     blame?: { entry: FileHistoryEntry; page?: FileHistoryPage; error?: string; loading: boolean }
 }
 export function createFileHistories(
-    options: { api: Window["workbench"]; update(): Promise<AbortSignal>; signal: AbortSignal; changed?(state: FileHistoryState): void },
+    options: {
+        api: Window["workbench"]
+        update(): Promise<AbortSignal>
+        signal: AbortSignal
+        changed?(state: FileHistoryState): void
+        composition?(state: FileHistoryState): { tip: string; primaryTip: string } | undefined
+    },
 ) {
     const states = new Set<FileHistoryState>()
     let sequence = 0
@@ -36,6 +44,8 @@ export function createFileHistories(
         if (!state.alive || state.loading || more && !state.page?.cursor)
             return
         const generation = state.generation
+        const composition = options.composition?.(state)
+        const readKey = JSON.stringify([composition, state.choices])
         const id = `history:${++sequence}`
         state.requests.add(id)
         state.loading = true
@@ -45,6 +55,8 @@ export function createFileHistories(
             const result = await options.api.readFileHistory(state.repositoryId, id, {
                 source: state.source,
                 path: state.path,
+                choices: state.choices,
+                composition,
                 ...(more ? { cursor: state.page?.cursor } : {}),
             })
             if (!state.alive || generation != state.generation)
@@ -53,9 +65,10 @@ export function createFileHistories(
                 throw new Error(result.error.message)
             if (more)
                 result.page.entries = [...state.page!.entries, ...result.page.entries]
-            const changed = !!state.page && state.page.tip != result.page.tip
-            if (!more && state.page && state.page.tip == result.page.tip && state.page.entries.length > result.page.entries.length)
+            const changed = !!state.page && (state.page.tip != result.page.tip || state.readKey != readKey)
+            if (!more && !changed && state.page && state.page.entries.length > result.page.entries.length)
                 return
+            state.readKey = readKey
             state.page = result.page
             if (changed)
                 options.changed?.(state)
@@ -83,10 +96,11 @@ export function createFileHistories(
         state.requests.add(id)
         update()
         try {
+            const objectId = entry.status == "D" ? entry.followedParent ?? entry.objectId : entry.objectId
             const result = await options.api.readFileHistory(state.repositoryId, id, {
-                source: state.source,
+                source: { kind: "commit", objectId },
                 path: state.path,
-                blame: { objectId: entry.objectId, path: entry.path, offset: more ? view.page?.nextBlameOffset : undefined },
+                blame: { objectId, path: entry.path, offset: more ? view.page?.nextBlameOffset : undefined },
             })
             if (!state.alive || generation != state.generation || state.blame != view)
                 return
@@ -116,15 +130,20 @@ export function createFileHistories(
                 requests: new Set(),
                 alive: true,
                 expanded: new Set(),
+                choices: [],
             }
             states.add(state)
-            void read(state)
+            void Promise.resolve().then(() => read(state))
             return state
         },
         refresh(repositoryId: string) {
             for (const state of states) {
-                if (state.repositoryId == repositoryId && state.source.kind != "commit")
+                if (
+                    state.repositoryId == repositoryId
+                    && (state.source.kind != "commit" || state.readKey != JSON.stringify([options.composition?.(state), state.choices]))
+                ) {
                     void read(state)
+                }
             }
         },
         suspend() {
@@ -141,6 +160,7 @@ export function createFileHistories(
             open(source: FileHistorySource, path: string): void
             toggle(entry?: FileHistoryEntry): void
             files(entry?: FileHistoryEntry): RemixNode
+            commit(entry: FileHistoryEntry): void
         }): RemixNode {
             const source = state.source
             return (
@@ -193,9 +213,30 @@ export function createFileHistories(
                             </button>
                             {entry.parentIds.length > 1 && <small>Following parent 1 · {entry.followedParent?.slice(0, 8)}</small>}
                             {entry.previousPath && <small>{entry.previousPath} → {entry.path}</small>}
+                            {entry.candidates && (
+                                <label>
+                                    Follow copy origin
+                                    <select
+                                        aria-label="Follow copy origin"
+                                        value={entry.previousPath ?? ""}
+                                        mix={on("change", event => {
+                                            const previousPath = event.currentTarget.value
+                                            state.choices = state.choices.filter(choice => choice.objectId != entry.objectId || choice.path != entry.path)
+                                            if (previousPath)
+                                                state.choices.push({ objectId: entry.objectId, path: entry.path, previousPath })
+                                            cancel(state)
+                                            void read(state)
+                                        })}
+                                    >
+                                        <option value="">Choose an origin…</option>
+                                        {entry.candidates.map(path => <option value={path}>{path}</option>)}
+                                    </select>
+                                </label>
+                            )}
                             {state.expanded.has(entry.objectId) && (
                                 <div>
                                     <button type="button" mix={on("click", () => blame(state, entry))}>Blame context</button>
+                                    <button type="button" mix={on("click", () => actions.commit(entry))}>Complete commit diff</button>
                                     {actions.files(entry)}
                                 </div>
                             )}
