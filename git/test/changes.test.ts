@@ -34,6 +34,62 @@ async function repository(format = "sha1", commit = true) {
 const changed = (lines: { kind: string; text: string }[]) =>
     lines.filter(line => ["addition", "deletion"].includes(line.kind)).map(line => [line.kind, line.text])
 
+describe("branch tip comparisons", () => {
+    for (const format of ["sha1", "sha256"]) {
+        test(`compares ordered diverged tips and freezes each read, ${format}`, async () => {
+            const { path, api } = await repository(format)
+            git(path, "checkout", "-qb", "feature")
+            await writeFile(resolve(path, "file.txt"), "feature\n")
+            git(path, "commit", "-qam", "feature change")
+            git(path, "checkout", "main")
+            await writeFile(resolve(path, "file.txt"), "main\n")
+            git(path, "commit", "-qam", "main change")
+            const source = { kind: "branches" as const, fromRef: "refs/heads/main", toRef: "refs/heads/feature" }
+            const inventory = await api.startReadChanges({ source }).result
+            expect(inventory.source.kind).toBe("comparison")
+            const page = await api.startReadFileDiff({ source: inventory.source, inventoryVersion: inventory.version, path: "file.txt" }).result
+            expect(changed(page.lines)).toEqual([["deletion", "main"], ["addition", "feature"]])
+            expect(page.selectable).toBe(false)
+            const reversed = await api.startReadFileDiff({ source: { ...source, fromRef: source.toRef, toRef: source.fromRef }, path: "file.txt" }).result
+            expect(changed(reversed.lines)).toEqual([["deletion", "feature"], ["addition", "main"]])
+            await writeFile(resolve(path, "file.txt"), "new main\n")
+            git(path, "commit", "-qam", "advance")
+            const frozen = await api.startReadFileDiff({ source: inventory.source, path: "file.txt" }).result
+            expect(changed(frozen.lines)).toEqual(changed(page.lines))
+            const fresh = await api.startReadFileDiff({ source, path: "file.txt" }).result
+            expect(changed(fresh.lines)[0]).toEqual(["deletion", "new main"])
+            git(path, "branch", "-D", "feature")
+            await expect(api.startReadChanges({ source }).result).rejects.toThrow("unavailable")
+        })
+    }
+
+    test("pages file inventory, preserves rename and binary evidence, and ignores Working Changes", async () => {
+        const { path, api } = await repository()
+        git(path, "branch", "before")
+        await rename(resolve(path, "file.txt"), resolve(path, "renamed.txt"))
+        await Promise.all(Array.from({ length: 201 }, (_, index) => writeFile(resolve(path, `item-${index}.txt`), "added\n")))
+        await writeFile(resolve(path, "binary.bin"), Buffer.from([0, 1, 2]))
+        git(path, "add", ".")
+        git(path, "commit", "-qm", "many files")
+        await writeFile(resolve(path, "untracked.txt"), "working only\n")
+        const status = git(path, "status", "--porcelain=v2")
+        const source = { kind: "branches" as const, fromRef: "refs/heads/before", toRef: "refs/heads/main" }
+        const first = await api.startReadChanges({ source }).result
+        expect(first.files).toHaveLength(200)
+        expect(first.nextOffset).toBe(200)
+        const second = await api.startReadChanges({ source: first.source, offset: first.nextOffset }).result
+        expect(second.files).toHaveLength(3)
+        expect(second.nextOffset).toBeUndefined()
+        expect(second.files.find(file => file.path == "renamed.txt")?.oldPath).toBe("file.txt")
+        const binary = await api.startReadFileDiff({ source: first.source, path: "binary.bin" }).result
+        expect(binary.summary).toContain("Binary content changed.")
+        expect(git(path, "status", "--porcelain=v2")).toBe(status)
+        const empty = await api.startReadChanges({ source: { ...source, fromRef: source.toRef } }).result
+        expect(empty.files).toEqual([])
+        await expect(api.startReadChanges({ source: { ...source, fromRef: "refs/heads/main~1" } }).result).rejects.toThrow()
+    })
+})
+
 describe("Working Changes and committed diff reads", () => {
     test("validates source edits even when Git normalizes them to the same displayed patch", async () => {
         const { path, api, source } = await repository()

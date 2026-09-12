@@ -7,11 +7,31 @@ async function checkRenderer() {
     const violations: string[] = []
     document.addEventListener("securitypolicyviolation", event => violations.push(`${event.violatedDirective}: ${event.blockedURI}`))
     const scenario = inspectionScenario()
+    let holdComparison = false
+    let finishComparison: (() => void) | undefined
+    let finishComparisonPatch: (() => void) | undefined
+    const readPatch = scenario.api.readFileDiff
+    scenario.api.readFileDiff = async (...args) => {
+        if (holdComparison && args[2].source.kind == "comparison")
+            await new Promise<void>(resolve => finishComparisonPatch = resolve)
+        return readPatch(...args)
+    }
+    const readChanges = scenario.api.readChanges
+    scenario.api.readChanges = async (...args) => {
+        if (holdComparison && args[2].source.kind == "branches")
+            await new Promise<void>(resolve => finishComparison = resolve)
+        const result = await readChanges(...args)
+        if (result.ok && args[2].source.kind == "branches")
+            result.inventory.source = { kind: "comparison", fromObjectId: "2".repeat(40), toObjectId: "1".repeat(40) }
+        return result
+    }
     const readGraph = scenario.api.readBranchGraph
     scenario.api.readBranchGraph = async (...args) => {
         const result = await readGraph(...args)
         if (result.ok) {
             const [main, feature] = result.graph.branches
+            if (holdComparison)
+                main.tip = "a".repeat(40)
             result.graph.tags = [{ kind: "tag", id: "tag:waypoint", name: "waypoint", objectId: "tagged", parentBranchId: feature.id, tooltip: "Tag waypoint" }]
             result.graph.history = [{ objectId: feature.tip, lineId: feature.id, parentIds: ["tagged"] }, {
                 objectId: "tagged",
@@ -331,7 +351,7 @@ async function checkRenderer() {
     await settle()
     const breakoutSwitchedTo = element(".inspection-breakout .diff-inspector").getAttribute("aria-label")
     const breakoutSwitched = breakoutSwitchedTo == "Diff for src/example.ts" && !document.querySelector(".branch-column .diff-inspector")
-        && breakout.querySelector(".pierre-diff")!.shadowRoot!.querySelectorAll("[data-line]").length == 2
+        && element(".inspection-breakout").querySelector(".pierre-diff")!.shadowRoot!.querySelectorAll("[data-line]").length == 2
     element("[aria-label='Close diff column']").click()
     await settle()
     outer.scrollTop = 0
@@ -418,11 +438,84 @@ async function checkRenderer() {
     showGraphButton.click()
     await settle()
     const graphRestored = element(".graph-sidebar").getBoundingClientRect().width > 0
+    element("[data-node-id='branch:refs/heads/feature/workbench']").dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 90, clientY: 120 }),
+    )
+    await settle()
+    const menuBounds = element("dialog[aria-label='Branch actions']").getBoundingClientRect()
+    const contextMenuCompact = menuBounds.width < 180 && menuBounds.height < 50
+    element("[role='menuitem']").click()
+    await settle()
+    const comparisonSearch = element<HTMLInputElement>("[aria-label='Command Lens search']")
+    comparisonSearch.value = "main"
+    comparisonSearch.dispatchEvent(new Event("input", { bubbles: true }))
+    await settle()
+    element(".lens-results button").click()
+    await settle()
+    const comparison = element(".branch-comparison")
+    const comparisonContextMenu = document.activeElement == comparison && comparison.textContent!.includes("feature/workbench → main")
+        && !comparison.querySelector(".comparison-context") && comparison.previousElementSibling?.classList.contains("branch-column")
+    const comparisonLazy = !comparison.querySelector(".pierre-diff")
+    const comparisonRow = element(".branch-comparison .change-file")
+    const comparisonSharedRows = comparisonRow.getBoundingClientRect().height <= 31
+        && !!comparisonRow.querySelector(".file-status svg")
+        && getComputedStyle(element(".branch-comparison .file-folder")).textOverflow == "ellipsis"
+    element(".branch-comparison .change-file button").click()
+    await settle()
+    const comparisonPatch = !!comparison.querySelector(".pierre-diff")?.shadowRoot?.querySelector("[data-line]")
+    const comparisonGeometry = comparison.getBoundingClientRect().width >= 620 && comparison.scrollWidth == comparison.clientWidth
+    const rowTop = comparisonRow.getBoundingClientRect().top
+    const patchTop = element(".comparison-patch").getBoundingClientRect().top
+    holdComparison = true
+    element("[aria-label='Refresh Branch Graph']").click()
+    await settle()
+    const refreshStable = () =>
+        comparisonRow.getBoundingClientRect().top == rowTop
+        && element(".comparison-patch").getBoundingClientRect().top == patchTop
+        && !comparison.querySelector("[role='status']")
+    const comparisonRefreshStable = refreshStable()
+    finishComparison!()
+    await settle()
+    const comparisonPatchRefreshStable = refreshStable()
+    holdComparison = false
+    finishComparisonPatch!()
+    await settle()
+    element(".branch-comparison [aria-label='Side by side']").click()
+    await settle()
+    const comparisonSplit = element(".branch-comparison [aria-label='Side by side']").getAttribute("aria-pressed") == "true"
+    element(".branch-comparison [aria-label='Unified']").click()
+    element(".branch-comparison [aria-label='Show whitespace']").click()
+    await settle()
+    const comparisonControls = comparisonSplit
+        && element(".branch-comparison [aria-label='Unified']").getAttribute("aria-pressed") == "true"
+        && element(".branch-comparison [aria-label='Show whitespace']").getAttribute("aria-pressed") == "true"
+    const header = element(".branch-comparison > header")
+    const headerTop = header.getBoundingClientRect().top
+    comparison.scrollTop = 80
+    await settle()
+    const comparisonStickyHeader = getComputedStyle(header).position == "sticky" && header.getBoundingClientRect().top == headerTop
+    const comparisonHeaderOnlyClose = header.querySelectorAll("button").length == 1
+        && header.querySelector("button")?.getAttribute("aria-label") == "Close comparison"
+    element("[aria-label='Close comparison']").click()
+    await settle()
+    const comparisonClosed = !document.querySelector(".branch-comparison")
     const stylesheets = document.adoptedStyleSheets.length
     root.dispose()
     const graphScrollDrift = await checkBranchGraphScroll()
     return {
+        comparisonControls,
+        comparisonStickyHeader,
+        comparisonHeaderOnlyClose,
+        contextMenuCompact,
+        comparisonSharedRows,
+        comparisonRefreshStable,
+        comparisonPatchRefreshStable,
         graphScrollDrift,
+        comparisonContextMenu,
+        comparisonLazy,
+        comparisonPatch,
+        comparisonGeometry,
+        comparisonClosed,
         collapsedColumnCompact,
         columnToggleStable,
         columnCollapseStillAtLeft,

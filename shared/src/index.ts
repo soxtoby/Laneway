@@ -431,6 +431,8 @@ export type DiffLayout = "unified" | "split"
 export type DiffSource =
     | { kind: "working"; worktreePath: string }
     | { kind: "commit"; objectId: string; parentId?: string }
+    | { kind: "branches"; fromRef: string; toRef: string }
+    | { kind: "comparison"; fromObjectId: string; toObjectId: string }
 
 export interface ChangedFile {
     path: string
@@ -449,6 +451,7 @@ export interface ChangedFile {
 export interface ChangesRequest {
     source: DiffSource
     includeIgnored?: boolean
+    offset?: number
 }
 
 export interface ChangesInventory {
@@ -456,6 +459,7 @@ export interface ChangesInventory {
     version: string
     files: ChangedFile[]
     parents: string[]
+    nextOffset?: number
 }
 
 export type DiffView = "combined" | "staged" | "unstaged" | "base" | "ours" | "theirs"
@@ -502,6 +506,12 @@ export type ChangesResult = { ok: true; inventory: ChangesInventory } | { ok: fa
 export type FileDiffResult = { ok: true; page: FileDiffPage } | { ok: false; error: EntryError }
 
 export const DiffSourceSchema = z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("branches"), fromRef: z.string().regex(/^refs\/(heads|remotes)\/.+/), toRef: z.string().regex(/^refs\/(heads|remotes)\/.+/) }),
+    z.object({
+        kind: z.literal("comparison"),
+        fromObjectId: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/),
+        toObjectId: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/),
+    }),
     z.object({ kind: z.literal("working"), worktreePath: z.string().min(1) }),
     z.object({
         kind: z.literal("commit"),
@@ -509,7 +519,11 @@ export const DiffSourceSchema = z.discriminatedUnion("kind", [
         parentId: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/).optional(),
     }),
 ])
-export const ChangesRequestSchema = z.object({ source: DiffSourceSchema, includeIgnored: z.boolean().optional() })
+export const ChangesRequestSchema = z.object({
+    source: DiffSourceSchema,
+    includeIgnored: z.boolean().optional(),
+    offset: z.number().int().nonnegative().optional(),
+})
 export const FileDiffRequestSchema = z.object({
     source: DiffSourceSchema,
     path: z.string().min(1),

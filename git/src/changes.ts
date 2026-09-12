@@ -68,7 +68,16 @@ export function startChangesRead(
             if (cache.size > 16)
                 cache.delete(cache.keys().next().value!)
         }
-        return snapshot.inventory
+        if (snapshot.inventory.source.kind != "comparison")
+            return snapshot.inventory
+        const offset = request.offset ?? 0
+        if (!Number.isSafeInteger(offset) || offset < 0)
+            throw new GitError("git.command-failed", "Invalid comparison page.")
+        return {
+            ...snapshot.inventory,
+            files: snapshot.inventory.files.slice(offset, offset + 200),
+            ...(offset + 200 < snapshot.inventory.files.length ? { nextOffset: offset + 200 } : {}),
+        }
     })
     return { cancel: reader.cancel, result }
 }
@@ -84,10 +93,17 @@ export function startFileDiffRead(
 }
 
 function snapshotKey(source: DiffSource, version: string) {
-    return JSON.stringify([source.kind, source.kind == "working" ? source.worktreePath : [source.objectId, source.parentId], version])
+    return JSON.stringify([source, version])
 }
 
 async function directory(descriptor: RepositoryDescriptor, reader: Reader, source: DiffSource) {
+    if (source.kind == "branches" || source.kind == "comparison") {
+        if (source.kind == "comparison") {
+            oid(descriptor, source.fromObjectId)
+            oid(descriptor, source.toObjectId)
+        }
+        return descriptor.selectedWorktree
+    }
     if (source.kind == "commit") {
         oid(descriptor, source.objectId)
         if (source.parentId)
@@ -106,6 +122,44 @@ async function directory(descriptor: RepositoryDescriptor, reader: Reader, sourc
 
 async function readSnapshot(descriptor: RepositoryDescriptor, reader: Reader, request: ChangesRequest): Promise<ChangesSnapshot> {
     const cwd = await directory(descriptor, reader, request.source)
+    if (request.source.kind == "branches" || request.source.kind == "comparison") {
+        let source = request.source
+        if (source.kind == "branches") {
+            for (const ref of [source.fromRef, source.toRef]) {
+                if (!/^refs\/(heads|remotes)\/.+/.test(ref))
+                    throw new GitError("git.command-failed", "Choose a branch ref.")
+                await reader.run(cwd, ["check-ref-format", ref])
+            }
+            const refs = await reader.run(cwd, ["for-each-ref", "--format=%(refname) %(objectname)", "--", source.fromRef, source.toRef])
+            const tips = new Map(refs.trim().split("\n").map(line => line.trim().split(" ") as [string, string]))
+            const fromObjectId = tips.get(source.fromRef), toObjectId = tips.get(source.toRef)
+            if (!fromObjectId || !toObjectId)
+                throw new GitError("git.command-failed", "A compared branch is unavailable. Retarget or close this comparison.")
+            source = { kind: "comparison", fromObjectId, toObjectId }
+        }
+        const output = await reader.run(cwd, [
+            "diff-tree",
+            "--no-commit-id",
+            "-r",
+            "--raw",
+            "-z",
+            "--no-abbrev",
+            "--no-ext-diff",
+            "--no-textconv",
+            "-M",
+            source.fromObjectId,
+            source.toObjectId,
+            "--",
+        ])
+        const files = parseRaw(output)
+        const attributes = await readAttributes(reader, cwd, source, files)
+        return {
+            inventory: { source, version: hash(JSON.stringify(source) + output + JSON.stringify([...attributes])), parents: [], files },
+            cwd,
+            headId: "",
+            attributes,
+        }
+    }
     if (request.source.kind == "working") {
         const headBefore = await head(reader, cwd)
         const status = await workingStatus(reader, cwd, request.includeIgnored)
@@ -168,7 +222,13 @@ async function readAttributes(reader: Reader, cwd: string, source: DiffSource, f
         return attributes
     const output = await reader.run(
         cwd,
-        ["check-attr", "-z", ...(source.kind == "commit" ? [`--source=${source.objectId}`] : []), "--all", "--stdin"],
+        [
+            "check-attr",
+            "-z",
+            ...(source.kind == "commit" ? [`--source=${source.objectId}`] : source.kind == "comparison" ? [`--source=${source.toObjectId}`] : []),
+            "--all",
+            "--stdin",
+        ],
         undefined,
         [0],
         paths.join("\0") + "\0",
@@ -266,7 +326,7 @@ async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, reques
     const attributes = snapshot.attributes.get(file.path) ?? ""
     const view = request.view ?? "combined"
     const stage = { base: 1, ours: 2, theirs: 3 }[view as "base" | "ours" | "theirs"]
-    if (source.kind == "commit" && view != "combined" || stage && !file.conflicted)
+    if (source.kind != "working" && view != "combined" || stage && !file.conflicted)
         throw new GitError("git.command-failed", "This comparison is unavailable for the selected file.")
     const before = request.expectedVersion != undefined && source.kind == "working" ? await workingIdentity(reader, cwd, file) : undefined
     if (before && (before.headId != headId || before.attributes != attributes))
@@ -282,7 +342,7 @@ async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, reques
         attrs.set(values[i + 1], values[i + 2])
     const custom = attrs.get("diff") && !["unspecified", "set"].includes(attrs.get("diff")!)
     const transformed = ["filter", "working-tree-encoding"].some(name => attrs.has(name) && !["unspecified", "unset"].includes(attrs.get(name)!))
-    let selectable = view == "combined" && !file.conflicted
+    let selectable = source.kind != "comparison" && source.kind != "branches" && view == "combined" && !file.conflicted
     if (file.oldMode != file.newMode && file.oldMode && file.newMode)
         summary.push(describeModeChange(file.oldMode, file.newMode))
     if (file.oldPath)
@@ -309,7 +369,13 @@ async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, reques
             "--ignore-submodules=none",
         ]
         const paths = [...new Set([file.oldPath, file.path].filter((path): path is string => Boolean(path)))]
-        if (source.kind == "commit") {
+        if (source.kind == "comparison") {
+            await reader.run(
+                cwd,
+                ["diff-tree", "--no-commit-id", "-r", "-p", "-M", ...flags, source.fromObjectId, source.toObjectId, "--", ...paths],
+                collector.write,
+            )
+        } else if (source.kind == "commit") {
             await reader.run(cwd, [
                 "diff-tree",
                 "--no-commit-id",

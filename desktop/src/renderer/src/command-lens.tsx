@@ -5,6 +5,7 @@ import type { LensResult } from "./branch-workspace"
 export function CommandLens(
     handle: Handle<{
         query: string
+        prompt?: string
         results: LensResult[]
         inputRef(node: HTMLInputElement): void
         setQuery(value: string): void
@@ -67,7 +68,7 @@ export function CommandLens(
                                 aria-autocomplete="list"
                                 aria-expanded={results.length > 0}
                                 aria-controls={listId}
-                                placeholder="Search open repositories and branches."
+                                placeholder={handle.props.prompt ?? "Search open repositories and branches."}
                                 value={query}
                                 mix={[
                                     commandLensSearchInput,
@@ -100,7 +101,7 @@ export function CommandLens(
                         </header>
                         {query.trim() == "" && (
                             <p class="lens-guidance" mix={lensGuidance}>
-                                Search open repositories and branches.
+                                {handle.props.prompt ?? "Search open repositories and branches."}
                             </p>
                         )}
                         {query.trim() != "" && results.length == 0 && (

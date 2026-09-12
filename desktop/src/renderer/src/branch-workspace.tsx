@@ -33,6 +33,7 @@ interface RepositoryGraphState {
     dragOriginalIds?: string[]
     focusRestored: boolean
     diffLayouts: Record<string, DiffLayout>
+    contextMenu?: { branchId: string; x: number; y: number }
 }
 
 interface BranchWorkspaceOptions {
@@ -67,10 +68,12 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
     let lensInput: HTMLInputElement | undefined
     let restoreFocus: HTMLElement | null = null
     let currentWorkspace: Workspace | undefined
+    let comparisonSource: { repositoryId: string; fromRef: string; replaceId?: string; chooseFrom?: boolean; chooseFirst?: boolean } | undefined
     const inspection = createInspection({
         api: options.api,
         update: options.update,
         signal: options.signal,
+        compareWith,
         layout: (repositoryId, columnId) => stateFor(repositoryId).diffLayouts[columnId] ?? "unified",
         saveLayout: (repositoryId, columnId, layout) => {
             stateFor(repositoryId).diffLayouts[columnId] = layout
@@ -126,7 +129,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         render(active, workspace, railCollapsed = false, toggleRail = () => {}) {
             currentWorkspace = workspace
             const state = stateFor(active.id)
-            inspection.retain(active.id, state.openedBranchIds)
+            inspection.retain(active.id, state.openedBranchIds, state.graph)
             const graph = state.graph
             const visibleBranches = graph ? branchesForDisplay(graph, state.showAll, state.collapsedBranchIds) : []
             const layout = graph ? layoutBranchGraph(graph, visibleBranches) : { rows: [], width: 26 }
@@ -139,6 +142,48 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             }
             return (
                 <section class="workspace graph-workspace" mix={workspaceStyle} aria-live="polite">
+                    {state.contextMenu && graph && (
+                        <dialog
+                            aria-label="Branch actions"
+                            style={{
+                                left: `${Math.max(0, Math.min(state.contextMenu.x, window.innerWidth - 180))}px`,
+                                top: `${Math.max(0, Math.min(state.contextMenu.y, window.innerHeight - 60))}px`,
+                            }}
+                            mix={[
+                                branchContextMenu,
+                                ref(dialog => dialog.showModal()),
+                                on("cancel", event => {
+                                    event.preventDefault()
+                                    state.contextMenu = undefined
+                                    void options.update()
+                                }),
+                                on("click", event => {
+                                    if (event.target == event.currentTarget) {
+                                        state.contextMenu = undefined
+                                        void options.update()
+                                    }
+                                }),
+                            ]}
+                        >
+                            <div role="menu" aria-label="Branch actions">
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    mix={[
+                                        ref(button => button.focus()),
+                                        on("click", () => {
+                                            const branch = graph.branches.find(branch => branch.id == state.contextMenu?.branchId)
+                                            state.contextMenu = undefined
+                                            if (branch)
+                                                compareWith(active.id, branch.preferredRef)
+                                        }),
+                                    ]}
+                                >
+                                    Compare with…
+                                </button>
+                            </div>
+                        </dialog>
+                    )}
                     <RepositoryRail
                         railCollapsed={railCollapsed}
                         toggleRail={toggleRail}
@@ -269,6 +314,11 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                                             select={() => selectNode(active.id, row.node.id)}
                                                             open={() => openBranch(active.id, row.node.id)}
                                                             selectMarker={marker => selectMarker(active.id, row.node.id, marker)}
+                                                            contextMenu={event => {
+                                                                event.preventDefault()
+                                                                state.contextMenu = { branchId: row.node.id, x: event.clientX, y: event.clientY }
+                                                                void options.update()
+                                                            }}
                                                         />
                                                     )
                                                     : (
@@ -350,8 +400,28 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                 return null
             return (
                 <CommandLens
+                    prompt={comparisonSource
+                        ? comparisonSource.chooseFirst
+                            ? "Choose replacement source branch"
+                            : `${comparisonSource.chooseFrom ? "Choose replacement source to compare to" : "Compare with"} ${
+                                comparisonSource.fromRef.replace(/^refs\/(heads|remotes)\//, "")
+                            }`
+                        : undefined}
                     query={lensQuery}
-                    results={lensResults(workspace, states, activeRepositoryId, lensQuery)}
+                    results={comparisonSource
+                        ? (stateFor(comparisonSource.repositoryId).graph?.branches ?? [])
+                            .filter(branch => branch.preferredRef != comparisonSource!.fromRef
+                                && branch.name.toLocaleLowerCase().includes(lensQuery.trim().toLocaleLowerCase())
+                            )
+                            .map(branch => ({
+                                kind: "branch" as const,
+                                repositoryId: comparisonSource!.repositoryId,
+                                nodeId: branch.id,
+                                label: branch.name,
+                                detail: branch.preferredRef,
+                                score: 1,
+                            }))
+                        : lensResults(workspace, states, activeRepositoryId, lensQuery)}
                     inputRef={node => lensInput = node}
                     setQuery={value => {
                         lensQuery = value
@@ -419,6 +489,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                 const validColumnIds = new Set([...result.graph.branches, ...result.graph.virtualBranches].map(branch => branch.id))
                 const removedColumns = state.openedBranchIds.filter(id => !validColumnIds.has(id))
                 state.graph = result.graph
+                state.openedBranchIds.push(...inspection.refreshComparisons(repositoryId, result.graph))
                 if (refreshRemote)
                     state.remoteRefreshed = true
                 state.patterns = result.graph.remotePatterns.join(", ")
@@ -701,7 +772,12 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         const nodeIds = rows.map(row => row.node.id)
         const state = stateFor(repositoryId)
         const index = nodeIds.findIndex(id => id == state.selectedId)
-        if (event.key == "ArrowDown" || event.key == "ArrowUp") {
+        if ((event.key == "ContextMenu" || event.shiftKey && event.key == "F10") && state.graph?.branches.some(branch => branch.id == state.selectedId)) {
+            event.preventDefault()
+            const rect = event.currentTarget instanceof HTMLElement ? event.currentTarget.getBoundingClientRect() : undefined
+            state.contextMenu = { branchId: state.selectedId!, x: rect?.left ?? 0, y: rect?.top ?? 0 }
+            void options.update()
+        } else if (event.key == "ArrowDown" || event.key == "ArrowUp") {
             event.preventDefault()
             const delta = event.key == "ArrowDown" ? 1 : -1
             const nextIndex = index < 0 && delta < 0 ? nodeIds.length - 1 : Math.max(0, Math.min(nodeIds.length - 1, index + delta))
@@ -754,10 +830,43 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
 
     function closeLens() {
         lensOpen = false
+        comparisonSource = undefined
         void options.update().then(() => restoreFocus?.focus())
     }
 
     async function activateLensResult(result: LensResult) {
+        if (comparisonSource) {
+            const request = comparisonSource
+            const state = stateFor(request.repositoryId)
+            const graph = state.graph
+            if (request.chooseFirst) {
+                const branch = graph?.branches.find(branch => branch.id == result.nodeId)
+                if (branch) {
+                    comparisonSource = { repositoryId: request.repositoryId, fromRef: branch.preferredRef, replaceId: request.replaceId }
+                    lensQuery = ""
+                    await options.update()
+                }
+                return
+            }
+            const fixedNode = graph?.branches.find(branch => branch.refs.includes(request.fromRef))
+            const fixed = fixedNode ? { ...fixedNode, preferredRef: request.fromRef } : undefined
+            const selected = graph?.branches.find(branch => branch.id == result.nodeId)
+            const from = request.chooseFrom ? selected : fixed
+            const to = request.chooseFrom ? fixed : selected
+            if (!from || !to || !graph)
+                return
+            lensOpen = false
+            comparisonSource = undefined
+            if (!state.openedBranchIds.includes(from.id))
+                state.openedBranchIds.push(from.id)
+            state.collapsedColumnIds = state.collapsedColumnIds.filter(id => id != from.id)
+            state.maximizedBranchId = undefined
+            state.widths[from.id] ??= 380
+            state.focusedColumnId = from.id
+            await persist(request.repositoryId)
+            inspection.openComparison(request.repositoryId, from, to, graph, request.replaceId, backingPath(request.repositoryId, from.id))
+            return
+        }
         if (result.kind == "command") {
             moveColumn(result.repositoryId, result.nodeId, result.delta)
             closeLens()
@@ -774,7 +883,30 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         await options.update()
         document.querySelector<HTMLElement>(".graph-rows")?.focus()
     }
+    function compareWith(repositoryId: string, fromRef: string, replaceId?: string, toRef?: string) {
+        const chooseFrom = !!toRef && !stateFor(repositoryId).graph?.branches.some(branch => branch.refs.includes(fromRef))
+        const chooseFirst = chooseFrom && !stateFor(repositoryId).graph?.branches.some(branch => branch.refs.includes(toRef!))
+        comparisonSource = { repositoryId, fromRef: chooseFirst ? "" : chooseFrom ? toRef! : fromRef, replaceId, chooseFrom, chooseFirst }
+        openLens()
+        restoreFocus = replaceId
+            ? document.querySelector<HTMLElement>(`[data-auxiliary-id="${replaceId}"]`)
+            : document.querySelector<HTMLElement>(".graph-rows")
+    }
 }
+
+const branchContextMenu = css({
+    position: "fixed",
+    width: "max-content",
+    maxWidth: "calc(100vw - 16px)",
+    borderRadius: "3px",
+    margin: 0,
+    padding: "4px",
+    border: "1px solid var(--line-strong)",
+    background: "var(--panel)",
+    color: "var(--text)",
+    "&::backdrop": { background: "transparent" },
+    "& button": { color: "inherit", background: "var(--control)", border: 0, padding: "4px 8px", font: "inherit", cursor: "pointer" },
+})
 
 function windowNodes(nodes: GraphRowLayout[], scrollTop: number, viewportHeight: number) {
     const overscan = 6
@@ -1015,7 +1147,15 @@ function BaseUnresolved(
 
 function BranchRow(
     handle: Handle<
-        { branch: BranchGraphBranchNode; rail: RemixNode; selected: boolean; select(): void; open(): void; selectMarker(marker: BranchGraphMarker): void }
+        {
+            branch: BranchGraphBranchNode
+            rail: RemixNode
+            selected: boolean
+            select(): void
+            open(): void
+            selectMarker(marker: BranchGraphMarker): void
+            contextMenu(event: MouseEvent): void
+        }
     >,
 ) {
     return () => {
@@ -1027,7 +1167,13 @@ function BranchRow(
                 role="option"
                 aria-selected={props.selected}
                 data-node-id={branch.id}
-                mix={[graphRow, on("click", props.select)]}
+                mix={[
+                    graphRow,
+                    on("click", props.select),
+                    ref((element, signal) => {
+                        element.addEventListener("contextmenu", event => handle.props.contextMenu(event), { signal })
+                    }),
+                ]}
             >
                 {props.rail}
                 <span class="branch-copy" mix={branchCopy}>
@@ -1168,7 +1314,8 @@ function BranchColumns(
         const columns = props.state.openedBranchIds.map(id =>
             props.graph.branches.find(branch => branch.id == id) ?? props.graph.virtualBranches.find(branch => branch.id == id)
         ).filter(column => column != undefined)
-        if (columns.length == 0) {
+        const unavailable = props.inspection.unavailableComparisonSources(props.repositoryId, props.graph)
+        if (columns.length == 0 && unavailable.length == 0) {
             return (
                 <section class="column-empty" mix={columnEmpty}>
                     <span mix={columnEmptySpan}>
@@ -1310,6 +1457,7 @@ function BranchColumns(
                         {!props.state.collapsedColumnIds.includes(column.id) && props.inspection.breakout(props.repositoryId, column.id)}
                     </>
                 ))}
+                {unavailable.map(id => props.inspection.breakout(props.repositoryId, id))}
             </section>
         )
     }
