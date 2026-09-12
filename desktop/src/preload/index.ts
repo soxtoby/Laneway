@@ -4,6 +4,8 @@ import { contextBridge, ipcRenderer } from "electron"
 
 contextBridge.exposeInMainWorld("workbench", {
     readChanges: (repositoryId: string, requestId: string, request: ChangesRequest) => ipcRenderer.invoke("changes:read", repositoryId, requestId, request),
+    readFileHistory: (repositoryId: string, requestId: string, request: FileHistoryRequest) =>
+        ipcRenderer.invoke("history:read", repositoryId, requestId, request),
     readFileDiff: (repositoryId: string, requestId: string, request: FileDiffRequest) => ipcRenderer.invoke("changes:diff", repositoryId, requestId, request),
     cancelInspection: (repositoryId: string, requestId: string) => ipcRenderer.invoke("changes:cancel", repositoryId, requestId),
     getState: () => ipcRenderer.invoke("app:state"),
@@ -35,3 +37,4 @@ contextBridge.exposeInMainWorld("workbench", {
         return () => ipcRenderer.off("entry:progress", handler)
     },
 })
+import type { FileHistoryRequest } from "@git-workbench/shared"

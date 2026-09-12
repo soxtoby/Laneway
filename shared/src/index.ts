@@ -532,3 +532,4 @@ export const FileDiffRequestSchema = z.object({
     inventoryVersion: z.string().optional(),
     expectedVersion: z.string().optional(),
 })
+export * from "./file-history"

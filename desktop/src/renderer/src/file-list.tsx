@@ -5,6 +5,7 @@ export function FileTree(
     handle: Handle<
         {
             files: ChangedFile[]
+            actions?(file: ChangedFile): FileAction[]
             flat?: boolean
             filter?: string
             expanded: Set<string>
@@ -40,7 +41,7 @@ export function FileTree(
         }
         const rows = (files: ChangedFile[]) =>
             files.map(file => (
-                <div key={file.path} class="file-inspection">
+                <FileMenu key={file.path} class="file-inspection" actions={props.actions?.(file) ?? []}>
                     <div class={`change-file ${props.expanded.has(file.path) ? "active" : ""}`} mix={changeFile}>
                         {props.check && (
                             <input
@@ -70,7 +71,7 @@ export function FileTree(
                         {props.controls(file)}
                     </div>
                     {props.diff(file)}
-                </div>
+                </FileMenu>
             ))
         const renderDirectory = (directory: Directory, prefix = ""): RemixNode => (
             <>
@@ -278,3 +279,4 @@ const fileTreeSummary = css({
     overflowWrap: "anywhere",
     cursor: "pointer",
 })
+import { type FileAction, FileMenu } from "./file-menu"

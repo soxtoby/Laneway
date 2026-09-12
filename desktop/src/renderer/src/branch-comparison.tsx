@@ -195,7 +195,14 @@ export function createBranchComparisons(options: { api: Window["workbench"]; upd
                 }
             }
         },
-        render(state: BranchComparisonState, id: string, sourceId: string, close: () => void, retarget: () => void): RemixNode {
+        render(
+            state: BranchComparisonState,
+            id: string,
+            sourceId: string,
+            close: () => void,
+            retarget: () => void,
+            history: (source: FileHistorySource, path: string) => void,
+        ): RemixNode {
             return (
                 <aside
                     key={id}
@@ -227,6 +234,10 @@ export function createBranchComparisons(options: { api: Window["workbench"]; upd
                     )}
                     {state.inventory?.files.length == 0 && !state.error && <p>No differences between these branch tips.</p>}
                     <FileTree
+                        actions={file => [{
+                            label: `History in ${state.fromName}`,
+                            run: () => history({ kind: "branch", ref: state.fromRef }, file.oldPath ?? file.path),
+                        }, { label: `History in ${state.toName}`, run: () => history({ kind: "branch", ref: state.toRef }, file.path) }]}
                         flat
                         files={state.inventory?.files ?? []}
                         expanded={new Set(state.patches.keys())}
@@ -343,3 +354,4 @@ const comparison = css({
     "& small, & .auxiliary-source": { color: "var(--muted)" },
     "& .comparison-patch": { minWidth: 0, overflow: "hidden" },
 })
+import type { FileHistorySource } from "@git-workbench/shared"

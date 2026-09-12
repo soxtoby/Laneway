@@ -26,6 +26,7 @@ declare global {
     interface Window {
         workbench: {
             readChanges(repositoryId: string, requestId: string, request: ChangesRequest): Promise<ChangesResult>
+            readFileHistory(repositoryId: string, requestId: string, request: FileHistoryRequest): Promise<FileHistoryResult>
             readFileDiff(repositoryId: string, requestId: string, request: FileDiffRequest): Promise<FileDiffResult>
             cancelInspection(repositoryId: string, requestId: string): Promise<boolean>
             getState(): Promise<AppState>
@@ -57,3 +58,4 @@ declare global {
 }
 
 export {}
+import type { FileHistoryRequest, FileHistoryResult } from "@git-workbench/shared"

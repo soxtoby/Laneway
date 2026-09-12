@@ -145,6 +145,10 @@ export class OpenRepositories {
         return this.trackInspection(repositoryId, requestId, () => this.requireRepository(repositoryId).git.startReadChanges(request))
     }
 
+    readFileHistory(repositoryId: string, requestId: string, request: FileHistoryRequest) {
+        return this.trackInspection(repositoryId, requestId, () => this.requireRepository(repositoryId).git.startReadFileHistory(request))
+    }
+
     readFileDiff(repositoryId: string, requestId: string, request: FileDiffRequest) {
         return this.trackInspection(repositoryId, requestId, () => this.requireRepository(repositoryId).git.startReadFileDiff(request))
     }
@@ -279,3 +283,4 @@ export function entryError(error: unknown): EntryError {
         return { code: error.code, message: error.message }
     return { code: "git.command-failed", message: error instanceof Error ? error.message : String(error) }
 }
+import type { FileHistoryRequest } from "@git-workbench/shared"

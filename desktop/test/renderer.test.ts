@@ -1141,6 +1141,69 @@ describe("Working Changes inspection", () => {
     })
 })
 
+test("File History shares file inspection, opens blame origins, reuses inputs and closes descendants", async () => {
+    const scenario = inspectionScenario()
+    const oid = "2".repeat(40)
+    let reads = 0
+    scenario.api.readFileHistory = async (_repo, _id, request) => {
+        reads++
+        return {
+            ok: true,
+            page: request.blame
+                ? { entries: [], blame: [{ objectId: "1".repeat(40), path: "other.txt", originalLine: 1, line: 1, author: "Test", text: "origin" }] }
+                : {
+                    tip: oid,
+                    entries: [{
+                        objectId: oid,
+                        parentIds: ["1".repeat(40), "3".repeat(40)],
+                        followedParent: "1".repeat(40),
+                        path: request.path,
+                        status: "M",
+                        subject: "History commit",
+                        authorName: "Test",
+                        authorEmail: "test@example.test",
+                        authoredAt: 1,
+                    }],
+                },
+        }
+    }
+    const { container, root, dispose } = render(scenario.api)
+    try {
+        await flush(root)
+        const row = container.querySelector<HTMLElement>(".change-file")!
+        const menu = async () => {
+            row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 50, clientY: 50 }))
+            await flush(root)
+            click(button(container, "File history"))
+            await flush(root)
+        }
+        await menu()
+        const history = container.querySelector<HTMLElement>(".file-history")!
+        expect(history).not.toBeNull()
+        expect(history.textContent).toContain("Following parent 1")
+        expect(history.textContent).toContain("Working Changes")
+        await menu()
+        expect(container.querySelectorAll(".file-history")).toHaveLength(1)
+        expect(reads).toBe(1)
+        click(button(history, "History commit"))
+        await flush(root)
+        click(history.querySelector<HTMLButtonElement>(".change-file button")!)
+        await flush(root)
+        expect(history.querySelector(".pierre-diff")).not.toBeNull()
+        click(button(history, "Blame context"))
+        await flush(root)
+        click(history.querySelector<HTMLButtonElement>(".blame-line button")!)
+        await flush(root)
+        expect(container.querySelectorAll(".file-history")).toHaveLength(2)
+        expect(container.querySelectorAll(".file-history")[1].textContent).not.toContain("Working Changes")
+        click(history.querySelector<HTMLButtonElement>("[aria-label='Close file history']")!)
+        await flush(root)
+        expect(container.querySelector(".file-history")).toBeNull()
+    } finally {
+        dispose()
+    }
+})
+
 function render(api: Window["workbench"]) {
     const container = document.createElement("div")
     document.body.append(container)

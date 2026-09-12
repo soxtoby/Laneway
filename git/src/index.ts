@@ -290,6 +290,10 @@ export class RepositoryGit {
         )
     }
 
+    startReadFileHistory(request: FileHistoryRequest) {
+        return startFileHistoryRead(this.descriptor, (cwd, args) => startGitProcess({ installation: this.descriptor.git, cwd, args, readOnly: true }), request)
+    }
+
     startReadFileDiff(request: FileDiffRequest) {
         return startFileDiffRead(
             this.descriptor,
@@ -622,3 +626,5 @@ async function terminateProcessTree(pid: number, force: boolean) {
         // The process may have exited between the completion check and signal.
     }
 }
+import type { FileHistoryRequest } from "@git-workbench/shared"
+import { startFileHistoryRead } from "./file-history"

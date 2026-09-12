@@ -52,6 +52,16 @@ async function performEntry(action: () => Promise<Workspace>): Promise<EntryResu
 }
 
 function registerHandlers() {
+    ipcMain.handle("history:read", async (_event, repositoryId: unknown, requestId: unknown, value: unknown): Promise<FileHistoryResult> => {
+        const request = FileHistoryRequestSchema.safeParse(value)
+        if (typeof repositoryId != "string" || typeof requestId != "string" || !request.success)
+            return { ok: false, error: { code: "git.command-failed", message: "Invalid file history request." } }
+        try {
+            return { ok: true, page: await repositories.readFileHistory(repositoryId, requestId, request.data) }
+        } catch (error) {
+            return { ok: false, error: entryError(error) }
+        }
+    })
     ipcMain.handle("changes:read", async (_event, repositoryId: unknown, requestId: unknown, value: unknown): Promise<ChangesResult> => {
         const request = ChangesRequestSchema.safeParse(value)
         if (typeof repositoryId != "string" || typeof requestId != "string" || !request.success)
@@ -343,3 +353,4 @@ app.on("window-all-closed", () => {
     if (process.platform != "darwin")
         app.quit()
 })
+import { FileHistoryRequestSchema, type FileHistoryResult } from "@git-workbench/shared"

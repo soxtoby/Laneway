@@ -174,6 +174,7 @@ export function fakeWorkbench(overrides: Partial<Window["workbench"]> = {}): Win
         readChanges: async () => ({ ok: false, error: { code: "git.command-failed", message: "Changes unavailable" } }),
         readFileDiff: async () => ({ ok: false, error: { code: "git.command-failed", message: "Diff unavailable" } }),
         cancelInspection: async () => false,
+        readFileHistory: async () => ({ ok: true, page: { entries: [] } }),
         openRepository: async () => ({ ok: false, error: { code: "git.cancelled", message: "Cancelled" } }),
         chooseDirectory: async defaultPath => defaultPath,
         suggestCloneDestination: async (_source, parent) => `${parent}\\project`,

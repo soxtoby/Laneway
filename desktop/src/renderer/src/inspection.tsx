@@ -70,12 +70,32 @@ interface ColumnState {
     status: string
     alive: boolean
     unavailable?: boolean
+    auxiliaryId?: string
+    transientLayout?: DiffLayout
 }
 
 export function createInspection(options: Options) {
     const columns = new Map<string, ColumnState>()
-    const auxiliary = new AuxiliaryColumns<BreakoutState | BranchComparisonState>()
+    const auxiliary = new AuxiliaryColumns<BreakoutState | BranchComparisonState | FileHistoryState>()
     const comparisons = createBranchComparisons(options)
+    const histories = createFileHistories({
+        ...options,
+        changed(history) {
+            const host = historyHosts.get(history)
+            if (!host)
+                return
+            for (const group of host.files.keys()) {
+                if (group != "working" && !history.page?.entries.some(entry => entry.objectId == group)) {
+                    clearGroup(host, group)
+                    host.files.delete(group)
+                }
+            }
+            host.wholeFiles.clear()
+            for (const diff of host.diffs.values())
+                diff.selection = undefined
+        },
+    })
+    const historyHosts = new Map<FileHistoryState, ColumnState>()
     let activeRepositoryId: string | undefined
     const key = (repositoryId: string, id: string) => JSON.stringify([repositoryId, id])
     const update = () => {
@@ -83,6 +103,12 @@ export function createInspection(options: Options) {
             void options.update()
     }
     const refresh = () => {
+        if (activeRepositoryId)
+            histories.refresh(activeRepositoryId)
+        for (const host of historyHosts.values()) {
+            if (host.repositoryId == activeRepositoryId && host.worktreePath)
+                void readFiles(host, "working", { kind: "working", worktreePath: host.worktreePath }, true)
+        }
         for (const state of columns.values()) {
             if (state.repositoryId == activeRepositoryId && state.worktreePath && !state.unavailable)
                 void readFiles(state, "working", { kind: "working", worktreePath: state.worktreePath }, true)
@@ -96,6 +122,7 @@ export function createInspection(options: Options) {
     const visibility = () => {
         if (document.visibilityState != "visible") {
             comparisons.activate()
+            histories.suspend()
             for (const state of columns.values())
                 suspend(state)
         } else {
@@ -118,6 +145,43 @@ export function createInspection(options: Options) {
 
     function cancel(state: ColumnState, id: string) {
         void options.api.cancelInspection(state.repositoryId, id)
+    }
+    function openHistory(owner: ColumnState, sourceId: string, source: FileHistorySource, path: string) {
+        const node = auxiliary.open(sourceId, JSON.stringify(["history", source, path]), () => {
+            const value = histories.create(owner.repositoryId, source, path)
+            const host: ColumnState = {
+                ...owner,
+                id: `history:${crypto.randomUUID()}`,
+                auxiliaryId: undefined,
+                breakout: undefined,
+                worktreePath: source.kind == "worktree" ? source.worktreePath : undefined,
+                files: new Map(),
+                diffs: new Map(),
+                cachedDiffs: new Map(),
+                requestIds: new Set(),
+                wholeFiles: new Map(),
+                history: new Map(),
+                filter: "",
+                filterOpen: false,
+                transientLayout: "unified",
+            }
+            historyHosts.set(value, host)
+            return {
+                value,
+                dispose() {
+                    histories.dispose(value)
+                    host.alive = false
+                    suspend(host)
+                    historyHosts.delete(value)
+                },
+            }
+        })
+        if (node.value.kind == "history")
+            historyHosts.get(node.value)!.auxiliaryId = node.id
+        void options.update().then(signal => {
+            if (!signal.aborted)
+                document.querySelector<HTMLElement>(`[data-auxiliary-id="${node.id}"]`)?.focus()
+        })
     }
     function suspend(state: ColumnState) {
         for (const diff of state.diffs.values()) {
@@ -189,11 +253,15 @@ export function createInspection(options: Options) {
                 wholeFiles: new Map(),
                 alive: true,
                 get breakout() {
-                    const value = auxiliary.descendants(id).find(column => column.sourceId == id && column.value.kind != "comparison")?.value
-                    return value?.kind == "comparison" ? undefined : value
+                    const value = auxiliary.descendants(id).find(column =>
+                        column.sourceId == id && (column.value.kind == "file" || column.value.kind == "commit")
+                    )?.value
+                    return value?.kind == "file" || value?.kind == "commit" ? value : undefined
                 },
                 set breakout(value: BreakoutState | undefined) {
-                    const previous = auxiliary.descendants(id).find(column => column.sourceId == id && column.value.kind != "comparison")
+                    const previous = auxiliary.descendants(id).find(column =>
+                        column.sourceId == id && (column.value.kind == "file" || column.value.kind == "commit")
+                    )
                     if (previous?.value == value)
                         return
                     if (previous)
@@ -337,7 +405,7 @@ export function createInspection(options: Options) {
         state.breakout = undefined
     }
     function focusBreakout(state: ColumnState) {
-        const column = auxiliary.descendants(key(state.repositoryId, state.id)).find(column => column.value.kind != "comparison")
+        const column = auxiliary.descendants(key(state.repositoryId, state.id)).find(column => column.value.kind == "file" || column.value.kind == "commit")
         if (!column)
             return
         auxiliary.focusedId = column.id
@@ -584,6 +652,20 @@ export function createInspection(options: Options) {
                     </p>
                 )}
                 <FileTree
+                    actions={file => [{
+                        label: "File history",
+                        run: () =>
+                            openHistory(
+                                state,
+                                state.auxiliaryId ?? key(state.repositoryId, state.id),
+                                files.source.kind == "working"
+                                    ? { kind: "worktree", worktreePath: files.source.worktreePath }
+                                    : files.source.kind == "commit"
+                                    ? { kind: "commit", objectId: files.source.objectId }
+                                    : { kind: "branch", ref: state.column.kind == "branch" ? state.column.preferredRef : "" },
+                                file.path,
+                            ),
+                    }]}
                     flat
                     filter={state.filter}
                     files={visible}
@@ -628,14 +710,21 @@ export function createInspection(options: Options) {
     function renderDiffControls(state: ColumnState, diff: FileDiffState): RemixNode {
         return (
             <DiffControls
-                layout={options.layout(state.repositoryId, state.id)}
+                layout={state.transientLayout ?? options.layout(state.repositoryId, state.id)}
                 showWhitespace={diff.showWhitespace}
-                setLayout={layout => options.saveLayout(state.repositoryId, state.id, layout)}
+                setLayout={layout => {
+                    if (state.auxiliaryId) {
+                        state.transientLayout = layout
+                        update()
+                    } else {
+                        options.saveLayout(state.repositoryId, state.id, layout)
+                    }
+                }}
                 toggleWhitespace={() => {
                     diff.showWhitespace = !diff.showWhitespace
                     update()
                 }}
-                breakout={!state.breakout
+                breakout={!state.breakout && !state.auxiliaryId
                     ? () => showFileBreakout(state, diff)
                     : undefined}
             />
@@ -643,7 +732,7 @@ export function createInspection(options: Options) {
     }
     function renderDiff(state: ColumnState, diff: FileDiffState): RemixNode {
         const page = diff.page
-        const layout = options.layout(state.repositoryId, state.id)
+        const layout = state.transientLayout ?? options.layout(state.repositoryId, state.id)
         const brokenOut = state.breakout?.kind == "file" && state.breakout.diff == diff
             || state.breakout?.kind == "commit" && state.breakout.group == diff.group
         return (
@@ -852,6 +941,7 @@ export function createInspection(options: Options) {
         activate(repositoryId?: string) {
             comparisons.activate(repositoryId)
             if (activeRepositoryId != repositoryId) {
+                histories.suspend()
                 for (const state of columns.values()) {
                     if (state.repositoryId == activeRepositoryId)
                         suspend(state)
@@ -869,7 +959,7 @@ export function createInspection(options: Options) {
                 if (state.repositoryId == repositoryId && !ids.includes(state.id)) {
                     if (
                         graph && ![...graph.branches, ...graph.virtualBranches].some(branch => branch.id == state.id)
-                        && auxiliary.descendants(id).some(column => column.value.kind == "comparison")
+                        && auxiliary.descendants(id).some(column => column.value.kind == "comparison" || column.value.kind == "history")
                     ) {
                         if (!state.unavailable) {
                             state.unavailable = true
@@ -1175,6 +1265,7 @@ export function createInspection(options: Options) {
         },
         refreshComparisons(repositoryId: string, graph: BranchGraph) {
             comparisons.refresh(repositoryId, graph)
+            histories.refresh(repositoryId)
             return [...columns.values()].filter(state =>
                 state.repositoryId == repositoryId && state.unavailable
                 && graph.branches.some(branch => branch.id == state.id)
@@ -1184,7 +1275,7 @@ export function createInspection(options: Options) {
             return [...columns.values()].filter(state =>
                 state.repositoryId == repositoryId
                 && ![...graph.branches, ...graph.virtualBranches].some(branch => branch.id == state.id)
-                && auxiliary.descendants(key(repositoryId, state.id)).some(column => column.value.kind == "comparison")
+                && auxiliary.descendants(key(repositoryId, state.id)).some(column => column.value.kind == "comparison" || column.value.kind == "history")
             ).map(state => state.id)
         },
         openComparison(
@@ -1214,17 +1305,69 @@ export function createInspection(options: Options) {
             if (!state)
                 return null
             return auxiliary.descendants(key(repositoryId, columnId)).map(auxiliaryColumn => {
+                if (auxiliaryColumn.value.kind == "history") {
+                    const history = auxiliaryColumn.value
+                    const host = historyHosts.get(history)!
+                    host.graph = state.graph
+                    return histories.render(history, auxiliaryColumn.id, auxiliaryColumn.sourceId, {
+                        close() {
+                            auxiliary.close(auxiliaryColumn.id)
+                            update()
+                        },
+                        open(source, path) {
+                            openHistory(host, auxiliaryColumn.id, source, path)
+                        },
+                        toggle(entry) {
+                            const group = entry?.objectId ?? "working"
+                            if (history.expanded.has(group)) {
+                                history.expanded.delete(group)
+                                clearGroup(host, group)
+                            } else {
+                                history.expanded.add(group)
+                                const source: DiffSource = entry
+                                    ? { kind: "commit", objectId: entry.objectId, parentId: entry.followedParent }
+                                    : { kind: "working", worktreePath: host.worktreePath! }
+                                void readFiles(host, group, source)
+                            }
+                            update()
+                        },
+                        files(entry) {
+                            const group = entry?.objectId ?? "working"
+                            const files = host.files.get(group)
+                            return fileList(
+                                host,
+                                group,
+                                files?.inventory
+                                    ? {
+                                        ...files,
+                                        inventory: {
+                                            ...files.inventory,
+                                            files: files.inventory.files.filter(file => file.path == (entry?.path ?? history.path)),
+                                        },
+                                    }
+                                    : files,
+                            )
+                        },
+                    })
+                }
                 if (auxiliaryColumn.value.kind == "comparison") {
                     const comparison = auxiliaryColumn.value
-                    return comparisons.render(comparison, auxiliaryColumn.id, columnId, () => {
-                        auxiliary.close(auxiliaryColumn.id)
-                        void options.update().then(signal => {
-                            if (!signal.aborted) {
-                                ;(Array.from(document.querySelectorAll<HTMLElement>(".branch-column"))
-                                    .find(element => element.dataset.columnId == columnId) ?? document.querySelector<HTMLElement>(".graph-rows"))?.focus()
-                            }
-                        })
-                    }, () => options.compareWith(repositoryId, comparison.fromRef, auxiliaryColumn.id, comparison.toRef))
+                    return comparisons.render(
+                        comparison,
+                        auxiliaryColumn.id,
+                        columnId,
+                        () => {
+                            auxiliary.close(auxiliaryColumn.id)
+                            void options.update().then(signal => {
+                                if (!signal.aborted) {
+                                    ;(Array.from(document.querySelectorAll<HTMLElement>(".branch-column"))
+                                        .find(element => element.dataset.columnId == columnId) ?? document.querySelector<HTMLElement>(".graph-rows"))?.focus()
+                                }
+                            })
+                        },
+                        () => options.compareWith(repositoryId, comparison.fromRef, auxiliaryColumn.id, comparison.toRef),
+                        (source, path) => openHistory(state, auxiliaryColumn.id, source, path),
+                    )
                 }
                 const breakout = auxiliaryColumn.value
                 const files = breakout.kind == "commit" ? state.files.get(breakout.group) : undefined
@@ -1898,3 +2041,5 @@ const closeDiffColumnButton = css({
     minWidth: "26px",
     minHeight: "26px",
 })
+import type { FileHistorySource } from "@git-workbench/shared"
+import { createFileHistories, type FileHistoryState } from "./file-history"
