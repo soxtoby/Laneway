@@ -7,6 +7,8 @@ import { CommandLens } from "./command-lens"
 import { errorMessage, type NoticeState } from "./feedback"
 import { createInspection } from "./inspection"
 import { RepositoryRailToggle } from "./workspace"
+import { createWorktreeActions } from "./worktree-actions"
+import { reconcileWorktreeColumns } from "./worktree-columns"
 
 interface RepositoryGraphState {
     graph?: BranchGraph
@@ -69,11 +71,32 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
     let restoreFocus: HTMLElement | null = null
     let currentWorkspace: Workspace | undefined
     let comparisonSource: { repositoryId: string; fromRef: string; replaceId?: string; chooseFrom?: boolean; chooseFirst?: boolean } | undefined
+    const worktreeActions = createWorktreeActions({
+        api: options.api,
+        update: options.update,
+        completed: async (repositoryId, request, columnId) => {
+            const repository = options.workspace().repositories.find(item => item.id == repositoryId)
+            const destination = repository?.columns.find(item => item.id == columnId)
+            if (request.action == "switch" && destination && !destination.worktreePath) {
+                const source = repository?.columns.find(item => item.worktreePath == request.path)
+                destination.worktreePath = request.path
+                destination.worktreeId = source?.worktreeId
+                if (source) {
+                    source.worktreePath = undefined
+                    source.worktreeId = undefined
+                }
+            }
+            await read(repositoryId, false, false)
+        },
+    })
     const inspection = createInspection({
         api: options.api,
         update: options.update,
         signal: options.signal,
         compareWith,
+        openCommitWorktree: (repositoryId, commit) => {
+            void worktreeActions.prepare(repositoryId, { action: "create", commit, move: false })
+        },
         layout: (repositoryId, columnId) => stateFor(repositoryId).diffLayouts[columnId] ?? "unified",
         saveLayout: (repositoryId, columnId, layout) => {
             stateFor(repositoryId).diffLayouts[columnId] = layout
@@ -90,6 +113,14 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             void read(activeRepositoryId, false, true)
     }
     const onShortcut = (event: KeyboardEvent) => {
+        if (
+            activeRepositoryId && event.ctrlKey && !event.altKey && (event.key.toLowerCase() == "z" || event.key.toLowerCase() == "y")
+            && !(event.target instanceof HTMLElement && event.target.closest('input, textarea, select, [contenteditable="true"]'))
+        ) {
+            event.preventDefault()
+            void worktreeActions.transition(activeRepositoryId, event.shiftKey || event.key.toLowerCase() == "y" ? "redo" : "undo")
+            return
+        }
         if (event.ctrlKey && event.key.toLowerCase() == "k") {
             event.preventDefault()
             openLens()
@@ -142,6 +173,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             }
             return (
                 <section class="workspace graph-workspace" mix={workspaceStyle} aria-live="polite">
+                    {worktreeActions.dialog()}
                     {state.contextMenu && graph && (
                         <dialog
                             aria-label="Branch actions"
@@ -217,6 +249,24 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                         </h1>
                                     </div>
                                     <div class="graph-actions" mix={graphActions}>
+                                        <button
+                                            type="button"
+                                            aria-label="Undo last operation"
+                                            title="Undo (Ctrl+Z)"
+                                            disabled={worktreeActions.busy()}
+                                            mix={[graphActionsButton, on("click", () => worktreeActions.transition(active.id, "undo"))]}
+                                        >
+                                            ↶
+                                        </button>
+                                        <button
+                                            type="button"
+                                            aria-label="Redo operation"
+                                            title="Redo (Ctrl+Shift+Z)"
+                                            disabled={worktreeActions.busy()}
+                                            mix={[graphActionsButton, on("click", () => worktreeActions.transition(active.id, "redo"))]}
+                                        >
+                                            ↷
+                                        </button>
                                         <button
                                             type="button"
                                             class={state.showAll ? "active" : ""}
@@ -379,6 +429,12 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                     inspection={inspection}
                                     repositoryId={active.id}
                                     worktreePath={id => backingPath(active.id, id)}
+                                    worktreeControls={column => worktreeActions.controls(active.id, column, backingPath(active.id, column.id), graph)}
+                                    dropBranch={(columnId, branchRef) => {
+                                        const path = backingPath(active.id, columnId)
+                                        if (path)
+                                            void worktreeActions.prepare(active.id, { action: "switch", path, branch: branchRef, move: true })
+                                    }}
                                     close={branchId => closeBranch(active.id, branchId)}
                                     collapse={branchId => collapseColumn(active.id, branchId)}
                                     maximize={branchId => maximizeBranch(active.id, branchId)}
@@ -472,7 +528,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
 
     async function read(repositoryId: string, refreshRemote: boolean, quiet: boolean) {
         const state = stateFor(repositoryId)
-        if (state.loading || state.refreshing)
+        if (state.loading || state.refreshing || (quiet && worktreeActions.busy()))
             return
         state.error = undefined
         if (state.graph)
@@ -500,25 +556,20 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                     state.widths[column.id] ??= 380
                 const savedRepository = options.workspace().repositories.find(repository => repository.id == repositoryId)
                 if (savedRepository?.status == "available") {
-                    const worktreePaths = new Set([
-                        ...result.graph.branches.flatMap(branch => branch.checkedOut.map(worktree => worktree.path)),
-                        ...result.graph.virtualBranches.map(branch => branch.worktree.path),
-                    ])
-                    const removedWorktreeColumns = new Set(
-                        savedRepository.columns.filter(column => column.worktreePath && !worktreePaths.has(column.worktreePath)).map(column => column.id),
-                    )
-                    state.openedBranchIds = state.openedBranchIds.filter(id => !removedWorktreeColumns.has(id))
-                    for (const savedColumn of savedRepository.columns.filter(column => column.kind == "branch" && column.worktreePath)) {
-                        const current = result.graph.branches.find(branch => branch.checkedOut.some(worktree => worktree.path == savedColumn.worktreePath))
-                            ?? result.graph.virtualBranches.find(branch => branch.worktree.path == savedColumn.worktreePath)
-                        if (current && current.id != savedColumn.id && !state.openedBranchIds.includes(current.id)) {
-                            const savedIndex = state.openedBranchIds.indexOf(savedColumn.id)
-                            state.openedBranchIds.splice(savedIndex + 1, 0, current.id)
-                            state.widths[current.id] = state.widths[savedColumn.id] ?? 380
-                            if (state.collapsedColumnIds.includes(savedColumn.id))
-                                state.collapsedColumnIds.push(current.id)
-                        }
+                    const reconciled = reconcileWorktreeColumns(savedRepository.columns, result.graph, savedRepository.focusedColumnId)
+                    state.openedBranchIds = [
+                        ...reconciled.columns.map(column => column.id),
+                        ...state.openedBranchIds.filter(id => !savedRepository.columns.some(column => column.id == id)),
+                    ]
+                    for (const column of reconciled.columns) {
+                        state.widths[column.id] = column.width
+                        state.diffLayouts[column.id] = column.diffLayout ?? "unified"
+                        state.collapsedColumnIds = state.collapsedColumnIds.filter(id => id != column.id)
+                        if (column.collapsed)
+                            state.collapsedColumnIds.push(column.id)
                     }
+                    state.focusedColumnId = reconciled.focused
+                    savedRepository.columns = reconciled.columns
                 }
                 if (savedRepository?.status == "available" && !savedRepository.layoutInitialized) {
                     const selectedPath = savedRepository.info.selectedWorktree
@@ -555,6 +606,9 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                 }
                 await persist(repositoryId)
             } else if (result.error.code != "git.cancelled") {
+                const refreshedWorkspace = (await options.api.getState()).workspace
+                if (refreshedWorkspace.repositories.some(repository => repository.id == repositoryId && repository.status == "missing"))
+                    options.workspaceChanged(refreshedWorkspace)
                 state.error = result.error.message
                 if (state.graph)
                     options.notify({ code: result.error.code, message: `Branch Graph refresh failed: ${result.error.message}` })
@@ -727,6 +781,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                     collapsed: state.collapsedColumnIds.includes(id),
                     diffLayout: state.diffLayouts[id] ?? "unified",
                     ...(backingPath(repositoryId, id) ? { worktreePath: backingPath(repositoryId, id) } : {}),
+                    worktreeId: branch.checkedOut.find(worktree => worktree.path == backingPath(repositoryId, id))?.id,
                 }]
             }
             const virtual = state.graph!.virtualBranches.find(candidate => candidate.id == id)
@@ -735,6 +790,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                     kind: "virtual" as const,
                     id,
                     worktreePath: virtual.worktree.path,
+                    worktreeId: virtual.worktree.id,
                     lastSeenObjectId: virtual.objectId,
                     width: state.widths[id] ?? 380,
                     collapsed: state.collapsedColumnIds.includes(id),
@@ -1167,8 +1223,10 @@ function BranchRow(
                 role="option"
                 aria-selected={props.selected}
                 data-node-id={branch.id}
+                draggable={!branch.remoteOnly}
                 mix={[
                     graphRow,
+                    on("dragstart", event => event.dataTransfer?.setData("application/x-workbench-branch", branch.preferredRef)),
                     on("click", props.select),
                     ref((element, signal) => {
                         element.addEventListener("contextmenu", event => handle.props.contextMenu(event), { signal })
@@ -1298,6 +1356,8 @@ function BranchColumns(
             inspection: ReturnType<typeof createInspection>
             repositoryId: string
             worktreePath(id: string): string | undefined
+            worktreeControls(column: BranchGraph["branches"][number] | BranchGraph["virtualBranches"][number]): RemixNode
+            dropBranch(columnId: string, branchRef: string): void
             close(branchId: string): void
             collapse(branchId: string): void
             maximize(branchId: string): void
@@ -1389,6 +1449,11 @@ function BranchColumns(
                                                     const source = props.state.draggingColumnId
                                                     if (source)
                                                         props.commitMove(source)
+                                                    else {
+                                                        const branch = event.dataTransfer?.getData("application/x-workbench-branch")
+                                                        if (branch)
+                                                            props.dropBranch(column.id, branch)
+                                                    }
                                                 }),
                                                 on("dragend", () => {
                                                     if (props.state.draggingColumnId && props.state.dragOriginalIds) {
@@ -1442,11 +1507,7 @@ function BranchColumns(
                                                 )}
                                             </div>
                                         </header>
-                                        {props.worktreePath(column.id) && (
-                                            <div class="column-worktree" mix={columnWorktree}>
-                                                ⌂ {props.worktreePath(column.id)}
-                                            </div>
-                                        )}
+                                        {props.worktreeControls(column)}
                                         {props.inspection.body(props.repositoryId, column, props.graph, props.worktreePath(column.id))}
                                         {!props.state.maximizedBranchId && (
                                             <ColumnDivider branchId={column.id} width={props.state.widths[column.id] ?? 380} resize={props.resize} />
@@ -2465,18 +2526,6 @@ const branchColumnButton = css({
         borderColor: "var(--line-strong)",
         background: "var(--control)",
     },
-})
-
-const columnWorktree = css({
-    padding: "5px 11px",
-    overflow: "hidden",
-    color: "var(--muted)",
-    borderBottom: "1px solid var(--line)",
-    background: "var(--canvas)",
-    fontFamily: "var(--mono)",
-    fontSize: "10px",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
 })
 
 const columnDivider = css({

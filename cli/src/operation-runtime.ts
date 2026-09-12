@@ -1,8 +1,12 @@
 import { connectRepository, GitError, type RepositoryGit } from "@git-workbench/git"
+import { pathExists, previewWorktree, worktreeBasename } from "@git-workbench/git"
 import { type OperationAvailability, type OperationAvailabilityReason, type OperationHistoryEntry, type OperationHistoryResult, type OperationSummary, OperationSummarySchema, type OperationTransitionResult, type RecoveredExecution, type RecoveryResult, type TestMutationResult } from "@git-workbench/shared"
+import type { WorktreeRequest, WorktreeResult } from "@git-workbench/shared"
 import { link, lstat, mkdir, open, readdir, readFile, readlink, rename, unlink } from "node:fs/promises"
-import { resolve } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import { z } from "zod"
+import { mutateWorktree } from "./worktree-mutations"
+import { captureWorktreeState, relocateRemovedState, restoreWorktreeState, retainWorktreeState, worktreeStateMatches, WorktreeStateSchema } from "./worktree-state"
 
 const fixtureRef = "refs/workbench/test/fixture"
 const journalFileName = "journal.jsonl"
@@ -30,6 +34,7 @@ const StoredOperationContentSchema = OperationSummarySchema.extend({
     expectedGitLockfiles: z.array(z.string()),
     refChanges: z.array(RefChangeSchema),
     worktreeChanges: z.array(WorktreeChangeSchema),
+    lifecycle: z.object({ before: WorktreeStateSchema, after: WorktreeStateSchema.optional() }).optional(),
 })
 const StoredOperationSchema = StoredOperationContentSchema.extend({
     integrity: z.string().regex(/^[0-9a-f]{64}$/),
@@ -49,6 +54,7 @@ const TransitionEventSchema = z.object({
     action: z.enum(["undo", "redo"]),
     operationId: z.string(),
     timestamp: z.string(),
+    operation: StoredOperationSchema.optional(),
 })
 
 const HistoryEventSchema = z.discriminatedUnion("type", [OperationEventSchema, TransitionEventSchema])
@@ -56,6 +62,7 @@ const JournalPhaseSchema = z.enum([
     "intent",
     "recovery-retained",
     "preconditions-verified",
+    "worktrees-committed",
     "refs-committed",
     "history-committed",
     "finalized",
@@ -91,13 +98,14 @@ interface HistoryProjection {
 }
 
 export type OperationCommand =
+    | { command: "worktree"; request: WorktreeRequest; token?: string; noWait: boolean; crashAfter?: JournalPhase; branchPrefix?: string }
     | { command: "test-mutation"; value: string; noWait: boolean; crashAfter?: JournalPhase; holdAfterIntentMs?: number }
-    | { command: "undo"; noWait: boolean; crashAfter?: JournalPhase }
+    | { command: "undo"; noWait: boolean; crashAfter?: JournalPhase; worktreeBasename?: string }
     | { command: "redo"; noWait: boolean; crashAfter?: JournalPhase }
     | { command: "history"; noWait: boolean }
     | { command: "recover"; noWait: boolean }
 
-export type OperationCommandResult = TestMutationResult | OperationTransitionResult | OperationHistoryResult | RecoveryResult
+export type OperationCommandResult = TestMutationResult | OperationTransitionResult | OperationHistoryResult | RecoveryResult | WorktreeResult
 
 export interface CancellationSignal {
     isCancelled(): boolean
@@ -138,10 +146,12 @@ export async function executeOperationCommand(
             return recovery
 
         switch (command.command) {
+            case "worktree":
+                return runtime.applyWorktree(command.request, command.token, command.crashAfter, command.branchPrefix)
             case "test-mutation":
                 return runtime.applyTestMutation(command.value, command.crashAfter, command.holdAfterIntentMs)
             case "undo":
-                return runtime.undo(command.crashAfter)
+                return runtime.undo(command.crashAfter, command.worktreeBasename)
             case "redo":
                 return runtime.redo(command.crashAfter)
             case "history":
@@ -156,6 +166,117 @@ class OperationRuntime {
         private readonly store: OperationStore,
         private readonly cancellation: CancellationSignal,
     ) {}
+
+    async applyWorktree(request: WorktreeRequest, token?: string, crashAfter?: JournalPhase, branchPrefix = "worktree/"): Promise<WorktreeResult> {
+        await this.repository.command(this.repository.descriptor.mainWorktree, ["check-ref-format", "--branch", `${branchPrefix}worktree`])
+        const preview = await previewWorktree(this.repository, request)
+        if (token && token != preview.token)
+            throw new OperationRuntimeError("operation.precondition-failed", "Worktree state changed after preview. Review it again.")
+        if (
+            (request.action == "create" || request.action == "switch") && !request.move
+            && preview.worktrees.some(item =>
+                item.branchRef == `refs/heads/${request.branch?.replace(/^refs\/heads\//, "")}` && !("path" in request && item.path == request.path)
+            )
+        ) {
+            throw new OperationRuntimeError("operation.precondition-failed", "Confirm moving the branch from its current worktree first.")
+        }
+        if (request.action == "remove" && preview.ignored.length && !request.allowIgnoredLoss)
+            throw new OperationRuntimeError("operation.precondition-failed", "Review ignored-file loss before removal.")
+        const locks = await findGitLockfiles(this.repository.descriptor.commonDirectory)
+        if (locks.length)
+            throw gitLockfileError(locks)
+        const before = await captureWorktreeState(this.repository, preview.affected)
+        const projection = await this.store.readHistory()
+        const abandoned = projection.operations.slice(projection.position)
+        let operation = sealOperation({
+            id: crypto.randomUUID(),
+            timestamp: new Date().toISOString(),
+            kind: `worktree.${request.action}`,
+            summary: `${request.action[0]!.toUpperCase()}${request.action.slice(1)} worktree ${preview.destination ?? ("path" in request ? request.path : "")}`,
+            affectedRefs: [],
+            affectedWorktrees: preview.affected,
+            gitCommonDirectory: this.repository.descriptor.commonDirectory,
+            expectedGitLockfiles: [],
+            refChanges: [],
+            worktreeChanges: [],
+            lifecycle: { before },
+        })
+        const executionId = crypto.randomUUID()
+        await this.store.appendJournal({
+            schemaVersion: 1,
+            executionId,
+            operationId: operation.id,
+            action: "apply",
+            phase: "intent",
+            timestamp: new Date().toISOString(),
+            operation,
+            abandonedOperationIds: abandoned.map(item => item.id),
+        })
+        crashIfRequested("intent", crashAfter)
+        await retainOperation(this.repository, operation)
+        await this.store.appendJournalPhase(executionId, operation.id, "apply", "recovery-retained")
+        crashIfRequested("recovery-retained", crashAfter)
+        await this.cancelIfRequested(executionId, operation, "apply")
+        try {
+            await validatePreconditions(this.repository, operation, "apply")
+        } catch (error) {
+            await this.abortBeforeCommit(executionId, operation, "apply")
+            throw error
+        }
+        await this.store.appendJournalPhase(executionId, operation.id, "apply", "preconditions-verified")
+        crashIfRequested("preconditions-verified", crashAfter)
+        await this.cancelIfRequested(executionId, operation, "apply")
+        let changedRefs: Set<string>
+        try {
+            changedRefs = await mutateWorktree(this.repository, preview, branchPrefix)
+        } catch (error) {
+            if (await worktreeStateMatches(this.repository, before))
+                await this.abortBeforeCommit(executionId, operation, "apply")
+            else {
+                throw recoveryBlocked(
+                    operation,
+                    "apply",
+                    `The worktree operation stopped: ${
+                        error instanceof Error ? error.message : String(error)
+                    }. Its original state remains retained for recovery.`,
+                )
+            }
+            throw error
+        }
+        const after = await captureWorktreeState(this.repository, preview.affected, before)
+        const refChanges = [...new Set([...Object.keys(before.refs), ...Object.keys(after.refs)])].filter(ref => before.refs[ref] != after.refs[ref]).map(
+            ref => ({ ref, before: before.refs[ref] ?? null, after: after.refs[ref] ?? null }),
+        )
+        if (refChanges.some(change => !changedRefs.has(change.ref))) {
+            throw recoveryBlocked(
+                operation,
+                "apply",
+                "An unrelated ref changed during the worktree mutation. Its state was left intact; inspect recovery before continuing.",
+            )
+        }
+        operation = sealOperation({ ...operation, affectedRefs: refChanges.map(change => change.ref), refChanges, lifecycle: { before, after } })
+        await retainOperation(this.repository, operation)
+        await this.store.appendJournal({
+            schemaVersion: 1,
+            executionId,
+            operationId: operation.id,
+            action: "apply",
+            phase: "worktrees-committed",
+            timestamp: new Date().toISOString(),
+            operation,
+        })
+        await validateOperationState(this.repository, operation, "apply", "target")
+        crashIfRequested("worktrees-committed", crashAfter)
+        await this.store.appendJournalPhase(executionId, operation.id, "apply", "refs-committed")
+        crashIfRequested("refs-committed", crashAfter)
+        await this.commitHistory(executionId, operation, "apply")
+        await this.store.appendJournalPhase(executionId, operation.id, "apply", "history-committed")
+        crashIfRequested("history-committed", crashAfter)
+        for (const old of abandoned)
+            await releaseOperation(this.repository, old.id)
+        await this.store.appendJournalPhase(executionId, operation.id, "apply", "finalized")
+        return { type: "result", command: "worktree", operation: summarize(operation) }
+    }
 
     async applyTestMutation(value: string, crashAfter?: JournalPhase, holdAfterIntentMs?: number): Promise<TestMutationResult> {
         const projection = await this.store.readHistory()
@@ -184,14 +305,33 @@ class OperationRuntime {
         return { type: "result", command: "test-mutation", operation: summarize(operation) }
     }
 
-    async undo(crashAfter?: JournalPhase): Promise<OperationTransitionResult> {
+    async undo(crashAfter?: JournalPhase, basename?: string): Promise<OperationTransitionResult> {
         const projection = await this.store.readHistory()
         if (projection.position == 0)
             return { type: "result", command: "undo", status: "unavailable", reason: "empty" }
 
-        const operation = projection.operations[projection.position - 1]
+        let operation = projection.operations[projection.position - 1]
         if (!operation)
             throw new OperationRuntimeError("operation.history-corrupt", "Operation History has an invalid undo position.")
+
+        if (basename) {
+            if (operation.kind != "worktree.remove" || !operation.lifecycle?.after)
+                throw new OperationRuntimeError("operation.precondition-failed", "An alternate basename is only available when undoing worktree removal.")
+            const root = operation.lifecycle.before.roots.find(root => root.kind == "working" && root.present)
+            if (!root)
+                throw new OperationRuntimeError("operation.precondition-failed", "There is no removed directory to recreate.")
+            const destination = join(dirname(root.path), worktreeBasename(basename))
+            if (await pathExists(destination))
+                throw new OperationRuntimeError("operation.precondition-failed", "The alternate worktree path is occupied.")
+            operation = sealOperation({
+                ...operation,
+                affectedWorktrees: [...new Set([...operation.affectedWorktrees, destination])],
+                lifecycle: {
+                    before: await relocateRemovedState(this.repository, operation.lifecycle.before, root.path, destination),
+                    after: await relocateRemovedState(this.repository, operation.lifecycle.after, root.path, destination),
+                },
+            })
+        }
 
         await this.applyOperation(operation, "undo", [], crashAfter)
         return { type: "result", command: "undo", status: "performed", operation: summarize(operation) }
@@ -301,9 +441,17 @@ class OperationRuntime {
         await this.cancelIfRequested(executionId, operation, action)
 
         try {
-            await applyRefChanges(this.repository, transitionChanges(operation, action))
+            if (operation.lifecycle) {
+                const { before, after } = operation.lifecycle
+                if (!after)
+                    throw recoveryBlocked(operation, action, "The worktree operation has no completed target snapshot.")
+                await restoreWorktreeState(this.repository, action == "undo" ? after : before, action == "undo" ? before : after)
+            } else {
+                await applyRefChanges(this.repository, transitionChanges(operation, action))
+            }
         } catch (error) {
-            await this.abortBeforeCommit(executionId, operation, action)
+            if (!operation.lifecycle)
+                await this.abortBeforeCommit(executionId, operation, action)
             throw error
         }
         await validateOperationState(this.repository, operation, action, "target")
@@ -342,6 +490,17 @@ class OperationRuntime {
 
     private async resumeExecution(execution: JournalExecution) {
         const { action, executionId, operation, operationId } = execution.intent
+        if (operation.lifecycle && !operation.lifecycle.after && !execution.phases.has("cancelled")) {
+            if (await worktreeStateMatches(this.repository, operation.lifecycle.before)) {
+                await this.abortBeforeCommit(executionId, operation, action)
+                return false
+            }
+            throw recoveryBlocked(
+                operation,
+                action,
+                "A worktree mutation stopped before its target was recorded. Retained Git and file state is available under this operation's recovery refs; inspect the affected paths before continuing.",
+            )
+        }
         if (execution.phases.has("cancelled") || execution.phases.has("aborted")) {
             if (action == "apply")
                 await releaseOperation(this.repository, operation.id)
@@ -370,9 +529,18 @@ class OperationRuntime {
             }
             if (!execution.phases.has("preconditions-verified"))
                 await this.store.appendJournalPhase(executionId, operationId, action, "preconditions-verified")
-            await applyRefChanges(this.repository, transitionChanges(operation, action))
+            if (operation.lifecycle?.after) {
+                await restoreWorktreeState(
+                    this.repository,
+                    action == "undo" ? operation.lifecycle.after : operation.lifecycle.before,
+                    action == "undo" ? operation.lifecycle.before : operation.lifecycle.after,
+                )
+            } else {
+                await applyRefChanges(this.repository, transitionChanges(operation, action))
+            }
         }
 
+        await validateOperationState(this.repository, operation, action, "target")
         if (!execution.phases.has("refs-committed"))
             await this.store.appendJournalPhase(executionId, operationId, action, "refs-committed")
         if (!historyCommitted)
@@ -399,6 +567,7 @@ class OperationRuntime {
             action,
             operationId: operation.id,
             timestamp: new Date().toISOString(),
+            ...(operation.lifecycle ? { operation } : {}),
         })
     }
 }
@@ -480,6 +649,12 @@ class OperationStore {
                 : projection.operations[projection.position]
             if (expected?.id !== event.operationId)
                 throw new OperationRuntimeError("operation.history-corrupt", `Operation History contains an invalid ${event.action} transition.`)
+            if (event.operation) {
+                validateOperationIntegrity(event.operation, "operation.history-corrupt")
+                if (event.operation.id != expected.id)
+                    throw new OperationRuntimeError("operation.history-corrupt", "A transition snapshot belongs to another operation.")
+                projection.operations[event.action == "undo" ? projection.position - 1 : projection.position] = event.operation
+            }
             projection.position += event.action == "undo" ? -1 : 1
         }
 
@@ -537,6 +712,10 @@ class OperationStore {
             if (execution.phases.has("finalized") || execution.phases.has(event.phase))
                 throw new OperationRuntimeError("operation.journal-corrupt", "The recovery journal contains an invalid repeated phase.")
             execution.phases.add(event.phase)
+            if (event.phase == "worktrees-committed" && event.operation) {
+                validateOperationIntegrity(event.operation, "operation.journal-corrupt")
+                execution.intent.operation = event.operation
+            }
         }
 
         return [...executions.values()].filter(execution => !execution.phases.has("finalized"))
@@ -635,6 +814,11 @@ const neverCancelled: CancellationSignal = {
 }
 
 async function retainOperation(repository: RepositoryGit, operation: StoredOperation) {
+    if (operation.lifecycle) {
+        await retainWorktreeState(repository, operation.id, "before", operation.lifecycle.before)
+        if (operation.lifecycle.after)
+            await retainWorktreeState(repository, operation.id, "after", operation.lifecycle.after)
+    }
     for (const [index, change] of operation.refChanges.entries()) {
         if (change.before)
             await repository.updateRef(`refs/workbench/recovery/${operation.id}/before/${index}`, change.before)
@@ -645,8 +829,9 @@ async function retainOperation(repository: RepositoryGit, operation: StoredOpera
 
 async function releaseOperation(repository: RepositoryGit, operationId: string) {
     const prefix = `refs/workbench/recovery/${operationId}/`
-    for (const ref of await repository.listRefs(prefix))
-        await repository.updateRef(ref, null)
+    const refs = await repository.listRefs(prefix)
+    if (refs.length)
+        await repository.command(repository.descriptor.mainWorktree, ["update-ref", "--stdin"], refs.map(ref => `delete ${ref}\n`).join(""))
 }
 
 async function applyRefChanges(repository: RepositoryGit, changes: RefChange[]) {
@@ -665,6 +850,23 @@ async function validatePreconditions(repository: RepositoryGit, operation: Store
     const gitLockfiles = await findGitLockfiles(operation.gitCommonDirectory)
     if (!sameStrings(gitLockfiles, operation.expectedGitLockfiles))
         throw gitLockfileError(gitLockfiles)
+
+    if (operation.lifecycle) {
+        const expected = action == "undo" ? operation.lifecycle.after : operation.lifecycle.before
+        let matches = false
+        try {
+            matches = Boolean(expected && await worktreeStateMatches(repository, expected))
+        } catch (error) {
+            throw new OperationRuntimeError("operation.precondition-failed", error instanceof Error ? error.message : String(error), {
+                reason: "worktree-changed",
+            })
+        }
+        if (!matches) {
+            throw new OperationRuntimeError("operation.precondition-failed", "Worktree files, registration, HEAD, index, or refs changed outside Workbench.", {
+                reason: "worktree-changed",
+            })
+        }
+    }
 
     const expectsAfter = action == "undo"
     for (const change of operation.refChanges) {
@@ -706,6 +908,7 @@ function validateOperationState(repository: RepositoryGit, operation: StoredOper
 
 async function findGitLockfiles(commonDirectory: string) {
     const lockfiles: string[] = []
+    const commonLockfiles = new Set(["config.lock", "gc.log.lock", "HEAD.lock", "index.lock", "packed-refs.lock", "shallow.lock"])
 
     async function visit(directory: string, relativeDirectory: string, recursive: boolean) {
         let entries
@@ -721,7 +924,7 @@ async function findGitLockfiles(commonDirectory: string) {
             const relativePath = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name
             if (recursive && entry.isDirectory())
                 await visit(resolve(directory, entry.name), relativePath, true)
-            else if (entry.isFile() && entry.name.endsWith(".lock"))
+            else if (entry.isFile() && entry.name.endsWith(".lock") && (relativeDirectory || commonLockfiles.has(entry.name)))
                 lockfiles.push(relativePath)
         }
     }

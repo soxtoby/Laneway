@@ -23,6 +23,16 @@ app.whenReady().then(async () => {
     })`)
     window.webContents.sendInputEvent({ type: "mouseDown", ...point, button: "left", clickCount: 1 })
     window.webContents.sendInputEvent({ type: "mouseUp", ...point, button: "left", clickCount: 1 })
+    const menuPoint = await window.webContents.executeJavaScript(`new Promise(resolve => {
+        const timer = setInterval(() => {
+            const item = document.querySelector('[data-column-id="virtual:inspection"] [role="menuitem"]');
+            if (!item) return;
+            clearInterval(timer);
+            const rect = item.getBoundingClientRect();
+            resolve({ x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) });
+        }, 20);
+    })`)
+    window.webContents.sendInputEvent({ type: "mouseMove", ...menuPoint })
     const result = await window.webContents.executeJavaScript("window.rendererChecks")
     fs.writeFileSync(path.join(directory, "result.json"), JSON.stringify(result))
     app.quit()

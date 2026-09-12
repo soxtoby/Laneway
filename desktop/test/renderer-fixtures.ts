@@ -171,6 +171,9 @@ export function branchGraph(repositoryId: string) {
 export function fakeWorkbench(overrides: Partial<Window["workbench"]> = {}): Window["workbench"] {
     return {
         getState: async () => appState(),
+        previewWorktree: async () => ({ ok: false, error: { message: "Worktree operations unavailable" } }),
+        executeWorktree: async () => ({ ok: false, error: { message: "Worktree operations unavailable" } }),
+        transitionOperation: async () => ({ ok: true }),
         readChanges: async () => ({ ok: false, error: { code: "git.command-failed", message: "Changes unavailable" } }),
         readFileDiff: async () => ({ ok: false, error: { code: "git.command-failed", message: "Diff unavailable" } }),
         cancelInspection: async () => false,

@@ -1,6 +1,7 @@
 import { GitError } from "@git-workbench/git"
 import { readSettings, SettingsError } from "@git-workbench/settings"
 import { ENGINE_VERSION, type EngineMessage, type ErrorEvent, ExitCode } from "@git-workbench/shared"
+import { type WorktreeRequest, WorktreeRequestSchema } from "@git-workbench/shared"
 import { executeOperationCommand, type JournalPhase, OperationCancelledError, type OperationCommand, OperationRuntimeError } from "./operation-runtime.ts"
 
 const args = process.argv.slice(2)
@@ -21,7 +22,7 @@ function write(message: string | EngineMessage, json: boolean) {
         }
     } else if (message.command == "undo" || message.command == "redo")
         console.log(message.status == "performed" ? message.operation?.summary : `Nothing to ${message.command}.`)
-    else if (message.command == "test-mutation")
+    else if (message.command == "test-mutation" || message.command == "worktree")
         console.log(message.operation.summary)
     else if (message.command == "recover")
         console.log(message.status == "clean" ? "No recovery is required." : `Recovered ${message.recovered.length} operation(s).`)
@@ -219,11 +220,34 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
     let gitPath: string | undefined
     let crashAfter: JournalPhase | undefined
     let holdAfterIntentMs: number | undefined
+    let request: WorktreeRequest | undefined
+    let token: string | undefined
+    let worktreeBasename: string | undefined
 
     for (let index = 0; index < commandArguments.length; index += 1) {
         const argument = commandArguments[index]
         if (argument == "--json" || argument == "--no-wait")
             continue
+        if (command == "undo" && argument == "--worktree-basename") {
+            worktreeBasename = commandArguments[++index]
+            if (!worktreeBasename)
+                return invalidOperationArgument(command, json, "Provide a new basename for the restored worktree.", "--worktree-basename")
+            continue
+        }
+        if (command == "worktree" && argument == "--request") {
+            try {
+                request = WorktreeRequestSchema.parse(JSON.parse(commandArguments[++index]!))
+            } catch {
+                return invalidOperationArgument(command, json, "Provide a valid worktree request JSON object.", "--request")
+            }
+            continue
+        }
+        if (command == "worktree" && argument == "--expected") {
+            token = commandArguments[++index]
+            if (!token)
+                return invalidOperationArgument(command, json, "Provide a preview token.", "--expected")
+            continue
+        }
         if (argument == "--git-path") {
             gitPath = commandArguments[index + 1]
             if (!gitPath)
@@ -248,11 +272,19 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
             continue
         }
         if (
-            (command == "test-mutation" || command == "undo" || command == "redo") && argument == "--crash-after"
+            (command == "test-mutation" || command == "worktree" || command == "undo" || command == "redo") && argument == "--crash-after"
             && process.env.WORKBENCH_ENABLE_TEST_COMMANDS == "1"
         ) {
             const phase = commandArguments[index + 1]
-            const phases: JournalPhase[] = ["intent", "recovery-retained", "preconditions-verified", "refs-committed", "history-committed", "finalized"]
+            const phases: JournalPhase[] = [
+                "intent",
+                "recovery-retained",
+                "preconditions-verified",
+                "worktrees-committed",
+                "refs-committed",
+                "history-committed",
+                "finalized",
+            ]
             if (!phase || !phases.includes(phase as JournalPhase))
                 return invalidOperationArgument(command, json, `Invalid journal phase "${phase ?? ""}".`, "--crash-after")
             crashAfter = phase as JournalPhase
@@ -265,15 +297,17 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
 
     if (command == "test-mutation" && value == undefined)
         return invalidOperationArgument(command, json, "A value is required for --value.", "--value")
+    if (command == "worktree" && !request)
+        return invalidOperationArgument(command, json, "A worktree request is required.", "--request")
 
     return {
         ok: true,
         json,
         gitPath,
-        command: command == "test-mutation"
+        command: command == "worktree" ? { command, request: request!, token, noWait, crashAfter } : command == "test-mutation"
             ? { command, value: value!, noWait, crashAfter, holdAfterIntentMs }
             : command == "undo" || command == "redo"
-            ? { command, noWait, crashAfter }
+            ? { command, noWait, crashAfter, ...(command == "undo" ? { worktreeBasename } : {}) }
             : { command, noWait },
     }
 }
@@ -301,7 +335,8 @@ async function runOperationCommand(command: OperationCommand["command"], command
     const cancellation = monitorCancellation()
     try {
         const settings = await readSettings(process.env.WORKBENCH_SETTINGS_PATH)
-        write(await executeOperationCommand(parsed.command, process.cwd(), cancellation, parsed.gitPath ?? settings.gitPath), parsed.json)
+        const command = parsed.command.command == "worktree" ? { ...parsed.command, branchPrefix: settings.virtualBranchPrefix } : parsed.command
+        write(await executeOperationCommand(command, process.cwd(), cancellation, parsed.gitPath ?? settings.gitPath), parsed.json)
         return ExitCode.ok
     } catch (error) {
         if (error instanceof OperationCancelledError) {
@@ -337,7 +372,7 @@ else if (args[0] == "echo") {
     } else {
         process.exitCode = await echo(parsed.message, parsed.delayMs, parsed.json)
     }
-} else if (args[0] == "undo" || args[0] == "redo" || args[0] == "history" || args[0] == "recover")
+} else if (args[0] == "worktree" || args[0] == "undo" || args[0] == "redo" || args[0] == "history" || args[0] == "recover")
     process.exitCode = await runOperationCommand(args[0], args.slice(1))
 else if (args[0] == "test-mutation" && process.env.WORKBENCH_ENABLE_TEST_COMMANDS == "1")
     process.exitCode = await runOperationCommand("test-mutation", args.slice(1))

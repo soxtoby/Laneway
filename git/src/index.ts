@@ -5,6 +5,7 @@ import { access, lstat, mkdir, readdir, readFile, realpath } from "node:fs/promi
 import { delimiter, isAbsolute, resolve } from "node:path"
 import { type BranchGraphReadCache, startBranchGraphRead, startBranchHistoryRead } from "./branch-graph"
 import { type ChangesReadCache, startChangesRead, startFileDiffRead } from "./changes"
+import { readRegisteredWorktrees } from "./worktrees"
 
 const minimumGitVersion = [2, 41, 0] as const
 const credentialPattern = /([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]+)(?::[^\s/@]*)?@/gi
@@ -77,7 +78,7 @@ interface GitRunOptions {
     installation: GitInstallation
     args: string[]
     cwd?: string
-    input?: string
+    input?: string | Uint8Array
     secrets?: string[]
     onProgress?: (message: string) => void
 }
@@ -281,9 +282,13 @@ export class RepositoryGit {
 
     constructor(readonly descriptor: RepositoryDescriptor) {}
 
+    private get readDescriptor() {
+        return { ...this.descriptor, selectedWorktree: this.descriptor.mainWorktree }
+    }
+
     startReadChanges(request: ChangesRequest) {
         return startChangesRead(
-            this.descriptor,
+            this.readDescriptor,
             (cwd, args, onOutput, input) => startGitProcess({ installation: this.descriptor.git, cwd, args, readOnly: true, onOutput, input }),
             request,
             this.changesCache,
@@ -291,12 +296,16 @@ export class RepositoryGit {
     }
 
     startReadFileHistory(request: FileHistoryRequest) {
-        return startFileHistoryRead(this.descriptor, (cwd, args) => startGitProcess({ installation: this.descriptor.git, cwd, args, readOnly: true }), request)
+        return startFileHistoryRead(
+            this.readDescriptor,
+            (cwd, args) => startGitProcess({ installation: this.descriptor.git, cwd, args, readOnly: true }),
+            request,
+        )
     }
 
     startReadFileDiff(request: FileDiffRequest) {
         return startFileDiffRead(
-            this.descriptor,
+            this.readDescriptor,
             (cwd, args, onOutput, input) => startGitProcess({ installation: this.descriptor.git, cwd, args, readOnly: true, onOutput, input }),
             request,
             this.changesCache,
@@ -366,25 +375,44 @@ export class RepositoryGit {
     }
 
     startReadBranchGraph(options: BranchGraphReadOptions) {
-        return startBranchGraphRead(
+        const task = startBranchGraphRead(
             this.descriptor,
-            (args, input) => startGitProcess({ installation: this.descriptor.git, cwd: this.descriptor.selectedWorktree, args, input }),
+            (args, input) => startGitProcess({ installation: this.descriptor.git, cwd: this.descriptor.mainWorktree, args, input }),
             options,
             this.branchGraphCache,
             cache => this.branchGraphCache = cache,
         )
+        return {
+            cancel: task.cancel,
+            result: task.result.then(async graph => {
+                const worktrees = await readRegisteredWorktrees(this)
+                const enrich = (item: { path: string }) =>
+                    worktrees.find(worktree => worktree.path.replaceAll("\\", "/").toLowerCase() == item.path.replaceAll("\\", "/").toLowerCase()) ?? item
+                for (const branch of graph.branches)
+                    branch.checkedOut = branch.checkedOut.map(item => ({ ...item, ...enrich(item) }))
+                for (const branch of graph.virtualBranches)
+                    branch.worktree = { ...branch.worktree, ...enrich(branch.worktree) }
+                return graph
+            }),
+        }
     }
 
     startReadBranchHistory(request: BranchHistoryRequest) {
         return startBranchHistoryRead(
             this.descriptor,
-            (args, input) => startGitProcess({ installation: this.descriptor.git, cwd: this.descriptor.selectedWorktree, args, input }),
+            (args, input) => startGitProcess({ installation: this.descriptor.git, cwd: this.descriptor.mainWorktree, args, input }),
             request,
         )
     }
 
-    private run(cwd: string, args: string[], input?: string) {
+    run(cwd: string, args: string[], input?: string | Uint8Array) {
         return runGitProcess({ installation: this.descriptor.git, cwd, args, input })
+    }
+
+    async command(cwd: string, args: string[], input?: string | Uint8Array) {
+        const result = await this.run(cwd, args, input)
+        this.throwIfFailed(result, "Git command failed.")
+        return result.stdout
     }
 
     private async requireText(cwd: string, args: string[], input?: string) {
@@ -628,3 +656,4 @@ async function terminateProcessTree(pid: number, force: boolean) {
 }
 import type { FileHistoryRequest } from "@git-workbench/shared"
 import { startFileHistoryRead } from "./file-history"
+export * from "./worktrees"

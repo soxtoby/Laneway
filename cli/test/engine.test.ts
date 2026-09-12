@@ -404,6 +404,26 @@ describe("Workbench Engine executable", () => {
         }
     })
 
+    test("an unrelated .lock file in the Git directory does not block a Workbench mutation", async () => {
+        const repository = await createRepository()
+        const testEnvironment = { WORKBENCH_ENABLE_TEST_COMMANDS: "1" }
+
+        try {
+            await writeFile(resolve(repository, ".git", "project.lock"), "")
+            const mutation = await runEngineAt(
+                repository,
+                ["test-mutation", "--value", "allowed", "--json"],
+                testEnvironment,
+            )
+
+            expect(mutation.exitCode).toBe(0)
+            expect(parseNdjson(mutation.stdout).at(-1)).toMatchObject({ type: "result", command: "test-mutation" })
+            expect(runGitAt(repository, "show", "refs/workbench/test/fixture").stdout.toString()).toBe("allowed")
+        } finally {
+            await rm(repository, { recursive: true, force: true })
+        }
+    })
+
     test("corrupt Operation History fails safely with a stable error", async () => {
         const repository = await createRepository()
         const testEnvironment = { WORKBENCH_ENABLE_TEST_COMMANDS: "1" }

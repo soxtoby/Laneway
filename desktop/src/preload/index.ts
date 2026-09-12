@@ -1,8 +1,13 @@
 import type { Appearance, AuthorIdentitySettings, BranchHistoryRequest, EntryProgress, RepositoryGraphSettings, Workspace } from "@git-workbench/shared"
 import type { ChangesRequest, FileDiffRequest } from "@git-workbench/shared"
+import type { WorktreeRequest } from "@git-workbench/shared"
 import { contextBridge, ipcRenderer } from "electron"
 
 contextBridge.exposeInMainWorld("workbench", {
+    previewWorktree: (repositoryId: string, request: WorktreeRequest) => ipcRenderer.invoke("worktree:preview", repositoryId, request),
+    executeWorktree: (repositoryId: string, request: WorktreeRequest, token: string) => ipcRenderer.invoke("worktree:execute", repositoryId, request, token),
+    transitionOperation: (repositoryId: string, action: "undo" | "redo", basename?: string) =>
+        ipcRenderer.invoke("worktree:history", repositoryId, action, basename),
     readChanges: (repositoryId: string, requestId: string, request: ChangesRequest) => ipcRenderer.invoke("changes:read", repositoryId, requestId, request),
     readFileHistory: (repositoryId: string, requestId: string, request: FileHistoryRequest) =>
         ipcRenderer.invoke("history:read", repositoryId, requestId, request),

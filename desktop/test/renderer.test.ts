@@ -1,4 +1,4 @@
-import type { ChangesResult, EntryProgress, EntryResult, FileDiffResult } from "@git-workbench/shared"
+import type { ChangesResult, EntryProgress, EntryResult, FileDiffResult, WorktreeRequest } from "@git-workbench/shared"
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { Window as HappyWindow } from "happy-dom"
 import type { createElement as createRemixElement, createRoot as createRemixRoot, VirtualRoot } from "remix/ui"
@@ -63,6 +63,147 @@ beforeAll(async () => {
 })
 
 afterAll(() => browserWindow.close())
+
+test("worktree creation previews the destination and mutates only after confirmation", async () => {
+    const scenario = inspectionScenario()
+    let executions = 0
+    scenario.api.previewWorktree = async (_id, request) => ({
+        ok: true,
+        preview: {
+            request,
+            worktrees: [],
+            destination: "D:/project.worktrees/feature",
+            affected: ["D:/project.worktrees/feature"],
+            ignored: [],
+            dirty: false,
+            uniqueCommits: false,
+            populatedSubmodules: false,
+            token: "current",
+        },
+    })
+    scenario.api.executeWorktree = async (_id, request, token) => {
+        expect(request.action).toBe("create")
+        expect(token).toBe("current")
+        executions++
+        return { ok: true }
+    }
+    const { container, root, dispose } = render(scenario.api)
+    await flush(root)
+    click(button(container.querySelector("[data-node-id='branch:refs/heads/main']")!, "Open"))
+    await flush(root)
+    click(container.querySelector<HTMLElement>(".column-worktree [aria-label='Check out branch']")!)
+    await flush(root)
+    click(button(container, "New worktree"))
+    await flush(root)
+    const dialog = container.querySelector<HTMLDialogElement>('dialog[aria-label="Worktree operation"]')!
+    expect(dialog.open).toBe(true)
+    expect(dialog.textContent).toContain("D:/project.worktrees/feature")
+    expect(executions).toBe(0)
+    click(button(dialog, "Cancel"))
+    await flush(root)
+    expect(executions).toBe(0)
+    click(container.querySelector<HTMLElement>(".column-worktree [aria-label='Check out branch']")!)
+    await flush(root)
+    click(button(container, "New worktree"))
+    await flush(root)
+    click(button(container.querySelector<HTMLDialogElement>('dialog[aria-label="Worktree operation"]')!, "Confirm"))
+    await flush(root)
+    expect(executions).toBe(1)
+    dispose()
+})
+
+test("worktree row renames inline and switches through branch search; removal stays in overflow", async () => {
+    const scenario = inspectionScenario()
+    const readGraph = scenario.api.readBranchGraph
+    scenario.api.readBranchGraph = async (...args) => {
+        const result = await readGraph(...args)
+        if (result.ok)
+            result.graph.branches[1]!.checkedOut[0]!.main = false
+        return result
+    }
+    const requests: WorktreeRequest[] = []
+    scenario.api.previewWorktree = async (_id, request) => {
+        requests.push(request)
+        return { ok: false, error: { message: "Preview requested" } }
+    }
+    const { container, root, dispose } = render(scenario.api)
+    try {
+        await flush(root)
+        const row = container.querySelector<HTMLElement>(".column-worktree")!
+        expect(row.querySelector("details, select, input")).toBeNull()
+        expect(row.textContent).not.toContain("Remove")
+        expect(row.textContent).not.toContain("commit")
+        const rename = row.querySelector<HTMLButtonElement>("[aria-label='Rename worktree']")!
+        click(rename)
+        await flush(root)
+        const name = row.querySelector<HTMLInputElement>("[aria-label='Worktree directory name']")!
+        expect(name.value).toBe("inspection")
+        input(name, "cancelled")
+        name.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+        await flush(root)
+        expect(requests).toEqual([])
+        expect(row.querySelector("input")).toBeNull()
+        click(row.querySelector<HTMLButtonElement>("[aria-label='Rename worktree']")!)
+        await flush(root)
+        const nextName = row.querySelector<HTMLInputElement>("input")!
+        input(nextName, "renamed")
+        nextName.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+        await flush(root)
+        expect(requests).toEqual([{ action: "rename", path: "D:\\Source\\inspection", basename: "renamed" }])
+        click(button(container.querySelector("dialog")!, "Cancel"))
+        await flush(root)
+
+        const switchBranch = row.querySelector<HTMLButtonElement>("[aria-label='Switch worktree branch']")!
+        click(switchBranch)
+        await flush(root)
+        expect(container.querySelector(".lens-results")!.textContent).not.toContain("feature/workbench")
+        input(container.querySelector<HTMLInputElement>("[aria-label='Command Lens search']")!, "main")
+        await flush(root)
+        click(container.querySelector<HTMLButtonElement>(".lens-results button")!)
+        await flush(root)
+        expect(requests[1]).toEqual({ action: "switch", path: "D:\\Source\\inspection", branch: "refs/heads/main", move: true })
+        expect(container.querySelector(".command-lens")).toBeNull()
+        click(button(container.querySelector("dialog")!, "Cancel"))
+        await flush(root)
+
+        let executed: WorktreeRequest | undefined
+        scenario.api.previewWorktree = async (_id, request) => {
+            requests.push(request)
+            return {
+                ok: true,
+                preview: {
+                    request,
+                    worktrees: [],
+                    affected: ["D:\\Source\\inspection"],
+                    ignored: ["D:\\Source\\inspection\\generated.bin"],
+                    dirty: true,
+                    uniqueCommits: false,
+                    populatedSubmodules: false,
+                    token: request.action == "remove" && request.allowIgnoredLoss ? "allowed" : "preview",
+                },
+            }
+        }
+        scenario.api.executeWorktree = async (_id, request) => {
+            executed = request
+            return { ok: true }
+        }
+        click(row.querySelector<HTMLButtonElement>("[aria-label='Worktree actions']")!)
+        await flush(root)
+        expect(row.querySelector("[role='menu']")!.textContent).not.toContain("New worktree")
+        click(button(row.querySelector("[role='menu']")!, "Remove worktree…"))
+        await flush(root)
+        expect(requests[2]).toEqual({ action: "remove", path: "D:\\Source\\inspection", preserve: true, allowIgnoredLoss: false })
+        expect(row.querySelector("[role='menu']")).toBeNull()
+        const removeDialog = container.querySelector<HTMLDialogElement>('dialog[aria-label="Worktree operation"]')!
+        expect(removeDialog.textContent).toContain("Working Changes detected")
+        expect(removeDialog.textContent).not.toContain("ignored")
+        click(button(removeDialog, "Remove worktree"))
+        await flush(root)
+        expect(executed).toEqual({ action: "remove", path: "D:\\Source\\inspection", preserve: true, allowIgnoredLoss: true })
+    } finally {
+        dispose()
+    }
+})
 
 describe("Remix repository entry renderer", () => {
     test("initializes a repository and opens the resulting workspace", async () => {

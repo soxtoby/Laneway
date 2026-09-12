@@ -41,7 +41,7 @@ Git's permanent repository worktree, unrelated to the Primary Branch. It may cha
 _Avoid_: Primary Worktree
 
 **Worktree Home**:
-The globally configurable parent directory for newly created linked worktrees. By default, Workbench uses a `<repository>.worktrees` sibling of the Main Worktree and derives each initial directory name from its branch.
+The parent directory for newly created linked worktrees: a `<repository>.worktrees` sibling of the Main Worktree, with initial directory names derived from their branches. Configurable placement is deferred.
 _Avoid_: Worktree storage
 
 **Registered Worktree**:
@@ -53,7 +53,7 @@ A linked worktree protected by a Git worktree lock and its optional reason. Work
 _Avoid_: Read-only worktree
 
 **Missing Worktree**:
-A registered linked worktree whose directory is unavailable at its recorded path while its per-worktree HEAD and index remain in Git's shared administrative data. Workbench never prunes it; the user may locate, repair, or forget it, while an external Git prune removes the entry and creates an undo boundary.
+A registered linked worktree whose directory is unavailable at its recorded path while its per-worktree HEAD and index remain in Git's shared administrative data. The user may locate and repair it or explicitly remove its registration; Workbench never prunes it automatically, and external Git pruning creates an undo boundary.
 _Avoid_: Deleted worktree, stale worktree
 
 **Worktree Removal**:

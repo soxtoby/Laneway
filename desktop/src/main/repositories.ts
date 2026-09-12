@@ -4,6 +4,9 @@ import type { Appearance, AuthorIdentitySettings, BranchGraph, BranchGraphReadOp
 import { resolve } from "node:path"
 
 export class OpenRepositories {
+    worktreeRepository(repositoryId: string) {
+        return this.requireRepository(repositoryId).git
+    }
     private readonly repositories = new Map<string, { info: RepositoryInfo; git: RepositoryGit }>()
     private readonly graphReads = new Map<string, GitTask<BranchGraph>>()
     private readonly historyReads = new Map<string, GitTask<BranchHistoryPage>>()

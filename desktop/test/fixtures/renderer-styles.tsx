@@ -7,6 +7,25 @@ async function checkRenderer() {
     const violations: string[] = []
     document.addEventListener("securitypolicyviolation", event => violations.push(`${event.violatedDirective}: ${event.blockedURI}`))
     const scenario = inspectionScenario()
+    let worktreeExecutions = 0
+    scenario.api.previewWorktree = async (_id, request) => ({
+        ok: true,
+        preview: {
+            request,
+            worktrees: [],
+            affected: ["D:/project.worktrees/feature"],
+            destination: "D:/project.worktrees/feature",
+            ignored: [],
+            dirty: false,
+            uniqueCommits: false,
+            populatedSubmodules: false,
+            token: "current",
+        },
+    })
+    scenario.api.executeWorktree = async () => {
+        worktreeExecutions++
+        return { ok: true }
+    }
     scenario.api.readFileHistory = async (_repository, _requestId, request) => ({
         ok: true,
         page: request.related
@@ -606,10 +625,34 @@ async function checkRenderer() {
     element("[aria-label='Close comparison']").click()
     await settle()
     const comparisonClosed = !document.querySelector(".branch-comparison")
+    ;[...element("[data-node-id='branch:refs/heads/main']").querySelectorAll("button")].find(button => button.textContent == "Open")!.click()
+    await settle()
+    element(".column-worktree [aria-label='Check out branch']").click()
+    await settle()
+    const worktreeMenu = element(".column-worktree [role='menu']")
+    const createWorktree = [...worktreeMenu.querySelectorAll("button")].find(button => button.textContent == "New worktree")!
+    createWorktree.click()
+    await settle()
+    const worktreeDialog = element<HTMLDialogElement>('dialog[aria-label="Worktree operation"]')
+    const dialogBounds = worktreeDialog.getBoundingClientRect()
+    const worktreePreview = worktreeDialog.open && worktreeExecutions == 0 && worktreeDialog.textContent!.includes("D:/project.worktrees/feature")
+        && dialogBounds.left >= 0 && dialogBounds.right <= window.innerWidth && dialogBounds.top >= 0 && dialogBounds.bottom <= window.innerHeight
+    ;[...worktreeDialog.querySelectorAll("button")].find(button => button.textContent == "Cancel")!.click()
+    await settle()
+    const worktreeCancelled = !document.querySelector('dialog[aria-label="Worktree operation"]') && worktreeExecutions == 0
+    const worktreeRow = element(".column-worktree")
+    const inspectionBounds = worktreeRow.parentElement!.querySelector(".column-inspection")!.getBoundingClientRect()
+    const rowBounds = worktreeRow.getBoundingClientRect()
+    const worktreeRowCompact = rowBounds.height <= 34 && Math.abs(inspectionBounds.top - rowBounds.bottom) <= 1
     const stylesheets = document.adoptedStyleSheets.length
     root.dispose()
     const graphScrollDrift = await checkBranchGraphScroll()
+    const virtualWorktreeCompact = await checkVirtualWorktree()
     return {
+        worktreePreview,
+        worktreeCancelled,
+        worktreeRowCompact,
+        virtualWorktreeCompact,
         historyTrail,
         historySingleLine,
         historyStickyRow,
@@ -701,6 +744,107 @@ async function checkRenderer() {
         activatedBranch,
         stylesheets,
         violations,
+    }
+}
+
+async function checkVirtualWorktree() {
+    const scenario = inspectionScenario()
+    const readGraph = scenario.api.readBranchGraph
+    scenario.api.readBranchGraph = async (...args) => {
+        const result = await readGraph(...args)
+        if (result.ok) {
+            const branch = result.graph.branches[1]!
+            const worktree = branch.checkedOut[0]!
+            branch.checkedOut = []
+            result.graph.virtualBranches = [{
+                kind: "virtual",
+                id: "virtual:inspection",
+                name: "inspection",
+                objectId: branch.tip,
+                tooltip: "Detached worktree",
+                worktree: { ...worktree, main: false },
+            }]
+            scenario.api.readBranchGraph = async () => result
+        }
+        return result
+    }
+    scenario.api.readChanges = async (_id, _requestId, request) => ({
+        ok: true,
+        inventory: { source: request.source, files: [], version: "clean", parents: [] },
+    })
+    const root = createRoot(document.querySelector<HTMLElement>("#app")!)
+    root.render(<WorkbenchApp api={scenario.api} />)
+    const settle = async () => {
+        for (let index = 0; index < 8; index++) {
+            await new Promise(resolve => setTimeout(resolve, 0))
+            root.flush()
+        }
+    }
+    try {
+        await settle()
+        const column = document.querySelector<HTMLElement>("[data-column-id='virtual:inspection']")!
+        const row = column.querySelector<HTMLElement>(".column-worktree")!
+        const bounds = row.getBoundingClientRect()
+        const body = column.querySelector<HTMLElement>(".column-inspection")!
+        const compact = bounds.height <= 34 && Math.abs(body.getBoundingClientRect().top - bounds.bottom) <= 1
+            && body.textContent!.includes("No Working Changes")
+        row.querySelector<HTMLButtonElement>("[aria-label='Worktree actions']")!.click()
+        await settle()
+        const menu = row.querySelector<HTMLElement>("[role='menu']")!
+        const removeItem = menu.querySelector<HTMLButtonElement>("button")!
+        for (let attempt = 0; attempt < 100 && !removeItem.matches(":hover"); attempt++)
+            await new Promise(resolve => setTimeout(resolve, 20))
+        const hover = removeItem.matches(":hover") && getComputedStyle(removeItem).backgroundColor != getComputedStyle(menu).backgroundColor
+            && getComputedStyle(removeItem).backgroundColor != "rgba(0, 0, 0, 0)"
+        const menuBounds = menu.getBoundingClientRect()
+        const overflow = menuBounds.left >= column.getBoundingClientRect().left && menuBounds.right <= column.getBoundingClientRect().right
+            && Math.abs(menuBounds.top - bounds.bottom) <= 1 && body.getBoundingClientRect().top == bounds.bottom
+            && menu.textContent!.includes("Remove worktree") && !menu.textContent!.includes("New worktree") && hover
+        menu.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+        await settle()
+        row.querySelector<HTMLButtonElement>("[aria-label='Rename worktree']")!.click()
+        await settle()
+        const input = row.querySelector<HTMLInputElement>("input")!
+        const inline = document.activeElement == input && input.value == "inspection" && row.getBoundingClientRect().height == bounds.height
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+        await settle()
+        const switchButton = row.querySelector<HTMLButtonElement>("[aria-label='Switch worktree branch']")!
+        switchButton.click()
+        await settle()
+        const search = row.querySelector<HTMLInputElement>("[aria-label='Command Lens search']")!
+        const popup = row.querySelector<HTMLDialogElement>("dialog")!
+        const searchable = popup.open && document.activeElement == search && popup.getBoundingClientRect().right <= innerWidth
+        search.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+        await settle()
+        const controls = compact && overflow && inline && searchable && document.activeElement == switchButton && !row.querySelector("dialog, input, details")
+        scenario.api.previewWorktree = async (_id, request) => ({
+            ok: true,
+            preview: {
+                request,
+                worktrees: [],
+                affected: ["D:/Source/inspection"],
+                ignored: Array.from({ length: 250 }, (_, index) => `D:/Source/inspection/generated-${index}.bin`),
+                dirty: false,
+                uniqueCommits: false,
+                populatedSubmodules: false,
+                token: "preview",
+            },
+        })
+        row.querySelector<HTMLButtonElement>("[aria-label='Worktree actions']")!.click()
+        await settle()
+        row.querySelector<HTMLButtonElement>("[role='menuitem']")!.click()
+        await settle()
+        const dialog = document.querySelector<HTMLDialogElement>("dialog[aria-label='Worktree operation']")!
+        const remove = [...dialog.querySelectorAll("button")].find(button => button.textContent == "Remove worktree")!
+        const styled = dialog.open && dialog.getBoundingClientRect().width <= 460 && remove.getBoundingClientRect().height >= 32
+            && getComputedStyle(remove).backgroundColor != "rgba(0, 0, 0, 0)" && dialog.textContent!.includes("D:/Source/inspection")
+            && !dialog.textContent!.includes("ignored files") && !dialog.textContent!.includes("generated-0.bin")
+            && dialog.scrollHeight <= innerHeight && !remove.disabled
+        ;[...dialog.querySelectorAll("button")].find(button => button.textContent == "Cancel")!.click()
+        await settle()
+        return controls && styled && !document.querySelector("dialog[aria-label='Worktree operation']")
+    } finally {
+        root.dispose()
     }
 }
 

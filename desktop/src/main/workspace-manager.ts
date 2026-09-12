@@ -1,3 +1,4 @@
+import { pathExists } from "@git-workbench/git"
 import { parseWorkspacePresentation, readWorkspace, resetWorkspace, type StoredRepository, type StoredWorkspace, WorkspaceStateError, writeWorkspace } from "@git-workbench/settings"
 import type { EntryError, OpenRepository, RepositoryInfo, Workspace } from "@git-workbench/shared"
 import { basename, dirname } from "node:path"
@@ -71,6 +72,16 @@ export class WorkspaceManager {
 
     repositoryOpenDefaultPath() {
         return this.stored.lastRepositoryParentPath
+    }
+
+    async refreshAvailability() {
+        for (const [id, info] of this.available) {
+            if (!await pathExists(info.mainWorktree)) {
+                this.available.delete(id)
+                this.openRepositories.close(id)
+            }
+        }
+        return this.snapshot()
     }
 
     async open(path: string) {

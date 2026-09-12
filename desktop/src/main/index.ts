@@ -1,10 +1,12 @@
+import { previewWorktree } from "@git-workbench/git"
 import { defaultWorkspacePath } from "@git-workbench/settings"
 import { ChangesRequestSchema, type ChangesResult, FileDiffRequestSchema, type FileDiffResult } from "@git-workbench/shared"
 import type { AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryResult, RepositoryGraphSettings, Workspace } from "@git-workbench/shared"
+import { type WorktreeActionResult, type WorktreePreviewResult, WorktreeRequestSchema } from "@git-workbench/shared"
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { inspectEngine, resolveEnginePath } from "./engine"
+import { inspectEngine, resolveEnginePath, runEngineCommand } from "./engine"
 import { EntryQueue } from "./entry-queue"
 import { entryError, OpenRepositories } from "./repositories"
 import { WorkspaceManager } from "./workspace-manager"
@@ -52,6 +54,55 @@ async function performEntry(action: () => Promise<Workspace>): Promise<EntryResu
 }
 
 function registerHandlers() {
+    ipcMain.handle("worktree:preview", async (_event, repositoryId: unknown, value: unknown): Promise<WorktreePreviewResult> => {
+        try {
+            if (typeof repositoryId != "string")
+                throw new Error("Choose a repository.")
+            return { ok: true, preview: await previewWorktree(repositories.worktreeRepository(repositoryId), WorktreeRequestSchema.parse(value)) }
+        } catch (error) {
+            return { ok: false, error: { message: error instanceof Error ? error.message : String(error) } }
+        }
+    })
+    ipcMain.handle("worktree:execute", async (_event, repositoryId: unknown, value: unknown, token: unknown): Promise<WorktreeActionResult> => {
+        try {
+            if (typeof repositoryId != "string" || typeof token != "string")
+                throw new Error("Review this worktree operation first.")
+            const request = WorktreeRequestSchema.parse(value)
+            const repository = repositories.worktreeRepository(repositoryId)
+            const result = await runEngineCommand({
+                enginePath,
+                cwd: repository.descriptor.mainWorktree,
+                args: ["worktree", "--request", JSON.stringify(request), "--expected", token, "--git-path", repository.descriptor.git.path],
+            }).result
+            if (result.exitCode)
+                throw new Error(result.messages.find(message => message.type == "error")?.message ?? result.diagnostics)
+            return { ok: true }
+        } catch (error) {
+            return { ok: false, error: { message: error instanceof Error ? error.message : String(error) } }
+        }
+    })
+    ipcMain.handle("worktree:history", async (_event, repositoryId: unknown, action: unknown, basename: unknown): Promise<WorktreeActionResult> => {
+        try {
+            if (typeof repositoryId != "string" || typeof action != "string" || (action != "undo" && action != "redo"))
+                throw new Error("Choose undo or redo.")
+            const repository = repositories.worktreeRepository(repositoryId)
+            const result = await runEngineCommand({
+                enginePath,
+                cwd: repository.descriptor.mainWorktree,
+                args: [
+                    action,
+                    "--git-path",
+                    repository.descriptor.git.path,
+                    ...(action == "undo" && typeof basename == "string" ? ["--worktree-basename", basename] : []),
+                ],
+            }).result
+            if (result.exitCode)
+                throw new Error(result.messages.find(message => message.type == "error")?.message ?? result.diagnostics)
+            return { ok: true }
+        } catch (error) {
+            return { ok: false, error: { message: error instanceof Error ? error.message : String(error) } }
+        }
+    })
     ipcMain.handle("history:read", async (_event, repositoryId: unknown, requestId: unknown, value: unknown): Promise<FileHistoryResult> => {
         const request = FileHistoryRequestSchema.safeParse(value)
         if (typeof repositoryId != "string" || typeof requestId != "string" || !request.success)
@@ -88,7 +139,7 @@ function registerHandlers() {
             typeof repositoryId == "string" && typeof requestId == "string" && repositories.cancelInspection(repositoryId, requestId),
     )
     ipcMain.handle("app:state", async () => ({
-        workspace: workspace.snapshot(),
+        workspace: await workspace.refreshAvailability(),
         settings: await repositories.gitSettings(),
         appearance: await repositories.appearance(),
         engine: engineStatus,

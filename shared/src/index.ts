@@ -101,6 +101,13 @@ export const TestMutationResultSchema = z.object({
     operation: OperationSummarySchema,
 })
 
+export const WorktreeResultSchema = z.object({
+    type: z.literal("result"),
+    command: z.literal("worktree"),
+    operation: OperationSummarySchema,
+})
+export type WorktreeResult = z.infer<typeof WorktreeResultSchema>
+
 export const RecoveredExecutionSchema = z.object({
     action: z.enum(["apply", "undo", "redo"]),
     operation: OperationSummarySchema,
@@ -132,6 +139,7 @@ export const EngineMessageSchema = z.union([
     OperationTransitionResultSchema,
     OperationHistoryResultSchema,
     TestMutationResultSchema,
+    WorktreeResultSchema,
     RecoveryResultSchema,
     CancelledEventSchema,
     ErrorEventSchema,
@@ -175,6 +183,7 @@ export interface RepositoryInfo {
 }
 
 export interface BranchWorkspaceColumn {
+    worktreeId?: string
     collapsed?: boolean
     diffLayout?: DiffLayout
     kind: "branch"
@@ -186,6 +195,7 @@ export interface BranchWorkspaceColumn {
 }
 
 export interface VirtualBranchWorkspaceColumn {
+    worktreeId?: string
     collapsed?: boolean
     diffLayout?: DiffLayout
     kind: "virtual"
@@ -279,6 +289,10 @@ export interface RepositoryGraphSettings {
 }
 
 export interface BranchGraphWorktree {
+    id?: string
+    locked?: boolean
+    lockReason?: string
+    missing?: boolean
     path: string
     name: string
     head: string
@@ -533,3 +547,4 @@ export const FileDiffRequestSchema = z.object({
     expectedVersion: z.string().optional(),
 })
 export * from "./file-history"
+export * from "./worktrees"

@@ -39,6 +39,10 @@ test("Remix renderer styles and controls work under production CSP in Electron",
         const result = JSON.parse(await readFile(join(directory, "result.json"), "utf8"))
         expect({ exitCode, error: result.error }, errors).toEqual({ exitCode: 0, error: undefined })
         expect(result).toMatchObject({
+            worktreePreview: true,
+            worktreeCancelled: true,
+            worktreeRowCompact: true,
+            virtualWorktreeCompact: true,
             historySingleLine: true,
             historyStickyRow: true,
             historyDirectDiff: true,

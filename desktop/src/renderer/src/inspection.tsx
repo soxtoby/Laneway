@@ -16,6 +16,7 @@ interface Options {
     layout(repositoryId: string, columnId: string): DiffLayout
     saveLayout(repositoryId: string, columnId: string, layout: DiffLayout): void
     compareWith(repositoryId: string, fromRef: string, replaceId?: string, toRef?: string): void
+    openCommitWorktree?(repositoryId: string, objectId: string): void
 }
 interface FileState {
     inventory?: ChangesInventory
@@ -1171,6 +1172,38 @@ export function createInspection(options: Options) {
                             {fileList(state, "working", state.files.get("working"))}
                         </section>
                     )}
+                    {!state.worktreePath && column.kind == "branch" && column.markers.length > 0 && (
+                        <section aria-label="Stashed Working Changes" mix={workingChanges}>
+                            <h3 mix={workingChangesH3}>Stashed Working Changes</h3>
+                            {column.markers.map(marker => {
+                                const files = state.files.get(marker.objectId)
+                                const untracked = files?.inventory?.parents[2]
+                                return (
+                                    <div>
+                                        <button
+                                            type="button"
+                                            title={marker.tooltip}
+                                            mix={on("click", () => readFiles(state, marker.objectId, { kind: "commit", objectId: marker.objectId }))}
+                                        >
+                                            {marker.label} · Show stashed files
+                                        </button>
+                                        {files && fileList(state, marker.objectId, files)}
+                                        {untracked && (
+                                            <>
+                                                <button
+                                                    type="button"
+                                                    mix={on("click", () => readFiles(state, untracked, { kind: "commit", objectId: untracked }))}
+                                                >
+                                                    Show stashed untracked files
+                                                </button>
+                                                {state.files.has(untracked) && fileList(state, untracked, state.files.get(untracked))}
+                                            </>
+                                        )}
+                                    </div>
+                                )
+                            })}
+                        </section>
+                    )}
                     <accordion.Context
                         type="multiple"
                         value={stack.filter(branch => state.history.get(branch.id)?.open).map(branch => branch.id)}
@@ -1266,6 +1299,26 @@ export function createInspection(options: Options) {
                                                                                         ]}
                                                                                     >
                                                                                         {commitDiffIcon()}
+                                                                                    </button>
+                                                                                )}
+                                                                                {files?.open && options.openCommitWorktree && (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        aria-label={`Open commit ${commit.subject} in new worktree`}
+                                                                                        title="Open commit in new worktree"
+                                                                                        mix={[
+                                                                                            commitDiffButton,
+                                                                                            on(
+                                                                                                "click",
+                                                                                                () =>
+                                                                                                    options.openCommitWorktree?.(
+                                                                                                        state.repositoryId,
+                                                                                                        commit.objectId,
+                                                                                                    ),
+                                                                                            ),
+                                                                                        ]}
+                                                                                    >
+                                                                                        ⌂
                                                                                     </button>
                                                                                 )}
                                                                             </h4>
