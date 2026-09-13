@@ -69,7 +69,7 @@ export async function captureWorktreeState(repository: RepositoryGit, paths: str
                     names.push(".git")
             }
         } else if (root.kind == "main")
-            names = ["HEAD", "index", "logs/HEAD"]
+            names = ["HEAD", "index", "logs/HEAD", "config", "workbench-local.json"]
         else if (root.kind == "stash")
             names = ["stash"]
         else

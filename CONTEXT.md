@@ -133,7 +133,7 @@ A tag occupying its commit's position as a history waypoint when that commit is 
 _Avoid_: Tag branch
 
 **Virtual Branch**:
-A changes-only view named for its Registered Worktree and representing that worktree's clean or dirty detached head, created either by branch relocation or by explicitly opening a commit in a new worktree. Workbench keeps its column available but hides commit history until attached; before committing or switching away from unique state, Workbench creates a real local branch using a configurable name prefix and stashes any Working Changes.
+A changes-only view of a Registered Worktree's clean or dirty detached head, created by branch relocation, deletion of its checked-out branch, or explicitly opening a commit in a new worktree, with an editable default branch name. Its column remains available with commit history hidden until attached; committing first creates the real branch, while switching away from unique state creates a protective branch and stashes any Working Changes.
 _Avoid_: Detached HEAD
 
 **Worktree-only Commit**:
@@ -157,7 +157,7 @@ A transient auxiliary column that breaks the selected Working Changes diff out f
 _Avoid_: Diff Column, Commit Diff Column
 
 **Working Changes**:
-The uncommitted, non-ignored changes belonging to one worktree. Before checkout changes, Workbench stores them in an ordinary Git stash associated with the old branch and exposes that stash as a Branch Marker. When Worktree Backing transfers between open columns, the old column keeps them visible as Stashed Working Changes. Git's index is imported compatibility state, not a Workbench composition mechanism.
+The uncommitted, non-ignored changes belonging to one worktree. Before checkout changes, Workbench stores them in an ordinary Git stash associated with the old branch and exposes that stash as a Branch Marker. When Worktree Backing transfers between open columns, the old column keeps them visible as Stashed Working Changes. Ordinary commits use Git's staged snapshot when present, otherwise all Working Changes; transfers to arbitrary destinations use Change Selection.
 _Avoid_: Staged changes, unstaged changes
 
 **Change Selection**:

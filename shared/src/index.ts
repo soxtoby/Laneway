@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { LocalResultSchema } from "./local-operations"
 
 export const ENGINE_VERSION = "0.1.0"
 
@@ -140,6 +141,7 @@ export const EngineMessageSchema = z.union([
     OperationHistoryResultSchema,
     TestMutationResultSchema,
     WorktreeResultSchema,
+    LocalResultSchema,
     RecoveryResultSchema,
     CancelledEventSchema,
     ErrorEventSchema,
@@ -301,6 +303,7 @@ export interface BranchGraphWorktree {
 }
 
 export interface BranchGraphMarker {
+    branchName?: string | null
     id: string
     kind: "stash"
     label: string
@@ -547,4 +550,5 @@ export const FileDiffRequestSchema = z.object({
     expectedVersion: z.string().optional(),
 })
 export * from "./file-history"
+export * from "./local-operations"
 export * from "./worktrees"

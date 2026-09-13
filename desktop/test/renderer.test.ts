@@ -515,6 +515,12 @@ describe("Remix repository entry renderer", () => {
 
         await flush(root)
         expect(container.querySelector(".status-bar")).toBeNull()
+        const masthead = container.querySelector(".masthead")!
+        expect(masthead.textContent).toContain("Stashes")
+        expect(masthead.querySelector('[aria-label="Undo last operation"]')).not.toBeNull()
+        expect(masthead.querySelector('[aria-label="Redo operation"]')).not.toBeNull()
+        expect(container.querySelector(".graph-toolbar")?.textContent).not.toContain("Stashes")
+        expect(container.querySelector('.graph-toolbar [aria-label="Undo last operation"]')).toBeNull()
         const columnHeaders = [...container.querySelectorAll(".branch-column > header")].map(header => header.textContent).join(" ")
         expect(columnHeaders).not.toContain("refs/heads/")
         expect(columnHeaders).not.toContain(main.tip.slice(0, 8))
@@ -547,7 +553,7 @@ test("retains worktree columns and restores collapse in place across restart", a
     expect([...view.container.querySelectorAll("[data-column-id]")].map(node => node.getAttribute("data-column-id"))).toEqual([branch.id, main.id])
     const column = view.container.querySelector<HTMLElement>(".branch-column")!
     expect(column.querySelector('[title="Close column"]')).toBeNull()
-    const divider = column.querySelector<HTMLElement>('[role="separator"]')!
+    const divider = column.querySelector<HTMLElement>('[aria-label="Resize branch column"]')!
     divider.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))
     await flush(view.root)
     click(column.querySelector<HTMLButtonElement>('[title="Collapse column"]')!)
@@ -830,7 +836,7 @@ describe("Working Changes inspection", () => {
         input.value = "SRC/FI"
         input.dispatchEvent(new Event("input", { bubbles: true }))
         await flush(root)
-        expect([...column.querySelectorAll(".working-changes mark")].map(mark => mark.textContent).join("")).toBe("src/fi")
+        expect([...column.querySelectorAll(".working-changes mark")].map(mark => mark.textContent).join("")).toBe("src/fisrc/fi")
         click(column.querySelector<HTMLButtonElement>(".commit-heading")!)
         await flush(root)
         expect([...column.querySelectorAll(".inspect-commit mark")].map(mark => mark.textContent).join("")).toBe("src/fi")
@@ -872,13 +878,9 @@ describe("Working Changes inspection", () => {
         release(file)
         await flush(root)
         expect(file.getAttribute("aria-expanded")).toBe("true")
-        const checkbox = container.querySelector<HTMLInputElement>("[aria-label='Select file src/file.txt']")!
-        down(checkbox)
+        expect(container.querySelector("[aria-label='Select file src/file.txt']")).toBeNull()
+        click(button(container, "Working Changes"))
         await flush(root)
-        expect(checkbox.checked).toBe(true)
-        release(checkbox)
-        await flush(root)
-        expect(checkbox.checked).toBe(true)
         const line = diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!
         down(line)
         await flush(root)
@@ -936,8 +938,6 @@ describe("Working Changes inspection", () => {
         await flush(root)
         const file = () => container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!
         click(file())
-        await flush(root)
-        click(diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
         await flush(root)
         click(file())
         await flush(root)
@@ -1135,11 +1135,13 @@ describe("Working Changes inspection", () => {
         const { container, root, dispose } = render(api)
         await flush(root)
         expect(container.textContent).toContain("Working Changes")
-        expect(container.textContent).toContain("staged")
+        expect(container.querySelector(".staged-divider")?.textContent).toContain("Staged")
         expect(reads).toBe(0)
         click(container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
         await flush(root)
         expect(reads).toBe(1)
+        click(button(container, "Working Changes"))
+        await flush(root)
         click(diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
         await flush(root)
         expect(diffRoot(container).querySelectorAll(".diff-line.selected")).toHaveLength(1)
@@ -1212,6 +1214,8 @@ describe("Working Changes inspection", () => {
         finish({ ok: true, page: scenario.page })
         await flush(root)
         expect(container.querySelector(".diff-inspector")?.getAttribute("aria-label")).toBe("Diff for other.txt")
+        click(button(container, "Working Changes"))
+        await flush(root)
         click(diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
         await flush(root)
         version = "two"
@@ -1220,6 +1224,9 @@ describe("Working Changes inspection", () => {
         expect(container.textContent).toContain("Change Selection cleared")
         expect(diffRoot(container).querySelector(".diff-line.selected")).toBeNull()
         click(container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
+        await flush(root)
+        const currentDiff = container.querySelector<HTMLElement>("[aria-label='Diff for src/file.txt']")!
+        click(button(currentDiff, "Working Changes"))
         await flush(root)
         click(diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
         await flush(root)
@@ -1463,6 +1470,115 @@ test("File History shares file inspection, opens blame origins, reuses inputs an
         expect(container.querySelector(".file-history")).toBeNull()
     } finally {
         dispose()
+    }
+})
+
+test("commit composer reveals staging controls, retains cancelled drafts, and commits the staged snapshot", async () => {
+    const scenario = inspectionScenario()
+    let staged = false, committed = false, version = 0
+    let draft = { title: "", message: "", branch: "" }
+    const mutations: string[] = []
+    const api: Window["workbench"] = {
+        ...scenario.api,
+        readCommitDraft: async () => ({ ...draft }),
+        saveCommitDraft: async (_id, _path, value) => {
+            draft = { ...value }
+        },
+        readChanges: async (...args) => {
+            const result = await scenario.api.readChanges(...args)
+            if (!result.ok)
+                return result
+            return {
+                ok: true,
+                inventory: {
+                    ...result.inventory,
+                    version: String(version),
+                    files: committed ? [] : result.inventory.files.map((file, index) => ({ ...file, staged: staged && index == 0, unstaged: true })),
+                },
+            }
+        },
+        localOperation: async (_id, request, token) => {
+            if (token) {
+                mutations.push(request.action)
+                if (request.action == "stage") {
+                    expect(request.files).toEqual(["src/file.txt"])
+                    staged = !request.unstage
+                }
+                if (request.action == "commit") {
+                    expect(staged).toBe(true)
+                    expect(request.title).toBe("Keep snapshot")
+                    committed = true
+                }
+                version++
+                return { ok: true, result: { type: "result", command: "local", status: "performed" } }
+            }
+            return {
+                ok: true,
+                result: {
+                    type: "result",
+                    command: "local-preview",
+                    status: "preview",
+                    preview: {
+                        token: String(version),
+                        affected: [],
+                        uniqueCommits: false,
+                        branch: "feature/workbench",
+                        unborn: false,
+                        suggestedBranch: "feature/workbench",
+                        staged,
+                        files: [],
+                        stashes: [],
+                        worktrees: [],
+                    },
+                },
+            }
+        },
+    }
+    const view = render(api)
+    try {
+        await flush(view.root)
+        expect(view.container.querySelector(".staged-divider")).toBeNull()
+        expect(view.container.querySelector('[aria-label="Stage src/file.txt"]')).toBeNull()
+        const header = view.container.querySelector(".commit-header")!
+        expect(header.textContent).toContain("Working Changes")
+        expect(header.textContent).toContain("Commit…")
+        expect(header.querySelector('[aria-label="Stash Working Changes"] svg')).not.toBeNull()
+        expect(header.querySelector('[aria-label="Show stashes"] svg')).not.toBeNull()
+        click(button(view.container, "Commit…"))
+        await flush(view.root)
+        expect(
+            view.container.querySelector('[aria-label="Commit title"]')!.compareDocumentPosition(view.container.querySelector(".staged-divider")!)
+                & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).not.toBe(0)
+        expect(view.container.querySelector(".staged-divider")).not.toBeNull()
+        expect(view.container.querySelectorAll(".working-changes .change-file")).toHaveLength(2)
+        expect(button(view.container, "Commit all changes (2)").disabled).toBe(true)
+        const title = view.container.querySelector<HTMLInputElement>('[aria-label="Commit title"]')!
+        title.value = "Keep snapshot"
+        title.dispatchEvent(new Event("input", { bubbles: true }))
+        await flush(view.root)
+        click(button(view.container, "Stage src/file.txt"))
+        await flush(view.root)
+        expect(
+            view.container.querySelector('[aria-label="Unstage src/file.txt"]')!.compareDocumentPosition(
+                view.container.querySelector('[aria-label="Stage other.txt"]')!,
+            ) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).not.toBe(0)
+        click(button(view.container, "Cancel"))
+        await flush(view.root)
+        expect(view.container.querySelector('[aria-label="Commit title"]')).toBeNull()
+        expect(view.container.querySelector('[aria-label="Unstage src/file.txt"]')).toBeNull()
+        expect(view.container.querySelector(".staged-divider")).not.toBeNull()
+        expect(draft.title).toBe("Keep snapshot")
+        click(button(view.container, "Commit…"))
+        await flush(view.root)
+        click(button(view.container, "Commit staged (1)"))
+        await flush(view.root)
+        expect(mutations).toEqual(["stage", "commit"])
+        expect(draft.title).toBe("")
+        expect(view.container.querySelector('[aria-label="Commit title"]')).toBeNull()
+    } finally {
+        view.dispose()
     }
 })
 

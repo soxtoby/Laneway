@@ -1,7 +1,22 @@
 import type { BranchGraph, WorkspaceColumn } from "@git-workbench/shared"
 import { expect, test } from "bun:test"
-import { reconcileWorktreeColumns } from "../src/renderer/src/worktree-columns"
+import { reconcileWorktreeColumns, workspaceGraph } from "../src/renderer/src/worktree-columns"
 import { branchGraph } from "./renderer-fixtures"
+
+test("equivalent refs retain separate branch-only columns and worktree identity", () => {
+    const graph = branchGraph("repo")
+    const main = graph.branches[0]!
+    main.localRefs.push("refs/heads/new")
+    main.refs.push("refs/heads/new")
+    const expanded = workspaceGraph(graph)
+    expect(expanded.branches.find(branch => branch.id == "branch:refs/heads/new")).toMatchObject({ name: "new", checkedOut: [] })
+    expect(graph.branches.some(branch => branch.id == "branch:refs/heads/new")).toBe(false)
+    expect(
+        reconcileWorktreeColumns([{ id: "branch:refs/heads/new", kind: "branch", ref: "refs/heads/new", lastSeenObjectId: main.tip, width: 380 }], graph)
+            .columns,
+    )
+        .toMatchObject([{ id: "branch:refs/heads/new", ref: "refs/heads/new", worktreePath: undefined }])
+})
 
 test("external checkout keeps the worktree column position and removes an existing branch-only duplicate", () => {
     const graph: BranchGraph = branchGraph("repo")

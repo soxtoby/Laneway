@@ -195,6 +195,16 @@ export function createBranchComparisons(options: { api: Window["workbench"]; upd
                 }
             }
         },
+        renameBranch(repositoryId: string, oldRef: string, newRef: string) {
+            for (const state of states) {
+                if (state.repositoryId != repositoryId)
+                    continue
+                if (state.fromRef == oldRef)
+                    state.fromRef = newRef
+                if (state.toRef == oldRef)
+                    state.toRef = newRef
+            }
+        },
         render(
             state: BranchComparisonState,
             id: string,

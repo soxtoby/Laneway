@@ -11,6 +11,9 @@ app.whenReady().then(async () => {
         height: 800,
         webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
     })
+    window.webContents.on("console-message", (_event, level, message) => {
+        if (level >= 2) console.error(message)
+    })
     await window.loadFile(path.join(directory, "index.html"))
     const point = await window.webContents.executeJavaScript(`new Promise(resolve => {
         const timer = setInterval(() => {

@@ -2,11 +2,13 @@ import { connectRepository, GitError, type RepositoryGit } from "@git-workbench/
 import { pathExists, previewWorktree, worktreeBasename } from "@git-workbench/git"
 import { type OperationAvailability, type OperationAvailabilityReason, type OperationHistoryEntry, type OperationHistoryResult, type OperationSummary, OperationSummarySchema, type OperationTransitionResult, type RecoveredExecution, type RecoveryResult, type TestMutationResult } from "@git-workbench/shared"
 import type { WorktreeRequest, WorktreeResult } from "@git-workbench/shared"
+import type { LocalRequest, LocalResult } from "@git-workbench/shared"
 import { link, lstat, mkdir, open, readdir, readFile, readlink, rename, unlink } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { z } from "zod"
+import { LocalPreconditionError, mutateLocal, prepareLocal } from "./local-mutations"
 import { mutateWorktree } from "./worktree-mutations"
-import { captureWorktreeState, relocateRemovedState, restoreWorktreeState, retainWorktreeState, worktreeStateMatches, WorktreeStateSchema } from "./worktree-state"
+import { captureWorktreeState, relocateRemovedState, restoreWorktreeState, retainWorktreeState, stateIdentity, worktreeStateMatches, WorktreeStateSchema } from "./worktree-state"
 
 const fixtureRef = "refs/workbench/test/fixture"
 const journalFileName = "journal.jsonl"
@@ -98,6 +100,7 @@ interface HistoryProjection {
 }
 
 export type OperationCommand =
+    | { command: "local" | "local-preview"; request: LocalRequest; token?: string; noWait: boolean; crashAfter?: JournalPhase; branchPrefix?: string }
     | { command: "worktree"; request: WorktreeRequest; token?: string; noWait: boolean; crashAfter?: JournalPhase; branchPrefix?: string }
     | { command: "test-mutation"; value: string; noWait: boolean; crashAfter?: JournalPhase; holdAfterIntentMs?: number }
     | { command: "undo"; noWait: boolean; crashAfter?: JournalPhase; worktreeBasename?: string }
@@ -105,7 +108,7 @@ export type OperationCommand =
     | { command: "history"; noWait: boolean }
     | { command: "recover"; noWait: boolean }
 
-export type OperationCommandResult = TestMutationResult | OperationTransitionResult | OperationHistoryResult | RecoveryResult | WorktreeResult
+export type OperationCommandResult = TestMutationResult | OperationTransitionResult | OperationHistoryResult | RecoveryResult | WorktreeResult | LocalResult
 
 export interface CancellationSignal {
     isCancelled(): boolean
@@ -146,6 +149,15 @@ export async function executeOperationCommand(
             return recovery
 
         switch (command.command) {
+            case "local-preview":
+                return {
+                    type: "result",
+                    command: "local-preview",
+                    status: "preview",
+                    preview: (await prepareLocal(repository, command.request, command.branchPrefix ?? "worktree/")).preview,
+                }
+            case "local":
+                return runtime.applyLocal(command.request, command.token, command.crashAfter, command.branchPrefix ?? "worktree/")
             case "worktree":
                 return runtime.applyWorktree(command.request, command.token, command.crashAfter, command.branchPrefix)
             case "test-mutation":
@@ -167,6 +179,30 @@ class OperationRuntime {
         private readonly cancellation: CancellationSignal,
     ) {}
 
+    async applyLocal(request: LocalRequest, token?: string, crashAfter?: JournalPhase, prefix = "worktree/"): Promise<LocalResult> {
+        const { preview, before } = await prepareLocal(this.repository, request, prefix)
+        if (!token || token != preview.token)
+            throw new OperationRuntimeError("operation.precondition-failed", "Repository content changed. Refresh and review the operation again.")
+        let result: LocalResult = { type: "result", command: "local", status: "performed" }
+        const expectedRefs = new Map<string, string | null>()
+        await this.applySnapshot(preview.affected, `local.${request.action}`, request.action.replaceAll("-", " "), async () => {
+            // Recheck the reviewed snapshot after journal preparation, before running hooks or Git mutations.
+            if (!await worktreeStateMatches(this.repository, before))
+                throw new OperationRuntimeError("operation.precondition-failed", "Repository content changed while preparing this operation.")
+            try {
+                result = await mutateLocal(this.repository, request, before, preview, expectedRefs)
+            } catch (error) {
+                if (error instanceof LocalPreconditionError)
+                    throw error
+                // Hook/filter failures may leave intentional edits. Retain the resulting state as an
+                // undoable operation instead of overwriting edits or leaving an unexplained journal.
+                result = { type: "result", command: "local", status: "failed", message: error instanceof Error ? error.message : String(error) }
+            }
+            return expectedRefs
+        }, crashAfter)
+        return result
+    }
+
     async applyWorktree(request: WorktreeRequest, token?: string, crashAfter?: JournalPhase, branchPrefix = "worktree/"): Promise<WorktreeResult> {
         await this.repository.command(this.repository.descriptor.mainWorktree, ["check-ref-format", "--branch", `${branchPrefix}worktree`])
         const preview = await previewWorktree(this.repository, request)
@@ -182,19 +218,36 @@ class OperationRuntime {
         }
         if (request.action == "remove" && preview.ignored.length && !request.allowIgnoredLoss)
             throw new OperationRuntimeError("operation.precondition-failed", "Review ignored-file loss before removal.")
+        const operation = await this.applySnapshot(
+            preview.affected,
+            `worktree.${request.action}`,
+            `${request.action[0]!.toUpperCase()}${request.action.slice(1)} worktree ${preview.destination ?? ("path" in request ? request.path : "")}`,
+            () => mutateWorktree(this.repository, preview, branchPrefix),
+            crashAfter,
+        )
+        return { type: "result", command: "worktree", operation }
+    }
+
+    private async applySnapshot(
+        affected: string[],
+        kind: string,
+        summary: string,
+        mutate: () => Promise<Set<string> | Map<string, string | null>>,
+        crashAfter?: JournalPhase,
+    ): Promise<OperationSummary> {
         const locks = await findGitLockfiles(this.repository.descriptor.commonDirectory)
         if (locks.length)
             throw gitLockfileError(locks)
-        const before = await captureWorktreeState(this.repository, preview.affected)
+        const before = await captureWorktreeState(this.repository, affected)
         const projection = await this.store.readHistory()
         const abandoned = projection.operations.slice(projection.position)
         let operation = sealOperation({
             id: crypto.randomUUID(),
             timestamp: new Date().toISOString(),
-            kind: `worktree.${request.action}`,
-            summary: `${request.action[0]!.toUpperCase()}${request.action.slice(1)} worktree ${preview.destination ?? ("path" in request ? request.path : "")}`,
+            kind,
+            summary,
             affectedRefs: [],
-            affectedWorktrees: preview.affected,
+            affectedWorktrees: affected,
             gitCommonDirectory: this.repository.descriptor.commonDirectory,
             expectedGitLockfiles: [],
             refChanges: [],
@@ -226,9 +279,9 @@ class OperationRuntime {
         await this.store.appendJournalPhase(executionId, operation.id, "apply", "preconditions-verified")
         crashIfRequested("preconditions-verified", crashAfter)
         await this.cancelIfRequested(executionId, operation, "apply")
-        let changedRefs: Set<string>
+        let changedRefs: Set<string> | Map<string, string | null>
         try {
-            changedRefs = await mutateWorktree(this.repository, preview, branchPrefix)
+            changedRefs = await mutate()
         } catch (error) {
             if (await worktreeStateMatches(this.repository, before))
                 await this.abortBeforeCommit(executionId, operation, "apply")
@@ -243,11 +296,15 @@ class OperationRuntime {
             }
             throw error
         }
-        const after = await captureWorktreeState(this.repository, preview.affected, before)
+        const after = await captureWorktreeState(this.repository, affected, before)
+        if (kind.startsWith("local.") && stateIdentity(before) == stateIdentity(after)) {
+            await this.abortBeforeCommit(executionId, operation, "apply")
+            return operation
+        }
         const refChanges = [...new Set([...Object.keys(before.refs), ...Object.keys(after.refs)])].filter(ref => before.refs[ref] != after.refs[ref]).map(
             ref => ({ ref, before: before.refs[ref] ?? null, after: after.refs[ref] ?? null }),
         )
-        if (refChanges.some(change => !changedRefs.has(change.ref))) {
+        if (refChanges.some(change => !changedRefs.has(change.ref) || changedRefs instanceof Map && changedRefs.get(change.ref) != change.after)) {
             throw recoveryBlocked(
                 operation,
                 "apply",
@@ -275,7 +332,7 @@ class OperationRuntime {
         for (const old of abandoned)
             await releaseOperation(this.repository, old.id)
         await this.store.appendJournalPhase(executionId, operation.id, "apply", "finalized")
-        return { type: "result", command: "worktree", operation: summarize(operation) }
+        return summarize(operation)
     }
 
     async applyTestMutation(value: string, crashAfter?: JournalPhase, holdAfterIntentMs?: number): Promise<TestMutationResult> {

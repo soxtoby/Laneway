@@ -1,6 +1,7 @@
 import type { Appearance, AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryProgress, EntryResult, GitSettingsState, RepositoryGraphSettings, Workspace } from "@git-workbench/shared"
 import type { ChangesRequest, ChangesResult, FileDiffRequest, FileDiffResult } from "@git-workbench/shared"
 import type { WorktreeActionResult, WorktreePreviewResult, WorktreeRequest } from "@git-workbench/shared"
+import type { CommitDraft, LocalActionResult, LocalRequest } from "@git-workbench/shared"
 
 interface EngineStatusReady {
     state: "ready"
@@ -27,6 +28,9 @@ declare global {
     interface Window {
         workbench: {
             previewWorktree(repositoryId: string, request: WorktreeRequest): Promise<WorktreePreviewResult>
+            localOperation(repositoryId: string, request: LocalRequest, token?: string): Promise<LocalActionResult>
+            readCommitDraft(repositoryId: string, path: string): Promise<CommitDraft>
+            saveCommitDraft(repositoryId: string, path: string, draft: CommitDraft): Promise<void>
             executeWorktree(repositoryId: string, request: WorktreeRequest, token: string): Promise<WorktreeActionResult>
             transitionOperation(repositoryId: string, action: "undo" | "redo", basename?: string): Promise<WorktreeActionResult>
             readChanges(repositoryId: string, requestId: string, request: ChangesRequest): Promise<ChangesResult>

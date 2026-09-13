@@ -168,6 +168,12 @@ export function createFileHistories(
                 }
             }
         },
+        renameBranch(repositoryId: string, oldRef: string, newRef: string) {
+            for (const state of states) {
+                if (state.repositoryId == repositoryId && state.source.kind == "branch" && state.source.ref == oldRef)
+                    state.source.ref = newRef
+            }
+        },
         suspend() {
             for (const state of states)
                 cancel(state)

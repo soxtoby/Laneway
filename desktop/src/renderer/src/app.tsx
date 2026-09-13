@@ -42,6 +42,7 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
         const currentWorkspace = workspace
         const active = currentWorkspace.repositories.find(repository => repository.id == currentWorkspace.activeRepositoryId)
         const busy = openingRepository || repositoryEntry.busy
+        const repositoryActions = active?.status == "available" ? branchWorkspace.repositoryActions(active.id, active.info.mainWorktree) : undefined
         return (
             <>
                 <main class={`shell ${railCollapsed ? "rail-collapsed" : ""}`} mix={shell}>
@@ -51,6 +52,7 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
                         appearance={appearance}
                         openSettings={gitSettings.open}
                         toggleAppearance={() => void toggleAppearance()}
+                        repositoryActions={repositoryActions}
                     />
                     {active?.status == "available"
                         ? (

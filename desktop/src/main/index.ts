@@ -1,11 +1,13 @@
-import { previewWorktree } from "@git-workbench/git"
+import { normalize, previewWorktree, readRegisteredWorktrees } from "@git-workbench/git"
 import { defaultWorkspacePath } from "@git-workbench/settings"
 import { ChangesRequestSchema, type ChangesResult, FileDiffRequestSchema, type FileDiffResult } from "@git-workbench/shared"
 import type { AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryResult, RepositoryGraphSettings, Workspace } from "@git-workbench/shared"
 import { type WorktreeActionResult, type WorktreePreviewResult, WorktreeRequestSchema } from "@git-workbench/shared"
+import { CommitDraftSchema, type LocalActionResult, LocalRequestSchema } from "@git-workbench/shared"
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { CommitDrafts } from "./commit-drafts"
 import { inspectEngine, resolveEnginePath, runEngineCommand } from "./engine"
 import { EntryQueue } from "./entry-queue"
 import { entryError, OpenRepositories } from "./repositories"
@@ -20,6 +22,8 @@ const enginePath = resolveEnginePath({
 })
 const repositories = new OpenRepositories(process.env.WORKBENCH_SETTINGS_PATH)
 const workspace = new WorkspaceManager(repositories, process.env.WORKBENCH_WORKSPACE_PATH ?? defaultWorkspacePath())
+const commitDrafts = new CommitDrafts(resolve(app.getPath("userData"), "commit-drafts.json"))
+const draftWorktrees = new Map<string, string>()
 
 const cancelledEntry = () =>
     ({
@@ -54,6 +58,47 @@ async function performEntry(action: () => Promise<Workspace>): Promise<EntryResu
 }
 
 function registerHandlers() {
+    ipcMain.handle("local:operation", async (_event, repositoryId: unknown, value: unknown, token: unknown): Promise<LocalActionResult> => {
+        try {
+            if (typeof repositoryId != "string" || (token !== undefined && typeof token != "string"))
+                throw new Error("Choose a repository operation.")
+            const request = LocalRequestSchema.parse(value)
+            const repository = repositories.worktreeRepository(repositoryId)
+            const output = await runEngineCommand({
+                enginePath,
+                cwd: repository.descriptor.mainWorktree,
+                args: [
+                    token ? "local" : "local-preview",
+                    "--request",
+                    JSON.stringify(request),
+                    ...(token ? ["--expected", token] : []),
+                    "--git-path",
+                    repository.descriptor.git.path,
+                ],
+            }).result
+            const result = output.messages.find(message => message.type == "result" && (message.command == "local" || message.command == "local-preview"))
+            if (!result || !("status" in result) || !(result.command == "local" || result.command == "local-preview"))
+                throw new Error(output.messages.find(message => message.type == "error")?.message ?? output.diagnostics ?? "Local operation failed.")
+            return { ok: true, result }
+        } catch (error) {
+            return { ok: false, error: { message: error instanceof Error ? error.message : String(error) } }
+        }
+    })
+    ipcMain.handle("commit:draft", async (_event, repositoryId: unknown, path: unknown, value: unknown) => {
+        if (typeof repositoryId != "string" || typeof path != "string")
+            throw new Error("Choose a worktree.")
+        const repository = repositories.worktreeRepository(repositoryId)
+        const key = JSON.stringify([repositoryId, normalize(path)])
+        if (value === undefined || !draftWorktrees.has(key)) {
+            const worktree = (await readRegisteredWorktrees(repository)).find(item => normalize(item.path) == normalize(path))
+            if (!worktree)
+                throw new Error("The worktree is no longer registered.")
+            draftWorktrees.set(key, worktree.id)
+        }
+        if (value === undefined)
+            return commitDrafts.read(repositoryId, draftWorktrees.get(key)!)
+        await commitDrafts.write(repositoryId, draftWorktrees.get(key)!, CommitDraftSchema.parse(value))
+    })
     ipcMain.handle("worktree:preview", async (_event, repositoryId: unknown, value: unknown): Promise<WorktreePreviewResult> => {
         try {
             if (typeof repositoryId != "string")

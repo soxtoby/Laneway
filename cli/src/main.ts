@@ -2,6 +2,7 @@ import { GitError } from "@git-workbench/git"
 import { readSettings, SettingsError } from "@git-workbench/settings"
 import { ENGINE_VERSION, type EngineMessage, type ErrorEvent, ExitCode } from "@git-workbench/shared"
 import { type WorktreeRequest, WorktreeRequestSchema } from "@git-workbench/shared"
+import { type LocalRequest, LocalRequestSchema } from "@git-workbench/shared"
 import { executeOperationCommand, type JournalPhase, OperationCancelledError, type OperationCommand, OperationRuntimeError } from "./operation-runtime.ts"
 
 const args = process.argv.slice(2)
@@ -24,8 +25,17 @@ function write(message: string | EngineMessage, json: boolean) {
         console.log(message.status == "performed" ? message.operation?.summary : `Nothing to ${message.command}.`)
     else if (message.command == "test-mutation" || message.command == "worktree")
         console.log(message.operation.summary)
-    else if (message.command == "recover")
+    else if (message.command == "local" || message.command == "local-preview") {
+        console.log(
+            message.preview
+                ? JSON.stringify(message.preview)
+                : message.status == "hook-review"
+                ? `Hook changed files: ${message.changedFiles?.join(", ")}`
+                : message.status,
+        )
+    } else if (message.command == "recover") {
         console.log(message.status == "clean" ? "No recovery is required." : `Recovered ${message.recovered.length} operation(s).`)
+    }
 }
 
 function writeError(error: ErrorEvent, json: boolean) {
@@ -221,6 +231,7 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
     let crashAfter: JournalPhase | undefined
     let holdAfterIntentMs: number | undefined
     let request: WorktreeRequest | undefined
+    let localRequest: LocalRequest | undefined
     let token: string | undefined
     let worktreeBasename: string | undefined
 
@@ -234,6 +245,14 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
                 return invalidOperationArgument(command, json, "Provide a new basename for the restored worktree.", "--worktree-basename")
             continue
         }
+        if ((command == "local" || command == "local-preview") && argument == "--request") {
+            try {
+                localRequest = LocalRequestSchema.parse(JSON.parse(commandArguments[++index]!))
+            } catch {
+                return invalidOperationArgument(command, json, "Provide a valid local operation request.", "--request")
+            }
+            continue
+        }
         if (command == "worktree" && argument == "--request") {
             try {
                 request = WorktreeRequestSchema.parse(JSON.parse(commandArguments[++index]!))
@@ -242,7 +261,7 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
             }
             continue
         }
-        if (command == "worktree" && argument == "--expected") {
+        if ((command == "worktree" || command == "local") && argument == "--expected") {
             token = commandArguments[++index]
             if (!token)
                 return invalidOperationArgument(command, json, "Provide a preview token.", "--expected")
@@ -272,7 +291,7 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
             continue
         }
         if (
-            (command == "test-mutation" || command == "worktree" || command == "undo" || command == "redo") && argument == "--crash-after"
+            (command == "test-mutation" || command == "worktree" || command == "local" || command == "undo" || command == "redo") && argument == "--crash-after"
             && process.env.WORKBENCH_ENABLE_TEST_COMMANDS == "1"
         ) {
             const phase = commandArguments[index + 1]
@@ -299,12 +318,18 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
         return invalidOperationArgument(command, json, "A value is required for --value.", "--value")
     if (command == "worktree" && !request)
         return invalidOperationArgument(command, json, "A worktree request is required.", "--request")
+    if ((command == "local" || command == "local-preview") && !localRequest)
+        return invalidOperationArgument(command, json, "A local operation request is required.", "--request")
 
     return {
         ok: true,
         json,
         gitPath,
-        command: command == "worktree" ? { command, request: request!, token, noWait, crashAfter } : command == "test-mutation"
+        command: command == "local" || command == "local-preview"
+            ? { command, request: localRequest!, token, noWait, crashAfter }
+            : command == "worktree"
+            ? { command, request: request!, token, noWait, crashAfter }
+            : command == "test-mutation"
             ? { command, value: value!, noWait, crashAfter, holdAfterIntentMs }
             : command == "undo" || command == "redo"
             ? { command, noWait, crashAfter, ...(command == "undo" ? { worktreeBasename } : {}) }
@@ -335,9 +360,10 @@ async function runOperationCommand(command: OperationCommand["command"], command
     const cancellation = monitorCancellation()
     try {
         const settings = await readSettings(process.env.WORKBENCH_SETTINGS_PATH)
-        const command = parsed.command.command == "worktree" ? { ...parsed.command, branchPrefix: settings.virtualBranchPrefix } : parsed.command
-        write(await executeOperationCommand(command, process.cwd(), cancellation, parsed.gitPath ?? settings.gitPath), parsed.json)
-        return ExitCode.ok
+        const command = "request" in parsed.command ? { ...parsed.command, branchPrefix: settings.virtualBranchPrefix } : parsed.command
+        const result = await executeOperationCommand(command, process.cwd(), cancellation, parsed.gitPath ?? settings.gitPath)
+        write(result, parsed.json)
+        return "status" in result && result.status == "failed" ? ExitCode.failure : ExitCode.ok
     } catch (error) {
         if (error instanceof OperationCancelledError) {
             write({ type: "cancelled", command, message: error.message }, parsed.json)
@@ -372,9 +398,12 @@ else if (args[0] == "echo") {
     } else {
         process.exitCode = await echo(parsed.message, parsed.delayMs, parsed.json)
     }
-} else if (args[0] == "worktree" || args[0] == "undo" || args[0] == "redo" || args[0] == "history" || args[0] == "recover")
+} else if (
+    args[0] == "local" || args[0] == "local-preview" || args[0] == "worktree" || args[0] == "undo" || args[0] == "redo" || args[0] == "history"
+    || args[0] == "recover"
+) {
     process.exitCode = await runOperationCommand(args[0], args.slice(1))
-else if (args[0] == "test-mutation" && process.env.WORKBENCH_ENABLE_TEST_COMMANDS == "1")
+} else if (args[0] == "test-mutation" && process.env.WORKBENCH_ENABLE_TEST_COMMANDS == "1")
     process.exitCode = await runOperationCommand("test-mutation", args.slice(1))
 else {
     const command = args[0] ?? ""

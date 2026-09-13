@@ -1,6 +1,33 @@
 import type { BranchGraph, WorkspaceColumn } from "@git-workbench/shared"
 
+// Graph rows coalesce equivalent refs. Workspace columns retain each local branch identity.
+export function workspaceGraph(graph: BranchGraph): BranchGraph {
+    if (graph.branches.every(branch => branch.localRefs.length < 2))
+        return graph
+    const result = {
+        ...graph,
+        branches: graph.branches.flatMap(branch =>
+            branch.localRefs.length < 2 ? [branch] : branch.localRefs.map(ref => ({
+                ...branch,
+                id: `branch:${ref}`,
+                name: ref.slice(11),
+                preferredRef: ref,
+                localRefs: [ref],
+                refs: [ref, ...(ref == branch.preferredRef ? branch.remoteRefs : [])],
+                aliases: [ref.slice(11)],
+                checkedOut: branch.checkedOut.filter(worktree => worktree.branchRef == ref),
+                markers: branch.markers.filter(marker => marker.branchName ? marker.branchName == ref.slice(11) : ref == branch.preferredRef),
+                primary: branch.primary
+                    && (graph.primaryBranch.ref == ref || !branch.localRefs.includes(graph.primaryBranch.ref ?? "") && ref == branch.preferredRef),
+                ...(ref == branch.preferredRef ? {} : { remoteRefs: [], upstreamRef: undefined, upstreamTip: undefined, ahead: 0, behind: 0 }),
+            }))
+        ),
+    }
+    return result
+}
+
 export function reconcileWorktreeColumns(columns: WorkspaceColumn[], graph: BranchGraph, focused?: string) {
+    graph = workspaceGraph(graph)
     const nodes = [...graph.branches, ...graph.virtualBranches]
     const replacements = new Map<string, string | undefined>()
     const retained = new Set<string>()

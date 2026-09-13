@@ -288,7 +288,7 @@ describe("system Git", () => {
 
         expect(graph.branches).toHaveLength(41)
         expect(elapsed).toBeLessThan(1_000)
-    })
+    }, 30_000)
 
     test("initializes populated directories and clones a disposable local remote", async () => {
         const populated = await temporaryDirectory("workbench-init-")

@@ -73,6 +73,7 @@ export class GitError extends Error {
 }
 
 interface GitRunOptions {
+    env?: Record<string, string>
     readOnly?: boolean
     onOutput?: (chunk: Buffer) => void
     installation: GitInstallation
@@ -405,12 +406,12 @@ export class RepositoryGit {
         )
     }
 
-    run(cwd: string, args: string[], input?: string | Uint8Array) {
-        return runGitProcess({ installation: this.descriptor.git, cwd, args, input })
+    run(cwd: string, args: string[], input?: string | Uint8Array, env?: Record<string, string>) {
+        return runGitProcess({ installation: this.descriptor.git, cwd, args, input, env })
     }
 
-    async command(cwd: string, args: string[], input?: string | Uint8Array) {
-        const result = await this.run(cwd, args, input)
+    async command(cwd: string, args: string[], input?: string | Uint8Array, env?: Record<string, string>) {
+        const result = await this.run(cwd, args, input, env)
         this.throwIfFailed(result, "Git command failed.")
         return result.stdout
     }
@@ -584,6 +585,7 @@ function startGitProcess(options: GitRunOptions) {
             detached: process.platform != "win32",
             env: {
                 ...process.env,
+                ...options.env,
                 GIT_TERMINAL_PROMPT: "0",
                 ...(options.readOnly ? { GIT_OPTIONAL_LOCKS: "0", GIT_NO_LAZY_FETCH: "1", GIT_LITERAL_PATHSPECS: "1" } : {}),
             },

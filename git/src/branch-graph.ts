@@ -1,5 +1,6 @@
 import type { AuthorIdentitySettings, BranchGraph, BranchGraphBase, BranchGraphBranchNode, BranchGraphMarker, BranchGraphReadOptions, BranchGraphTagNode, BranchGraphVirtualBranch, BranchGraphWorktree, BranchHistoryCommit, BranchHistoryPage, BranchHistoryRequest } from "@git-workbench/shared"
-import { basename } from "node:path"
+import { readFile } from "node:fs/promises"
+import { basename, join } from "node:path"
 import { graphHistory } from "./graph-history"
 import { GitError, type GitTask, redactGitText, type RepositoryDescriptor } from "./index"
 
@@ -36,6 +37,7 @@ interface RefRecord {
 }
 
 interface StashRecord {
+    branch?: string | null
     selector: string
     objectId: string
     parentIds: string[]
@@ -145,7 +147,7 @@ async function readVerifiedGraph(
 ) {
     const key = graphOptionsKey(options)
     for (let attempt = 0; attempt < 3; attempt += 1) {
-        const before = await readEvidence(runner)
+        const before = await readEvidence(runner, descriptor)
         const beforeFingerprint = fingerprint(before)
         if (!options.refreshRemote && cached?.key == key && cached.evidence == beforeFingerprint)
             return cached.graph
@@ -184,7 +186,7 @@ function graphOptionsKey(options: BranchGraphReadOptions) {
     })
 }
 
-async function readEvidence(runner: GraphRunner): Promise<Evidence> {
+async function readEvidence(runner: GraphRunner, descriptor: RepositoryDescriptor): Promise<Evidence> {
     const [remoteResult, refResult, worktreeResult, stashResult] = await Promise.all([
         runner.run(["remote"]),
         runner.run([
@@ -202,13 +204,23 @@ async function readEvidence(runner: GraphRunner): Promise<Evidence> {
     const refText = text(refResult)
     const worktreeText = text(worktreeResult)
     const stashText = text(stashResult)
+    let associations: Record<string, string | null> = {}
+    try {
+        associations = JSON.parse(await readFile(join(descriptor.commonDirectory, "workbench-local.json"), "utf8")).stashes ?? {}
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code != "ENOENT")
+            throw error
+    }
     return {
         remotes: remoteText.split("\n").filter(Boolean).sort(naturalCompare),
         remoteText,
         refs: parseRefs(refText),
         refText,
-        stashes: parseStashes(stashText),
-        stashText,
+        stashes: parseStashes(stashText).map(stash => ({
+            ...stash,
+            ...(Object.hasOwn(associations, stash.objectId) ? { branch: associations[stash.objectId] } : {}),
+        })),
+        stashText: stashText + JSON.stringify(associations),
         worktrees: parseWorktrees(worktreeText),
         worktreeText,
     }
@@ -473,11 +485,13 @@ function includeBaseRelationships(branches: MutableBranch[], included: Set<strin
 
 function attachStashes(branches: MutableBranch[], stashes: StashRecord[]) {
     for (const stash of stashes) {
-        const branchName = /^(?:WIP on|On) ([^:]+):/.exec(stash.subject)?.[1]
+        if (stash.branch === null)
+            continue
+        const branchName = stash.branch ?? /^(?:WIP on|On) ([^:]+):/.exec(stash.subject)?.[1]
         const named = branchName ? branches.find(branch => branch.aliases.includes(branchName)) : undefined
         const parent = stash.parentIds[0]
         const exactParents = parent ? branches.filter(branch => branch.tip == parent) : []
-        const owner = named ?? (exactParents.length == 1 ? exactParents[0] : undefined)
+        const owner = named ?? (stash.branch === undefined && exactParents.length == 1 ? exactParents[0] : undefined)
         if (owner)
             owner.markers.push(stashMarker(stash))
     }
@@ -520,13 +534,13 @@ function placeTags(refs: RefRecord[], branches: MutableBranch[], topology: Graph
 }
 
 function createVirtualBranches(worktrees: BranchGraphWorktree[]): BranchGraphVirtualBranch[] {
-    return worktrees.filter(worktree => !worktree.branchRef).map(worktree => ({
+    return worktrees.filter(worktree => !worktree.branchRef || /^0+$/.test(worktree.head)).map(worktree => ({
         kind: "virtual",
         id: `virtual:${worktree.path}`,
         name: worktree.name,
         objectId: worktree.head,
         worktree,
-        tooltip: `detached at ${shortObjectId(worktree.head)}`,
+        tooltip: /^0+$/.test(worktree.head) ? "No commits yet" : `detached at ${shortObjectId(worktree.head)}`,
     }))
 }
 
@@ -883,6 +897,7 @@ function effectiveIdentities(configured: AuthorIdentitySettings, effectiveEmail:
 
 function stashMarker(stash: StashRecord): BranchGraphMarker {
     return {
+        branchName: stash.branch === undefined ? /^(?:WIP on|On) ([^:]+):/.exec(stash.subject)?.[1] : stash.branch,
         id: `stash:${stash.selector}`,
         kind: "stash",
         label: stash.selector,

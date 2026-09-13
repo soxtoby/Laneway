@@ -15,6 +15,7 @@ export function WorkbenchHeader(
         appearance: Appearance
         openSettings(): void
         toggleAppearance(): void
+        repositoryActions?: { busy: boolean; stashes(): void; undo(): void; redo(): void }
     }>,
 ) {
     return () => (
@@ -38,6 +39,35 @@ export function WorkbenchHeader(
                 </button>
             )}
             <div class="header-actions" mix={headerActions}>
+                {handle.props.repositoryActions && (
+                    <div class="repository-actions" mix={repositoryActions}>
+                        <button
+                            type="button"
+                            disabled={handle.props.repositoryActions.busy}
+                            mix={[topBarButton, on("click", handle.props.repositoryActions.stashes)]}
+                        >
+                            Stashes
+                        </button>
+                        <button
+                            type="button"
+                            aria-label="Undo last operation"
+                            title="Undo (Ctrl+Z)"
+                            disabled={handle.props.repositoryActions.busy}
+                            mix={[iconButton, on("click", handle.props.repositoryActions.undo)]}
+                        >
+                            ↶
+                        </button>
+                        <button
+                            type="button"
+                            aria-label="Redo operation"
+                            title="Redo (Ctrl+Shift+Z)"
+                            disabled={handle.props.repositoryActions.busy}
+                            mix={[iconButton, on("click", handle.props.repositoryActions.redo)]}
+                        >
+                            ↷
+                        </button>
+                    </div>
+                )}
                 <button
                     class="icon-button"
                     type="button"
@@ -185,6 +215,26 @@ const headerActions = css({
     display: "flex",
     alignItems: "center",
     gap: "4px",
+})
+
+const repositoryActions = css({
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    marginRight: "4px",
+    paddingRight: "8px",
+    borderRight: "1px solid var(--line)",
+})
+
+const topBarButton = css({
+    height: "28px",
+    padding: "0 7px",
+    color: "var(--muted)",
+    border: "1px solid transparent",
+    borderRadius: "4px",
+    background: "transparent",
+    font: "inherit",
+    "&:hover:not(:disabled)": { color: "var(--text)", borderColor: "var(--line-strong)", background: "var(--control)" },
 })
 
 const iconButton = css({

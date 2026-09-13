@@ -3,6 +3,7 @@ import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 import * as accordion from "remix/ui/accordion/primitives"
 import { AuxiliaryColumns } from "./auxiliary-columns"
 import { type BranchComparisonState, createBranchComparisons } from "./branch-comparison"
+import { CommitComposer } from "./commit-composer"
 import { DiffLines } from "./diff"
 import { DiffControls } from "./diff-controls"
 import { fileLabel, FileTree } from "./file-list"
@@ -17,6 +18,9 @@ interface Options {
     saveLayout(repositoryId: string, columnId: string, layout: DiffLayout): void
     compareWith(repositoryId: string, fromRef: string, replaceId?: string, toRef?: string): void
     openCommitWorktree?(repositoryId: string, objectId: string): void
+    localChanged?(repositoryId: string): Promise<void>
+    localBusyChanged?(busy: boolean): void
+    createBranchAt?(repositoryId: string, objectId: string): void
 }
 interface FileState {
     inventory?: ChangesInventory
@@ -392,6 +396,17 @@ export function createInspection(options: Options) {
             const previous = files.inventory?.version
             files.inventory = result.inventory
             files.source = result.inventory.source
+            if (group == "working") {
+                for (const view of ["staged", "unstaged"] as const) {
+                    state.files.set(`working-${view}`, {
+                        ...files,
+                        inventory: {
+                            ...result.inventory,
+                            files: result.inventory.files.filter(file => view == "staged" ? file.staged : file.unstaged || file.untracked),
+                        },
+                    })
+                }
+            }
             if (state.breakout?.kind == "commit" && state.breakout.group == group)
                 populateCommitBreakout(state, state.breakout)
             if (previous && previous != result.inventory.version) {
@@ -401,7 +416,7 @@ export function createInspection(options: Options) {
                 }
             }
             for (const diff of state.diffs.values()) {
-                if (diff.group != group)
+                if (diff.group != group && !(group == "working" && diff.group.startsWith("working-")))
                     continue
                 if (!result.inventory.files.some(file => file.path == diff.path && !file.ignored))
                     clearDiff(state, diff)
@@ -451,11 +466,12 @@ export function createInspection(options: Options) {
     }
     function createDiff(state: ColumnState, group: string, path: string) {
         const files = state.files.get(group)
+        const view = group == "working-staged" ? "staged" : group == "working-unstaged" ? "unstaged" : "combined"
         const diff: FileDiffState = {
             group,
             path,
-            view: "combined",
-            page: files?.error ? undefined : state.cachedDiffs.get(JSON.stringify([files?.source, files?.inventory?.version, path])),
+            view,
+            page: files?.error ? undefined : state.cachedDiffs.get(JSON.stringify([files?.source, files?.inventory?.version, path, view])),
             loading: false,
             generation: 0,
             showWhitespace: false,
@@ -576,8 +592,8 @@ export function createInspection(options: Options) {
             if (!result.ok)
                 throw new Error(result.error.message)
             const page = result.page
-            if (diff.view == "combined" && !more && page.lines.reduce((length, line) => length + line.text.length, 0) <= 128_000) {
-                const id = JSON.stringify([source, inventoryVersion, diff.path])
+            if (!more && page.lines.reduce((length, line) => length + line.text.length, 0) <= 128_000) {
+                const id = JSON.stringify([source, inventoryVersion, diff.path, diff.view])
                 state.cachedDiffs.delete(id)
                 state.cachedDiffs.set(id, page)
                 if (state.cachedDiffs.size > 16)
@@ -693,7 +709,7 @@ export function createInspection(options: Options) {
     function matchesFilter(state: ColumnState, file: ChangedFile) {
         return `${file.oldPath ?? ""} ${file.path}`.toLowerCase().includes(state.filter.toLowerCase()) && (state.status == "all" || file.status == state.status)
     }
-    function fileList(state: ColumnState, group: string, files: FileState | undefined): RemixNode {
+    function fileList(state: ColumnState, group: string, files: FileState | undefined, stage?: (paths: string[]) => void, busy = false): RemixNode {
         if (!files)
             return null
         const all = files.inventory?.files ?? []
@@ -704,7 +720,7 @@ export function createInspection(options: Options) {
             ? new Set<string>()
             : new Set([...state.diffs.values()].filter(diff => diff.group == group).map(diff => diff.path))
         return (
-            <section class="change-file-list" aria-label={group == "working" ? "Working Changes files" : "Commit files"} mix={changeFileList}>
+            <section class="change-file-list" aria-label={group.startsWith("working") ? "Working Changes files" : "Commit files"} mix={changeFileList}>
                 {files.error && (
                     <p role="alert" mix={changeFileListP}>
                         {files.error}{" "}
@@ -713,12 +729,13 @@ export function createInspection(options: Options) {
                         </button>
                     </p>
                 )}
-                {files.inventory && !all.some(file => !file.ignored) && (
+                {files.inventory && !group.startsWith("working-") && !all.some(file => !file.ignored) && (
                     <p class="inspection-muted" mix={inspectionMuted}>
                         {group == "working" ? "No Working Changes" : "No changes against this parent"}
                     </p>
                 )}
                 <FileTree
+                    hideStagedBadge={group.startsWith("working-")}
                     actions={file => [{
                         label: "File history",
                         run: () =>
@@ -739,7 +756,21 @@ export function createInspection(options: Options) {
                     expanded={expanded}
                     controls={file => {
                         const diff = state.diffs.get(diffKey(group, file.path))
-                        return diff && !state.breakout ? renderDiffControls(state, diff) : null
+                        return (
+                            <>
+                                {diff && !state.breakout ? renderDiffControls(state, diff) : null}
+                                {stage && (
+                                    <button
+                                        type="button"
+                                        aria-label={`${group == "working-staged" ? "Unstage" : "Stage"} ${file.path}`}
+                                        disabled={busy}
+                                        mix={on("click", () => stage(file.oldPath ? [file.oldPath, file.path] : [file.path]))}
+                                    >
+                                        {group == "working-staged" ? "−" : "+"}
+                                    </button>
+                                )}
+                            </>
+                        )
                     }}
                     diff={file => {
                         const diff = state.diffs.get(diffKey(group, file.path))
@@ -752,7 +783,7 @@ export function createInspection(options: Options) {
                         clearGroup(state, group, path)
                         update()
                     }}
-                    check={selectable(state, group)
+                    check={!group.startsWith("working-") && selectable(state, group)
                         ? file => {
                             const id = `${group}:${file.path}`
                             if (state.wholeFiles.has(id))
@@ -986,6 +1017,10 @@ export function createInspection(options: Options) {
         state.filterButton?.focus({ preventScroll: true })
     }
     return {
+        renameBranch(repositoryId: string, oldRef: string, newRef: string) {
+            comparisons.renameBranch(repositoryId, oldRef, newRef)
+            histories.renameBranch(repositoryId, oldRef, newRef)
+        },
         workingSummary(repositoryId: string, column: Column, graph: BranchGraph, worktreePath?: string) {
             if (!worktreePath)
                 return "Branch"
@@ -1141,35 +1176,36 @@ export function createInspection(options: Options) {
                     )}
                     {state.worktreePath && (
                         <section class="working-changes" mix={workingChanges}>
-                            <header mix={workingChangesHeader}>
-                                <h3 mix={workingChangesH3}>
-                                    Working Changes
-                                </h3>
-                                <button
-                                    type="button"
-                                    aria-label="Refresh Working Changes"
-                                    mix={[
-                                        refreshWorkingChangesButton,
-                                        on("click", () => readFiles(state, "working", { kind: "working", worktreePath: state.worktreePath! }, true)),
-                                    ]}
-                                >
-                                    ↻
-                                </button>
-                            </header>
-                            <label class="ignored-toggle" mix={ignoredToggle}>
-                                <input
-                                    type="checkbox"
-                                    checked={state.showIgnored}
-                                    mix={[
-                                        workingChangesInput,
-                                        on("change", event => {
-                                            state.showIgnored = event.currentTarget.checked
-                                            void readFiles(state, "working", { kind: "working", worktreePath: state.worktreePath! })
-                                        }),
-                                    ]}
-                                />Show ignored
-                            </label>
-                            {fileList(state, "working", state.files.get("working"))}
+                            <CommitComposer
+                                key={state.worktreePath}
+                                api={options.api}
+                                repositoryId={state.repositoryId}
+                                path={state.worktreePath}
+                                virtual={column.kind != "branch"}
+                                busyChanged={options.localBusyChanged}
+                                inventory={state.files.get("working")?.inventory}
+                                refresh={() => void readFiles(state, "working", { kind: "working", worktreePath: state.worktreePath! }, true)}
+                                showIgnored={state.showIgnored}
+                                toggleIgnored={value => {
+                                    state.showIgnored = value
+                                    void readFiles(state, "working", { kind: "working", worktreePath: state.worktreePath! })
+                                }}
+                                renderFiles={(view, stage, busy) => fileList(state, `working-${view}`, state.files.get(`working-${view}`), stage, busy)}
+                                changed={async (refreshGraph = true) => {
+                                    await readFiles(state, "working", { kind: "working", worktreePath: state.worktreePath! }, true)
+                                    if (refreshGraph)
+                                        await options.localChanged?.(state.repositoryId)
+                                }}
+                            />
+                            {state.files.get("working")?.error && <p role="alert">{state.files.get("working")?.error}</p>}
+                            {state.showIgnored && (
+                                <details>
+                                    <summary>Ignored files · {state.files.get("working")?.inventory?.files.filter(file => file.ignored).length ?? 0}</summary>
+                                    {state.files.get("working")?.inventory?.files.filter(file => file.ignored).map(file => (
+                                        <div class="inspection-muted">{file.path}</div>
+                                    ))}
+                                </details>
+                            )}
                         </section>
                     )}
                     {!state.worktreePath && column.kind == "branch" && column.markers.length > 0 && (
@@ -1288,6 +1324,26 @@ export function createInspection(options: Options) {
                                                                                         {commit.subject}
                                                                                     </span>
                                                                                 </button>
+                                                                                {files?.open && (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        title="Create branch here"
+                                                                                        aria-label={`Create branch at ${commit.subject}`}
+                                                                                        mix={[
+                                                                                            commitDiffButton,
+                                                                                            on(
+                                                                                                "click",
+                                                                                                () =>
+                                                                                                    options.createBranchAt?.(
+                                                                                                        state.repositoryId,
+                                                                                                        commit.objectId,
+                                                                                                    ),
+                                                                                            ),
+                                                                                        ]}
+                                                                                    >
+                                                                                        ⑂
+                                                                                    </button>
+                                                                                )}
                                                                                 {files?.open && (
                                                                                     <button
                                                                                         type="button"
@@ -1985,55 +2041,9 @@ const workingChanges = css({
     borderBottom: "1px solid var(--line-strong)",
 })
 
-const workingChangesHeader = css({
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "8px 10px",
-    background: "var(--accent-wash)",
-    borderBottom: "1px solid var(--line)",
-})
-
 const workingChangesH3 = css({
     fontSize: "12px",
     margin: "0",
-})
-
-const refreshWorkingChangesButton = css({
-    border: "1px solid var(--line)",
-    background: "var(--control)",
-    color: "var(--text)",
-    borderRadius: "3px",
-    padding: "3px 6px",
-    font: "inherit",
-    cursor: "pointer",
-    "&:hover": {
-        background: "var(--control-hover)",
-    },
-    '&[aria-pressed="true"]': {
-        background: "var(--accent-wash-strong)",
-        borderColor: "var(--accent-edge)",
-    },
-    minWidth: "26px",
-    minHeight: "26px",
-})
-
-const ignoredToggle = css({
-    display: "flex",
-    alignItems: "center",
-    gap: "5px",
-    color: "var(--muted)",
-    fontSize: "11px",
-    padding: "5px 8px",
-})
-
-const workingChangesInput = css({
-    width: "14px",
-    height: "14px",
-    minHeight: 0,
-    padding: 0,
-    margin: "0 3px 0 0",
-    flex: "0 0 14px",
 })
 
 const stackBranch = css({

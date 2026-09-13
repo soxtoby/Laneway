@@ -170,6 +170,28 @@ export function branchGraph(repositoryId: string) {
 
 export function fakeWorkbench(overrides: Partial<Window["workbench"]> = {}): Window["workbench"] {
     return {
+        localOperation: async () => ({
+            ok: true,
+            result: {
+                type: "result",
+                command: "local-preview",
+                status: "preview",
+                preview: {
+                    token: "fixture",
+                    affected: [],
+                    uniqueCommits: false,
+                    branch: "feature/workbench",
+                    unborn: false,
+                    suggestedBranch: "feature/workbench",
+                    staged: true,
+                    files: [],
+                    stashes: [],
+                    worktrees: [],
+                },
+            },
+        }),
+        readCommitDraft: async () => ({ title: "", message: "", branch: "" }),
+        saveCommitDraft: async () => {},
         getState: async () => appState(),
         previewWorktree: async () => ({ ok: false, error: { message: "Worktree operations unavailable" } }),
         executeWorktree: async () => ({ ok: false, error: { message: "Worktree operations unavailable" } }),

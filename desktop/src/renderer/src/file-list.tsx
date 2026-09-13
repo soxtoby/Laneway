@@ -46,6 +46,7 @@ export function FileTree(
             files: ChangedFile[]
             actions?(file: ChangedFile): FileAction[]
             flat?: boolean
+            hideStagedBadge?: boolean
             filter?: string
             expanded: Set<string>
             diff(file: ChangedFile): RemixNode
@@ -98,7 +99,7 @@ export function FileTree(
                                 {changeIcon(file.conflicted ? "conflicted" : file.status)}
                             </span>
                             {fileLabel(file.path, props.flat || !!file.oldPath, file.oldPath, props.filter)}
-                            {file.staged && (
+                            {file.staged && !props.hideStagedBadge && (
                                 <small class="staged-badge" mix={stagedBadge}>
                                     staged
                                 </small>

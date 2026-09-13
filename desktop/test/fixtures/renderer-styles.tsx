@@ -187,7 +187,7 @@ async function checkRenderer() {
     fileButton.dispatchEvent(new MouseEvent("click", { detail: 1, bubbles: true, cancelable: true, composed: true }))
     await settle()
     const noSecondToggle = fileButton.getAttribute("aria-expanded") == "true"
-    const selectedFile = element<HTMLInputElement>(".change-file input[type=checkbox]")
+    const selectedFile = element<HTMLInputElement>(".ignored-toggle input[type=checkbox]")
     selectedFile.dispatchEvent(new MouseEvent("mousedown", { button: 0, detail: 1, bubbles: true, cancelable: true, composed: true }))
     await settle()
     const selectedOnMouseDown = selectedFile.checked
@@ -196,6 +196,8 @@ async function checkRenderer() {
     await settle()
     const noSecondSelection = selectedFile.checked
     selectedFile.click()
+    await settle()
+    ;[...document.querySelectorAll<HTMLButtonElement>(".diff-views button")].find(button => button.textContent == "Working Changes")!.click()
     await settle()
     const diffShadow = element(".pierre-diff").shadowRoot!
     const metadata = element(".diff-summary")
@@ -482,7 +484,8 @@ async function checkRenderer() {
     )
     await settle()
     const menuBounds = element("dialog[aria-label='Branch actions']").getBoundingClientRect()
-    const contextMenuCompact = menuBounds.width < 180 && menuBounds.height < 50
+    const contextMenuCompact = menuBounds.width < 180
+        && menuBounds.height <= document.querySelectorAll('[aria-label="Branch actions"] [role="menuitem"]').length * 34 + 16
     element("[role='menuitem']").click()
     await settle()
     const comparisonSearch = element<HTMLInputElement>("[aria-label='Command Lens search']")
