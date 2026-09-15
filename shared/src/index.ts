@@ -1,5 +1,7 @@
 import { z } from "zod"
+import { ConflictResultSchema } from "./conflicts"
 import { LocalResultSchema } from "./local-operations"
+export * from "./conflicts"
 
 export const ENGINE_VERSION = "0.1.0"
 
@@ -142,6 +144,7 @@ export const EngineMessageSchema = z.union([
     TestMutationResultSchema,
     WorktreeResultSchema,
     LocalResultSchema,
+    ConflictResultSchema,
     RecoveryResultSchema,
     CancelledEventSchema,
     ErrorEventSchema,
@@ -185,6 +188,7 @@ export interface RepositoryInfo {
 }
 
 export interface BranchWorkspaceColumn {
+    resolutionSubject?: string
     worktreeId?: string
     collapsed?: boolean
     diffLayout?: DiffLayout
@@ -197,6 +201,7 @@ export interface BranchWorkspaceColumn {
 }
 
 export interface VirtualBranchWorkspaceColumn {
+    resolutionSubject?: string
     worktreeId?: string
     collapsed?: boolean
     diffLayout?: DiffLayout
@@ -330,6 +335,7 @@ export interface BranchGraphCommitSummary {
 }
 
 export interface BranchGraphBranchNode {
+    unresolved?: { stackId?: string; subjects: string[]; recovery?: string; temporaryRef?: string }
     kind: "branch"
     id: string
     name: string
@@ -420,6 +426,7 @@ export interface BranchHistoryRequest {
 }
 
 export interface BranchHistoryCommit {
+    conflictId?: string
     objectId: string
     parentIds: string[]
     authorName: string

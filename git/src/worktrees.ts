@@ -2,6 +2,7 @@ import type { RegisteredWorktree, WorktreePreview, WorktreeRequest } from "@git-
 import { createHash } from "node:crypto"
 import { lstat, readdir, readFile, readlink } from "node:fs/promises"
 import { basename, dirname, isAbsolute, join, resolve } from "node:path"
+import { readConflictState } from "./conflicts"
 import { GitError, type RepositoryGit } from "./index"
 
 export async function pathExists(path: string) {
@@ -100,6 +101,16 @@ export async function hasUniqueCommits(repository: RepositoryGit, worktree: Regi
 }
 
 export async function previewWorktree(repository: RepositoryGit, request: WorktreeRequest): Promise<WorktreePreview> {
+    if ((request.action == "create" || request.action == "switch") && request.branch) {
+        const ref = request.branch.startsWith("refs/heads/") ? request.branch : `refs/heads/${request.branch}`
+        const state = await readConflictState(repository).catch(() => undefined)
+        const stack = state?.stacks.find(s => s.branches.some(b => b.ref == ref))
+        if (stack) {
+            if (!await repository.resolveRef(stack.temporaryRef))
+                throw new GitError("git.command-failed", "Restore the missing unresolved stack before checking it out.")
+            request = { ...request, branch: stack.temporaryRef.slice(11) }
+        }
+    }
     const worktrees = await readRegisteredWorktrees(repository)
     const current = "path" in request ? worktrees.find(item => normalize(item.path) == normalize(request.path)) : undefined
     if ("path" in request && !current)

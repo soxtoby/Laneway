@@ -60,6 +60,7 @@ export function reconcileWorktreeColumns(columns: WorkspaceColumn[], graph: Bran
             width: column.width,
             collapsed: column.collapsed,
             diffLayout: column.diffLayout,
+            resolutionSubject: id == column.id ? column.resolutionSubject : undefined,
             worktreePath: worktree?.path,
             worktreeId: worktree?.id,
         }

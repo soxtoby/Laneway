@@ -2,6 +2,7 @@ import type { Appearance, AuthorIdentitySettings, BranchGraphResult, BranchHisto
 import type { ChangesRequest, ChangesResult, FileDiffRequest, FileDiffResult } from "@git-workbench/shared"
 import type { WorktreeActionResult, WorktreePreviewResult, WorktreeRequest } from "@git-workbench/shared"
 import type { CommitDraft, LocalActionResult, LocalRequest } from "@git-workbench/shared"
+import type { ConflictActionResult, ConflictRequest } from "@git-workbench/shared"
 
 interface EngineStatusReady {
     state: "ready"
@@ -27,6 +28,7 @@ interface AppState {
 declare global {
     interface Window {
         workbench: {
+            conflictOperation(repositoryId: string, request: ConflictRequest): Promise<ConflictActionResult>
             previewWorktree(repositoryId: string, request: WorktreeRequest): Promise<WorktreePreviewResult>
             localOperation(repositoryId: string, request: LocalRequest, token?: string): Promise<LocalActionResult>
             readCommitDraft(repositoryId: string, path: string): Promise<CommitDraft>

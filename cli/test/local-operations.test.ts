@@ -120,7 +120,7 @@ test("rename preserves upstream; delete detaches dirty worktree and undo reattac
     await transition(path, "undo")
     expect(git(path, "branch", "--show-current")).toBe("renamed")
 }, 60_000)
-test("stash apply consumes stash, undo restores it, conflicts leave original files unchanged", async () => {
+test("stash apply consumes stash, undo restores it, conflicts keep stash and marked Working Changes", async () => {
     const path = await fixture()
     await writeFile(join(path, "a.txt"), "stashed\n")
     expect((await perform(path, { action: "stash-create", path, label: "saved" })).status).toBe("performed")
@@ -133,8 +133,9 @@ test("stash apply consumes stash, undo restores it, conflicts leave original fil
     await writeFile(join(path, "a.txt"), "conflicting\n")
     git(path, "add", ".")
     git(path, "commit", "-qm", "conflict")
-    expect((await perform(path, request)).status).toBe("failed")
-    expect(git(path, "status", "--porcelain")).toBe("")
+    expect((await perform(path, request)).status).toBe("performed")
+    expect(git(path, "ls-files", "--unmerged")).toBe("")
+    expect(await readFile(join(path, "a.txt"), "utf8")).toContain("<<<<<<< Updated stack")
     expect(git(path, "rev-parse", "refs/stash")).toBe(objectId)
 }, 60_000)
 test("hook changes request review; failed hooks preserve draft content without creating a commit", async () => {

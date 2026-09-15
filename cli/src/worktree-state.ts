@@ -115,6 +115,7 @@ export async function captureWorktreeState(repository: RepositoryGit, paths: str
             "refs/heads",
             "refs/tags",
             "refs/stash",
+            "refs/workbench/conflicts/current",
         ])).toString()
     for (const line of output.trim().split("\n").filter(Boolean)) {
         const [ref, oid] = line.split(" ")

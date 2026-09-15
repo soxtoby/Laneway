@@ -21,6 +21,7 @@ interface Options {
     localChanged?(repositoryId: string): Promise<void>
     localBusyChanged?(busy: boolean): void
     createBranchAt?(repositoryId: string, objectId: string): void
+    resolveConflict?(repositoryId: string, columnId: string, subject: string): void
 }
 interface FileState {
     inventory?: ChangesInventory
@@ -71,6 +72,7 @@ interface ColumnState {
     showIgnored: boolean
     filter: string
     filterOpen: boolean
+    conflictsOnly?: boolean
     filterInput?: HTMLInputElement
     filterButton?: HTMLButtonElement
     status: string
@@ -657,6 +659,8 @@ export function createInspection(options: Options) {
             if (generation == current.generation) {
                 current.loading = false
                 update()
+                if (state.alive && state.conflictsOnly && !current.error && current.page?.nextOffset != undefined)
+                    void history(state, branch, true)
             }
         }
     }
@@ -1046,6 +1050,46 @@ export function createInspection(options: Options) {
                 closeFilter(state)
             }
         },
+        conflictFilter(repositoryId: string, column: Column, graph: BranchGraph, worktreePath?: string): RemixNode {
+            const state = stateFor(repositoryId, column, graph, worktreePath)
+            if (column.kind != "branch" || !column.unresolved && !state.conflictsOnly)
+                return null
+            return (
+                <button
+                    type="button"
+                    aria-label="Show only conflicted commits"
+                    title="Show only conflicted commits"
+                    aria-pressed={Boolean(state.conflictsOnly)}
+                    mix={[
+                        conflictIndicator,
+                        on("click", () => {
+                            state.conflictsOnly = !state.conflictsOnly
+                            if (state.conflictsOnly) {
+                                let branch: BranchGraphBranchNode | undefined = column
+                                const seen = new Set<string>()
+                                while (branch && !seen.has(branch.id)) {
+                                    seen.add(branch.id)
+                                    if (branch.unresolved) {
+                                        const current = state.history.get(branch.id)
+                                        if (current)
+                                            current.open = true
+                                        if (!current?.page || current.page.nextOffset != undefined)
+                                            void history(state, branch, Boolean(current?.page))
+                                    }
+                                    const nextId: string | undefined = branch.base.status == "known"
+                                        ? branch.base.branchId
+                                        : state.baseSelections.get(branch.id)
+                                    branch = graph.branches.find(b => b.id == nextId)
+                                }
+                            }
+                            update()
+                        }),
+                    ]}
+                >
+                    {conflictIcon()}
+                </button>
+            )
+        },
         filterControl(repositoryId: string, column: Column, graph: BranchGraph, render: Options["update"], worktreePath?: string): RemixNode {
             const state = stateFor(repositoryId, column, graph, worktreePath)
             return (
@@ -1304,7 +1348,7 @@ export function createInspection(options: Options) {
                                                                     </button>
                                                                 </p>
                                                             )}
-                                                            {current.page?.commits.map(commit => {
+                                                            {current.page?.commits.filter(commit => !state.conflictsOnly || commit.conflictId).map(commit => {
                                                                 const files = state.files.get(commit.objectId)
                                                                 return (
                                                                     <accordion.ItemContext key={commit.objectId} value={commit.objectId}>
@@ -1324,6 +1368,24 @@ export function createInspection(options: Options) {
                                                                                         {commit.subject}
                                                                                     </span>
                                                                                 </button>
+                                                                                {commit.conflictId && (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        title="Commit has conflicts · Resolve"
+                                                                                        aria-label={`Resolve conflicts in ${commit.subject}`}
+                                                                                        mix={[
+                                                                                            conflictIndicator,
+                                                                                            on("click", () =>
+                                                                                                options.resolveConflict?.(
+                                                                                                    state.repositoryId,
+                                                                                                    state.id,
+                                                                                                    commit.conflictId!,
+                                                                                                )),
+                                                                                        ]}
+                                                                                    >
+                                                                                        {conflictIcon()}
+                                                                                    </button>
+                                                                                )}
                                                                                 {files?.open && (
                                                                                     <button
                                                                                         type="button"
@@ -2086,6 +2148,31 @@ const stackHeading = css({
     },
 })
 
+function conflictIcon() {
+    return (
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M8 2 15 14H1Z" />
+            <path d="M8 6v4m0 1.5v1" />
+        </svg>
+    )
+}
+const conflictIndicator = css({
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: "0",
+    minWidth: "26px",
+    height: "26px",
+    padding: "3px",
+    color: "var(--warning)",
+    background: "transparent",
+    border: "1px solid transparent",
+    borderRadius: "4px",
+    cursor: "pointer",
+    "&[aria-pressed=true]": { background: "var(--warning-wash)", borderColor: "var(--warning-edge)" },
+    "&:hover": { background: "var(--warning-wash)" },
+    ".inspect-commit &": { height: "100%", width: "32px", alignSelf: "stretch", borderRadius: "0", padding: "0", border: "0" },
+})
 const commitDiffButton = css({
     width: "32px",
     height: "32px",

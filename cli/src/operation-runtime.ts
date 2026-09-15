@@ -3,9 +3,11 @@ import { pathExists, previewWorktree, worktreeBasename } from "@git-workbench/gi
 import { type OperationAvailability, type OperationAvailabilityReason, type OperationHistoryEntry, type OperationHistoryResult, type OperationSummary, OperationSummarySchema, type OperationTransitionResult, type RecoveredExecution, type RecoveryResult, type TestMutationResult } from "@git-workbench/shared"
 import type { WorktreeRequest, WorktreeResult } from "@git-workbench/shared"
 import type { LocalRequest, LocalResult } from "@git-workbench/shared"
+import type { ConflictRequest, ConflictResult } from "@git-workbench/shared"
 import { link, lstat, mkdir, open, readdir, readFile, readlink, rename, unlink } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { z } from "zod"
+import { conflictMutation, conflictPaths, executeConflict, suspendWorkingConflicts } from "./conflict-operations"
 import { LocalPreconditionError, mutateLocal, prepareLocal } from "./local-mutations"
 import { mutateWorktree } from "./worktree-mutations"
 import { captureWorktreeState, relocateRemovedState, restoreWorktreeState, retainWorktreeState, stateIdentity, worktreeStateMatches, WorktreeStateSchema } from "./worktree-state"
@@ -100,6 +102,7 @@ interface HistoryProjection {
 }
 
 export type OperationCommand =
+    | { command: "conflict"; request: ConflictRequest; noWait: boolean; crashAfter?: JournalPhase }
     | { command: "local" | "local-preview"; request: LocalRequest; token?: string; noWait: boolean; crashAfter?: JournalPhase; branchPrefix?: string }
     | { command: "worktree"; request: WorktreeRequest; token?: string; noWait: boolean; crashAfter?: JournalPhase; branchPrefix?: string }
     | { command: "test-mutation"; value: string; noWait: boolean; crashAfter?: JournalPhase; holdAfterIntentMs?: number }
@@ -108,7 +111,14 @@ export type OperationCommand =
     | { command: "history"; noWait: boolean }
     | { command: "recover"; noWait: boolean }
 
-export type OperationCommandResult = TestMutationResult | OperationTransitionResult | OperationHistoryResult | RecoveryResult | WorktreeResult | LocalResult
+export type OperationCommandResult =
+    | TestMutationResult
+    | OperationTransitionResult
+    | OperationHistoryResult
+    | RecoveryResult
+    | WorktreeResult
+    | LocalResult
+    | ConflictResult
 
 export interface CancellationSignal {
     isCancelled(): boolean
@@ -149,6 +159,8 @@ export async function executeOperationCommand(
             return recovery
 
         switch (command.command) {
+            case "conflict":
+                return runtime.conflict(command.request, command.crashAfter)
             case "local-preview":
                 return {
                     type: "result",
@@ -179,6 +191,24 @@ class OperationRuntime {
         private readonly cancellation: CancellationSignal,
     ) {}
 
+    async conflict(request: ConflictRequest, crashAfter?: JournalPhase): Promise<ConflictResult> {
+        const changes = new Map<string, string | null>()
+        if (!conflictMutation(request))
+            return executeConflict(this.repository, request, changes, () => this.cancellation.isCancelled())
+        let result: ConflictResult | undefined
+        await this.applySnapshot(
+            await conflictPaths(this.repository),
+            `conflict.${request.action}`,
+            request.action == "rewrite" ? "Rewrite stack" : request.action == "accept" ? "Accept conflict resolution" : request.action.replaceAll("-", " "),
+            async () => {
+                result = await executeConflict(this.repository, request, changes, () => this.cancellation.isCancelled())
+                return changes
+            },
+            crashAfter,
+        )
+        return result!
+    }
+
     async applyLocal(request: LocalRequest, token?: string, crashAfter?: JournalPhase, prefix = "worktree/"): Promise<LocalResult> {
         const { preview, before } = await prepareLocal(this.repository, request, prefix)
         if (!token || token != preview.token)
@@ -206,6 +236,7 @@ class OperationRuntime {
     async applyWorktree(request: WorktreeRequest, token?: string, crashAfter?: JournalPhase, branchPrefix = "worktree/"): Promise<WorktreeResult> {
         await this.repository.command(this.repository.descriptor.mainWorktree, ["check-ref-format", "--branch", `${branchPrefix}worktree`])
         const preview = await previewWorktree(this.repository, request)
+        request = preview.request
         if (token && token != preview.token)
             throw new OperationRuntimeError("operation.precondition-failed", "Worktree state changed after preview. Review it again.")
         if (
@@ -222,7 +253,14 @@ class OperationRuntime {
             preview.affected,
             `worktree.${request.action}`,
             `${request.action[0]!.toUpperCase()}${request.action.slice(1)} worktree ${preview.destination ?? ("path" in request ? request.path : "")}`,
-            () => mutateWorktree(this.repository, preview, branchPrefix),
+            async () => {
+                const changed = await mutateWorktree(this.repository, preview, branchPrefix)
+                const conflictChanges = new Map<string, string | null>()
+                await suspendWorkingConflicts(this.repository, conflictChanges)
+                for (const ref of conflictChanges.keys())
+                    changed.add(ref)
+                return changed
+            },
             crashAfter,
         )
         return { type: "result", command: "worktree", operation }

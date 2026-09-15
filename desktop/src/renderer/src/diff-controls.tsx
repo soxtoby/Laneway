@@ -1,5 +1,6 @@
 import type { DiffLayout } from "@git-workbench/shared"
 import { css, type Handle, on } from "remix/ui"
+import { fileActionButton } from "./file-list"
 
 export function DiffControls(
     handle: Handle<{
@@ -20,7 +21,7 @@ export function DiffControls(
                         aria-label={layout == "unified" ? "Unified" : "Side by side"}
                         title={layout == "unified" ? "Unified" : "Side by side"}
                         aria-pressed={props.layout == layout}
-                        mix={[diffToolbarButton, on("click", () => props.setLayout(layout))]}
+                        mix={[fileActionButton, on("click", () => props.setLayout(layout))]}
                     >
                         {diffIcon(layout)}
                     </button>
@@ -30,14 +31,14 @@ export function DiffControls(
                     aria-label="Show whitespace"
                     title="Show whitespace"
                     aria-pressed={props.showWhitespace}
-                    mix={[diffToolbarButton, on("click", props.toggleWhitespace)]}
+                    mix={[fileActionButton, on("click", props.toggleWhitespace)]}
                 >
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                         <path d="M13 2H6a3.5 3.5 0 0 0 0 7h2M8 2v12M11 2v12" />
                     </svg>
                 </button>
                 {props.breakout && (
-                    <button type="button" aria-label="Break out diff" title="Break out diff" mix={[diffToolbarButton, on("click", props.breakout)]}>
+                    <button type="button" aria-label="Break out diff" title="Break out diff" mix={[fileActionButton, on("click", props.breakout)]}>
                         {diffIcon("breakout")}
                     </button>
                 )}
@@ -66,27 +67,4 @@ const diffToolbarDiv = css({
     display: "flex",
     gap: "4px",
     flex: "0 0 auto",
-})
-
-const diffToolbarButton = css({
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    border: "1px solid var(--line)",
-    background: "var(--control)",
-    color: "var(--text)",
-    borderRadius: "3px",
-    padding: "2px",
-    font: "inherit",
-    cursor: "pointer",
-    fontSize: "11px",
-    '&[aria-pressed="true"]': {
-        background: "var(--accent-wash-strong)",
-        borderColor: "var(--accent-edge)",
-    },
-    "&:hover": {
-        background: "var(--control-hover)",
-    },
-    width: "22px",
-    height: "22px",
 })

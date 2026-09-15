@@ -4,6 +4,7 @@ import { createHash } from "node:crypto"
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path"
+import { applyStashConflict } from "./conflict-operations"
 import { captureWorktreeState, stateIdentity, type WorktreeState } from "./worktree-state"
 
 interface LocalMetadata {
@@ -215,7 +216,10 @@ export async function mutateLocal(
         if (request.action == "stash-apply") {
             if (preview.files.length)
                 throw new Error("Apply requires a clean worktree. Commit or stash its Working Changes first.")
-            await checkStashApplication(repository, path, request.objectId)
+            if (!await checkStashApplication(repository, path, request.objectId)) {
+                await applyStashConflict(repository, path, request.objectId, expectedRefs)
+                return result
+            }
             await run(["stash", "apply", "--index", request.objectId])
         }
         const stashes = await localStashes(repository)
@@ -326,8 +330,7 @@ async function checkStashApplication(repository: RepositoryGit, path: string, ob
         const env = { GIT_DIR: gitDirectory, GIT_WORK_TREE: worktree, GIT_INDEX_FILE: join(scratch, "index") }
         await repository.command(worktree, ["read-tree", "--reset", "-u", "HEAD"], undefined, env)
         const result = await repository.run(worktree, ["stash", "apply", "--index", objectId], undefined, env)
-        if (result.exitCode)
-            throw new Error("This stash cannot be restored cleanly. The stash and original worktree are unchanged; conflict resolution is not available yet.")
+        return result.exitCode == 0
     } finally {
         if (!resolve(scratch).startsWith(root + sep))
             throw new Error("Invalid scratch path.")

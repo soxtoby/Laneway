@@ -4,6 +4,7 @@ import { ChangesRequestSchema, type ChangesResult, FileDiffRequestSchema, type F
 import type { AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryResult, RepositoryGraphSettings, Workspace } from "@git-workbench/shared"
 import { type WorktreeActionResult, type WorktreePreviewResult, WorktreeRequestSchema } from "@git-workbench/shared"
 import { CommitDraftSchema, type LocalActionResult, LocalRequestSchema } from "@git-workbench/shared"
+import { type ConflictActionResult, ConflictRequestSchema } from "@git-workbench/shared"
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -58,6 +59,25 @@ async function performEntry(action: () => Promise<Workspace>): Promise<EntryResu
 }
 
 function registerHandlers() {
+    ipcMain.handle("conflict:operation", async (_event, repositoryId: unknown, value: unknown): Promise<ConflictActionResult> => {
+        try {
+            if (typeof repositoryId != "string")
+                throw new Error("Choose a repository.")
+            const request = ConflictRequestSchema.parse(value)
+            const repository = repositories.worktreeRepository(repositoryId)
+            const output = await runEngineCommand({
+                enginePath,
+                cwd: repository.descriptor.mainWorktree,
+                args: ["conflict", "--request", JSON.stringify(request), "--git-path", repository.descriptor.git.path],
+            }).result
+            const result = output.messages.find(message => message.type == "result" && message.command == "conflict")
+            if (output.exitCode || !result || result.type != "result" || result.command != "conflict")
+                throw new Error(output.messages.find(message => message.type == "error")?.message ?? output.diagnostics ?? "Conflict operation failed.")
+            return { ok: true, result }
+        } catch (error) {
+            return { ok: false, error: { message: error instanceof Error ? error.message : String(error) } }
+        }
+    })
     ipcMain.handle("local:operation", async (_event, repositoryId: unknown, value: unknown, token: unknown): Promise<LocalActionResult> => {
         try {
             if (typeof repositoryId != "string" || (token !== undefined && typeof token != "string"))

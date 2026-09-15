@@ -13,7 +13,7 @@ export function InspectionItem(
         checked?: boolean
         checkLabel?: string
         check?(): void
-        choose(): void
+        choose?(): void
     }>,
 ) {
     return () => {
@@ -29,7 +29,13 @@ export function InspectionItem(
                             mix={[selectFileInput, on("change", () => props.check?.())]}
                         />
                     )}
-                    <button type="button" title={props.title} aria-expanded={props.expanded} mix={[changeFileButton, on("click", props.choose)]}>
+                    <button
+                        type="button"
+                        title={props.title}
+                        aria-expanded={props.expanded}
+                        disabled={!props.choose}
+                        mix={[changeFileButton, on("click", () => props.choose?.())]}
+                    >
                         {props.label}
                     </button>
                     {props.controls}
@@ -260,6 +266,27 @@ const changeFileButton = css({
         background: "var(--accent-wash-strong)",
         borderColor: "var(--accent-edge)",
     },
+    "&:disabled": { opacity: "1", cursor: "default" },
+})
+
+export const fileActionButton = css({
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    border: "1px solid var(--line)",
+    background: "var(--control)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "2px",
+    font: "inherit",
+    cursor: "pointer",
+    fontSize: "11px",
+    flexShrink: "0",
+    width: "22px",
+    height: "22px",
+    '&[aria-pressed="true"]': { background: "var(--accent-wash-strong)", borderColor: "var(--accent-edge)" },
+    "&:hover:not(:disabled)": { background: "var(--control-hover)" },
+    "&:disabled": { opacity: "0.45", cursor: "default" },
 })
 
 const fileStatus = css({

@@ -1,10 +1,11 @@
-import type { BranchGraphReadOptions, BranchHistoryRequest, ChangesRequest, FileDiffRequest } from "@git-workbench/shared"
+import type { BranchGraphReadOptions, BranchHistoryRequest, ChangesRequest, DiffSource, FileDiffRequest } from "@git-workbench/shared"
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
 import { constants } from "node:fs"
 import { access, lstat, mkdir, readdir, readFile, realpath } from "node:fs/promises"
 import { delimiter, isAbsolute, resolve } from "node:path"
 import { type BranchGraphReadCache, startBranchGraphRead, startBranchHistoryRead } from "./branch-graph"
 import { type ChangesReadCache, startChangesRead, startFileDiffRead } from "./changes"
+import { conflictComparisonSource, conflictHistoryRequest, projectConflictGraph } from "./conflict-graph"
 import { readRegisteredWorktrees } from "./worktrees"
 
 const minimumGitVersion = [2, 41, 0] as const
@@ -288,12 +289,13 @@ export class RepositoryGit {
     }
 
     startReadChanges(request: ChangesRequest) {
-        return startChangesRead(
-            this.readDescriptor,
-            (cwd, args, onOutput, input) => startGitProcess({ installation: this.descriptor.git, cwd, args, readOnly: true, onOutput, input }),
-            request,
-            this.changesCache,
-        )
+        return this.withConflictComparison(request, prepared =>
+            startChangesRead(
+                this.readDescriptor,
+                (cwd, args, onOutput, input) => startGitProcess({ installation: this.descriptor.git, cwd, args, readOnly: true, onOutput, input }),
+                prepared,
+                this.changesCache,
+            ))
     }
 
     startReadFileHistory(request: FileHistoryRequest) {
@@ -305,12 +307,34 @@ export class RepositoryGit {
     }
 
     startReadFileDiff(request: FileDiffRequest) {
-        return startFileDiffRead(
-            this.readDescriptor,
-            (cwd, args, onOutput, input) => startGitProcess({ installation: this.descriptor.git, cwd, args, readOnly: true, onOutput, input }),
-            request,
-            this.changesCache,
-        )
+        return this.withConflictComparison(request, prepared =>
+            startFileDiffRead(
+                this.readDescriptor,
+                (cwd, args, onOutput, input) => startGitProcess({ installation: this.descriptor.git, cwd, args, readOnly: true, onOutput, input }),
+                prepared,
+                this.changesCache,
+            ))
+    }
+
+    private withConflictComparison<T extends { source: DiffSource }, R>(request: T, start: (prepared: T) => GitTask<R>): GitTask<R> {
+        if (request.source.kind != "branches")
+            return start(request)
+        const source = request.source
+        let task: GitTask<R> | undefined
+        let cancelled = false
+        return {
+            cancel: async () => {
+                cancelled = true
+                await task?.cancel()
+            },
+            result: (async () => {
+                const prepared = await conflictComparisonSource(this, source)
+                if (cancelled)
+                    throw new GitError("git.cancelled", "Comparison loading cancelled.")
+                task = start({ ...request, source: prepared })
+                return task.result
+            })(),
+        }
     }
 
     async hashObject(value: string) {
@@ -393,17 +417,31 @@ export class RepositoryGit {
                     branch.checkedOut = branch.checkedOut.map(item => ({ ...item, ...enrich(item) }))
                 for (const branch of graph.virtualBranches)
                     branch.worktree = { ...branch.worktree, ...enrich(branch.worktree) }
-                return graph
+                return projectConflictGraph(this, graph)
             }),
         }
     }
 
     startReadBranchHistory(request: BranchHistoryRequest) {
-        return startBranchHistoryRead(
-            this.descriptor,
-            (args, input) => startGitProcess({ installation: this.descriptor.git, cwd: this.descriptor.mainWorktree, args, input }),
-            request,
-        )
+        let task: ReturnType<typeof startBranchHistoryRead> | undefined
+        let cancelled = false
+        return {
+            cancel: async () => {
+                cancelled = true
+                await task?.cancel()
+            },
+            result: (async () => {
+                const prepared = await conflictHistoryRequest(this, request)
+                if (cancelled)
+                    throw new GitError("git.cancelled", "History loading cancelled.")
+                task = startBranchHistoryRead(
+                    this.descriptor,
+                    (args, input) => startGitProcess({ installation: this.descriptor.git, cwd: this.descriptor.mainWorktree, args, input }),
+                    prepared.request,
+                )
+                return prepared.decorate(await task.result)
+            })(),
+        }
     }
 
     run(cwd: string, args: string[], input?: string | Uint8Array, env?: Record<string, string>) {
@@ -658,4 +696,5 @@ async function terminateProcessTree(pid: number, force: boolean) {
 }
 import type { FileHistoryRequest } from "@git-workbench/shared"
 import { startFileHistoryRead } from "./file-history"
+export * from "./conflicts"
 export * from "./worktrees"

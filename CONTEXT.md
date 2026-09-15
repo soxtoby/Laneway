@@ -173,19 +173,19 @@ Working Changes created from the detached snapshot in a Historical Edit. They st
 _Avoid_: Replacement commit, original Working Changes
 
 **Working Changes Conflict**:
-A conflict produced when Stashed Working Changes cannot be restored cleanly onto the current committed tree. It uses the regular Conflict Resolution Column, but acceptance writes uncommitted Working Changes rather than a commit and never restacks descendants; the ordinary stash remains and publication stays blocked until the result is accepted or explicitly kept stashed.
+A deferred conflict produced when Stashed Working Changes cannot be restored cleanly onto a committed tree. Its accepted resolution becomes Working Changes rather than a commit and never restacks descendants.
 _Avoid_: Conflicted Commit, Unresolved Stack, stash pop failure
 
 **Unresolved Stack**:
-The checked-out result of a stack rewrite containing one or more Conflicted Commits. It remains locally usable and distinct from later branch updates, but Workbench blocks publication until every conflict is resolved.
+The locally usable provisional result of a completed stack rewrite containing one or more Conflicted Commits. It may continue evolving, but affected and dependent stacks cannot Publish until every deferred conflict is resolved.
 _Avoid_: Successful rebase, failed rebase
 
 **Conflicted Commit**:
-A commit in an Unresolved Stack that still contains unresolved content decisions. Accepting a resolution produced from temporary files rewrites that commit and restacks its descendants.
+A commit in an Unresolved Stack that contains deferred content decisions. Accepting its complete resolution rewrites that commit and restacks its descendants.
 _Avoid_: Failed commit, paused rebase
 
 **Conflict Resolution Column**:
-An auxiliary column opened beside a Workspace Column for one Conflicted Commit or Working Changes Conflict. It identifies the conflict sources and coordinates per-hunk, temporary-file, merge-tool, or AI resolution without replacing the checked-out stack or worktree.
+An auxiliary column opened beside a Workspace Column for one Conflicted Commit or Working Changes Conflict. It lists conflicted files with whole-file choices and external merge-tool actions, and coordinates an explicit, durable resolution candidate without replacing the checked-out stack or Working Changes before acceptance. In-app hunk resolution is deferred.
 _Avoid_: Conflict modal, merge editor
 
 **Provider Overlay**:

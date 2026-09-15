@@ -3,6 +3,7 @@ import { readSettings, SettingsError } from "@git-workbench/settings"
 import { ENGINE_VERSION, type EngineMessage, type ErrorEvent, ExitCode } from "@git-workbench/shared"
 import { type WorktreeRequest, WorktreeRequestSchema } from "@git-workbench/shared"
 import { type LocalRequest, LocalRequestSchema } from "@git-workbench/shared"
+import { type ConflictRequest, ConflictRequestSchema } from "@git-workbench/shared"
 import { executeOperationCommand, type JournalPhase, OperationCancelledError, type OperationCommand, OperationRuntimeError } from "./operation-runtime.ts"
 
 const args = process.argv.slice(2)
@@ -232,6 +233,7 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
     let holdAfterIntentMs: number | undefined
     let request: WorktreeRequest | undefined
     let localRequest: LocalRequest | undefined
+    let conflictRequest: ConflictRequest | undefined
     let token: string | undefined
     let worktreeBasename: string | undefined
 
@@ -239,6 +241,14 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
         const argument = commandArguments[index]
         if (argument == "--json" || argument == "--no-wait")
             continue
+        if (command == "conflict" && argument == "--request") {
+            try {
+                conflictRequest = ConflictRequestSchema.parse(JSON.parse(commandArguments[++index]!))
+            } catch {
+                return invalidOperationArgument(command, json, "Provide a valid conflict request.", "--request")
+            }
+            continue
+        }
         if (command == "undo" && argument == "--worktree-basename") {
             worktreeBasename = commandArguments[++index]
             if (!worktreeBasename)
@@ -291,7 +301,8 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
             continue
         }
         if (
-            (command == "test-mutation" || command == "worktree" || command == "local" || command == "undo" || command == "redo") && argument == "--crash-after"
+            (command == "test-mutation" || command == "worktree" || command == "local" || command == "conflict" || command == "undo" || command == "redo")
+            && argument == "--crash-after"
             && process.env.WORKBENCH_ENABLE_TEST_COMMANDS == "1"
         ) {
             const phase = commandArguments[index + 1]
@@ -316,6 +327,8 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
 
     if (command == "test-mutation" && value == undefined)
         return invalidOperationArgument(command, json, "A value is required for --value.", "--value")
+    if (command == "conflict" && !conflictRequest)
+        return invalidOperationArgument(command, json, "A conflict request is required.", "--request")
     if (command == "worktree" && !request)
         return invalidOperationArgument(command, json, "A worktree request is required.", "--request")
     if ((command == "local" || command == "local-preview") && !localRequest)
@@ -325,7 +338,7 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
         ok: true,
         json,
         gitPath,
-        command: command == "local" || command == "local-preview"
+        command: command == "conflict" ? { command, request: conflictRequest!, noWait, crashAfter } : command == "local" || command == "local-preview"
             ? { command, request: localRequest!, token, noWait, crashAfter }
             : command == "worktree"
             ? { command, request: request!, token, noWait, crashAfter }
@@ -400,7 +413,7 @@ else if (args[0] == "echo") {
     }
 } else if (
     args[0] == "local" || args[0] == "local-preview" || args[0] == "worktree" || args[0] == "undo" || args[0] == "redo" || args[0] == "history"
-    || args[0] == "recover"
+    || args[0] == "recover" || args[0] == "conflict"
 ) {
     process.exitCode = await runOperationCommand(args[0], args.slice(1))
 } else if (args[0] == "test-mutation" && process.env.WORKBENCH_ENABLE_TEST_COMMANDS == "1")
