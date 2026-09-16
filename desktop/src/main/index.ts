@@ -1,4 +1,4 @@
-import { normalize, previewWorktree, readRegisteredWorktrees } from "@git-workbench/git"
+import { isText, normalize, previewWorktree, readRegisteredWorktrees } from "@git-workbench/git"
 import { defaultWorkspacePath } from "@git-workbench/settings"
 import { ChangesRequestSchema, type ChangesResult, FileDiffRequestSchema, type FileDiffResult } from "@git-workbench/shared"
 import type { AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryResult, RepositoryGraphSettings, Workspace } from "@git-workbench/shared"
@@ -6,7 +6,9 @@ import { type WorktreeActionResult, type WorktreePreviewResult, WorktreeRequestS
 import { CommitDraftSchema, type LocalActionResult, LocalRequestSchema } from "@git-workbench/shared"
 import { type ConflictActionResult, ConflictRequestSchema } from "@git-workbench/shared"
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron"
-import { resolve } from "node:path"
+import { mkdtemp, rm, rmdir, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { CommitDrafts } from "./commit-drafts"
 import { inspectEngine, resolveEnginePath, runEngineCommand } from "./engine"
@@ -25,6 +27,7 @@ const repositories = new OpenRepositories(process.env.WORKBENCH_SETTINGS_PATH)
 const workspace = new WorkspaceManager(repositories, process.env.WORKBENCH_WORKSPACE_PATH ?? defaultWorkspacePath())
 const commitDrafts = new CommitDrafts(resolve(app.getPath("userData"), "commit-drafts.json"))
 const draftWorktrees = new Map<string, string>()
+const conflictInspections = new Map<string, ConflictActionResult>()
 
 const cancelledEntry = () =>
     ({
@@ -59,23 +62,63 @@ async function performEntry(action: () => Promise<Workspace>): Promise<EntryResu
 }
 
 function registerHandlers() {
+    ipcMain.handle("conflict:content", async (_event, repositoryId: unknown, object: unknown): Promise<string | null> => {
+        if (typeof repositoryId != "string" || typeof object != "string" || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(object))
+            throw new Error("Choose a valid conflict file object.")
+        const repository = repositories.worktreeRepository(repositoryId)
+        const bytes = await repository.command(repository.descriptor.mainWorktree, ["cat-file", "blob", object])
+        return bytes.length <= 2_000_000 && isText(bytes) ? bytes.toString() : null
+    })
     ipcMain.handle("conflict:operation", async (_event, repositoryId: unknown, value: unknown): Promise<ConflictActionResult> => {
+        let requestDirectory: string | undefined
         try {
             if (typeof repositoryId != "string")
                 throw new Error("Choose a repository.")
             const request = ConflictRequestSchema.parse(value)
             const repository = repositories.worktreeRepository(repositoryId)
+            const inspectionVersion = async () =>
+                (await repository.command(repository.descriptor.mainWorktree, [
+                    "for-each-ref",
+                    "--format=%(refname) %(objectname)",
+                    "refs/workbench/conflicts/current",
+                    ...(request.action == "inspect" ? [`refs/workbench/conflict-candidates/${request.subject}/`] : []),
+                ])).toString()
+            const version = request.action == "inspect" ? await inspectionVersion() : undefined
+            const cacheKey = JSON.stringify([repository.descriptor.commonDirectory, request, version])
+            if (version != undefined) {
+                const cached = conflictInspections.get(cacheKey)
+                if (cached)
+                    return cached
+            }
+            let requestArgs = ["--request", JSON.stringify(request)]
+            if (request.action == "edit") {
+                requestDirectory = await mkdtemp(join(tmpdir(), "workbench-conflict-request-"))
+                const requestPath = join(requestDirectory, "request.json")
+                await writeFile(requestPath, JSON.stringify(request))
+                requestArgs = ["--request-file", requestPath]
+            }
             const output = await runEngineCommand({
                 enginePath,
                 cwd: repository.descriptor.mainWorktree,
-                args: ["conflict", "--request", JSON.stringify(request), "--git-path", repository.descriptor.git.path],
+                args: ["conflict", ...requestArgs, "--git-path", repository.descriptor.git.path],
             }).result
             const result = output.messages.find(message => message.type == "result" && message.command == "conflict")
             if (output.exitCode || !result || result.type != "result" || result.command != "conflict")
                 throw new Error(output.messages.find(message => message.type == "error")?.message ?? output.diagnostics ?? "Conflict operation failed.")
-            return { ok: true, result }
+            const response: ConflictActionResult = { ok: true, result }
+            if (version != undefined && version == await inspectionVersion()) {
+                conflictInspections.set(cacheKey, response)
+                if (conflictInspections.size > 16)
+                    conflictInspections.delete(conflictInspections.keys().next().value!)
+            }
+            return response
         } catch (error) {
             return { ok: false, error: { message: error instanceof Error ? error.message : String(error) } }
+        } finally {
+            if (requestDirectory) {
+                await rm(join(requestDirectory, "request.json"), { force: true })
+                await rmdir(requestDirectory)
+            }
         }
     })
     ipcMain.handle("local:operation", async (_event, repositoryId: unknown, value: unknown, token: unknown): Promise<LocalActionResult> => {

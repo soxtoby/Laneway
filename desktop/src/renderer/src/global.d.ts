@@ -28,6 +28,7 @@ interface AppState {
 declare global {
     interface Window {
         workbench: {
+            readConflictContent(repositoryId: string, object: string): Promise<string | null>
             conflictOperation(repositoryId: string, request: ConflictRequest): Promise<ConflictActionResult>
             previewWorktree(repositoryId: string, request: WorktreeRequest): Promise<WorktreePreviewResult>
             localOperation(repositoryId: string, request: LocalRequest, token?: string): Promise<LocalActionResult>

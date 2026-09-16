@@ -1,58 +1,24 @@
-import type { BranchGraphBranchNode, ConflictRequest, ConflictResult, Workspace } from "@git-workbench/shared"
-import { css, type Handle, on, ref } from "remix/ui"
+import type { BranchGraphBranchNode, ChangedFile, ConflictRequest, ConflictResult } from "@git-workbench/shared"
+import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 import { ResolutionReview, resolutionReview } from "./conflict-content"
 import { fileActionButton, fileLabel, InspectionItem } from "./file-list"
+import { type ConflictSides, MergeResolution } from "./merge-resolution"
 
 interface Options {
     api: Window["workbench"]
-    workspace(): Workspace
-    update(): Promise<AbortSignal>
     changed(repositoryId: string): Promise<void>
-    persist(repositoryId: string): Promise<void>
 }
 export function createConflictResolution(options: Options) {
-    const open = new Map<string, string | undefined>()
-    const key = (repository: string, column: string) => `${repository}:${column}`
-    const selected = (repository: string, column: string) => {
-        const id = key(repository, column)
-        if (!open.has(id))
-            open.set(id, options.workspace().repositories.find(r => r.id == repository)?.columns.find(c => c.id == column)?.resolutionSubject)
-        return open.get(id)
-    }
-    function select(repository: string, column: string, subject?: string) {
-        open.set(key(repository, column), subject)
-        void options.persist(repository)
-        void options.update()
-    }
     return {
-        selected,
-        open: select,
         controls(repository: string, column: BranchGraphBranchNode, path?: string) {
-            if (!column.unresolved)
-                return null
-            return (
-                <ConflictControls
-                    key={`${repository}:${column.id}`}
-                    api={options.api}
-                    repository={repository}
-                    branch={column}
-                    path={path}
-                    open={subject => select(repository, column.id, subject)}
-                    changed={() => options.changed(repository)}
-                />
-            )
-        },
-        column(repository: string, column: string, path?: string, tip?: string) {
-            const subject = selected(repository, column)
-            return subject
+            return column.unresolved
                 ? (
-                    <ConflictResolutionColumn
-                        key={`${repository}:${subject}:${tip ?? ""}`}
+                    <ConflictControls
+                        key={repository + ":" + column.id}
                         api={options.api}
                         repository={repository}
-                        subject={subject}
+                        branch={column}
                         path={path}
-                        close={() => select(repository, column)}
                         changed={() => options.changed(repository)}
                     />
                 )
@@ -63,11 +29,11 @@ export function createConflictResolution(options: Options) {
 
 function ConflictControls(
     handle: Handle<
-        { api: Window["workbench"]; repository: string; branch: BranchGraphBranchNode; path?: string; open(subject: string): void; changed(): Promise<void> }
+        { api: Window["workbench"]; repository: string; branch: BranchGraphBranchNode; path?: string; changed(): Promise<void> }
     >,
 ) {
     let result: ConflictResult | undefined
-    let error = "", busy = false, requested = ""
+    let error = "", busy = false, requested = "", selected: string | undefined
     async function run(request: ConflictRequest) {
         busy = true
         error = ""
@@ -104,9 +70,26 @@ function ConflictControls(
                 {props.branch.unresolved?.recovery && !recovery && <p>{props.branch.unresolved.recovery}</p>}
                 {conflicts.map(conflict => (
                     <div>
-                        <button disabled={busy} mix={on("click", () => props.open(conflict.id))}>
+                        <button
+                            disabled={busy}
+                            aria-expanded={selected == conflict.id}
+                            mix={on("click", () => {
+                                selected = selected == conflict.id ? undefined : conflict.id
+                                void handle.update()
+                            })}
+                        >
                             {conflict.title} {conflict.commit ? `(${conflict.commit.slice(0, 8)})` : ""}
                         </button>
+                        {selected == conflict.id && !conflict.suspended && (
+                            <ConflictResolution
+                                key={conflict.id}
+                                api={props.api}
+                                repository={props.repository}
+                                subject={conflict.id}
+                                path={props.path}
+                                changed={props.changed}
+                            />
+                        )}
                         {conflict.suspended && props.path && (
                             <button
                                 disabled={busy}
@@ -155,16 +138,27 @@ type ResolutionAction =
     | { action: "accept" | "cancel" | "keep-stashed" }
     | { action: "use-file"; file: string; path: string }
     | { action: "tool"; file: string }
+    | { action: "edit"; file: string; content: string }
 
-export function ConflictResolutionColumn(
-    handle: Handle<{ api: Window["workbench"]; repository: string; subject: string; path?: string; close(): void; changed(): Promise<void> }>,
+type ConflictView = NonNullable<ConflictResult["view"]>
+const conflictFileCache = new Map<string, ConflictView>()
+
+export function ConflictResolution(
+    handle: Handle<{
+        api: Window["workbench"]
+        repository: string
+        subject: string
+        path?: string
+        changed(): Promise<void>
+        renderFiles?(files: ChangedFile[], renderFile: (file: ChangedFile) => RemixNode): RemixNode
+    }>,
 ) {
     let view: ConflictResult["view"], summary: ConflictResult["conflicts"][number] | undefined
     let error = "", busy = false, loaded = false
     let element: HTMLElement
     async function run(request: ConflictRequest) {
         if (busy)
-            return
+            return false
         busy = true
         error = ""
         await handle.update()
@@ -174,92 +168,156 @@ export function ConflictResolutionColumn(
                 throw new Error(response.error.message)
             view = response.result.view
             summary = response.result.conflicts.find(c => c.id == handle.props.subject) ?? summary
-            if (request.action == "accept" || request.action == "keep-stashed") {
+            if (request.action == "accept" || request.action == "keep-stashed")
                 await handle.props.changed()
-                handle.props.close()
-            }
+            return true
         } catch (e) {
             error = e instanceof Error ? e.message : String(e)
+            return false
         } finally {
             busy = false
             void handle.update()
         }
     }
-    function action(request: ResolutionAction) {
+    async function loadFile(file: string) {
+        const current = view!
+        const key = JSON.stringify([handle.props.repository, current.subject.id, current.subject.input, current.candidate.revision, file])
+        const cached = conflictFileCache.get(key)
+        if (cached)
+            return cached
+        const item = current.files.find(item => item.path == file)!
+        if (!item.resolved) {
+            const entry = file in current.candidate.files ? current.candidate.files[file] : item.provisional
+            const resultText = entry && entry.mode != "160000" ? await handle.props.api.readConflictContent(handle.props.repository, entry.object) : null
+            const loaded = { ...current, files: current.files.map(item => item.path == file ? { ...item, loaded: true, resultText } : item) }
+            conflictFileCache.set(key, loaded)
+            if (conflictFileCache.size > 16)
+                conflictFileCache.delete(conflictFileCache.keys().next().value!)
+            return loaded
+        }
+        const response = await handle.props.api.conflictOperation(handle.props.repository, { action: "inspect", subject: current.subject.id, files: [file] })
+        if (!response.ok)
+            throw new Error(response.error.message)
+        const loaded = response.result.view!
+        if (loaded.subject.input != current.subject.input || loaded.candidate.revision != current.candidate.revision)
+            throw new Error("Resolution progress changed. Reload the conflict before continuing.")
+        conflictFileCache.set(key, loaded)
+        if (conflictFileCache.size > 16)
+            conflictFileCache.delete(conflictFileCache.keys().next().value!)
+        return loaded
+    }
+    async function action(request: ResolutionAction) {
         element.querySelectorAll<HTMLDetailsElement>("details[open]").forEach(menu => menu.open = false)
         if (view)
-            void run({ ...request, subject: view.subject.id, input: view.subject.input, revision: view.candidate.revision } as ConflictRequest)
+            return run({ ...request, subject: view.subject.id, input: view.subject.input, revision: view.candidate.revision } as ConflictRequest)
+        return false
     }
     return () => {
         const props = handle.props
         if (!loaded) {
             loaded = true
-            handle.queueTask(async () => {
-                await run({ action: "inspect", subject: props.subject })
-                element.scrollIntoView({ block: "nearest", inline: "nearest" })
-            })
+            handle.queueTask(() => run({ action: "inspect", subject: props.subject, files: [] }))
         }
         const resolved = view?.files.filter(f => f.resolved).length ?? 0
         const remaining = (view?.files.length ?? 0) - resolved
-        const rightLabel = summary?.kind == "working" ? "stashed changes" : "this commit"
+        const working = summary?.kind == "working"
+        const sides: ConflictSides = {
+            left: {
+                label: working ? "Current files" : "Before this commit",
+                action: working ? "Use pre-stash version" : "Use version before this commit",
+                description: working ? "Files before restoring the stash." : "Destination files, including earlier commits in this stack.",
+            },
+            right: {
+                label: working ? "Stashed changes" : "This commit",
+                action: working ? "Use stashed changes" : "Use this commit",
+                description: working ? `Stash ${view?.sourceCommit.slice(0, 8) ?? ""}` : `${view?.sourceCommit.slice(0, 8) ?? ""} · ${summary?.title ?? ""}`,
+            },
+        }
         return (
             <article
-                class="conflict-resolution-column"
-                aria-label="Conflict Resolution Column"
+                class="inline-conflict-resolution"
+                aria-label="Conflict resolution"
                 aria-busy={busy}
-                mix={[columnStyle, ref(node => element = node)]}
+                mix={[resolutionStyle, ref(node => element = node)]}
             >
-                <header class="resolution-header">
-                    <div class="resolution-heading">
-                        <span>Resolve conflict{summary?.branch ? " · " + summary.branch : ""}</span>
-                        <h2 title={summary?.title}>{summary?.title ?? "Loading conflict…"}</h2>
-                    </div>
-                    <button class="icon-button" aria-label="Close conflict resolution" title="Close" mix={on("click", props.close)}>
-                        {resolutionIcon("close")}
-                    </button>
-                </header>
+                {!view && !error && <p role="status">Loading conflict…</p>}
                 {error && (
                     <div class="resolution-error" role="alert">
                         <span>{error}</span>
-                        <button disabled={busy} mix={on("click", () => void run({ action: "inspect", subject: props.subject }))}>Reload</button>
+                        <button disabled={busy} mix={on("click", () => void run({ action: "inspect", subject: props.subject, files: [] }))}>Reload</button>
                     </div>
                 )}
                 {view && (
                     <>
-                        <div class="resolution-list-heading">
-                            <strong>
-                                Conflicted files <span>{view.files.length}</span>
-                            </strong>
-                            <button disabled={busy || !view.candidate.revision} mix={on("click", () => action({ action: "cancel" }))}>
-                                Discard resolution progress
-                            </button>
-                        </div>
-                        <div class="resolution-content">
-                            <ul class="conflict-file-list" aria-label="Conflicted files">
-                                {view.files.map(file => (
-                                    <ConflictFileRow
-                                        key={file.path}
-                                        view={view!}
-                                        file={file}
-                                        busy={busy}
-                                        path={props.path}
-                                        rightLabel={rightLabel}
-                                        action={action}
-                                    />
-                                ))}
-                            </ul>
-                        </div>
+                        {props.renderFiles
+                            ? props.renderFiles(
+                                view.files.map(file => ({
+                                    path: file.path,
+                                    status: file.resolved ? "modified" : "conflicted",
+                                    conflicted: !file.resolved,
+                                    staged: false,
+                                    unstaged: false,
+                                    untracked: false,
+                                    ignored: false,
+                                })),
+                                file => {
+                                    const conflict = view!.files.find(candidate => candidate.path == file.path)
+                                    return conflict
+                                        ? (
+                                            <ConflictFileRow
+                                                key={file.path}
+                                                view={view!}
+                                                file={conflict}
+                                                busy={busy}
+                                                path={props.path}
+                                                sides={sides}
+                                                action={action}
+                                                loadFile={loadFile}
+                                            />
+                                        )
+                                        : undefined
+                                },
+                            )
+                            : (
+                                <div class="conflict-file-list" aria-label="Conflicted files">
+                                    {view.files.map(file => (
+                                        <ConflictFileRow
+                                            key={file.path}
+                                            view={view!}
+                                            file={file}
+                                            busy={busy}
+                                            path={props.path}
+                                            sides={sides}
+                                            action={action}
+                                            loadFile={loadFile}
+                                        />
+                                    ))}
+                                </div>
+                            )}
                         <footer class="resolution-footer">
                             <div class="resolution-progress" role="status">
                                 <strong>
-                                    {busy ? "Working…" : view.ready ? "Ready to accept" : remaining + (remaining == 1 ? " file left" : " files left")}
+                                    {busy
+                                        ? "Working…"
+                                        : view.ready
+                                        ? "Ready to accept"
+                                        : remaining + (remaining == 1 ? " file left" : " files left")}
                                 </strong>
                                 <span>{resolved} of {view.files.length} files resolved</span>
                             </div>
+                            <button
+                                title="Discard resolution progress"
+                                disabled={busy || !view.candidate.revision}
+                                mix={on("click", () => void action({ action: "cancel" }))}
+                            >
+                                Discard progress
+                            </button>
                             {summary?.kind == "working" && (
-                                <button disabled={busy} mix={on("click", () => action({ action: "keep-stashed" }))}>Keep stashed</button>
+                                <button disabled={busy} mix={on("click", () => void action({ action: "keep-stashed" }))}>
+                                    Keep stashed
+                                </button>
                             )}
-                            <button class="accept-resolution" disabled={busy || !view.ready} mix={on("click", () => action({ action: "accept" }))}>
+                            <button class="accept-resolution" disabled={busy || !view.ready} mix={on("click", () => void action({ action: "accept" }))}>
                                 {resolutionIcon("check")}Accept resolution
                             </button>
                         </footer>
@@ -276,29 +334,62 @@ function ConflictFileRow(
         file: NonNullable<ConflictResult["view"]>["files"][number]
         busy: boolean
         path?: string
-        rightLabel: string
-        action(request: ResolutionAction): void
+        sides: ConflictSides
+        action(request: ResolutionAction): Promise<boolean>
+        loadFile(file: string): Promise<ConflictView>
     }>,
 ) {
     let expanded = false, reviewVersion = ""
+    let detail: ConflictView | undefined, loading = false, loadError = "", attempted = ""
     let review: ReturnType<typeof resolutionReview> | undefined
+    let contents = handle.props.file.resultText, reset = 0
     return () => {
-        const { view, file, busy, path, rightLabel, action } = handle.props
+        let { view, file } = handle.props
+        const { path, sides, action, busy } = handle.props
+        const versionKey = JSON.stringify([view.subject.input, view.candidate.revision])
+        if (detail && (detail.subject.input != view.subject.input || detail.candidate.revision != view.candidate.revision))
+            detail = undefined
+        if (expanded && file.loaded === false && !detail && !loading && attempted != versionKey) {
+            attempted = versionKey
+            loading = true
+            loadError = ""
+            handle.queueTask(async () => {
+                try {
+                    detail = await handle.props.loadFile(file.path)
+                } catch (error) {
+                    loadError = error instanceof Error ? error.message : String(error)
+                } finally {
+                    loading = false
+                    void handle.update()
+                }
+            })
+        }
+        if (detail && file.loaded === false) {
+            view = detail
+            file = detail.files.find(item => item.path == file.path)!
+        }
+        const leftLabel = sides.left.label.toLowerCase(), rightLabel = sides.right.label.toLowerCase()
+        if (contents != file.resultText) {
+            contents = file.resultText
+            reset++
+        }
+        const entry = view.candidate.files[file.path] ?? file.provisional
+        const readable = file.resultText != null && !!entry && ["100644", "100755"].includes(entry.mode)
         const version = view.candidate.revision
-        if (expanded && file.resolved && version != reviewVersion) {
+        if (expanded && file.loaded !== false && file.resolved && version != reviewVersion) {
             review = resolutionReview(view, file)
             reviewVersion = version
         }
         return (
-            <li class="conflict-file" data-file={file.path} data-resolved={file.resolved}>
+            <div class="conflict-file" data-file={file.path} data-resolved={file.resolved}>
                 <InspectionItem
                     title={file.path}
-                    expanded={expanded && file.resolved}
+                    expanded={expanded}
                     actions={busy
                         ? []
                         : [
-                            { label: "Use updated stack", run: () => action({ action: "choose", file: file.path, side: "left" }) },
-                            { label: "Use " + rightLabel, run: () => action({ action: "choose", file: file.path, side: "right" }) },
+                            { label: sides.left.action, run: () => action({ action: "choose", file: file.path, side: "left" }) },
+                            { label: sides.right.action, run: () => action({ action: "choose", file: file.path, side: "right" }) },
                             { label: "Merge tool", run: () => action({ action: "tool", file: file.path }) },
                             ...(path
                                 ? [{
@@ -307,9 +398,11 @@ function ConflictFileRow(
                                 }]
                                 : []),
                         ]}
-                    choose={file.resolved
+                    choose={file.loaded === false || readable || file.resolved
                         ? () => {
                             expanded = !expanded
+                            if (expanded)
+                                attempted = ""
                             void handle.update()
                         }
                         : undefined}
@@ -331,18 +424,20 @@ function ConflictFileRow(
                             <button
                                 type="button"
                                 disabled={busy}
-                                aria-label="Use updated stack"
-                                title={file.left ? "Use the entire file from the updated stack" : "The updated stack deletes this file"}
-                                mix={[fileActionButton, on("click", () => action({ action: "choose", file: file.path, side: "left" }))]}
+                                aria-label={sides.left.action}
+                                title={file.left ? `Use the entire file: ${leftLabel}. ${sides.left.description}` : `Delete this file: absent in ${leftLabel}.`}
+                                mix={[fileActionButton, on("click", () => void action({ action: "choose", file: file.path, side: "left" }))]}
                             >
                                 {resolutionIcon("take-left")}
                             </button>
                             <button
                                 type="button"
                                 disabled={busy}
-                                aria-label={"Use " + rightLabel}
-                                title={file.right ? "Use the entire file from " + rightLabel : "The " + rightLabel + " version deletes this file"}
-                                mix={[fileActionButton, on("click", () => action({ action: "choose", file: file.path, side: "right" }))]}
+                                aria-label={sides.right.action}
+                                title={file.right
+                                    ? `Use the entire file from ${rightLabel}. ${sides.right.description}`
+                                    : `Delete this file: absent in ${rightLabel}.`}
+                                mix={[fileActionButton, on("click", () => void action({ action: "choose", file: file.path, side: "right" }))]}
                             >
                                 {resolutionIcon("take-right")}
                             </button>
@@ -351,7 +446,7 @@ function ConflictFileRow(
                                 disabled={busy}
                                 aria-label="Merge tool"
                                 title="Resolve this file in your configured Git merge tool"
-                                mix={[fileActionButton, on("click", () => action({ action: "tool", file: file.path }))]}
+                                mix={[fileActionButton, on("click", () => void action({ action: "tool", file: file.path }))]}
                             >
                                 {resolutionIcon("tool")}
                             </button>
@@ -362,14 +457,14 @@ function ConflictFileRow(
                                     </summary>
                                     <div class="resolution-menu-items">
                                         {path && (
-                                            <button disabled={busy} mix={on("click", () => action({ action: "use-file", file: file.path, path }))}>
+                                            <button disabled={busy} mix={on("click", () => void action({ action: "use-file", file: file.path, path }))}>
                                                 Use current file
                                             </button>
                                         )}
                                         {view.subject.suggestion && (
                                             <button
                                                 disabled={busy}
-                                                mix={on("click", () => action({ action: "choose", file: file.path, side: "suggestion" }))}
+                                                mix={on("click", () => void action({ action: "choose", file: file.path, side: "suggestion" }))}
                                             >
                                                 Use previous result
                                             </button>
@@ -380,20 +475,35 @@ function ConflictFileRow(
                         </div>
                     }
                 >
+                    {expanded && loading && <p role="status">Loading diff…</p>}
+                    {expanded && loadError && <p role="alert">{loadError}</p>}
+                    {expanded && readable && !file.resolved && (
+                        <MergeResolution
+                            key={reset}
+                            name={file.path}
+                            contents={file.resultText!}
+                            subject={view.subject}
+                            sides={sides}
+                            busy={busy}
+                            resolve={content => action({ action: "edit", file: file.path, content })}
+                        />
+                    )}
                     {expanded && file.resolved && review && (
                         <div class="file-review">
-                            <div class="review-heading">Compared with updated stack</div>
+                            <div class="review-heading">Compared with: {sides.left.label}</div>
                             <ResolutionReview key={review.version} page={review} file={file} deleted={view.candidate.files[file.path] === null} />
                         </div>
                     )}
+                    {expanded && file.loaded !== false && !readable && !file.resolved && (
+                        <p>Use a whole-file choice or the external merge tool for this file.</p>
+                    )}
                 </InspectionItem>
-            </li>
+            </div>
         )
     }
 }
-function resolutionIcon(kind: "close" | "check" | "conflict" | "tool" | "more" | "take-left" | "take-right") {
+function resolutionIcon(kind: "check" | "conflict" | "tool" | "more" | "take-left" | "take-right") {
     const paths = {
-        close: "m4 4 8 8M12 4l-8 8",
         check: "m3 8 3 3 7-7",
         conflict: "M8 2 15 14H1ZM8 6v4m0 1.5v1",
         tool: "M2 3h4v10H2ZM10 3h4v10h-4M6 8h4m-2-2 2 2-2 2",
@@ -439,55 +549,15 @@ const controlsStyle = css({
     borderBottom: "1px solid var(--line)",
     color: "var(--text)",
     fontSize: "12px",
-    "& button": { ...control, margin: "2px" },
-    "& strong": { color: "var(--warning)" },
+    "& > div > button, & > div > details button": { ...control, margin: "2px" },
+    "& > strong": { color: "var(--warning)" },
 })
-const columnStyle = css({
-    flex: "0 0 560px",
-    width: "560px",
-    minWidth: "420px",
-    height: "100%",
-    display: "flex",
-    flexDirection: "column",
-    borderRight: "1px solid var(--line-strong)",
-    background: "var(--panel)",
+const resolutionStyle = css({
+    minWidth: "0",
     color: "var(--text)",
     fontSize: "12px",
-    overflow: "hidden",
-    "& :where(.resolution-header, .resolution-list-heading, .resolution-footer, .resolution-error) > button": control,
+    "& :where(.resolution-footer, .resolution-error) > button": control,
     "& svg": { flexShrink: "0" },
-    "& .resolution-header": {
-        minHeight: "44px",
-        flexShrink: "0",
-        boxSizing: "border-box",
-        padding: "6px 10px",
-        display: "flex",
-        alignItems: "center",
-        gap: "12px",
-        borderBottom: "1px solid var(--line)",
-        background: "var(--panel-deep)",
-    },
-    "& .resolution-heading": {
-        flex: "1",
-        minWidth: "0",
-        "& > span": { color: "var(--muted)", fontSize: "10px" },
-        "& h2": { fontSize: "12px", fontWeight: "600", lineHeight: "18px", whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden", margin: "0" },
-    },
-    "& .icon-button": { width: "26px", padding: "0", borderColor: "transparent", background: "transparent" },
-    "& .resolution-list-heading": {
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: "8px",
-        padding: "5px 12px",
-        flexShrink: "0",
-        background: "var(--raised)",
-        borderBottom: "1px solid var(--line)",
-        "& strong": { fontWeight: "500" },
-        "& strong span": { marginLeft: "6px", color: "var(--muted)" },
-        "& button": { borderColor: "transparent", background: "transparent", fontSize: "11px" },
-    },
-    "& .resolution-content": { flex: "1", minHeight: "0", overflow: "auto" },
     "& .conflict-file-list": { listStyle: "none", padding: "0", margin: "0" },
     "& .resolved-mark": { color: "var(--accent)", display: "inline-flex", flex: "0 0 14px" },
     "& .pending-mark": { color: "var(--warning)", display: "inline-flex", flex: "0 0 14px" },
@@ -527,22 +597,29 @@ const columnStyle = css({
     "& .resolution-footer": {
         display: "flex",
         flex: "0 0 auto",
-        gap: "12px",
+        gap: "8px",
+        flexWrap: "wrap",
         alignItems: "center",
-        minHeight: "56px",
+        minHeight: "44px",
         padding: "8px 12px",
         boxSizing: "border-box",
         borderTop: "1px solid var(--line-strong)",
         background: "var(--raised)",
+        "& > button": { flexShrink: "0", whiteSpace: "nowrap" },
     },
     "& .resolution-progress": {
-        flex: "1",
-        display: "grid",
-        gap: "3px",
+        flex: "0 0 100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        flexWrap: "wrap",
+        gap: "4px 12px",
+        whiteSpace: "nowrap",
         "& strong": { fontSize: "12px", fontWeight: "500" },
         "& span": { fontSize: "11px", color: "var(--muted)" },
     },
     "& .accept-resolution": {
+        marginLeft: "auto",
         minHeight: "30px",
         background: "var(--accent)",
         color: "var(--accent-ink)",

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { access, mkdir, mkdtemp, open, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { resolve } from "node:path"
 
@@ -342,6 +342,29 @@ describe("Workbench Engine executable", () => {
             expect((await runEngineAt(repository, ["redo", "--json"], testEnvironment)).exitCode).toBe(0)
             expect(runGitAt(repository, "show", "refs/workbench/test/fixture").stdout.toString()).toBe("undo-me")
         } finally {
+            await rm(repository, { recursive: true, force: true })
+        }
+    })
+
+    test("lock cleanup preserves candidates still being written", async () => {
+        const repository = await createRepository()
+        const directory = resolve(repository, ".git", "workbench")
+        await mkdir(directory)
+        const path = resolve(directory, "mutation.lock.candidate-writing")
+        const candidate = await open(path, "wx")
+        try {
+            expect((await runEngineAt(repository, ["recover", "--json"])).exitCode).toBe(0)
+            expect(await Bun.file(path).exists()).toBe(true)
+            await candidate.writeFile(JSON.stringify({ pid: process.pid, token: "writing" }))
+            const stale = resolve(directory, "mutation.lock.candidate-dead")
+            await writeFile(stale, JSON.stringify({ pid: 2147483647, token: "dead" }))
+            expect((await runEngineAt(repository, ["recover", "--json"])).exitCode).toBe(0)
+            expect(await Bun.file(path).exists()).toBe(true)
+            expect(await Bun.file(stale).exists()).toBe(false)
+        } finally {
+            await candidate.close()
+            if (!repository.startsWith(resolve(tmpdir(), "workbench-mutation-")))
+                throw new Error("Invalid fixture path")
             await rm(repository, { recursive: true, force: true })
         }
     })

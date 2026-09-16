@@ -184,9 +184,9 @@ _Avoid_: Successful rebase, failed rebase
 A commit in an Unresolved Stack that contains deferred content decisions. Accepting its complete resolution rewrites that commit and restacks its descendants.
 _Avoid_: Failed commit, paused rebase
 
-**Conflict Resolution Column**:
-An auxiliary column opened beside a Workspace Column for one Conflicted Commit or Working Changes Conflict. It lists conflicted files with whole-file choices and external merge-tool actions, and coordinates an explicit, durable resolution candidate without replacing the checked-out stack or Working Changes before acceptance. In-app hunk resolution is deferred.
-_Avoid_: Conflict modal, merge editor
+**Conflict Resolution**:
+Inline resolution within a Workspace Column. Conflicted files in a commit expand Pierre's merge controls in place of the normal diff, with whole-file choices and external merge-tool actions on their file rows. Other files retain their normal diffs. Choices save durable progress; resolved files show a normal diff. Accept resolution belongs to the commit and updates the stack only after every conflict is resolved. Working Changes conflicts also resolve inside the branch column.
+_Avoid_: Conflict modal
 
 **Provider Overlay**:
 Optional hosted metadata and actions attached to local Git evidence. It refreshes explicitly and by polling, exposes cache freshness, and may be unavailable or unauthenticated without preventing local Workbench use.

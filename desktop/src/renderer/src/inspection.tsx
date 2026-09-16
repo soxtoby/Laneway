@@ -4,6 +4,7 @@ import * as accordion from "remix/ui/accordion/primitives"
 import { AuxiliaryColumns } from "./auxiliary-columns"
 import { type BranchComparisonState, createBranchComparisons } from "./branch-comparison"
 import { CommitComposer } from "./commit-composer"
+import { ConflictResolution } from "./conflict-resolution"
 import { DiffLines } from "./diff"
 import { DiffControls } from "./diff-controls"
 import { fileLabel, FileTree } from "./file-list"
@@ -21,7 +22,6 @@ interface Options {
     localChanged?(repositoryId: string): Promise<void>
     localBusyChanged?(busy: boolean): void
     createBranchAt?(repositoryId: string, objectId: string): void
-    resolveConflict?(repositoryId: string, columnId: string, subject: string): void
 }
 interface FileState {
     inventory?: ChangesInventory
@@ -373,6 +373,23 @@ export function createInspection(options: Options) {
         state.column = column
         state.graph = graph
         state.unavailable = false
+        for (const [id, current] of state.history) {
+            const branch = graph.branches.find(branch => branch.id == id)
+            if (!branch || current.key == branchHistoryKey(branch))
+                continue
+            current.generation++
+            current.key = branchHistoryKey(branch)
+            current.page = undefined
+            current.error = undefined
+            current.loading = false
+            const owner = state
+            if (current.open) {
+                queueMicrotask(() => {
+                    if (owner.alive && owner.history.get(id) == current && current.key == branchHistoryKey(branch))
+                        void history(owner, branch)
+                })
+            }
+        }
         return state
     }
     async function readFiles(state: ColumnState, group: string, source: DiffSource, refreshDiff = false, open = true) {
@@ -624,9 +641,13 @@ export function createInspection(options: Options) {
             }
         }
     }
+    function branchHistoryKey(branch: BranchGraphBranchNode) {
+        const baseTips = branch.base.status == "known" ? [branch.base.tip] : branch.base.candidates.map(candidate => candidate.tip)
+        return JSON.stringify([branch.tip, baseTips, branch.unresolved])
+    }
     async function history(state: ColumnState, branch: BranchGraphBranchNode, more = false) {
         const baseTips = branch.base.status == "known" ? [branch.base.tip] : branch.base.candidates.map(candidate => candidate.tip)
-        const historyKey = `${branch.tip}:${baseTips.join(":")}`
+        const historyKey = branchHistoryKey(branch)
         let current = state.history.get(branch.id)
         if (!current || current.key != historyKey) {
             current = { key: historyKey, loading: false, open: true, generation: 0 }
@@ -666,8 +687,7 @@ export function createInspection(options: Options) {
     }
     function toggleHistory(state: ColumnState, branch: BranchGraphBranchNode) {
         const current = state.history.get(branch.id)
-        const baseTips = branch.base.status == "known" ? [branch.base.tip] : branch.base.candidates.map(candidate => candidate.tip)
-        if (!current || current.key != `${branch.tip}:${baseTips.join(":")}`)
+        if (!current || current.key != branchHistoryKey(branch))
             void history(state, branch)
         else {
             current.open = !current.open
@@ -713,10 +733,22 @@ export function createInspection(options: Options) {
     function matchesFilter(state: ColumnState, file: ChangedFile) {
         return `${file.oldPath ?? ""} ${file.path}`.toLowerCase().includes(state.filter.toLowerCase()) && (state.status == "all" || file.status == state.status)
     }
-    function fileList(state: ColumnState, group: string, files: FileState | undefined, stage?: (paths: string[]) => void, busy = false): RemixNode {
+    function fileList(
+        state: ColumnState,
+        group: string,
+        files: FileState | undefined,
+        stage?: (paths: string[]) => void,
+        busy = false,
+        resolution?: { files: ChangedFile[]; renderFile(file: ChangedFile): RemixNode },
+    ): RemixNode {
         if (!files)
             return null
-        const all = files.inventory?.files ?? []
+        const inventory = files.inventory?.files ?? []
+        const replacements = new Map(resolution?.files.map(file => [file.path, file]))
+        const all = [
+            ...inventory.map(file => replacements.has(file.path) ? { ...file, ...replacements.get(file.path) } : file),
+            ...(resolution?.files.filter(file => !inventory.some(existing => existing.path == file.path)) ?? []),
+        ]
         const visible = all.filter(file => !file.ignored && matchesFilter(state, file))
         const expanded = state.breakout?.kind == "file" && state.breakout.diff.group == group
             ? new Set([state.breakout.diff.path])
@@ -739,6 +771,7 @@ export function createInspection(options: Options) {
                     </p>
                 )}
                 <FileTree
+                    renderFile={resolution?.renderFile}
                     hideStagedBadge={group.startsWith("working-")}
                     actions={file => [{
                         label: "File history",
@@ -1159,7 +1192,7 @@ export function createInspection(options: Options) {
                 }
             }
         },
-        body(repositoryId: string, column: Column, graph: BranchGraph, worktreePath?: string): RemixNode {
+        body(repositoryId: string, column: Column, graph: BranchGraph, worktreePath?: string, conflictControls?: RemixNode): RemixNode {
             const state = stateFor(repositoryId, column, graph, worktreePath)
             const stack: BranchGraphBranchNode[] = []
             let branch = column.kind == "branch" ? column : undefined
@@ -1176,6 +1209,7 @@ export function createInspection(options: Options) {
             }
             return (
                 <div class={`column-inspection ${state.filterOpen ? "filter-open" : ""}`} mix={columnInspection}>
+                    {conflictControls}
                     {state.filterOpen && (
                         <div class="inspection-filters" mix={inspectionFilters}>
                             <input
@@ -1305,9 +1339,22 @@ export function createInspection(options: Options) {
                                                 <h3 class="disclosure-heading" mix={disclosureHeading}>
                                                     <button class="stack-heading" type="button" mix={[stackHeading, accordion.trigger()]}>
                                                         <span>{current?.open ? "▾" : "▸"} {branch.name}</span>
-                                                        <small mix={stackHeadingSmall}>
-                                                            {branch.base.status == "known" ? "Unique commits" : "Commits"}
-                                                        </small>
+                                                        <span mix={stackHeadingStatus}>
+                                                            <small mix={stackHeadingSmall}>
+                                                                {branch.base.status == "known" ? "Unique commits" : "Commits"}
+                                                            </small>
+                                                            {branch.unresolved && (
+                                                                <span
+                                                                    class="stack-conflict-indicator"
+                                                                    role="img"
+                                                                    aria-label={`${branch.name} has unresolved conflicts`}
+                                                                    title={branch.unresolved.recovery ?? "This branch is part of an unresolved stack"}
+                                                                    mix={stackConflictIndicator}
+                                                                >
+                                                                    {conflictIcon()}
+                                                                </span>
+                                                            )}
+                                                        </span>
                                                     </button>
                                                 </h3>
                                             )}
@@ -1375,12 +1422,17 @@ export function createInspection(options: Options) {
                                                                                         aria-label={`Resolve conflicts in ${commit.subject}`}
                                                                                         mix={[
                                                                                             conflictIndicator,
-                                                                                            on("click", () =>
-                                                                                                options.resolveConflict?.(
-                                                                                                    state.repositoryId,
-                                                                                                    state.id,
-                                                                                                    commit.conflictId!,
-                                                                                                )),
+                                                                                            on("click", () => {
+                                                                                                if (files)
+                                                                                                    files.open = true
+                                                                                                else {
+                                                                                                    void readFiles(state, commit.objectId, {
+                                                                                                        kind: "commit",
+                                                                                                        objectId: commit.objectId,
+                                                                                                    })
+                                                                                                }
+                                                                                                update()
+                                                                                            }),
                                                                                         ]}
                                                                                     >
                                                                                         {conflictIcon()}
@@ -1470,7 +1522,29 @@ export function createInspection(options: Options) {
                                                                                                 </select>
                                                                                             </label>
                                                                                         )}
-                                                                                        {fileList(state, commit.objectId, files)}
+                                                                                        {commit.conflictId
+                                                                                            ? (
+                                                                                                <ConflictResolution
+                                                                                                    key={commit.conflictId}
+                                                                                                    api={options.api}
+                                                                                                    repository={state.repositoryId}
+                                                                                                    subject={commit.conflictId}
+                                                                                                    path={state.worktreePath}
+                                                                                                    changed={async () => {
+                                                                                                        await options.localChanged?.(state.repositoryId)
+                                                                                                    }}
+                                                                                                    renderFiles={(conflicts, renderFile) =>
+                                                                                                        fileList(
+                                                                                                            state,
+                                                                                                            commit.objectId,
+                                                                                                            files,
+                                                                                                            undefined,
+                                                                                                            false,
+                                                                                                            { files: conflicts, renderFile },
+                                                                                                        )}
+                                                                                                />
+                                                                                            )
+                                                                                            : fileList(state, commit.objectId, files)}
                                                                                     </>
                                                                                 )}
                                                                             </div>
@@ -2194,6 +2268,9 @@ const commitDiffButton = css({
 const stackHeadingSmall = css({
     color: "var(--muted)",
 })
+
+const stackHeadingStatus = css({ display: "inline-flex", alignItems: "center", gap: "8px" })
+const stackConflictIndicator = css({ display: "inline-flex", alignItems: "center", flexShrink: "0", color: "var(--warning)" })
 
 const stackBranchButton = css({
     border: "1px solid var(--line)",

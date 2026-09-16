@@ -170,6 +170,7 @@ export function branchGraph(repositoryId: string) {
 
 export function fakeWorkbench(overrides: Partial<Window["workbench"]> = {}): Window["workbench"] {
     return {
+        readConflictContent: async () => null,
         conflictOperation: async () => ({ ok: true, result: { type: "result", command: "conflict", conflicts: [], recovery: [] } }),
         localOperation: async () => ({
             ok: true,

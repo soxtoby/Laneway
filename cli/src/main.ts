@@ -4,6 +4,7 @@ import { ENGINE_VERSION, type EngineMessage, type ErrorEvent, ExitCode } from "@
 import { type WorktreeRequest, WorktreeRequestSchema } from "@git-workbench/shared"
 import { type LocalRequest, LocalRequestSchema } from "@git-workbench/shared"
 import { type ConflictRequest, ConflictRequestSchema } from "@git-workbench/shared"
+import { readFileSync, statSync } from "node:fs"
 import { executeOperationCommand, type JournalPhase, OperationCancelledError, type OperationCommand, OperationRuntimeError } from "./operation-runtime.ts"
 
 const args = process.argv.slice(2)
@@ -241,9 +242,12 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
         const argument = commandArguments[index]
         if (argument == "--json" || argument == "--no-wait")
             continue
-        if (command == "conflict" && argument == "--request") {
+        if (command == "conflict" && (argument == "--request" || argument == "--request-file")) {
             try {
-                conflictRequest = ConflictRequestSchema.parse(JSON.parse(commandArguments[++index]!))
+                const value = commandArguments[++index]!
+                if (argument == "--request-file" && statSync(value).size > 8_000_000)
+                    throw new Error("Conflict request is too large.")
+                conflictRequest = ConflictRequestSchema.parse(JSON.parse(argument == "--request-file" ? readFileSync(value, "utf8") : value))
             } catch {
                 return invalidOperationArgument(command, json, "Provide a valid conflict request.", "--request")
             }

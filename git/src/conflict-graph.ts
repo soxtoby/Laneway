@@ -124,20 +124,27 @@ export async function projectConflictGraph(repo: RepositoryGit, graph: BranchGra
 }
 
 export async function conflictHistoryRequest(repo: RepositoryGit, request: BranchHistoryRequest) {
-    const token = await repo.resolveRef(conflictStateRef)
-    const state = await readConflictState(repo).catch(() => undefined)
+    const readRefs = async () =>
+        new Map(
+            (await repo.command(repo.descriptor.mainWorktree, ["for-each-ref", "--format=%(refname) %(objectname)", conflictStateRef, temporaryBranchPrefix]))
+                .toString().trim().split("\n").filter(Boolean).map(line => line.trim().split(" ") as [string, string]),
+        )
+    const before = await readRefs()
+    const token = before.get(conflictStateRef) ?? null
+    const state = await readConflictState(repo, token).catch(() => undefined)
     const stack = state?.stacks.find(s => s.branches.some(b => b.ref == request.branchRef))
     if (!stack)
         return { request, decorate: (page: BranchHistoryPage) => page }
     const boundary = stack.branches.find(b => b.ref == request.branchRef)!
-    const temporaryTip = await repo.resolveRef(stack.temporaryRef)
+    const temporaryTip = before.get(stack.temporaryRef) ?? null
     const tip = boundary == stack.branches.at(-1) ? temporaryTip ?? boundary.current : boundary.current
     if (tip != request.tip)
         throw new Error("The provisional branch changed. Refresh its history.")
     return {
         request: { ...request, branchRef: tip },
         async decorate(page: BranchHistoryPage) {
-            if (await repo.resolveRef(conflictStateRef) != token || await repo.resolveRef(stack.temporaryRef) != temporaryTip)
+            const after = await readRefs()
+            if ((after.get(conflictStateRef) ?? null) != token || (after.get(stack.temporaryRef) ?? null) != temporaryTip)
                 throw new Error("Conflict history changed while loading. Refresh the branch.")
             return {
                 ...page,

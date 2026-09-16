@@ -6,6 +6,7 @@ import type { ConflictRequest } from "@git-workbench/shared"
 import { contextBridge, ipcRenderer } from "electron"
 
 contextBridge.exposeInMainWorld("workbench", {
+    readConflictContent: (repositoryId: string, object: string) => ipcRenderer.invoke("conflict:content", repositoryId, object),
     conflictOperation: (repositoryId: string, request: ConflictRequest) => ipcRenderer.invoke("conflict:operation", repositoryId, request),
     previewWorktree: (repositoryId: string, request: WorktreeRequest) => ipcRenderer.invoke("worktree:preview", repositoryId, request),
     localOperation: (repositoryId: string, request: LocalRequest, token?: string) => ipcRenderer.invoke("local:operation", repositoryId, request, token),

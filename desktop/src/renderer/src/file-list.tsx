@@ -50,6 +50,7 @@ export function FileTree(
     handle: Handle<
         {
             files: ChangedFile[]
+            renderFile?(file: ChangedFile): RemixNode
             actions?(file: ChangedFile): FileAction[]
             flat?: boolean
             hideStagedBadge?: boolean
@@ -86,37 +87,39 @@ export function FileTree(
             directory.files.push(file)
         }
         const rows = (files: ChangedFile[]) =>
-            files.map(file => (
-                <InspectionItem
-                    key={file.path}
-                    actions={props.actions?.(file) ?? []}
-                    title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
-                    expanded={props.expanded.has(file.path)}
-                    checked={props.checked?.has(`${props.prefix}:${file.path}`) ?? false}
-                    checkLabel={`Select file ${file.path}`}
-                    check={props.check
-                        ? () => props.check?.(file)
-                        : undefined}
-                    choose={() => props.choose(file)}
-                    controls={props.controls(file)}
-                    label={
-                        <>
-                            <span class={`file-status ${file.status.replaceAll(" ", "-")}`} mix={fileStatus}>
-                                {changeIcon(file.conflicted ? "conflicted" : file.status)}
-                            </span>
-                            {fileLabel(file.path, props.flat || !!file.oldPath, file.oldPath, props.filter)}
-                            {file.staged && !props.hideStagedBadge && (
-                                <small class="staged-badge" mix={stagedBadge}>
-                                    staged
-                                </small>
-                            )}
-                            {file.submodule && <small>submodule</small>}
-                        </>
-                    }
-                >
-                    {props.diff(file)}
-                </InspectionItem>
-            ))
+            files.map(file =>
+                props.renderFile?.(file) ?? (
+                    <InspectionItem
+                        key={file.path}
+                        actions={props.actions?.(file) ?? []}
+                        title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
+                        expanded={props.expanded.has(file.path)}
+                        checked={props.checked?.has(`${props.prefix}:${file.path}`) ?? false}
+                        checkLabel={`Select file ${file.path}`}
+                        check={props.check
+                            ? () => props.check?.(file)
+                            : undefined}
+                        choose={() => props.choose(file)}
+                        controls={props.controls(file)}
+                        label={
+                            <>
+                                <span class={`file-status ${file.status.replaceAll(" ", "-")}`} mix={fileStatus}>
+                                    {changeIcon(file.conflicted ? "conflicted" : file.status)}
+                                </span>
+                                {fileLabel(file.path, props.flat || !!file.oldPath, file.oldPath, props.filter)}
+                                {file.staged && !props.hideStagedBadge && (
+                                    <small class="staged-badge" mix={stagedBadge}>
+                                        staged
+                                    </small>
+                                )}
+                                {file.submodule && <small>submodule</small>}
+                            </>
+                        }
+                    >
+                        {props.diff(file)}
+                    </InspectionItem>
+                )
+            )
         const renderDirectory = (directory: Directory, prefix = ""): RemixNode => (
             <>
                 {[...directory.children].map(([name, child]) => {

@@ -22,6 +22,7 @@ Validation covers real SHA-1/SHA-256 repositories, structural and binary conflic
 - Private durable state is authoritative for each conflict's exact inputs and provisional branch boundaries. Markers alone are insufficient, and binary or structural conflicts retain their source blobs privately while keeping one provisional version in the tree.
 - Workbench marks every affected Branch Node unresolved. Switching away follows normal column lifecycle and does not keep a branch-only column open solely for recovery.
 - Conflicted Commits stay in the ordinary commit stack with a conflict indicator that opens resolution. The Branch Column header has the same indicator as a toggle for showing only conflicted commits; it does not move them into a separate list.
+- Lower branches in the Active Stack show a conflict indicator in their section headings, including while collapsed. Expanding a branch preserves the indicator; it clears when that branch is no longer unresolved.
 - The temporary branch is internal representation: Workbench omits it as an ordinary Branch Node and Command Lens result, while other Git tools continue to show the real branch.
 - The temporary branch may be edited, built, tested, committed to, or updated by Workbench or another tool. Workbench follows its current history rather than preserving alternative reflog children as separate continuations.
 - Workbench blocks Publish, but external Git may explicitly publish or merge the conspicuous temporary branch. If unresolved decisions reach an ordinary branch, Workbench keeps that branch marked conflicted and blocks Publish.
@@ -36,14 +37,15 @@ Validation covers real SHA-1/SHA-256 repositories, structural and binary conflic
 
 ## Conflict content and acceptance
 
-- Text markers name the updated stack and replayed commit with short object IDs, rather than ours/theirs. Descendant commits replay over marked content; failures become additional Conflicted Commits.
+- New text markers name **Before this commit** and **This commit**, with short object IDs. Stash restoration uses **Current files before restoring stash** and **Stashed changes**. Existing committed markers retain their original wording; detection uses their recorded labels, so old conflicts and saved candidates remain resolvable. Descendant commits replay over marked content; failures become additional Conflicted Commits.
 - Conflict resolution is always explicit. Ordinary edits never implicitly resolve a conflict.
 - Whole-file choices, temporary-file edits, merge-tool output, and **Use current file** build a durable candidate separate from the checked-out stack. A merge tool exiting successfully does not accept its result.
-- The Conflict Resolution Column centres on the conflicted-file list. Each file offers **Use updated stack**, **Use this commit** (or **Use stashed changes**), and **Merge tool**. Resolved files stay in the list with their status; diff review against the updated stack opens only when requested. Acceptance remains a separate footer action.
+- Conflict resolution lives in the branch column, inside the conflicted commit's ordinary file list. Conflicted files expand a merge view instead of the normal diff; other files retain normal inspection. Each file offers **Use version before this commit**, **Use this commit**, and **Merge tool**. Selecting a text file expands Pierre's built-in **Accept current change**, **Accept incoming change**, and **Accept both** controls. Current is labelled **Before this commit** and means destination files including earlier commits in this stack; incoming is labelled **This commit**, with its original title and short commit ID. Working Changes conflicts use **Current files** (before restoring the stash) and **Stashed changes**, with **Use pre-stash version** and **Use stashed changes** actions. These display labels replace internal marker messages without modifying stored conflict content.
+- Each Pierre choice immediately saves the candidate, including partial resolution. The view advances only after saving succeeds. Resolved files show the normal commit-style diff against the version before this commit (or stash restoration). **Discard progress** restores the original conflict content; **Accept resolution** remains an explicit action on the commit, enabled once all its conflicts are resolved. Custom text editing uses the external merge tool.
 - Partial candidates survive closing and restart. Acceptance requires explicit resolution content for every recorded region and no Workbench markers remaining in the candidate.
 - Conflicted Commits may be accepted in any order. Accepting one is a Workbench Operation that rewrites it and restacks descendants. Changed downstream inputs reopen their conflicts and retain old results only as suggestions.
 - Binary and structural source versions are materialized as named temporary files for inspection or an external merge tool, never invented as sibling project files.
-- V1 has no in-app hunk resolution, built-in merge editor, or AI resolution action.
+- Binary and structural files retain whole-file and external-tool actions. Pierre merge controls support regular text files up to the conflict preview limit. V1 has no AI resolution action.
 
 ## Working Changes conflicts
 
@@ -58,11 +60,11 @@ Validation covers real SHA-1/SHA-256 repositories, structural and binary conflic
 - The stack rewrite and each accepted conflict resolution are separate Workbench Operations. Partial resolution work is durable state, not an operation.
 - Later Workbench operations must be undone before the rewrite that created their Unresolved Stack. An unrecorded external mutation may create the ordinary external-change boundary.
 - Undoing the rewrite restores its prior branch refs and worktree and removes its temporary branch. Accepting the final conflict performs final branch advancement and local temporary-branch cleanup.
-- Closing a Conflict Resolution Column preserves its candidate. Explicit cancellation discards only that candidate and leaves the conflict unresolved. There is no special paused-rebase Abort or Reset action.
+- Collapsing a commit or closing its branch column preserves resolution progress. Explicit cancellation discards only that candidate and leaves the conflict unresolved. There is no special paused-rebase Abort or Reset action.
 
 ## Restart and missing branches
 
-- Restart restores valid Unresolved Stacks and durable candidates while following normal Workspace State. A Conflict Resolution Column reopens only when Workspace State says it was open.
+- Restart restores valid Unresolved Stacks and durable candidates while following normal Workspace State. Resolution progress survives restart; commits and files follow normal inspection expansion behavior, with no separate resolution column to restore.
 - If another tool deleted the temporary branch but private recovery refs still retain its commits, Workbench does not silently recreate it. Affected Branch Nodes show recovery is required and offer **Restore unresolved stack** or **Discard unresolved update** after showing what each action retains.
 - If authoritative conflict metadata is missing or corrupt, marker text is not used to reconstruct it. Workbench keeps the temporary branch usable, blocks final acceptance and Publish, and offers recovery from durable journal/private-ref state or explicit conversion to a normal branch with conflict recovery abandoned.
 - If the expected temporary branch disappears and another branch appears at the same tip, Workbench shows it as a possible external rename but requires confirmation before adopting it; equal commit IDs do not establish branch identity.

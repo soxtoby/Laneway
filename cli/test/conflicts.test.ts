@@ -4,6 +4,7 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
+import { conflictResult } from "../src/conflict-operations"
 import { executeOperationCommand } from "../src/operation-runtime"
 
 const fixtures: string[] = []
@@ -66,7 +67,8 @@ test("rewrite completes with committed markers, explicit durable resolution, und
     expect(git(path, "rev-parse", "topic")).toBe(before)
     expect(git(path, "status", "--porcelain")).toBe("")
     const marked = await readFile(join(path, "a.txt"), "utf8")
-    expect(marked).toContain("<<<<<<< Updated stack")
+    expect(marked).toContain("<<<<<<< Before this commit at")
+    expect(marked).toContain(">>>>>>> This commit")
     expect(await readFile(join(path, "b.txt"), "utf8")).toBe("later\n")
     expect((await conflict(path, { action: "publish-check", branches: ["topic"] })).publishable).toBe(false)
     expect((await conflict(path, { action: "publish-check", branches: ["main"] })).publishable).toBe(true)
@@ -84,6 +86,27 @@ test("rewrite completes with committed markers, explicit durable resolution, und
     expect(await readFile(join(path, "a.txt"), "utf8")).toBe(marked)
     await transition(path, "redo")
     expect(git(path, "branch", "--show-current")).toBe("topic")
+}, 120_000)
+
+test("edited conflict candidates preserve partial markers, exact inputs and worktree isolation", async () => {
+    const { path, base } = await fixture()
+    const result = await conflict(path, { action: "rewrite", branches: ["topic"], base, path })
+    const subject = result.conflicts[0].id
+    const view = (await conflict(path, { action: "inspect", subject })).view!
+    const marked = await readFile(join(path, "a.txt"), "utf8")
+    const request = { action: "edit" as const, subject, input: view.subject.input, revision: view.candidate.revision, file: "a.txt" }
+    const partial = await conflict(path, { ...request, content: marked.replace("<".repeat(view.subject.markerSize), "") })
+    expect(partial.view!.ready).toBe(false)
+    expect(partial.view!.files[0].resolved).toBe(false)
+    expect(await readFile(join(path, "a.txt"), "utf8")).toBe(marked)
+    await expect(conflict(path, { ...request, content: "stale\n" })).rejects.toThrow()
+    const edited = await conflict(path, { ...request, revision: partial.view!.candidate.revision, content: "Custom merged result\n" })
+    expect(edited.view!.ready).toBe(true)
+    expect(edited.view!.files[0].resultText).toBe("Custom merged result\n")
+    expect((await conflict(path, { action: "inspect", subject })).view!.candidate).toEqual(edited.view!.candidate)
+    expect(await readFile(join(path, "a.txt"), "utf8")).toBe(marked)
+    await accept(path, subject)
+    expect(git(path, "show", "HEAD:a.txt")).toBe("Custom merged result")
 }, 120_000)
 
 test("accepting a descendant first reopens changed inputs after upstream resolution", async () => {
@@ -332,3 +355,42 @@ test("stash conflicts are uncommitted and keep-stashed/accept undo to unresolved
     expect((await conflict(path, { action: "list" })).conflicts[0].kind).toBe("working")
     expect(git(path, "rev-parse", "refs/stash")).toBe(stash)
 }, 120_000)
+
+test("conflict inventory avoids tree construction and unopened file content", async () => {
+    const { path, base } = await fixture()
+    const rewritten = await conflict(path, { action: "rewrite", branches: ["topic"], base, path })
+    const subject = rewritten.conflicts[0].id
+    const repo = await connectRepository(path)
+    const commands: string[][] = []
+    const command = repo.command.bind(repo)
+    repo.command = async (...args) => {
+        commands.push(args[1])
+        return command(...args)
+    }
+    const state = await readConflictState(repo)
+    const stack = state.stacks[0]
+    state.stacks.length = 0
+    expect((await readConflictState(repo)).stacks).toHaveLength(1)
+    commands.length = 0
+    const history = await repo.startReadBranchHistory({ branchRef: stack.branches[0].ref, tip: stack.branches[0].current, baseTips: [stack.base] }).result
+    expect(history.commits.some(commit => commit.conflictId == subject)).toBe(true)
+    expect(commands.filter(args => args[0] == "for-each-ref")).toHaveLength(2)
+    expect(commands.some(args => args[0] == "show" || args[0] == "rev-parse")).toBe(false)
+    commands.length = 0
+    const inventory = (await conflictResult(repo, subject, [])).view!
+    expect(inventory.files).toHaveLength(1)
+    expect(inventory.files[0].loaded).toBe(false)
+    expect(inventory.files[0].resolved).toBe(false)
+    expect(inventory.ready).toBe(false)
+    expect(commands.filter(args => ["read-tree", "write-tree", "update-index", "cat-file", "diff"].includes(args[0]))).toEqual([])
+    commands.length = 0
+    const detail = (await conflictResult(repo, subject, ["a.txt"])).view!
+    expect(detail.files[0].resultText).toContain("<<<<<<<")
+    expect(commands.some(args => ["read-tree", "write-tree", "diff"].includes(args[0]))).toBe(false)
+    await choose(path, subject, "right")
+    const resolved = (await conflictResult(repo, subject, [])).view!
+    expect(resolved.files[0].resolved).toBe(true)
+    expect(resolved.ready).toBe(true)
+    const review = (await conflictResult(repo, subject, ["a.txt"])).view!
+    expect(review.files[0].diff).toContain("+topic")
+}, 60_000)

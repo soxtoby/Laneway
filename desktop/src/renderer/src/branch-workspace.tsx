@@ -95,10 +95,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
     let localMutations = 0
     const conflicts = createConflictResolution({
         api: options.api,
-        workspace: options.workspace,
-        update: options.update,
         changed: repositoryId => read(repositoryId, false, false),
-        persist,
     })
     const inspection = createInspection({
         api: options.api,
@@ -109,7 +106,6 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             localMutations += busy ? 1 : -1
         },
         createBranchAt: (repositoryId, commit) => localBranches.atCommit(repositoryId, commit),
-        resolveConflict: (repositoryId, columnId, subject) => conflicts.open(repositoryId, columnId, subject),
         compareWith,
         openCommitWorktree: (repositoryId, commit) => {
             void worktreeActions.prepare(repositoryId, { action: "create", commit, move: false })
@@ -159,9 +155,11 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             void read(activeRepositoryId, false, true)
     }
     const onShortcut = (event: KeyboardEvent) => {
+        if (event.defaultPrevented)
+            return
         if (
             activeRepositoryId && event.ctrlKey && !event.altKey && (event.key.toLowerCase() == "z" || event.key.toLowerCase() == "y")
-            && !(event.target instanceof HTMLElement && event.target.closest('input, textarea, select, [contenteditable="true"]'))
+            && !event.composedPath().some(node => node instanceof HTMLElement && node.matches('input, textarea, select, [contenteditable="true"]'))
         ) {
             event.preventDefault()
             void worktreeActions.transition(activeRepositoryId, event.shiftKey || event.key.toLowerCase() == "y" ? "redo" : "undo")
@@ -848,7 +846,6 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                     width: state.widths[id] ?? 380,
                     collapsed: state.collapsedColumnIds.includes(id),
                     diffLayout: state.diffLayouts[id] ?? "unified",
-                    resolutionSubject: conflicts.selected(repositoryId, id),
                     ...(backingPath(repositoryId, id) ? { worktreePath: backingPath(repositoryId, id) } : {}),
                     worktreeId: branch.checkedOut.find(worktree => worktree.path == backingPath(repositoryId, id))?.id,
                 }]
@@ -859,7 +856,6 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                     kind: "virtual" as const,
                     id,
                     worktreePath: virtual.worktree.path,
-                    resolutionSubject: conflicts.selected(repositoryId, id),
                     worktreeId: virtual.worktree.id,
                     lastSeenObjectId: virtual.objectId,
                     width: state.widths[id] ?? 380,
@@ -1615,21 +1611,21 @@ function BranchColumns(
                                             </div>
                                         </header>
                                         {props.worktreeControls(column)}
-                                        {column.kind == "branch" && props.conflicts.controls(props.repositoryId, column, props.worktreePath(column.id))}
-                                        {props.inspection.body(props.repositoryId, column, props.graph, props.worktreePath(column.id))}
+                                        {props.inspection.body(
+                                            props.repositoryId,
+                                            column,
+                                            props.graph,
+                                            props.worktreePath(column.id),
+                                            column.kind == "branch"
+                                                ? props.conflicts.controls(props.repositoryId, column, props.worktreePath(column.id))
+                                                : undefined,
+                                        )}
                                         {!props.state.maximizedBranchId && (
                                             <ColumnDivider branchId={column.id} width={props.state.widths[column.id] ?? 380} resize={props.resize} />
                                         )}
                                     </>
                                 )}
                         </article>
-                        {!props.state.collapsedColumnIds.includes(column.id)
-                            && props.conflicts.column(
-                                props.repositoryId,
-                                column.id,
-                                props.worktreePath(column.id),
-                                column.kind == "branch" ? column.tip : column.objectId,
-                            )}
                         {!props.state.collapsedColumnIds.includes(column.id) && props.inspection.breakout(props.repositoryId, column.id)}
                     </>
                 ))}
@@ -2560,7 +2556,6 @@ const collapsedColumnButton = css({
 })
 
 const branchColumn = css({
-    "&:has(> [aria-label='Unresolved conflicts'])": { gridTemplateRows: "auto auto auto minmax(0, 1fr)" },
     "&.collapsed": { minWidth: "52px", gridTemplateRows: "minmax(0, 1fr)" },
     position: "relative",
     width: "380px",

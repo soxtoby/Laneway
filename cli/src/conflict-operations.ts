@@ -1,4 +1,4 @@
-import { blob, candidateReady, conflictHunks, conflictStateRef, gitText, isText, normalize, readConflictState, readRegisteredWorktrees, replaceTreeFiles, replayTree, type RepositoryGit, retainedDocument, rewriteCommit, storeConflictState, temporaryBranchPrefix, treeEntries, withConflictScratch } from "@git-workbench/git"
+import { blob, candidateReady, conflictHunks, conflictStateRef, gitText, hasConflictMarkers, isText, normalize, readConflictState, readRegisteredWorktrees, replaceTreeFiles, replayTree, type RepositoryGit, retainedDocument, rewriteCommit, storeConflictState, temporaryBranchPrefix, treeEntries, withConflictScratch } from "@git-workbench/git"
 import { type ConflictFile, type ConflictRequest, type ConflictResult, type ConflictState, type ConflictSubject, type ResolutionCandidate, ResolutionCandidateSchema, type UnresolvedStack } from "@git-workbench/shared"
 import { createHash } from "node:crypto"
 import { lstat, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
@@ -58,7 +58,7 @@ async function checkedCandidate(repo: RepositoryGit, subject: ConflictSubject, r
     return candidate
 }
 
-export async function conflictResult(repo: RepositoryGit, subjectId?: string): Promise<ConflictResult> {
+export async function conflictResult(repo: RepositoryGit, subjectId?: string, requestedFiles?: string[]): Promise<ConflictResult> {
     const result: ConflictResult = { type: "result", command: "conflict", conflicts: [], recovery: [] }
     const state = await readConflictState(repo).catch(() => undefined)
     if (!state) {
@@ -71,8 +71,11 @@ export async function conflictResult(repo: RepositoryGit, subjectId?: string): P
         result.publishable = false
         return result
     }
+    const inspectedCandidate = subjectId && requestedFiles ? readCandidate(repo, findSubject(state, subjectId).subject) : undefined
     for (const stack of state.stacks) {
-        const tip = await repo.resolveRef(stack.temporaryRef)
+        if (subjectId && requestedFiles && !stack.steps.some(step => step.conflict?.id == subjectId))
+            continue
+        const tip = subjectId && requestedFiles ? stack.temporaryRef : await repo.resolveRef(stack.temporaryRef)
         const branch = stack.branches.at(-1)!.ref.slice(11)
         if (!tip) {
             const refs = await repo.listRefs("refs/heads/")
@@ -84,7 +87,7 @@ export async function conflictResult(repo: RepositoryGit, subjectId?: string): P
             result.recovery.push({ stack: stack.id, branch, message: "The unresolved branch is missing.", candidates })
         }
         for (const step of stack.steps) {
-            if (step.conflict) {
+            if (step.conflict && (!subjectId || !requestedFiles || step.conflict.id == subjectId)) {
                 result.conflicts.push({
                     id: step.conflict.id,
                     stackId: stack.id,
@@ -107,7 +110,7 @@ export async function conflictResult(repo: RepositoryGit, subjectId?: string): P
             suspended: Boolean(working.suspended),
         })
     }
-    for (const ref of await repo.listRefs(temporaryBranchPrefix)) {
+    for (const ref of requestedFiles ? [] : await repo.listRefs(temporaryBranchPrefix)) {
         if (!state.stacks.some(stack => stack.temporaryRef == ref)) {
             result.recovery.push({
                 stack: "untracked",
@@ -118,13 +121,45 @@ export async function conflictResult(repo: RepositoryGit, subjectId?: string): P
         }
     }
     if (subjectId) {
-        const { subject } = findSubject(state, subjectId)
-        const candidate = await readCandidate(repo, subject)
-        const suggestion = subject.suggestion ? await treeEntries(repo, subject.suggestion) : undefined
-        const candidateTree = await replaceTreeFiles(repo, subject.tree, candidate.files)
-        const reviewTree = await replaceTreeFiles(repo, subject.tree, Object.fromEntries(subject.files.map(file => [file.path, file.left])))
+        const { subject, step, working } = findSubject(state, subjectId)
+        const candidate = await (inspectedCandidate ?? readCandidate(repo, subject))
+        const suggestion = subject.suggestion && requestedFiles?.length != 0 ? await treeEntries(repo, subject.suggestion) : undefined
+        const needsReview = requestedFiles == undefined || requestedFiles.some(path => path in candidate.files)
+        const [candidateTree, reviewTree] = needsReview
+            ? await Promise.all([
+                replaceTreeFiles(repo, subject.tree, candidate.files),
+                replaceTreeFiles(repo, subject.tree, Object.fromEntries(subject.files.map(file => [file.path, file.left]))),
+            ])
+            : [subject.tree, subject.tree]
+        const blobs = new Map<string, Promise<Buffer | null>>()
+        const readBlob = (entry: ConflictFile["base"]) => {
+            if (!entry || entry.mode == "160000")
+                return Promise.resolve(null)
+            let pending = blobs.get(entry.object)
+            if (!pending) {
+                pending = blob(repo, entry)
+                blobs.set(entry.object, pending)
+            }
+            return pending
+        }
         const files: NonNullable<ConflictResult["view"]>["files"] = []
         for (const file of subject.files) {
+            if (requestedFiles && !requestedFiles.includes(file.path)) {
+                const bytes = file.path in candidate.files ? await readBlob(candidate.files[file.path]) : null
+                files.push({
+                    ...file,
+                    loaded: false,
+                    baseText: null,
+                    leftText: null,
+                    rightText: null,
+                    resultText: null,
+                    suggestionText: null,
+                    diff: "",
+                    hunks: [],
+                    resolved: file.path in candidate.files && !hasConflictMarkers(bytes?.toString() ?? "", subject),
+                })
+                continue
+            }
             const entries = [
                 file.base,
                 file.left,
@@ -133,11 +168,12 @@ export async function conflictResult(repo: RepositoryGit, subjectId?: string): P
                 suggestion?.get(file.path) ?? null,
             ]
             const texts = await Promise.all(entries.map(async entry => {
-                const bytes = await blob(repo, entry)
+                const bytes = await readBlob(entry)
                 return isText(bytes) && bytes!.length <= 2_000_000 ? bytes!.toString() : null
             }))
-            const diff =
-                (await repo.command(repo.descriptor.mainWorktree, ["diff", "--no-ext-diff", "--no-textconv", reviewTree, candidateTree, "--", file.path]))
+            const diff = !needsReview
+                ? ""
+                : (await repo.command(repo.descriptor.mainWorktree, ["diff", "--no-ext-diff", "--no-textconv", reviewTree, candidateTree, "--", file.path]))
                     .toString()
             files.push({
                 ...file,
@@ -147,18 +183,26 @@ export async function conflictResult(repo: RepositoryGit, subjectId?: string): P
                 resultText: texts[3],
                 suggestionText: texts[4],
                 diff: diff.slice(0, 2_000_000),
-                resolved: file.path in candidate.files && !conflictHunks(texts[3] ?? "", subject).length,
+                resolved: file.path in candidate.files && !hasConflictMarkers(texts[3] ?? "", subject),
                 hunks: conflictHunks(texts[3] ?? "", subject),
             })
         }
-        result.view = { subject, candidate, files, reviewTree, resultTree: candidateTree, ready: await candidateReady(repo, subject, candidate) }
+        result.view = {
+            subject,
+            sourceCommit: step?.source ?? working!.stash,
+            candidate,
+            files,
+            reviewTree,
+            resultTree: candidateTree,
+            ready: await candidateReady(repo, subject, candidate),
+        }
     }
     return result
 }
 
 export async function executeConflict(repo: RepositoryGit, request: ConflictRequest, changes: Changes, cancelled: () => boolean = () => false) {
     if (request.action == "list" || request.action == "inspect")
-        return conflictResult(repo, request.action == "inspect" ? request.subject : undefined)
+        return conflictResult(repo, request.action == "inspect" ? request.subject : undefined, request.action == "inspect" ? request.files : undefined)
     if (request.action == "publish-check" && !(await readConflictState(repo).catch(() => undefined)))
         return conflictResult(repo)
     const state = await readConflictState(repo)
@@ -369,6 +413,14 @@ export async function executeConflict(repo: RepositoryGit, request: ConflictRequ
         } else {
             candidate.files[file.path] = request.side == "delete" ? null : file[request.side]
         }
+    } else if (request.action == "edit") {
+        const entry = candidate.files[file.path] ?? file.provisional ?? file.left ?? file.right
+        if (!entry || !["100644", "100755"].includes(entry.mode) || !isText(Buffer.from(request.content)))
+            throw new Error("Use a named side or an external tool for binary and structural conflicts.")
+        candidate.files[file.path] = {
+            mode: entry.mode,
+            object: await gitText(repo, ["hash-object", "-w", "--stdin"], request.content),
+        }
     } else if (request.action == "use-file") {
         await requireWorktree(repo, request.path)
         const absolute = resolve(request.path, file.path)
@@ -434,7 +486,10 @@ async function rebaseStack(repo: RepositoryGit, stack: UnresolvedStack, cancelle
         if (cancelled())
             throw new Error("Stack replay cancelled.")
         const previous = step.conflict
-        const merged = await replayTree(repo, await commitParent(repo, step.source), parent, step.source, step.id)
+        const merged = await replayTree(repo, await commitParent(repo, step.source), parent, step.source, step.id, {
+            left: `Before this commit at ${parent.slice(0, 8)}`,
+            right: `This commit ${step.source.slice(0, 8)}`,
+        })
         if (merged.conflict && previous?.input == merged.conflict.input) {
             merged.tree = await replaceTreeFiles(repo, merged.tree, Object.fromEntries(previous.files.map(file => [file.path, file.provisional])))
             merged.conflict = { ...previous, tree: merged.tree }
@@ -617,7 +672,10 @@ export async function applyStashConflict(repo: RepositoryGit, path: string, stas
         const extras = await treeEntries(repo, untracked.stdout.toString().trim())
         stashTree = await replaceTreeFiles(repo, stashTree, Object.fromEntries(extras))
     }
-    const merged = await replayTree(repo, await commitParent(repo, stash), head, stashTree, crypto.randomUUID())
+    const merged = await replayTree(repo, await commitParent(repo, stash), head, stashTree, crypto.randomUUID(), {
+        left: `Current files before restoring stash at ${head.slice(0, 8)}`,
+        right: `Stashed changes ${stash.slice(0, 8)}`,
+    })
     if (!merged.conflict)
         throw new Error("The stash failed for a reason other than a content conflict. Its original state is preserved.")
     const branch = (await repo.run(path, ["symbolic-ref", "--quiet", "HEAD"])).stdout.toString().trim() || null

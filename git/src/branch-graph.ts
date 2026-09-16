@@ -802,7 +802,9 @@ async function readHistoryPage(descriptor: RepositoryDescriptor, runner: GraphRu
     validateObjectId(descriptor, request.tip)
     for (const baseTip of request.baseTips)
         validateObjectId(descriptor, baseTip)
-    const before = optionalText(await runner.run(["rev-parse", "--verify", "--quiet", request.branchRef], [0, 1]))
+    const before = request.branchRef == request.tip
+        ? request.tip
+        : optionalText(await runner.run(["rev-parse", "--verify", "--quiet", request.branchRef], [0, 1]))
     if (before != request.tip)
         throw new GitError("git.command-failed", "The branch moved before Workbench could expand its commits. Refresh the Branch Graph and try again.")
     const offset = Math.max(0, request.offset ?? 0)
@@ -821,7 +823,9 @@ async function readHistoryPage(descriptor: RepositoryDescriptor, runner: GraphRu
         ]),
     )
     const commits = parseHistory(output)
-    const after = optionalText(await runner.run(["rev-parse", "--verify", "--quiet", request.branchRef], [0, 1]))
+    const after = request.branchRef == request.tip
+        ? request.tip
+        : optionalText(await runner.run(["rev-parse", "--verify", "--quiet", request.branchRef], [0, 1]))
     if (after != request.tip)
         throw new GitError("git.command-failed", "The branch moved while Workbench expanded its commits. Refresh the Branch Graph and try again.")
     return {

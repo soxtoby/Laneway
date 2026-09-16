@@ -188,7 +188,6 @@ export interface RepositoryInfo {
 }
 
 export interface BranchWorkspaceColumn {
-    resolutionSubject?: string
     worktreeId?: string
     collapsed?: boolean
     diffLayout?: DiffLayout
@@ -201,7 +200,6 @@ export interface BranchWorkspaceColumn {
 }
 
 export interface VirtualBranchWorkspaceColumn {
-    resolutionSubject?: string
     worktreeId?: string
     collapsed?: boolean
     diffLayout?: DiffLayout

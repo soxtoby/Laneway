@@ -27,21 +27,24 @@ test("production conflict IPC, candidate isolation, column restart and acceptanc
         git("config", "mergetool.workbench-test.trustExitCode", "true")
         await writeFile(join(repository, "file.txt"), "Order summary\nDelivery: five business days.\nTracking is included.\n")
         await writeFile(join(repository, "payment.txt"), "Payment: cash\n")
-        await writeFile(join(repository, "contact.txt"), "Support: email\n")
+        await writeFile(join(repository, "contact.ts"), 'export const support = "email"\n')
         git("add", ".")
         git("commit", "-qm", "base")
         git("switch", "-qc", "topic")
         await writeFile(join(repository, "file.txt"), "Order summary\nDelivery: next business day.\nTracking is included.\n")
         await writeFile(join(repository, "payment.txt"), "Payment: card\n")
-        await writeFile(join(repository, "contact.txt"), "Support: live chat\n")
+        await writeFile(join(repository, "contact.ts"), 'export const support = "live chat"\n')
+        await writeFile(join(repository, "notes.txt"), "A clean file in the conflicted commit\n")
+        git("add", ".")
         git("commit", "-qam", "topic change")
+        git("branch", "lower")
         await writeFile(join(repository, "receipt.txt"), "A clean descendant\n")
         git("add", ".")
         git("commit", "-qm", "clean descendant")
         git("switch", "main")
         await writeFile(join(repository, "file.txt"), "Order summary\nDelivery: three business days.\nTracking is included.\n")
         await writeFile(join(repository, "payment.txt"), "Payment: bank transfer\n")
-        await writeFile(join(repository, "contact.txt"), "Support: phone\n")
+        await writeFile(join(repository, "contact.ts"), 'export const support = "phone"\n')
         git("commit", "-qam", "base change")
         const base = git("rev-parse", "HEAD")
         git("switch", "topic")
@@ -50,7 +53,7 @@ test("production conflict IPC, candidate isolation, column restart and acceptanc
             "conflict",
             "--json",
             "--request",
-            JSON.stringify({ action: "rewrite", branches: ["topic"], base, path: repository }),
+            JSON.stringify({ action: "rewrite", branches: ["lower", "topic"], base, path: repository }),
         ], { cwd: repository, stdout: "pipe", stderr: "pipe" })
         const [output, code] = await Promise.all([new Response(rewrite.stdout).text(), rewrite.exited])
         expect(code, output).toBe(0)
@@ -88,7 +91,9 @@ test("production conflict IPC, candidate isolation, column restart and acceptanc
             const result = await readFile(join(directory, `${phase}.json`), "utf8").catch(() => errors)
             expect(exitCode, result).toBe(0)
             if (phase != "accept") {
-                expect(await readFile(join(repository, "file.txt"), "utf8")).toContain("<<<<<<<")
+                const marked = await readFile(join(repository, "file.txt"), "utf8")
+                expect(marked).toContain("<<<<<<< Before this commit at")
+                expect(marked).toContain(">>>>>>> This commit")
                 await mkdir(join(root, "desktop/out/validation"), { recursive: true })
                 await copyFile(join(directory, `${phase}.png`), join(root, `desktop/out/validation/conflict-${phase}.png`))
                 await copyFile(join(directory, `${phase}-dark.png`), join(root, `desktop/out/validation/conflict-${phase}-dark.png`))
@@ -97,7 +102,7 @@ test("production conflict IPC, candidate isolation, column restart and acceptanc
         expect(git("branch", "--show-current")).toBe("topic")
         expect(git("show", "HEAD:file.txt")).toBe("Order summary\nDelivery: next business day.\nTracking is included.")
         expect(git("show", "HEAD:payment.txt")).toBe("Payment: bank transfer")
-        expect(git("show", "HEAD:contact.txt")).toBe("Support: live chat")
+        expect(git("show", "HEAD:contact.ts")).toBe('export const support = "live chat"')
         expect(git("status", "--porcelain")).toBe("")
     } finally {
         if (!resolve(directory).startsWith(resolve(tmpdir()) + sep))

@@ -1,7 +1,26 @@
 import { expect, test } from "bun:test"
 import { mkdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { candidateReady, connectRepository, replayTree, treeEntries, withConflictScratch } from "../src/index"
+import { candidateReady, conflictHunks, connectRepository, hasConflictMarkers, replayTree, treeEntries, withConflictScratch } from "../src/index"
+
+test.each([["Updated stack at abcdef12 (record-1)", "Replayed commit fedcba98 (record-1)"], [
+    "Before this commit at abcdef12 (record-1)",
+    "This commit fedcba98 (record-1)",
+], ["Current files before restoring stash at abcdef12 (record-1)", "Stashed changes fedcba98 (record-1)"]])(
+    "recorded markers remain unresolved across label versions: %s",
+    (leftLabel, rightLabel) => {
+        const subject = { id: "record-1", input: "a".repeat(40), tree: "b".repeat(40), leftLabel, rightLabel, markerSize: 8, files: [] }
+        const start = `<<<<<<<< ${leftLabel}`, end = `>>>>>>>> ${rightLabel}`
+        const marked = `${start}\nleft\n========\nright\n${end}\n`
+        expect(conflictHunks(marked, subject)).toHaveLength(1)
+        expect(hasConflictMarkers(marked, subject)).toBe(true)
+        // A partly removed marker must still prevent acceptance, including CRLF files.
+        expect(hasConflictMarkers(`${start}\r\nleft\r\n`, subject)).toBe(true)
+        expect(hasConflictMarkers(`right\r\n${end}\r\n`, subject)).toBe(true)
+        expect(hasConflictMarkers(marked.replaceAll("record-1", "record-2"), subject)).toBe(false)
+        expect(hasConflictMarkers("left\nright\n", subject)).toBe(false)
+    },
+)
 
 test("binary, delete/modify and file/directory conflicts retain exact sources without sibling artifacts", async () => {
     await withConflictScratch(async path => {

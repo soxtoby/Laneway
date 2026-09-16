@@ -190,9 +190,6 @@ function parseColumn(value: unknown, restoring = false): WorkspaceColumn | undef
     const diffLayout = record.diffLayout == "split" || record.diffLayout == "unified" ? record.diffLayout as DiffLayout : undefined
     const worktreePath = nonEmptyString(record.worktreePath) ? record.worktreePath : undefined
     const worktreeId = nonEmptyString(record.worktreeId) ? record.worktreeId : undefined
-    const resolutionSubject = typeof record.resolutionSubject == "string" && /^[a-zA-Z0-9-]+$/.test(record.resolutionSubject)
-        ? record.resolutionSubject
-        : undefined
     if (
         !restoring && ((record.collapsed !== undefined && typeof record.collapsed != "boolean")
             || (record.diffLayout !== undefined && diffLayout === undefined)
@@ -203,7 +200,6 @@ function parseColumn(value: unknown, restoring = false): WorkspaceColumn | undef
     if (record.kind == "branch" && nonEmptyString(record.ref)) {
         return {
             kind: "branch",
-            ...(resolutionSubject ? { resolutionSubject } : {}),
             id: record.id,
             ref: record.ref,
             lastSeenObjectId: record.lastSeenObjectId,
@@ -217,7 +213,6 @@ function parseColumn(value: unknown, restoring = false): WorkspaceColumn | undef
     if (record.kind == "virtual" && nonEmptyString(record.worktreePath)) {
         return {
             kind: "virtual",
-            ...(resolutionSubject ? { resolutionSubject } : {}),
             id: record.id,
             worktreePath: record.worktreePath,
             ...(worktreeId ? { worktreeId } : {}),

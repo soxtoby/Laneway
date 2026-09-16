@@ -1148,10 +1148,12 @@ async function cleanupStaleLockCandidates(directory: string) {
         const path = resolve(directory, entry.name)
         try {
             const lock = JSON.parse(await readFile(path, "utf8")) as { pid?: number }
-            if (lock.pid && isProcessAlive(lock.pid))
+            if (!Number.isInteger(lock.pid) || !lock.pid || lock.pid < 0 || isProcessAlive(lock.pid))
                 continue
         } catch {
-            // An unpublished corrupt candidate cannot own the repository lock.
+            // A competing process may have opened this file but not finished
+            // writing it. Only reclaim candidates with a known, dead owner.
+            continue
         }
         await unlinkIfPresent(path)
     }

@@ -16,12 +16,18 @@ const recoveryIdentity = {
     GIT_COMMITTER_EMAIL: "recovery@workbench.invalid",
 }
 
-export async function readConflictState(repo: RepositoryGit): Promise<ConflictState> {
-    const ref = await repo.resolveRef(conflictStateRef)
+const conflictStateCache = new WeakMap<RepositoryGit, { ref: string; state: ConflictState }>()
+export async function readConflictState(repo: RepositoryGit, knownRef?: string | null): Promise<ConflictState> {
+    const ref = knownRef === undefined ? await repo.resolveRef(conflictStateRef) : knownRef
     if (!ref)
         return { version: 1, stacks: [], working: [], retainedConflicts: [] }
+    const cached = conflictStateCache.get(repo)
+    if (cached?.ref == ref)
+        return structuredClone(cached.state)
     try {
-        return ConflictStateSchema.parse(JSON.parse((await repo.command(repo.descriptor.mainWorktree, ["show", `${ref}:state.json`])).toString()))
+        const state = ConflictStateSchema.parse(JSON.parse((await repo.command(repo.descriptor.mainWorktree, ["show", ref + ":state.json"])).toString()))
+        conflictStateCache.set(repo, { ref, state })
+        return structuredClone(state)
     } catch {
         throw new Error("Conflict recovery metadata is damaged. Retained branches and recovery refs have been preserved.")
     }
@@ -105,6 +111,8 @@ export async function treeEntries(repo: RepositoryGit, tree: string) {
     return result
 }
 export async function replaceTreeFiles(repo: RepositoryGit, tree: string, files: Record<string, ConflictFile["base"]>) {
+    if (!Object.keys(files).length)
+        return tree
     return withConflictScratch(async path => {
         const env = { GIT_INDEX_FILE: join(path, "index") }
         await gitText(repo, ["read-tree", tree], undefined, env)
@@ -128,6 +136,7 @@ export async function replayTree(
     left: string,
     right: string,
     id: string,
+    labels = { left: `Current files at ${left.slice(0, 8)}`, right: `Incoming changes at ${right.slice(0, 8)}` },
 ): Promise<{ tree: string; conflict?: ConflictSubject }> {
     const result = await repo.run(repo.descriptor.mainWorktree, [
         "-c",
@@ -162,8 +171,8 @@ export async function replayTree(
         throw new Error("Git reported a structural conflict without recoverable file stages.")
     const existing = await treeEntries(repo, tree)
     const inputs = await Promise.all([treeEntries(repo, base), treeEntries(repo, left), treeEntries(repo, right)])
-    const leftLabel = `Updated stack at ${left.slice(0, 8)} (${id.slice(0, 8)})`
-    const rightLabel = `Replayed commit ${right.slice(0, 8)} (${id.slice(0, 8)})`
+    const leftLabel = `${labels.left} (${id.slice(0, 8)})`
+    const rightLabel = `${labels.right} (${id.slice(0, 8)})`
     const replacements: Record<string, ConflictFile["base"]> = {}
     // merge-tree may park a file beside a conflicting directory as path~<commit>.
     // Keep that bookkeeping out of the project and record the real paths instead.
@@ -277,6 +286,10 @@ export function conflictHunks(content: string, subject: ConflictSubject) {
     }
     return hunks
 }
+export function hasConflictMarkers(content: string, subject: ConflictSubject) {
+    const [left, right] = [subject.leftLabel, subject.rightLabel].map(label => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    return new RegExp(`^(?:<{7,} ${left}|>{7,} ${right})`, "m").test(content)
+}
 export async function candidateReady(repo: RepositoryGit, subject: ConflictSubject, candidate: ResolutionCandidate) {
     const paths = Object.entries(candidate.files).filter(([, entry]) => entry).map(([path]) => path)
     if (paths.some(path => paths.some(other => other != path && path.startsWith(other + "/"))))
@@ -285,7 +298,7 @@ export async function candidateReady(repo: RepositoryGit, subject: ConflictSubje
         if (!(file.path in candidate.files))
             return false
         const bytes = await blob(repo, candidate.files[file.path])
-        if (bytes && new RegExp(`^(?:<{7,} Updated stack at|>{7,} Replayed commit) [a-f0-9]+ \\(${subject.id.slice(0, 8)}\\)`, "m").test(bytes.toString()))
+        if (bytes && hasConflictMarkers(bytes.toString(), subject))
             return false
     }
     return true

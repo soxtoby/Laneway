@@ -68,7 +68,7 @@ export type ResolutionCandidate = z.infer<typeof ResolutionCandidateSchema>
 const subjectRequest = { subject: id, input: oid, revision: z.string() }
 export const ConflictRequestSchema = z.discriminatedUnion("action", [
     z.object({ action: z.literal("list") }),
-    z.object({ action: z.literal("inspect"), subject: id }),
+    z.object({ action: z.literal("inspect"), subject: id, files: z.array(z.string()).optional() }),
     z.object({ action: z.literal("rewrite"), branches: z.array(z.string().min(1)).min(1), base: oid, path: z.string().optional() }),
     z.object({
         action: z.literal("choose"),
@@ -78,6 +78,7 @@ export const ConflictRequestSchema = z.discriminatedUnion("action", [
         hunk: z.number().int().nonnegative().optional(),
     }),
     z.object({ action: z.literal("use-file"), ...subjectRequest, file: z.string(), path: z.string() }),
+    z.object({ action: z.literal("edit"), ...subjectRequest, file: z.string(), content: z.string().max(2_000_000) }),
     z.object({ action: z.literal("tool"), ...subjectRequest, file: z.string() }),
     z.object({ action: z.literal("accept"), ...subjectRequest }),
     z.object({ action: z.literal("cancel"), ...subjectRequest }),
@@ -99,6 +100,7 @@ export const ConflictSummarySchema = z.object({
     suspended: z.boolean().optional(),
 })
 const viewFile = ConflictFileSchema.extend({
+    loaded: z.boolean().optional(),
     baseText: z.string().nullable(),
     leftText: z.string().nullable(),
     rightText: z.string().nullable(),
@@ -115,6 +117,7 @@ export const ConflictResultSchema = z.object({
     recovery: z.array(z.object({ stack: z.string(), branch: z.string(), message: z.string(), candidates: z.array(z.string()) })),
     view: z.object({
         subject: ConflictSubjectSchema,
+        sourceCommit: oid,
         candidate: ResolutionCandidateSchema,
         files: z.array(viewFile),
         reviewTree: oid,

@@ -55,7 +55,7 @@ export function ResolutionReview(handle: Handle<{ page: FileDiffPage; file: File
                             ? "This file will be deleted."
                             : handle.props.file.resultText === null
                             ? "Binary or structural file selected."
-                            : "Matches the updated stack."}
+                            : "No changes from the current version."}
                     </p>
                 )}
         </div>
