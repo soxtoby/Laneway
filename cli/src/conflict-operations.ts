@@ -200,11 +200,14 @@ export async function conflictResult(repo: RepositoryGit, subjectId?: string, re
     return result
 }
 
-export async function executeConflict(repo: RepositoryGit, request: ConflictRequest, changes: Changes, cancelled: () => boolean = () => false) {
-    if (request.action == "list" || request.action == "inspect")
-        return conflictResult(repo, request.action == "inspect" ? request.subject : undefined, request.action == "inspect" ? request.files : undefined)
-    if (request.action == "publish-check" && !(await readConflictState(repo).catch(() => undefined)))
-        return conflictResult(repo)
+export interface ConflictSession {
+    state: ConflictState
+    before: string | null
+    updateRefs: (updates: Parameters<RepositoryGit["updateRefs"]>[0]) => Promise<void>
+    persist: () => Promise<void>
+}
+// Reads authoritative conflict state and prepares CAS-guarded ref updates for one mutation.
+export async function openConflictSession(repo: RepositoryGit, changes: Changes): Promise<ConflictSession> {
     const state = await readConflictState(repo)
     for (const step of state.stacks.flatMap(s => s.steps)) {
         if (step.conflict && !state.retainedConflicts.some(c => c.commit == step.current))
@@ -227,6 +230,117 @@ export async function executeConflict(repo: RepositoryGit, request: ConflictRequ
     const persist = async () => {
         changes.set(conflictStateRef, await storeConflictState(repo, state, before))
     }
+    return { state, before, updateRefs, persist }
+}
+
+export interface StackRewritePlan {
+    // Affected branches in stack order, as full refs.
+    refs: string[]
+    base: string
+    path?: string
+    // Explicit replay sources per branch, bottom-up. When omitted, the branches' linear local history is replayed.
+    // For an existing Unresolved Stack these are incoming commits inserted before that branch's retained steps.
+    sources?: string[][]
+}
+export async function rewriteStack(repo: RepositoryGit, session: ConflictSession, plan: StackRewritePlan, changes: Changes, cancelled: () => boolean) {
+    const { state, updateRefs } = session
+    const refs = plan.refs.map(branchRef)
+    if (new Set(refs).size != refs.length)
+        throw new Error("Choose each affected branch once, in stack order.")
+    if (plan.sources && plan.sources.length != refs.length)
+        throw new Error("Provide replay sources for every affected branch.")
+    for (const ref of refs) {
+        await gitText(repo, ["check-ref-format", ref])
+        if (ref.startsWith(temporaryBranchPrefix))
+            throw new Error("Choose the intended branch, not its temporary representation.")
+    }
+    await gitText(repo, ["cat-file", "-e", `${plan.base}^{commit}`])
+    let stack = state.stacks.find(s => s.branches.at(-1)!.ref == refs.at(-1))
+    if (stack) {
+        if (JSON.stringify(stack.branches.map(b => b.ref)) != JSON.stringify(refs))
+            throw new Error("Update all branches belonging to this Unresolved Stack together.")
+        await followTemporaryBranch(repo, stack)
+        stack.base = plan.base
+        if (plan.sources) {
+            for (const [index, branch] of stack.branches.entries()) {
+                const incoming = plan.sources[index]!.map(source => ({ id: crypto.randomUUID(), source, current: source }))
+                if (!incoming.length)
+                    continue
+                const previous = index == 0 ? "base" : stack.branches[index - 1]!.step
+                const position = previous == "base" ? 0 : stack.steps.findIndex(step => step.id == previous) + 1
+                stack.steps.splice(position, 0, ...incoming)
+                if (branch.step == previous)
+                    branch.step = incoming.at(-1)!.id
+            }
+        }
+    } else {
+        if (state.stacks.some(s => s.branches.some(b => refs.includes(b.ref))))
+            throw new Error("These branches already belong to an Unresolved Stack. Update that stack first.")
+        const branchTips = await Promise.all(refs.map(ref => repo.resolveRef(ref)))
+        if (branchTips.some(tip => !tip))
+            throw new Error("An affected branch no longer exists.")
+        const upstreamBoundary = state.stacks.flatMap(s => s.branches).find(b => b.current == plan.base || b.before == plan.base)
+        let steps: UnresolvedStack["steps"]
+        let branches: UnresolvedStack["branches"]
+        if (plan.sources) {
+            steps = []
+            branches = []
+            let boundary = "base"
+            for (const [index, ref] of refs.entries()) {
+                const added = plan.sources[index]!.map(source => ({
+                    id: crypto.randomUUID(),
+                    source: state.retainedConflicts.find(c => c.commit == source)?.source ?? source,
+                    current: source,
+                }))
+                steps.push(...added)
+                boundary = added.at(-1)?.id ?? boundary
+                branches.push({ ref, before: branchTips[index]!, current: branchTips[index]!, step: boundary })
+            }
+        } else {
+            const fork = upstreamBoundary?.before ?? await gitText(repo, ["merge-base", branchTips[0]!, plan.base])
+            const sources = await linearCommits(repo, fork, branchTips.at(-1)!)
+            steps = sources.map(source => ({
+                id: crypto.randomUUID(),
+                source: state.retainedConflicts.find(c => c.commit == source)?.source ?? source,
+                current: source,
+            }))
+            branches = refs.map((ref, i) => {
+                const step = steps.find(s => s.current == branchTips[i])
+                if (!step && branchTips[i] != fork)
+                    throw new Error("Each affected branch must be a boundary in the replayed linear stack.")
+                return { ref, before: branchTips[i]!, current: branchTips[i]!, step: step?.id ?? "base" }
+            })
+        }
+        const stackId = crypto.randomUUID()
+        stack = { id: stackId, temporaryRef: `${temporaryBranchPrefix}${refs.at(-1)!.slice(11)}/${stackId}`, base: plan.base, branches, steps }
+        state.stacks.push(stack)
+    }
+    for (const upstream of state.stacks.filter(s => s.id != stack!.id)) {
+        const boundary = upstream.branches.find(b => b.current == plan.base || b.before == plan.base)
+        if (boundary) {
+            stack.dependency = { stackId: upstream.id, branch: boundary.ref }
+            stack.base = boundary.current
+        }
+    }
+    if (plan.path) {
+        const holder = await requireWorktree(repo, plan.path)
+        if (holder.branchRef != refs.at(-1) && holder.branchRef != stack.temporaryRef)
+            throw new Error("The destination must hold the intended tip branch or its temporary branch.")
+    }
+    await rebaseStack(repo, stack, cancelled)
+    if (cancelled())
+        throw new Error("Stack rewrite cancelled before changing refs or files.")
+    await publishProvisional(repo, state, stack, updateRefs, changes, plan.path)
+    return stack
+}
+
+export async function executeConflict(repo: RepositoryGit, request: ConflictRequest, changes: Changes, cancelled: () => boolean = () => false) {
+    if (request.action == "list" || request.action == "inspect")
+        return conflictResult(repo, request.action == "inspect" ? request.subject : undefined, request.action == "inspect" ? request.files : undefined)
+    if (request.action == "publish-check" && !(await readConflictState(repo).catch(() => undefined)))
+        return conflictResult(repo)
+    const session = await openConflictSession(repo, changes)
+    const { state, updateRefs, persist } = session
     if (request.action == "publish-check") {
         const result = await conflictResult(repo)
         const refs = request.branches.map(branchRef)
@@ -246,61 +360,7 @@ export async function executeConflict(repo: RepositoryGit, request: ConflictRequ
         return result
     }
     if (request.action == "rewrite") {
-        const refs = request.branches.map(branchRef)
-        if (new Set(refs).size != refs.length)
-            throw new Error("Choose each affected branch once, in stack order.")
-        for (const ref of refs) {
-            await gitText(repo, ["check-ref-format", ref])
-            if (ref.startsWith(temporaryBranchPrefix))
-                throw new Error("Choose the intended branch, not its temporary representation.")
-        }
-        await gitText(repo, ["cat-file", "-e", `${request.base}^{commit}`])
-        let stack = state.stacks.find(s => s.branches.at(-1)!.ref == refs.at(-1))
-        if (stack) {
-            if (JSON.stringify(stack.branches.map(b => b.ref)) != JSON.stringify(refs))
-                throw new Error("Update all branches belonging to this Unresolved Stack together.")
-            await followTemporaryBranch(repo, stack)
-            stack.base = request.base
-        } else {
-            if (state.stacks.some(s => s.branches.some(b => refs.includes(b.ref))))
-                throw new Error("These branches already belong to an Unresolved Stack. Update that stack first.")
-            const branchTips = await Promise.all(refs.map(ref => repo.resolveRef(ref)))
-            if (branchTips.some(tip => !tip))
-                throw new Error("An affected branch no longer exists.")
-            const upstreamBoundary = state.stacks.flatMap(s => s.branches).find(b => b.current == request.base || b.before == request.base)
-            const fork = upstreamBoundary?.before ?? await gitText(repo, ["merge-base", branchTips[0]!, request.base])
-            const sources = await linearCommits(repo, fork, branchTips.at(-1)!)
-            const steps = sources.map(source => ({
-                id: crypto.randomUUID(),
-                source: state.retainedConflicts.find(c => c.commit == source)?.source ?? source,
-                current: source,
-            }))
-            const branches = refs.map((ref, i) => {
-                const step = steps.find(s => s.current == branchTips[i])
-                if (!step && branchTips[i] != fork)
-                    throw new Error("Each affected branch must be a boundary in the replayed linear stack.")
-                return { ref, before: branchTips[i]!, current: branchTips[i]!, step: step?.id ?? "base" }
-            })
-            const stackId = crypto.randomUUID()
-            stack = { id: stackId, temporaryRef: `${temporaryBranchPrefix}${refs.at(-1)!.slice(11)}/${stackId}`, base: request.base, branches, steps }
-            state.stacks.push(stack)
-        }
-        for (const upstream of state.stacks.filter(s => s.id != stack!.id)) {
-            const boundary = upstream.branches.find(b => b.current == request.base || b.before == request.base)
-            if (boundary) {
-                stack.dependency = { stackId: upstream.id, branch: boundary.ref }
-                stack.base = boundary.current
-            }
-        }
-        if (request.path) {
-            const holder = await requireWorktree(repo, request.path)
-            if (holder.branchRef != refs.at(-1) && holder.branchRef != stack.temporaryRef)
-                throw new Error("The destination must hold the intended tip branch or its temporary branch.")
-        }
-        await rebaseStack(repo, stack, cancelled)
-        if (cancelled())
-            throw new Error("Stack rewrite cancelled before changing refs or files.")
-        await publishProvisional(repo, state, stack, updateRefs, changes, request.path)
+        await rewriteStack(repo, session, { refs: request.branches, base: request.base, path: request.path }, changes, cancelled)
         await persist()
         return conflictResult(repo)
     }
@@ -695,7 +755,7 @@ export async function applyStashConflict(repo: RepositoryGit, path: string, stas
     await repo.command(path, ["read-tree", head])
     changes.set(conflictStateRef, await storeConflictState(repo, state, before))
 }
-async function gitHead(repo: RepositoryGit, path: string) {
+export async function gitHead(repo: RepositoryGit, path: string) {
     return (await repo.command(path, ["rev-parse", "HEAD"])).toString().trim()
 }
 async function workingTree(repo: RepositoryGit, path: string) {

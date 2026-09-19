@@ -1,5 +1,6 @@
 import type { Appearance, GitSettingsState } from "@git-workbench/shared"
 import { css, type Handle, on } from "remix/ui"
+import type { PullControl } from "./pull-latest"
 
 export interface EntryActions {
     busy: boolean
@@ -15,7 +16,7 @@ export function WorkbenchHeader(
         appearance: Appearance
         openSettings(): void
         toggleAppearance(): void
-        repositoryActions?: { busy: boolean; stashes(): void; undo(): void; redo(): void }
+        repositoryActions?: { busy: boolean; stashes(): void; undo(): void; redo(): void; pull: PullControl }
     }>,
 ) {
     return () => (
@@ -41,6 +42,32 @@ export function WorkbenchHeader(
             <div class="header-actions" mix={headerActions}>
                 {handle.props.repositoryActions && (
                     <div class="repository-actions" mix={repositoryActions}>
+                        {handle.props.repositoryActions.pull.running
+                            ? (
+                                <span class="pull-progress" mix={pullProgress} role="status" aria-live="polite">
+                                    <span mix={pullProgressText}>{handle.props.repositoryActions.pull.running.message}</span>
+                                    <button
+                                        type="button"
+                                        class="pull-cancel"
+                                        aria-label="Cancel pull"
+                                        mix={[topBarButton, on("click", handle.props.repositoryActions.pull.cancel)]}
+                                    >
+                                        Cancel
+                                    </button>
+                                </span>
+                            )
+                            : (
+                                <button
+                                    type="button"
+                                    class="pull-latest"
+                                    title={handle.props.repositoryActions.pull.hint}
+                                    aria-label="Pull latest"
+                                    disabled={handle.props.repositoryActions.busy || !handle.props.repositoryActions.pull.available}
+                                    mix={[topBarButton, on("click", handle.props.repositoryActions.pull.start)]}
+                                >
+                                    Pull latest
+                                </button>
+                            )}
                         <button
                             type="button"
                             disabled={handle.props.repositoryActions.busy}
@@ -224,6 +251,23 @@ const repositoryActions = css({
     marginRight: "4px",
     paddingRight: "8px",
     borderRight: "1px solid var(--line)",
+})
+
+const pullProgress = css({
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    height: "28px",
+    padding: "0 4px 0 8px",
+    color: "var(--muted)",
+    fontSize: "12px",
+    whiteSpace: "nowrap",
+})
+
+const pullProgressText = css({
+    maxWidth: "260px",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
 })
 
 const topBarButton = css({

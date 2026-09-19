@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { ConflictResultSchema } from "./conflicts"
 import { LocalResultSchema } from "./local-operations"
+import { PullResultSchema } from "./pull"
 export * from "./conflicts"
 
 export const ENGINE_VERSION = "0.1.0"
@@ -145,6 +146,7 @@ export const EngineMessageSchema = z.union([
     WorktreeResultSchema,
     LocalResultSchema,
     ConflictResultSchema,
+    PullResultSchema,
     RecoveryResultSchema,
     CancelledEventSchema,
     ErrorEventSchema,
@@ -557,4 +559,5 @@ export const FileDiffRequestSchema = z.object({
 export * from "./composition"
 export * from "./file-history"
 export * from "./local-operations"
+export * from "./pull"
 export * from "./worktrees"

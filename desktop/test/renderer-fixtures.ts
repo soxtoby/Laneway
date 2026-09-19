@@ -170,6 +170,9 @@ export function branchGraph(repositoryId: string) {
 
 export function fakeWorkbench(overrides: Partial<Window["workbench"]> = {}): Window["workbench"] {
     return {
+        pullLatest: async () => ({ ok: false, error: { message: "Pull latest unavailable" } }),
+        cancelPull: async () => false,
+        onPullProgress: () => () => undefined,
         readConflictContent: async () => null,
         conflictOperation: async () => ({ ok: true, result: { type: "result", command: "conflict", conflicts: [], recovery: [] } }),
         localOperation: async () => ({

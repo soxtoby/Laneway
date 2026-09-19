@@ -8,6 +8,7 @@ import { createConflictResolution } from "./conflict-resolution"
 import { errorMessage, type NoticeState } from "./feedback"
 import { createInspection } from "./inspection"
 import { createLocalBranchActions } from "./local-branch-actions"
+import { createPullLatest, type PullControl } from "./pull-latest"
 import { RepositoryRailToggle } from "./workspace"
 import { createWorktreeActions } from "./worktree-actions"
 import { reconcileWorktreeColumns, workspaceGraph } from "./worktree-columns"
@@ -62,7 +63,7 @@ export interface BranchWorkspace {
     render(active: AvailableOpenRepository, workspace: Workspace, railCollapsed?: boolean, toggleRail?: () => void): RemixNode
     openLens(): void
     renderLens(workspace: Workspace): RemixNode
-    repositoryActions(repositoryId: string, mainWorktree: string): { busy: boolean; stashes(): void; undo(): void; redo(): void }
+    repositoryActions(repositoryId: string, mainWorktree: string): { busy: boolean; stashes(): void; undo(): void; redo(): void; pull: PullControl }
 }
 
 export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWorkspace {
@@ -148,6 +149,25 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         },
     })
 
+    const pullLatest = createPullLatest({
+        api: options.api,
+        update: options.update,
+        signal: options.signal,
+        graph: repositoryId => stateFor(repositoryId).graph,
+        scope: repositoryId => {
+            // Scope freezes at activation: every open column, collapsed or not, contributes its local branch.
+            const state = stateFor(repositoryId)
+            const branches = state.graph ? workspaceGraph(state.graph).branches : []
+            return state.openedBranchIds.flatMap(id => {
+                const branch = branches.find(candidate => candidate.id == id)
+                return branch && branch.localRefs.includes(branch.preferredRef) ? [branch.preferredRef] : []
+            })
+        },
+        completed: repositoryId => read(repositoryId, false, false),
+        notify: options.notify,
+        openBranch: (repositoryId, branchName) => openBranch(repositoryId, `branch:refs/heads/${branchName}`),
+    })
+
     const interval = window.setInterval(() => {
         if (activeRepositoryId && document.visibilityState == "visible" && document.hasFocus())
             void read(activeRepositoryId, false, true)
@@ -221,6 +241,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                 <section class="workspace graph-workspace" mix={workspaceStyle} aria-live="polite">
                     {worktreeActions.dialog()}
                     {localBranches.render()}
+                    {pullLatest.render(active.id)}
                     {state.contextMenu && graph && (
                         <dialog
                             aria-label="Branch actions"
@@ -544,10 +565,11 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         },
         repositoryActions(repositoryId, mainWorktree) {
             return {
-                busy: worktreeActions.busy() || localBranches.busy() || localMutations > 0,
+                busy: worktreeActions.busy() || localBranches.busy() || localMutations > 0 || pullLatest.busy(repositoryId),
                 stashes: () => void localBranches.stashes(repositoryId, mainWorktree),
                 undo: () => void worktreeActions.transition(repositoryId, "undo"),
                 redo: () => void worktreeActions.transition(repositoryId, "redo"),
+                pull: pullLatest.control(repositoryId),
             }
         },
     }
@@ -590,8 +612,12 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
 
     async function read(repositoryId: string, refreshRemote: boolean, quiet: boolean) {
         const state = stateFor(repositoryId)
-        if (state.loading || state.refreshing || (quiet && (worktreeActions.busy() || localBranches.busy() || localMutations > 0)))
+        if (
+            state.loading || state.refreshing
+            || (quiet && (worktreeActions.busy() || localBranches.busy() || localMutations > 0 || pullLatest.busy(repositoryId)))
+        ) {
             return
+        }
         state.error = undefined
         if (state.graph)
             state.refreshing = true

@@ -4,11 +4,13 @@ import { type OperationAvailability, type OperationAvailabilityReason, type Oper
 import type { WorktreeRequest, WorktreeResult } from "@git-workbench/shared"
 import type { LocalRequest, LocalResult } from "@git-workbench/shared"
 import type { ConflictRequest, ConflictResult } from "@git-workbench/shared"
+import type { BranchGraphReadOptions, PullRequest, PullResult } from "@git-workbench/shared"
 import { link, lstat, mkdir, open, readdir, readFile, readlink, rename, unlink } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { z } from "zod"
 import { conflictMutation, conflictPaths, executeConflict, suspendWorkingConflicts } from "./conflict-operations"
 import { LocalPreconditionError, mutateLocal, prepareLocal } from "./local-mutations"
+import { executePull, preparePull, type PullPreparation, type PullProgressReporter } from "./pull-latest"
 import { mutateWorktree } from "./worktree-mutations"
 import { captureWorktreeState, relocateRemovedState, restoreWorktreeState, retainWorktreeState, stateIdentity, worktreeStateMatches, WorktreeStateSchema } from "./worktree-state"
 
@@ -103,6 +105,14 @@ interface HistoryProjection {
 
 export type OperationCommand =
     | { command: "conflict"; request: ConflictRequest; noWait: boolean; crashAfter?: JournalPhase }
+    | {
+        command: "pull"
+        request: PullRequest
+        noWait: boolean
+        crashAfter?: JournalPhase
+        graphOptions: (repositoryId: string) => BranchGraphReadOptions
+        progress?: PullProgressReporter
+    }
     | { command: "local" | "local-preview"; request: LocalRequest; token?: string; noWait: boolean; crashAfter?: JournalPhase; branchPrefix?: string }
     | { command: "worktree"; request: WorktreeRequest; token?: string; noWait: boolean; crashAfter?: JournalPhase; branchPrefix?: string }
     | { command: "test-mutation"; value: string; noWait: boolean; crashAfter?: JournalPhase; holdAfterIntentMs?: number }
@@ -119,6 +129,7 @@ export type OperationCommandResult =
     | WorktreeResult
     | LocalResult
     | ConflictResult
+    | PullResult
 
 export interface CancellationSignal {
     isCancelled(): boolean
@@ -152,6 +163,38 @@ export async function executeOperationCommand(
     const repository = await connectRepository(cwd, gitPath)
     const store = new OperationStore(repository.descriptor.commonDirectory)
 
+    // Fetching is network-bound and mutates only remote-tracking refs, so it runs before the mutation lock.
+    let prepared: PullPreparation | undefined
+    if (command.command == "pull") {
+        const progress = command.progress ?? (() => {})
+        prepared = await preparePull(repository, command.request, command.graphOptions(repository.descriptor.id), () => cancellation.isCancelled(), progress)
+        if (prepared.kind == "no-remotes")
+            return { type: "result", command: "pull", status: "no-remotes", message: "Add a remote to pull.", fetches: [], stacks: [] }
+        if (prepared.kind == "cancelled") {
+            return {
+                type: "result",
+                command: "pull",
+                status: "cancelled",
+                message: "Pull cancelled before any local changes.",
+                fetches: prepared.fetches,
+                stacks: [],
+            }
+        }
+        if (!prepared.stacks.length && !prepared.blocked.length) {
+            const failed = prepared.fetches.filter(fetch => fetch.status == "failed")
+            return {
+                type: "result",
+                command: "pull",
+                status: "fetched",
+                message: failed.length
+                    ? `Fetching ${failed.map(fetch => fetch.remote).join(", ")} failed; no open stacks to update.`
+                    : "Fetched; no open stacks to update.",
+                fetches: prepared.fetches,
+                stacks: [],
+            }
+        }
+    }
+
     return store.withLock(command.noWait, cancellation, async () => {
         const runtime = new OperationRuntime(repository, store, cancellation)
         const recovery = await runtime.recover()
@@ -159,6 +202,8 @@ export async function executeOperationCommand(
             return recovery
 
         switch (command.command) {
+            case "pull":
+                return runtime.pull(prepared as Extract<PullPreparation, { kind: "prepared" }>, command.progress ?? (() => {}), command.crashAfter)
             case "conflict":
                 return runtime.conflict(command.request, command.crashAfter)
             case "local-preview":
@@ -207,6 +252,39 @@ class OperationRuntime {
             crashAfter,
         )
         return result!
+    }
+
+    async pull(prepared: Extract<PullPreparation, { kind: "prepared" }>, progress: PullProgressReporter, crashAfter?: JournalPhase): Promise<PullResult> {
+        const changes = new Map<string, string | null>()
+        let stacks: PullResult["stacks"] = []
+        const operation = await this.applySnapshot(await conflictPaths(this.repository), "pull.latest", "Pull latest", async () => {
+            stacks = await executePull(this.repository, prepared, changes, () => this.cancellation.isCancelled(), progress)
+            return changes
+        }, crashAfter)
+        const projection = await this.store.readHistory()
+        const recorded = projection.operations[projection.position - 1]?.id == operation.id
+        const cancelled = stacks.some(stack => stack.status == "cancelled")
+        const counts = new Map<string, number>()
+        for (const stack of stacks)
+            counts.set(stack.status, (counts.get(stack.status) ?? 0) + 1)
+        const labels: Record<string, string> = {
+            updated: "updated",
+            current: "already current",
+            "needs-resolution": "need resolution",
+            skipped: "skipped",
+            failed: "failed",
+            cancelled: "not started",
+        }
+        const summary = [...counts].map(([status, count]) => `${count} ${labels[status]}`).join(", ")
+        return {
+            type: "result",
+            command: "pull",
+            status: cancelled ? "cancelled" : "updated",
+            message: cancelled ? `Pull cancelled: ${summary}. Completed updates were kept.` : `Pull complete: ${summary}.`,
+            fetches: prepared.fetches,
+            stacks,
+            ...(recorded ? { operation: summarize(operation as StoredOperation) } : {}),
+        }
     }
 
     async applyLocal(request: LocalRequest, token?: string, crashAfter?: JournalPhase, prefix = "worktree/"): Promise<LocalResult> {
@@ -335,7 +413,7 @@ class OperationRuntime {
             throw error
         }
         const after = await captureWorktreeState(this.repository, affected, before)
-        if (kind.startsWith("local.") && stateIdentity(before) == stateIdentity(after)) {
+        if ((kind.startsWith("local.") || kind.startsWith("pull.")) && stateIdentity(before) == stateIdentity(after)) {
             await this.abortBeforeCommit(executionId, operation, "apply")
             return operation
         }

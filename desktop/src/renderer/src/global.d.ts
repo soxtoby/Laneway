@@ -3,6 +3,7 @@ import type { ChangesRequest, ChangesResult, FileDiffRequest, FileDiffResult } f
 import type { WorktreeActionResult, WorktreePreviewResult, WorktreeRequest } from "@git-workbench/shared"
 import type { CommitDraft, LocalActionResult, LocalRequest } from "@git-workbench/shared"
 import type { ConflictActionResult, ConflictRequest } from "@git-workbench/shared"
+import type { PullActionResult, PullProgress, PullRequest } from "@git-workbench/shared"
 
 interface EngineStatusReady {
     state: "ready"
@@ -28,6 +29,9 @@ interface AppState {
 declare global {
     interface Window {
         workbench: {
+            pullLatest(repositoryId: string, request: PullRequest): Promise<PullActionResult>
+            cancelPull(repositoryId: string): Promise<boolean>
+            onPullProgress(listener: (progress: PullProgress) => void): () => void
             readConflictContent(repositoryId: string, object: string): Promise<string | null>
             conflictOperation(repositoryId: string, request: ConflictRequest): Promise<ConflictActionResult>
             previewWorktree(repositoryId: string, request: WorktreeRequest): Promise<WorktreePreviewResult>

@@ -3,9 +3,17 @@ import type { ChangesRequest, FileDiffRequest } from "@git-workbench/shared"
 import type { WorktreeRequest } from "@git-workbench/shared"
 import type { CommitDraft, LocalRequest } from "@git-workbench/shared"
 import type { ConflictRequest } from "@git-workbench/shared"
+import type { PullProgress, PullRequest } from "@git-workbench/shared"
 import { contextBridge, ipcRenderer } from "electron"
 
 contextBridge.exposeInMainWorld("workbench", {
+    pullLatest: (repositoryId: string, request: PullRequest) => ipcRenderer.invoke("pull:latest", repositoryId, request),
+    cancelPull: (repositoryId: string) => ipcRenderer.invoke("pull:cancel", repositoryId),
+    onPullProgress: (listener: (progress: PullProgress) => void) => {
+        const handler = (_event: Electron.IpcRendererEvent, progress: PullProgress) => listener(progress)
+        ipcRenderer.on("pull:progress", handler)
+        return () => ipcRenderer.off("pull:progress", handler)
+    },
     readConflictContent: (repositoryId: string, object: string) => ipcRenderer.invoke("conflict:content", repositoryId, object),
     conflictOperation: (repositoryId: string, request: ConflictRequest) => ipcRenderer.invoke("conflict:operation", repositoryId, request),
     previewWorktree: (repositoryId: string, request: WorktreeRequest) => ipcRenderer.invoke("worktree:preview", repositoryId, request),

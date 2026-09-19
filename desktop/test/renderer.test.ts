@@ -538,6 +538,150 @@ describe("Remix repository entry renderer", () => {
     })
 })
 
+test("Pull latest freezes open-column scope, streams progress with Cancel, and summarizes outcomes by stack", async () => {
+    const repository = repositoryInfo("D:\Source\pull-graph")
+    const graph = branchGraph(repository.id)
+    const main = graph.branches[0]
+    const feature = graph.branches[1]
+    const saved = {
+        repositories: [{
+            status: "available" as const,
+            id: repository.id,
+            path: repository.mainWorktree,
+            info: repository,
+            layoutInitialized: true,
+            focusedColumnId: feature.id,
+            columns: [main, feature].map(branch => ({
+                kind: "branch" as const,
+                id: branch.id,
+                ref: branch.preferredRef,
+                lastSeenObjectId: branch.tip,
+                width: 380,
+                collapsed: branch == main,
+            })),
+        }],
+        activeRepositoryId: repository.id,
+    }
+    let requested: unknown
+    let progress: ((value: { repositoryId: string; message: string; completed: number; total: number }) => void) | undefined
+    let finish: ((value: Awaited<ReturnType<Window["workbench"]["pullLatest"]>>) => void) | undefined
+    let cancelled = 0
+    let graphReads = 0
+    const api = fakeWorkbench({
+        getState: async () => ({ ...appState(), workspace: saved }),
+        readBranchGraph: async () => {
+            graphReads++
+            return { ok: true, graph }
+        },
+        onPullProgress: listener => {
+            progress = listener
+            return () => progress = undefined
+        },
+        pullLatest: (_id, request) => {
+            requested = request
+            return new Promise(resolve => finish = resolve)
+        },
+        cancelPull: async () => {
+            cancelled++
+            return true
+        },
+    })
+    const { container, root, dispose } = render(api)
+    await flush(root)
+    const readsBefore = graphReads
+    const pull = button(container, "Pull latest")
+    expect(pull.disabled).toBe(false)
+    expect(pull.getAttribute("title")).toBe("Fetch and synchronize open stacks")
+    click(pull)
+    await flush(root)
+    expect(requested).toEqual({ branches: [main.preferredRef, feature.preferredRef], remote: "origin" })
+    expect(container.querySelector(".masthead .pull-latest")).toBeNull()
+    expect(container.querySelector(".masthead .pull-progress")?.textContent).toContain("Fetching…")
+    expect(container.querySelector<HTMLButtonElement>('.masthead [aria-label="Undo last operation"]')?.disabled).toBe(true)
+    progress!({ repositoryId: repository.id, message: "Updating feature/workbench…", completed: 1, total: 2 })
+    await flush(root)
+    expect(container.querySelector(".masthead .pull-progress")?.textContent).toContain("Updating feature/workbench…")
+    click(button(container, "Cancel pull"))
+    await flush(root)
+    expect(cancelled).toBe(1)
+    expect(container.querySelector(".masthead .pull-progress")?.textContent).toContain("Cancelling")
+    finish!({
+        ok: true,
+        result: {
+            type: "result",
+            command: "pull",
+            status: "updated",
+            message: "Pull complete: 1 updated, 1 need resolution.",
+            fetches: [{ remote: "origin", status: "fetched" }],
+            stacks: [{ id: "a", branches: ["main"], status: "updated", message: undefined }, {
+                id: "b",
+                branches: ["main", "feature/workbench"],
+                status: "needs-resolution",
+                message: "1 commit conflict deferred for inline resolution.",
+                conflicts: 1,
+            }],
+            operation: { id: "op", timestamp: "2026-09-20T00:00:00Z", kind: "pull.latest", summary: "Pull latest", affectedRefs: [], affectedWorktrees: [] },
+        },
+    })
+    await flush(root)
+    expect(graphReads).toBeGreaterThan(readsBefore)
+    const outcome = container.querySelector(".pull-outcome")!
+    expect(outcome.querySelector(".pull-summary")?.textContent).toBe("Pull complete: 1 updated, 1 need resolution.")
+    expect(outcome.querySelector(".pull-counts")?.textContent).toBe("1 updated · 1 needs resolution")
+    const stacks = [...outcome.querySelectorAll<HTMLDetailsElement>(".pull-stack")]
+    expect(stacks.map(stack => stack.querySelector(".pull-status")?.textContent)).toEqual(["Updated", "Needs resolution"])
+    expect(stacks[1].open).toBe(true)
+    expect(stacks[1].textContent).toContain("1 commit conflict deferred")
+    expect(container.querySelector(".masthead .pull-latest")).not.toBeNull()
+    click(button(outcome as HTMLElement, "Resolve in feature/workbench"))
+    await flush(root)
+    expect(container.querySelector(".pull-outcome")).toBeNull()
+    expect(document.activeElement?.getAttribute("data-column-id")).toBe(feature.id)
+    dispose()
+})
+
+test("an uneventful Pull latest confirms in passing without a dialog", async () => {
+    const repository = repositoryInfo("D:\Source\quiet-pull")
+    const graph = branchGraph(repository.id)
+    const api = fakeWorkbench({
+        getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
+        readBranchGraph: async () => ({ ok: true, graph }),
+        pullLatest: async () => ({
+            ok: true,
+            result: {
+                type: "result",
+                command: "pull",
+                status: "updated",
+                message: "Pull complete: 1 updated, 1 already current.",
+                fetches: [{ remote: "origin", status: "fetched" }],
+                stacks: [{ id: "a", branches: ["main"], status: "updated" }, { id: "b", branches: ["main", "feature/workbench"], status: "current" }],
+            },
+        }),
+    })
+    const { container, root, dispose } = render(api)
+    await flush(root)
+    click(button(container, "Pull latest"))
+    await flush(root)
+    expect(container.querySelector(".pull-outcome")).toBeNull()
+    expect(container.querySelector(".notice:not([hidden])")?.textContent).toContain("Pull complete: 1 updated, 1 already current.")
+    dispose()
+})
+
+test("Pull latest is disabled without remotes and explains why", async () => {
+    const repository = repositoryInfo("D:\Source\no-remotes")
+    const graph = { ...branchGraph(repository.id), availableRemotes: [], selectedRemote: undefined }
+    const api = fakeWorkbench({
+        getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
+        readBranchGraph: async () => ({ ok: true, graph }),
+    })
+    const { container, root, dispose } = render(api)
+    await flush(root)
+    const pull = button(container, "Pull latest")
+    expect(pull.disabled).toBe(true)
+    expect(pull.getAttribute("title")).toBe("Add a remote to pull.")
+    dispose()
+})
+
 test("retains worktree columns and restores collapse in place across restart", async () => {
     const scenario = inspectionScenario()
     const initial = await scenario.api.getState()

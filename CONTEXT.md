@@ -101,7 +101,7 @@ The ordered branch chain from an integration target through the branch shown in 
 _Avoid_: Active branch
 
 **Pull latest**:
-A repository-scoped fetch followed by local synchronization of every open Active Stack against frozen fetched Base Branch tips. Independent stacks may complete separately; it never publishes or touches unopened branches.
+A repository-scoped fetch and local synchronization of every open Active Stack, including incoming changes from each branch's upstream and its Base Branch. Its scope includes intermediate branches without their own columns, excludes branches outside all open stacks, and never includes publication.
 _Avoid_: Git pull
 
 **Publish**:

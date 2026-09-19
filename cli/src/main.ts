@@ -4,6 +4,7 @@ import { ENGINE_VERSION, type EngineMessage, type ErrorEvent, ExitCode } from "@
 import { type WorktreeRequest, WorktreeRequestSchema } from "@git-workbench/shared"
 import { type LocalRequest, LocalRequestSchema } from "@git-workbench/shared"
 import { type ConflictRequest, ConflictRequestSchema } from "@git-workbench/shared"
+import { type PullRequest, PullRequestSchema } from "@git-workbench/shared"
 import { readFileSync, statSync } from "node:fs"
 import { executeOperationCommand, type JournalPhase, OperationCancelledError, type OperationCommand, OperationRuntimeError } from "./operation-runtime.ts"
 
@@ -14,7 +15,13 @@ function write(message: string | EngineMessage, json: boolean) {
         console.log(JSON.stringify(message))
     else if (typeof message === "string")
         console.log(message)
-    else if ("message" in message)
+    else if (message.type == "result" && message.command == "pull") {
+        console.log(message.message)
+        for (const fetch of message.fetches)
+            console.log(`fetch ${fetch.remote} ${fetch.status}${fetch.message ? ` ${fetch.message}` : ""}`)
+        for (const stack of message.stacks)
+            console.log(`${stack.status} ${stack.branches.join(" > ")}${stack.message ? ` ${stack.message}` : ""}`)
+    } else if ("message" in message)
         console.log(message.message)
     else if (message.command == "history") {
         if (message.entries.length == 0)
@@ -235,6 +242,7 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
     let request: WorktreeRequest | undefined
     let localRequest: LocalRequest | undefined
     let conflictRequest: ConflictRequest | undefined
+    let pullRequest: PullRequest | undefined
     let token: string | undefined
     let worktreeBasename: string | undefined
 
@@ -250,6 +258,14 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
                 conflictRequest = ConflictRequestSchema.parse(JSON.parse(argument == "--request-file" ? readFileSync(value, "utf8") : value))
             } catch {
                 return invalidOperationArgument(command, json, "Provide a valid conflict request.", "--request")
+            }
+            continue
+        }
+        if (command == "pull" && argument == "--request") {
+            try {
+                pullRequest = PullRequestSchema.parse(JSON.parse(commandArguments[++index]!))
+            } catch {
+                return invalidOperationArgument(command, json, "Provide a valid pull request JSON object.", "--request")
             }
             continue
         }
@@ -308,7 +324,8 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
             continue
         }
         if (
-            (command == "test-mutation" || command == "worktree" || command == "local" || command == "conflict" || command == "undo" || command == "redo")
+            (command == "test-mutation" || command == "worktree" || command == "local" || command == "conflict" || command == "pull" || command == "undo"
+                || command == "redo")
             && argument == "--crash-after"
             && process.env.WORKBENCH_ENABLE_TEST_COMMANDS == "1"
         ) {
@@ -336,6 +353,8 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
         return invalidOperationArgument(command, json, "A value is required for --value.", "--value")
     if (command == "conflict" && !conflictRequest)
         return invalidOperationArgument(command, json, "A conflict request is required.", "--request")
+    if (command == "pull" && !pullRequest)
+        return invalidOperationArgument(command, json, "A pull request is required.", "--request")
     if (command == "worktree" && !request)
         return invalidOperationArgument(command, json, "A worktree request is required.", "--request")
     if ((command == "local" || command == "local-preview") && !localRequest)
@@ -345,7 +364,11 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
         ok: true,
         json,
         gitPath,
-        command: command == "conflict" ? { command, request: conflictRequest!, noWait, crashAfter } : command == "local" || command == "local-preview"
+        command: command == "conflict"
+            ? { command, request: conflictRequest!, noWait, crashAfter }
+            : command == "pull"
+            ? { command, request: pullRequest!, noWait, crashAfter, graphOptions: () => ({ authorIdentities: { secondary: [] }, remotePatterns: [] }) }
+            : command == "local" || command == "local-preview"
             ? { command, request: localRequest!, token, noWait, crashAfter }
             : command == "worktree"
             ? { command, request: request!, token, noWait, crashAfter }
@@ -380,7 +403,20 @@ async function runOperationCommand(command: OperationCommand["command"], command
     const cancellation = monitorCancellation()
     try {
         const settings = await readSettings(process.env.WORKBENCH_SETTINGS_PATH)
-        const command = "request" in parsed.command ? { ...parsed.command, branchPrefix: settings.virtualBranchPrefix } : parsed.command
+        const command = parsed.command.command == "pull"
+            ? {
+                ...parsed.command,
+                graphOptions: (repositoryId: string) => ({
+                    authorIdentities: settings.authorIdentities ?? { secondary: [] },
+                    selectedRemote: settings.repositories?.[repositoryId]?.selectedRemote,
+                    remotePatterns: settings.repositories?.[repositoryId]?.remotePatterns ?? [],
+                }),
+                progress: (message: string, completed: number, total: number) =>
+                    write({ type: "progress", command: "pull", completed, total, message }, parsed.json),
+            }
+            : "request" in parsed.command
+            ? { ...parsed.command, branchPrefix: settings.virtualBranchPrefix }
+            : parsed.command
         const result = await executeOperationCommand(command, process.cwd(), cancellation, parsed.gitPath ?? settings.gitPath)
         write(result, parsed.json)
         return "status" in result && result.status == "failed" ? ExitCode.failure : ExitCode.ok
@@ -420,7 +456,7 @@ else if (args[0] == "echo") {
     }
 } else if (
     args[0] == "local" || args[0] == "local-preview" || args[0] == "worktree" || args[0] == "undo" || args[0] == "redo" || args[0] == "history"
-    || args[0] == "recover" || args[0] == "conflict"
+    || args[0] == "recover" || args[0] == "conflict" || args[0] == "pull"
 ) {
     process.exitCode = await runOperationCommand(args[0], args.slice(1))
 } else if (args[0] == "test-mutation" && process.env.WORKBENCH_ENABLE_TEST_COMMANDS == "1")

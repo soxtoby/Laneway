@@ -5,6 +5,7 @@ import type { AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, B
 import { type WorktreeActionResult, type WorktreePreviewResult, WorktreeRequestSchema } from "@git-workbench/shared"
 import { CommitDraftSchema, type LocalActionResult, LocalRequestSchema } from "@git-workbench/shared"
 import { type ConflictActionResult, ConflictRequestSchema } from "@git-workbench/shared"
+import { type PullActionResult, type PullProgress, PullRequestSchema } from "@git-workbench/shared"
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron"
 import { mkdtemp, rm, rmdir, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -28,6 +29,8 @@ const workspace = new WorkspaceManager(repositories, process.env.WORKBENCH_WORKS
 const commitDrafts = new CommitDrafts(resolve(app.getPath("userData"), "commit-drafts.json"))
 const draftWorktrees = new Map<string, string>()
 const conflictInspections = new Map<string, ConflictActionResult>()
+// One Pull latest per repository; the engine's cooperative cancel line stops at the next safe boundary.
+const activePulls = new Map<string, { cancel(): void }>()
 
 const cancelledEntry = () =>
     ({
@@ -120,6 +123,53 @@ function registerHandlers() {
                 await rmdir(requestDirectory)
             }
         }
+    })
+    ipcMain.handle("pull:latest", async (event, repositoryId: unknown, value: unknown): Promise<PullActionResult> => {
+        try {
+            if (typeof repositoryId != "string")
+                throw new Error("Choose a repository.")
+            if (activePulls.has(repositoryId))
+                throw new Error("Pull latest is already running for this repository.")
+            const request = PullRequestSchema.parse(value)
+            const repository = repositories.worktreeRepository(repositoryId)
+            const sender = event.sender
+            const engine = runEngineCommand({
+                enginePath,
+                cwd: repository.descriptor.mainWorktree,
+                args: ["pull", "--request", JSON.stringify(request), "--git-path", repository.descriptor.git.path],
+                onMessage: message => {
+                    if (message.type == "progress" && !sender.isDestroyed()) {
+                        const progress: PullProgress = { repositoryId, message: message.message, completed: message.completed, total: message.total }
+                        sender.send("pull:progress", progress)
+                    }
+                },
+            })
+            activePulls.set(repositoryId, engine)
+            try {
+                const output = await engine.result
+                const result = output.messages.find(message => message.type == "result" && message.command == "pull")
+                if (!result || result.type != "result" || result.command != "pull") {
+                    const cancelled = output.messages.find(message => message.type == "cancelled")
+                    if (cancelled) {
+                        return {
+                            ok: true,
+                            result: { type: "result", command: "pull", status: "cancelled", message: cancelled.message, fetches: [], stacks: [] },
+                        }
+                    }
+                    throw new Error(output.messages.find(message => message.type == "error")?.message ?? output.diagnostics ?? "Pull latest failed.")
+                }
+                return { ok: true, result }
+            } finally {
+                activePulls.delete(repositoryId)
+            }
+        } catch (error) {
+            return { ok: false, error: { message: error instanceof Error ? error.message : String(error) } }
+        }
+    })
+    ipcMain.handle("pull:cancel", (_event, repositoryId: unknown) => {
+        const active = typeof repositoryId == "string" ? activePulls.get(repositoryId) : undefined
+        active?.cancel()
+        return Boolean(active)
     })
     ipcMain.handle("local:operation", async (_event, repositoryId: unknown, value: unknown, token: unknown): Promise<LocalActionResult> => {
         let requestDirectory: string | undefined
