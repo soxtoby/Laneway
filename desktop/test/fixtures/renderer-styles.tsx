@@ -334,7 +334,7 @@ async function checkRenderer() {
         const result = await readDiff(...args)
         return result.ok && args[2].path == "other.txt" ? { ...result, page: { ...result.page, lines: largeLines } } : result
     }
-    const commitFiles = [...document.querySelectorAll<HTMLButtonElement>(".inspect-commit .change-file > button")]
+    const commitFiles = [...document.querySelectorAll<HTMLButtonElement>(".inspect-commit .change-file > button:not(.composition-handle)")]
     commitFiles[1].click()
     await settle()
     const firstFile = commitFiles[0].closest<HTMLElement>(".file-inspection")!

@@ -878,7 +878,7 @@ describe("Working Changes inspection", () => {
         release(file)
         await flush(root)
         expect(file.getAttribute("aria-expanded")).toBe("true")
-        expect(container.querySelector("[aria-label='Select file src/file.txt']")).toBeNull()
+        expect(Boolean(container.querySelector("[aria-label='Select file src/file.txt']"))).toBe(true)
         click(button(container, "Working Changes"))
         await flush(root)
         const line = diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!
@@ -1149,7 +1149,7 @@ describe("Working Changes inspection", () => {
         click(button(container, "Staged"))
         await flush(root)
         expect(diffRoot(container).querySelector(".diff-line.selected")).toBeNull()
-        expect(diffRoot(container).querySelector("[aria-label='Select deletion line 1']")).toBeNull()
+        expect(Boolean(diffRoot(container).querySelector("[aria-label='Select deletion line 1']"))).toBe(true)
         click(button(container, "Working Changes"))
         await flush(root)
         click(diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select hunk']")!)

@@ -408,7 +408,7 @@ const composerStyle = css({
         font: "inherit",
     },
     "& > textarea": { resize: "vertical" },
-    "& button": {
+    "& button:not(.composition-handle)": {
         border: "1px solid var(--line-strong)",
         borderRadius: "4px",
         background: "var(--control)",

@@ -554,6 +554,7 @@ export const FileDiffRequestSchema = z.object({
     inventoryVersion: z.string().optional(),
     expectedVersion: z.string().optional(),
 })
+export * from "./composition"
 export * from "./file-history"
 export * from "./local-operations"
 export * from "./worktrees"

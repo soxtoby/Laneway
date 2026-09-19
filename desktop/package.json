@@ -9,6 +9,7 @@
         "build": "electron-vite build"
     },
     "dependencies": {
+        "@atlaskit/pragmatic-drag-and-drop": "^3.1.0",
         "@git-workbench/git": "workspace:*",
         "@git-workbench/settings": "workspace:*",
         "@git-workbench/shared": "workspace:*",

@@ -40,7 +40,9 @@ test("rebuilt desktop commits through production IPC and restores drafts across 
         const build = Bun.spawn([process.execPath, "run", "--cwd", "desktop", "build"], { cwd: root, stdout: "pipe", stderr: "pipe" })
         const diagnostics = await new Response(build.stderr).text()
         expect(await build.exited, diagnostics).toBe(0)
-        for (const phase of ["draft", "commit"]) {
+        for (const phase of ["draft", "commit", "compose"]) {
+            if (phase == "compose")
+                await writeFile(join(directory, "repository", "file.txt"), "composed desktop change\n")
             const env: NodeJS.ProcessEnv = {
                 ...process.env,
                 WORKBENCH_ENGINE_PATH: join(root, "cli/bin/workbench-engine.exe"),
@@ -67,10 +69,10 @@ test("rebuilt desktop commits through production IPC and restores drafts across 
             })
             const result = await readFile(join(directory, `${phase}.json`), "utf8").catch(() => errors)
             expect(exitCode, result).toBe(0)
-            expect(JSON.parse(result)).toEqual(phase == "draft" ? { draft: true } : { committed: true })
+            expect(JSON.parse(result)).toEqual(phase == "draft" ? { draft: true } : phase == "compose" ? { composed: true } : { committed: true })
         }
-        expect(git("log", "-1", "--format=%s")).toBe("Persistent desktop commit")
-        expect(git("show", "HEAD:file.txt")).toBe("desktop commit")
+        expect(git("log", "-1", "--format=%s")).toBe("Composed in desktop")
+        expect(git("show", "HEAD:file.txt")).toBe("composed desktop change")
         expect(git("status", "--porcelain")).toBe("")
         expect(git("branch", "--show-current")).toBe("main")
         expect(git("branch", "--list", "alias", "renamed")).toBe("")

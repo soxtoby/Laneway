@@ -19,6 +19,15 @@ app.on("browser-window-created", (_event, window) => {
                     throw new Error('UI timeout: ' + document.body.innerText);
                 };
                 const button = text => [...document.querySelectorAll('button')].find(element => element.textContent.trim() == text && !element.disabled);
+                if (${JSON.stringify(phase)} == 'compose') {
+                    (await wait(() => document.querySelector('[aria-label="Move or copy file.txt"]'))).click();
+                    (await wait(() => document.querySelector('[aria-label="New commit on main"]'))).click();
+                    const message = await wait(() => document.querySelector('[aria-label="New commit message"]'));
+                    message.value = 'Composed in desktop'; message.dispatchEvent(new Event('input', { bubbles: true }));
+                    (await wait(() => button('Review transfer'))).click();
+                    await wait(() => !document.querySelector('[aria-label="New commit message"]') && document.body.innerText.includes('No Working Changes'));
+                    return { composed: true };
+                }
                 (await wait(() => button('Commit…'))).click();
                 const title = await wait(() => document.querySelector('[aria-label="Commit title"]'));
                 if (${JSON.stringify(phase)} == 'draft') {

@@ -7,9 +7,15 @@ import { type ConflictSides, MergeResolution } from "./merge-resolution"
 interface Options {
     api: Window["workbench"]
     changed(repositoryId: string): Promise<void>
+    update(): Promise<AbortSignal>
 }
 export function createConflictResolution(options: Options) {
+    const requested = new Map<string, { subject: string; nonce: number }>()
     return {
+        open(repository: string, subject: string) {
+            requested.set(repository, { subject, nonce: (requested.get(repository)?.nonce ?? 0) + 1 })
+            void options.update()
+        },
         controls(repository: string, column: BranchGraphBranchNode, path?: string) {
             return column.unresolved
                 ? (
@@ -20,6 +26,7 @@ export function createConflictResolution(options: Options) {
                         branch={column}
                         path={path}
                         changed={() => options.changed(repository)}
+                        open={requested.get(repository)}
                     />
                 )
                 : null
@@ -29,11 +36,19 @@ export function createConflictResolution(options: Options) {
 
 function ConflictControls(
     handle: Handle<
-        { api: Window["workbench"]; repository: string; branch: BranchGraphBranchNode; path?: string; changed(): Promise<void> }
+        {
+            api: Window["workbench"]
+            repository: string
+            branch: BranchGraphBranchNode
+            path?: string
+            changed(): Promise<void>
+            open?: { subject: string; nonce: number }
+        }
     >,
 ) {
     let result: ConflictResult | undefined
     let error = "", busy = false, requested = "", selected: string | undefined
+    let opened = 0
     async function run(request: ConflictRequest) {
         busy = true
         error = ""
@@ -55,6 +70,10 @@ function ConflictControls(
     return () => {
         const props = handle.props
         const ids = props.branch.unresolved?.subjects ?? []
+        if (props.open && opened != props.open.nonce && ids.includes(props.open.subject)) {
+            opened = props.open.nonce
+            selected = props.open.subject
+        }
         const next = JSON.stringify(props.branch.unresolved)
         if (requested != next) {
             requested = next

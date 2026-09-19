@@ -259,9 +259,12 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
                 return invalidOperationArgument(command, json, "Provide a new basename for the restored worktree.", "--worktree-basename")
             continue
         }
-        if ((command == "local" || command == "local-preview") && argument == "--request") {
+        if ((command == "local" || command == "local-preview") && (argument == "--request" || argument == "--request-file")) {
             try {
-                localRequest = LocalRequestSchema.parse(JSON.parse(commandArguments[++index]!))
+                const value = commandArguments[++index]!
+                if (argument == "--request-file" && statSync(value).size > 8_000_000)
+                    throw new Error("Local request is too large.")
+                localRequest = LocalRequestSchema.parse(JSON.parse(argument == "--request-file" ? readFileSync(value, "utf8") : value))
             } catch {
                 return invalidOperationArgument(command, json, "Provide a valid local operation request.", "--request")
             }

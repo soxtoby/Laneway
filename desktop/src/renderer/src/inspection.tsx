@@ -1,9 +1,10 @@
-import type { BranchGraph, BranchGraphBranchNode, BranchGraphVirtualBranch, BranchHistoryPage, ChangedFile, ChangeSelection, ChangesInventory, DiffLayout, DiffSource, DiffView, FileDiffPage } from "@git-workbench/shared"
+import type { BranchGraph, BranchGraphBranchNode, BranchGraphVirtualBranch, BranchHistoryPage, ChangedFile, ChangeSelection, ChangesInventory, CompositionSource, DiffLayout, DiffSource, DiffView, FileDiffPage } from "@git-workbench/shared"
 import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 import * as accordion from "remix/ui/accordion/primitives"
 import { AuxiliaryColumns } from "./auxiliary-columns"
 import { type BranchComparisonState, createBranchComparisons } from "./branch-comparison"
 import { CommitComposer } from "./commit-composer"
+import { compositionStyles, createComposition } from "./composition"
 import { ConflictResolution } from "./conflict-resolution"
 import { DiffLines } from "./diff"
 import { DiffControls } from "./diff-controls"
@@ -22,6 +23,7 @@ interface Options {
     localChanged?(repositoryId: string): Promise<void>
     localBusyChanged?(busy: boolean): void
     createBranchAt?(repositoryId: string, objectId: string): void
+    resolveWorkingConflict?(repositoryId: string, subject: string): void
 }
 interface FileState {
     inventory?: ChangesInventory
@@ -73,6 +75,7 @@ interface ColumnState {
     filter: string
     filterOpen: boolean
     conflictsOnly?: boolean
+    selectingConflicts?: boolean
     filterInput?: HTMLInputElement
     filterButton?: HTMLButtonElement
     status: string
@@ -117,6 +120,65 @@ export function createInspection(options: Options) {
     const update = () => {
         if (!options.signal.aborted)
             void options.update()
+    }
+    const composition = createComposition({
+        ...options,
+        busyChanged: options.localBusyChanged,
+        async changed(repositoryId) {
+            for (const state of [...columns.values(), ...historyHosts.values()]) {
+                if (state.repositoryId == repositoryId) {
+                    state.wholeFiles.clear()
+                    for (const diff of state.diffs.values())
+                        diff.selection = undefined
+                }
+            }
+            await options.localChanged?.(repositoryId)
+            refresh()
+        },
+        async resolve(repositoryId) {
+            const result = await options.api.conflictOperation(repositoryId, { action: "list" })
+            const first = result.ok ? result.result.conflicts.find(c => !c.suspended) : undefined
+            if (first?.kind == "working") {
+                options.resolveWorkingConflict?.(repositoryId, first.id)
+                return
+            }
+            const state = [...columns.values()].find(s => s.repositoryId == repositoryId && s.column.kind == "branch" && s.column.unresolved)
+            if (state) {
+                state.conflictsOnly = true
+                if (state.column.kind == "branch") {
+                    const branch = state.graph.branches.find(b => first && b.unresolved?.subjects.includes(first.id)) ?? state.column
+                    await history(state, branch)
+                    const commit = [...state.history.values()].flatMap(h => h.page?.commits ?? []).find(c => first ? c.conflictId == first.id : c.conflictId)
+                    if (commit)
+                        await readFiles(state, commit.objectId, { kind: "commit", objectId: commit.objectId })
+                }
+                update()
+            }
+        },
+    })
+    function transferSource(state: ColumnState, source: DiffSource): CompositionSource | undefined {
+        if (source.kind == "working")
+            return source
+        if (source.kind == "commit")
+            return { ...source, branch: state.column.kind == "branch" ? state.column.preferredRef : undefined }
+    }
+    function fileTransfer(state: ColumnState, group: string, file: ChangedFile) {
+        const inventory = state.files.get(group)?.inventory
+        const source = inventory && transferSource(state, inventory.source)
+        if (!source || !inventory)
+            return null
+        const chosen = state.wholeFiles.has(`${group}:${file.path}`)
+            ? [...state.wholeFiles].filter(([id]) => id.startsWith(group + ":")).map(([, f]) => ({ path: f.path }))
+            : [{ path: file.path }]
+        return composition.source({
+            repositoryId: state.repositoryId,
+            selectedRemote: state.graph.selectedRemote,
+            source,
+            files: chosen,
+            inventoryVersion: inventory.version,
+            view: group == "working-staged" ? "staged" : group == "working-unstaged" ? "unstaged" : "combined",
+            label: chosen.length > 1 ? `${chosen.length} files` : file.path,
+        })
     }
     const refresh = () => {
         if (activeRepositoryId)
@@ -757,6 +819,20 @@ export function createInspection(options: Options) {
             : new Set([...state.diffs.values()].filter(diff => diff.group == group).map(diff => diff.path))
         return (
             <section class="change-file-list" aria-label={group.startsWith("working") ? "Working Changes files" : "Commit files"} mix={changeFileList}>
+                {!!resolution?.files.length && (
+                    <button
+                        type="button"
+                        mix={[
+                            changeFileListButton,
+                            on("click", () => {
+                                state.selectingConflicts = !state.selectingConflicts
+                                update()
+                            }),
+                        ]}
+                    >
+                        {state.selectingConflicts ? "Back to conflict resolution" : "Select changes outside conflicted lines"}
+                    </button>
+                )}
                 {files.error && (
                     <p role="alert" mix={changeFileListP}>
                         {files.error}{" "}
@@ -771,7 +847,7 @@ export function createInspection(options: Options) {
                     </p>
                 )}
                 <FileTree
-                    renderFile={resolution?.renderFile}
+                    renderFile={state.selectingConflicts ? undefined : resolution?.renderFile}
                     hideStagedBadge={group.startsWith("working-")}
                     actions={file => [{
                         label: "File history",
@@ -795,6 +871,7 @@ export function createInspection(options: Options) {
                         const diff = state.diffs.get(diffKey(group, file.path))
                         return (
                             <>
+                                {fileTransfer(state, group, file)}
                                 {diff && !state.breakout ? renderDiffControls(state, diff) : null}
                                 {stage && (
                                     <button
@@ -820,13 +897,18 @@ export function createInspection(options: Options) {
                         clearGroup(state, group, path)
                         update()
                     }}
-                    check={!group.startsWith("working-") && selectable(state, group)
+                    check={selectable(state, group)
                         ? file => {
                             const id = `${group}:${file.path}`
                             if (state.wholeFiles.has(id))
                                 state.wholeFiles.delete(id)
-                            else if (files.inventory)
+                            else if (files.inventory) {
+                                for (const id of state.wholeFiles.keys()) {
+                                    if (!id.startsWith(group + ":"))
+                                        state.wholeFiles.delete(id)
+                                }
                                 state.wholeFiles.set(id, { source: files.inventory.source, path: file.path, version: files.inventory.version })
+                            }
                             update()
                         }
                         : undefined}
@@ -951,27 +1033,6 @@ export function createInspection(options: Options) {
                                 {text}
                             </p>
                         ))}
-                        {page.file.oldPath && page.view == "combined" && page.selectable && (
-                            <label class="rename-selection" mix={renameSelection}>
-                                <input
-                                    type="checkbox"
-                                    checked={diff.selection?.rename ?? false}
-                                    mix={[
-                                        diffInspectorInput,
-                                        on("change", event => {
-                                            diff.selection = {
-                                                source: page.source,
-                                                path: page.file.path,
-                                                version: page.version,
-                                                lineIds: diff.selection?.lineIds ?? [],
-                                                rename: event.currentTarget.checked,
-                                            }
-                                            update()
-                                        }),
-                                    ]}
-                                />Select rename separately
-                            </label>
-                        )}
                         {page.lines.length == 0 && page.summary.length == 0 && (
                             <p class="inspection-muted" mix={inspectionMuted}>
                                 No net content difference in this view.
@@ -989,6 +1050,14 @@ export function createInspection(options: Options) {
                         />
                         {eligible && diff.selection && (
                             <div class="selection-summary" role="status" mix={selectionSummary}>
+                                {transferSource(state, page.source) && composition.source({
+                                    repositoryId: state.repositoryId,
+                                    selectedRemote: state.graph.selectedRemote,
+                                    source: transferSource(state, page.source)!,
+                                    files: [{ path: diff.path, version: page.version, lineIds: diff.selection.lineIds }],
+                                    view: diff.view == "staged" || diff.view == "unstaged" ? diff.view : "combined",
+                                    label: `${diff.selection.lineIds.length} lines in ${diff.path}`,
+                                })}
                                 {diff.selection.lineIds.length} lines selected{diff.selection.rename ? " · rename selected" : ""}
                                 <button
                                     type="button"
@@ -1208,7 +1277,8 @@ export function createInspection(options: Options) {
                 branch = graph.branches.find(item => item.id == nextId)
             }
             return (
-                <div class={`column-inspection ${state.filterOpen ? "filter-open" : ""}`} mix={columnInspection}>
+                <div class={`column-inspection ${state.filterOpen ? "filter-open" : ""}`} mix={[columnInspection, compositionStyles]}>
+                    {composition.status(repositoryId)}
                     {conflictControls}
                     {state.filterOpen && (
                         <div class="inspection-filters" mix={inspectionFilters}>
@@ -1253,7 +1323,11 @@ export function createInspection(options: Options) {
                         </div>
                     )}
                     {state.worktreePath && (
-                        <section class="working-changes" mix={workingChanges}>
+                        <section
+                            class="working-changes"
+                            mix={[workingChanges, composition.target(repositoryId, { kind: "working", worktreePath: state.worktreePath })]}
+                        >
+                            {composition.panel(repositoryId, { kind: "working", worktreePath: state.worktreePath })}
                             <CommitComposer
                                 key={state.worktreePath}
                                 api={options.api}
@@ -1329,14 +1403,48 @@ export function createInspection(options: Options) {
                         }}
                     >
                         <div class="stack-inspection" mix={accordion.root()}>
-                            {stack.map(branch => {
+                            {stack.map((branch, branchIndex) => {
                                 const current = state.history.get(branch.id)
                                 const columnBranch = branch.id == column.id
                                 return (
                                     <accordion.ItemContext key={branch.id} value={branch.id}>
                                         <section class="stack-branch" mix={[stackBranch, accordion.item()]}>
+                                            {branchIndex > 0 && !stack[branchIndex - 1].remoteOnly
+                                                && composition.seam(repositoryId, {
+                                                    kind: "seam",
+                                                    branch: stack[branchIndex - 1].preferredRef,
+                                                    parentId: branch.tip,
+                                                })}
+                                            {columnBranch && !branch.remoteOnly && (
+                                                <div
+                                                    class="composition-branch-target"
+                                                    mix={composition.target(repositoryId, { kind: "branch", branch: branch.preferredRef, tip: branch.tip })}
+                                                >
+                                                    {!branch.primary && composition.source({
+                                                        repositoryId,
+                                                        selectedRemote: graph.selectedRemote,
+                                                        source: { kind: "branch", branch: branch.preferredRef, tip: branch.tip },
+                                                        label: branch.name,
+                                                    })}
+                                                    {branch.name}
+                                                </div>
+                                            )}
+                                            {composition.panel(repositoryId, { kind: "branch", branch: branch.preferredRef, tip: branch.tip })}
                                             {!columnBranch && (
-                                                <h3 class="disclosure-heading" mix={disclosureHeading}>
+                                                <h3
+                                                    class="disclosure-heading composition-branch-heading"
+                                                    mix={[
+                                                        disclosureHeading,
+                                                        composition.target(repositoryId, { kind: "branch", branch: branch.preferredRef, tip: branch.tip }),
+                                                    ]}
+                                                >
+                                                    {!branch.remoteOnly && !branch.primary
+                                                        && composition.source({
+                                                            repositoryId,
+                                                            selectedRemote: graph.selectedRemote,
+                                                            source: { kind: "branch", branch: branch.preferredRef, tip: branch.tip },
+                                                            label: branch.name,
+                                                        })}
                                                     <button class="stack-heading" type="button" mix={[stackHeading, accordion.trigger()]}>
                                                         <span>{current?.open ? "▾" : "▸"} {branch.name}</span>
                                                         <span mix={stackHeadingStatus}>
@@ -1358,6 +1466,8 @@ export function createInspection(options: Options) {
                                                     </button>
                                                 </h3>
                                             )}
+                                            {!branch.remoteOnly
+                                                && composition.seam(repositoryId, { kind: "seam", branch: branch.preferredRef, parentId: branch.tip })}
                                             <div hidden={!columnBranch && !current?.open} mix={columnBranch ? [] : accordion.content()}>
                                                 {current?.open && (
                                                     <accordion.Context
@@ -1404,7 +1514,31 @@ export function createInspection(options: Options) {
                                                                             data-expanded={files?.open ? "true" : "false"}
                                                                             mix={[inspectCommit, accordion.item()]}
                                                                         >
-                                                                            <h4 class="disclosure-heading" mix={[disclosureHeading, commitStickyHeading]}>
+                                                                            <h4
+                                                                                class="disclosure-heading"
+                                                                                mix={[
+                                                                                    disclosureHeading,
+                                                                                    commitStickyHeading,
+                                                                                    composition.target(repositoryId, {
+                                                                                        kind: "commit",
+                                                                                        objectId: commit.objectId,
+                                                                                        branch: branch.preferredRef,
+                                                                                    }),
+                                                                                ]}
+                                                                            >
+                                                                                {composition.source({
+                                                                                    repositoryId,
+                                                                                    selectedRemote: graph.selectedRemote,
+                                                                                    source: {
+                                                                                        kind: "commit",
+                                                                                        objectId: commit.objectId,
+                                                                                        branch: branch.preferredRef,
+                                                                                        ...(files?.source.kind == "commit" && files.source.parentId
+                                                                                            ? { parentId: files.source.parentId }
+                                                                                            : {}),
+                                                                                    },
+                                                                                    label: commit.subject,
+                                                                                })}
                                                                                 <button
                                                                                     class="commit-heading"
                                                                                     type="button"
@@ -1492,6 +1626,11 @@ export function createInspection(options: Options) {
                                                                                     </button>
                                                                                 )}
                                                                             </h4>
+                                                                            {composition.panel(repositoryId, {
+                                                                                kind: "commit",
+                                                                                objectId: commit.objectId,
+                                                                                branch: branch.preferredRef,
+                                                                            })}
                                                                             <div hidden={!files?.open} mix={accordion.content()}>
                                                                                 {files?.open && (
                                                                                     <>
@@ -1549,6 +1688,14 @@ export function createInspection(options: Options) {
                                                                                 )}
                                                                             </div>
                                                                         </div>
+                                                                        {!branch.remoteOnly && !branch.primary && commit.parentIds[0]
+                                                                            && !(branch.base.status == "known" && branch.base.tip == commit.parentIds[0]
+                                                                                && branchIndex + 1 < stack.length)
+                                                                            && composition.seam(repositoryId, {
+                                                                                kind: "seam",
+                                                                                parentId: commit.parentIds[0],
+                                                                                branch: branch.preferredRef,
+                                                                            })}
                                                                     </accordion.ItemContext>
                                                                 )
                                                             })}

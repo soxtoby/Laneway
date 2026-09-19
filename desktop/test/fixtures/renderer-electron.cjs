@@ -15,6 +15,7 @@ app.whenReady().then(async () => {
         if (level >= 2) console.error(message)
     })
     await window.loadFile(path.join(directory, "index.html"))
+    window.webContents.executeJavaScript("window.addEventListener('unhandledrejection', event => console.error(event.reason?.stack || String(event.reason)))")
     const point = await window.webContents.executeJavaScript(`new Promise(resolve => {
         const timer = setInterval(() => {
             const button = document.querySelector('[aria-label="Filter files"]');
@@ -37,6 +38,8 @@ app.whenReady().then(async () => {
     })`)
     window.webContents.sendInputEvent({ type: "mouseMove", ...menuPoint })
     const result = await window.webContents.executeJavaScript("window.rendererChecks")
+    if (process.env.WORKBENCH_TEST_SCREENSHOT)
+        fs.writeFileSync(process.env.WORKBENCH_TEST_SCREENSHOT, (await window.webContents.capturePage()).toPNG())
     fs.writeFileSync(path.join(directory, "result.json"), JSON.stringify(result))
     app.quit()
 }).catch(error => {

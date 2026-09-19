@@ -238,7 +238,7 @@ describe("Working Changes and committed diff reads", () => {
             ]])
             expect(changed(staged.lines)).toHaveLength(2)
             expect(changed(unstaged.lines)).toEqual([["deletion", "old footer"], ["addition", "new footer"]])
-            expect(staged.selectable).toBe(false)
+            expect(staged.selectable).toBe(true)
             const untracked = await api.startReadFileDiff({ source, path: "untracked.txt" }).result
             expect(untracked.lines.some(line => line.text == "new\r")).toBe(true)
             expect(untracked.lines.some(line => line.kind == "notice")).toBe(true)

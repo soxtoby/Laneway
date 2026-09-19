@@ -4,6 +4,7 @@ import { createHash } from "node:crypto"
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path"
+import { mutateComposition, prepareComposition } from "./composition"
 import { applyStashConflict } from "./conflict-operations"
 import { captureWorktreeState, stateIdentity, type WorktreeState } from "./worktree-state"
 
@@ -40,6 +41,8 @@ export async function prepareLocal(
     request: LocalRequest,
     prefix: string,
 ): Promise<{ preview: LocalPreview; before: WorktreeState }> {
+    if (request.action == "compose")
+        return prepareComposition(repository, request)
     if (repository.descriptor.shallow || repository.descriptor.partial || repository.descriptor.sparse)
         throw new Error("Local mutations require a complete, non-sparse repository.")
     const worktrees = await readRegisteredWorktrees(repository)
@@ -137,7 +140,10 @@ export async function mutateLocal(
     before: WorktreeState,
     preview: LocalPreview,
     expectedRefs: Map<string, string | null>,
+    cancelled?: () => boolean,
 ): Promise<LocalResult> {
+    if (request.action == "compose")
+        return mutateComposition(repository, request, preview, expectedRefs, cancelled)
     const path = "path" in request && request.path ? request.path : repository.descriptor.mainWorktree
     const data = await metadata(repository)
     const result: LocalResult = { type: "result", command: "local", status: "performed" }

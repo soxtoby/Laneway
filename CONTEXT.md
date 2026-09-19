@@ -161,7 +161,7 @@ The uncommitted, non-ignored changes belonging to one worktree. Before checkout 
 _Avoid_: Staged changes, unstaged changes
 
 **Change Selection**:
-A file, hunk, line, or fragment chosen from exact Working Changes or committed content for a later Workbench Operation. Hunk, line, and fragment selection belongs to one visible file diff; Workbench does not expand it to paired lines, and a source-content change invalidates it instead of remapping it. Text derived by a custom diff program cannot be selected.
+A selection of files, hunks, or complete lines from exact Working Changes or committed content for a later Workbench Operation. Within-file selection belongs to one visible file diff, never automatically includes paired lines, and becomes invalid when its source content changes; partial-line fragments and text derived by a custom diff program are not selectable.
 _Avoid_: Staging, highlighted text
 
 **Historical Edit**:

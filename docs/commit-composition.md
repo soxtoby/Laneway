@@ -1,0 +1,44 @@
+# Commit composition
+
+Desired behavior for SOX-140, settled through the design interview. Implementation authorized after the interview. Pointer interactions use Atlassian Pragmatic Drag and Drop, with equivalent M/C/Enter keyboard actions.
+
+## Accepted decisions
+
+- Transfer selected files, hunks, and complete lines. No partial-line selection, computed edit chips, split editor, or intermediate-content editor. For changes within one line, copy the change and then adjust the file through Historical Edit.
+- Selected changes can target explicit Working Changes, eligible commits, or new-commit seams. Branch rows accept whole commits or branches, not selected file content.
+- Dropping a commit onto a branch moves that commit onto the destination; Ctrl-drag copies it. Moving a commit across branches replays source descendants without that commit on their existing branches, appends the selected commit to the destination tip, and restacks destination-dependent branches. Only the selected commit changes branches.
+- Dragging a branch onto another branch changes its base. Descendant branches follow by default, including branches without open columns. Identify every affected branch; offer an explicit alternative to move only the dragged branch and leave descendants on their existing history. Branches below the dragged branch remain in place.
+- Direct history edits target commits belonging to an editable branch in the focused Active Stack. Exclude merge commits, history outside the editable stack, remote-only history, and commits reachable from Primary Branch. Adding a commit atop Primary remains allowed. A commit inherited by dependent branches remains editable: editing it restacks all dependent branches, including those without open columns.
+- Copying a change already present at the destination reports "Already present" and leaves history unchanged. This includes copying forward onto a commit that already inherits the change. Moving the change forward, followed by Historical Edit where needed, is the applicable workflow instead.
+- Transfers into dirty Working Changes combine with existing edits where clean and use the agreed conflict prompt otherwise. Preserve unrelated edits and their staged/unstaged state; incoming changes arrive unstaged.
+- Published commits remain editable locally. Identify affected published branches that will require force-with-lease on the next Publish; composition itself makes no remote changes.
+- Transfers use the exact displayed source change. If a file was staged from 30 to 60 and later edited to 90, its staged diff transfers 30 to 60 and its unstaged diff transfers 60 to 90. Preserve remaining edits and staging; reconciliation conflicts use the agreed prompt.
+- Dropping selected changes onto a new-commit seam opens an inline message field. Require a nonblank message before executing the transfer; cancelling leaves the source untouched.
+- Transferring changes into an existing commit preserves its message. Message editing is a separate explicit action, not a prompt on every transfer.
+- Dragging a file row transfers its changes relative to the displayed source base, not an unconditional replacement of the destination file. Whole-file additions and deletions transfer as such; binary changes use the conflict flow when destination content differs.
+- Multiple files from one commit or Working Changes may transfer together as one undoable operation. Hunk/line selection stays within one file. Selections from different commits require separate transfers.
+- Moves replay the requested changes even when later commits overlap them. Prompt on conflicts and allow resolution now or later. Do not manufacture compensating changes to force the original final tree; final-tree conservation is not a blanket invariant for same-stack moves.
+- Protected Primary Branch history and remote-only commits may be copy sources, but not move sources that rewrite them. Copying changes from a merge commit requires an explicitly selected parent defining the diff.
+- Moving the last commit away from a branch leaves the branch pointing at its base and retains its column. Branch deletion remains explicit.
+- Binary files, symlinks, and submodule changes transfer only as whole-file changes. A rename with text edits transfers as one complete change; separating the rename from its content edits is deferred.
+- Remove descendant commits made empty by replay as well as an emptied source commit. Identify every removed commit before execution; retain branch names even when their tips collapse onto the same commit.
+- A partly duplicated copy skips changes already present and applies the remaining changes, reporting what was skipped. A wholly duplicated copy makes no mutation or undo entry.
+- Moving or copying a whole commit preserves its original author. Adding changes to an existing commit preserves that commit's author. A new commit composed from selected changes uses the user's configured author identity. Rewritten commits use the current user as committer.
+- At a boundary between stacked branches, the visible branch marker separates insertion seams. Dropping above or beneath that marker determines which branch owns the new commit; no separate branch-choice prompt is needed. The preview identifies the owning branch and affected descendants.
+- Transfers into or out of a Conflicted Commit are allowed when they do not interfere with its existing conflicted lines. Do not disable the whole commit merely because part of it is unresolved. Preserve existing conflict tracking and resolution progress for unaffected regions; new conflicts use the agreed prompt.
+- The same rule applies to conflicted Working Changes: allow unrelated transfers, including clean changes elsewhere in a conflicted text file. Block transfers that alter or remove existing unresolved regions, preserving their saved resolution progress. For binary or structural conflicts, the protected region is the entire conflicted file/path.
+- Moving the last change out of a source commit removes the empty commit and replays descendants. Identify that removal before execution. Copying does not remove the source commit.
+- If a move would conflict, show predicted conflicts before mutation. Offer Cancel, Continue and resolve now, or Continue and resolve later. Cancel changes nothing; both continuation choices create the same durable unresolved result, with resolve-now opening the first conflict.
+- Conflict recovery uses the current inline SOX-136 workflow. The older issue's separate resolution column and AI action do not describe the current V1 contract.
+
+## Related scope
+
+- Historical Edit details remain owned by SOX-139; copying and later editing are separate user actions.
+
+## Implementation notes
+
+- The shared `compose` request uses the existing local preview/execution IPC and operation journal. Large selections travel through request files, avoiding Windows command-line limits.
+- Drag grips use Atlassian Pragmatic Drag and Drop. M/C selects move/copy, arrow keys choose a visible destination, Enter confirms, and Escape cancels. New-commit messages and conflict approval stay inline.
+- Commit hooks run against isolated proposed checkouts with repository configuration and filters. Hook/signing failures leave source refs and files untouched; hook-modified content is retained in the checkout named by the error for review and retry.
+- Git operation/index conflicts and unsupported merge-history rewrites are rejected before mutation. Deferred Workbench conflicts remain usable outside their protected regions.
+- Real-Git regression coverage includes branch-boundary ownership, closed descendants, duplicate copies, author/staging preservation, conflict candidates, undo/redo, stale previews, cancellation, hooks/signing/filters, and journal recovery. Chromium tests cover Pragmatic bindings and keyboard parity under production CSP; a rebuilt Electron test composes through production IPC.

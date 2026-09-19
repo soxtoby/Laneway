@@ -52,7 +52,7 @@ export function inspectionScenario() {
                 source: request.source,
                 file: files.find(file => file.path == request.path)!,
                 view: request.view ?? "combined",
-                selectable: !request.view || request.view == "combined",
+                selectable: !request.view || ["combined", "staged", "unstaged"].includes(request.view),
             },
         }),
         readBranchHistory: async () => ({

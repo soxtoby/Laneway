@@ -17,6 +17,7 @@ interface ChangesSnapshot {
     cwd: string
     headId: string
     indexPath?: string
+    indexEntries?: string
     attributes: Map<string, string>
 }
 
@@ -164,24 +165,26 @@ async function readSnapshot(descriptor: RepositoryDescriptor, reader: Reader, re
         const headBefore = await head(reader, cwd)
         const status = await workingStatus(reader, cwd, request.includeIgnored)
         const files = parseStatus(status)
-        const [headAfter, attributes, stamps, indexPath] = await Promise.all([
+        const [headAfter, attributes, stamps, indexPath, indexEntries] = await Promise.all([
             head(reader, cwd),
             readAttributes(reader, cwd, request.source, files),
             Promise.all(files.filter(file => !file.ignored).map(file => stamp(resolve(cwd, file.path)))),
             reader.run(cwd, ["rev-parse", "--path-format=absolute", "--git-path", "index"]),
+            reader.run(cwd, ["ls-files", "--stage", "-z"]),
         ])
         if (headBefore != headAfter)
             throw stale()
         return {
             inventory: {
                 source: request.source,
-                version: hash(headBefore + status + JSON.stringify(stamps) + JSON.stringify([...attributes])),
+                version: hash(headBefore + status + JSON.stringify(stamps) + JSON.stringify([...attributes]) + indexEntries),
                 parents: [],
                 files,
             },
             cwd,
             headId: headBefore,
             indexPath: indexPath.trim(),
+            indexEntries,
             attributes,
         }
     }
@@ -332,7 +335,7 @@ async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, reques
     if (before && (before.headId != headId || before.attributes != attributes))
         throw stale()
     const evidence = source.kind == "working"
-        ? await Promise.all([snapshot.indexPath!, file.path, ...(file.oldPath ? [file.oldPath] : [])].map(path => stamp(resolve(cwd, path))))
+        ? await Promise.all([snapshot.indexEntries, ...[file.path, ...(file.oldPath ? [file.oldPath] : [])].map(path => stamp(resolve(cwd, path)))])
         : undefined
     const collector = patchCollector(request.offset ?? 0, Boolean(stage))
     const summary = collector.summary
@@ -342,7 +345,9 @@ async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, reques
         attrs.set(values[i + 1], values[i + 2])
     const custom = attrs.get("diff") && !["unspecified", "set"].includes(attrs.get("diff")!)
     const transformed = ["filter", "working-tree-encoding"].some(name => attrs.has(name) && !["unspecified", "unset"].includes(attrs.get(name)!))
-    let selectable = source.kind != "comparison" && source.kind != "branches" && view == "combined" && !file.conflicted
+    let selectable = source.kind != "comparison" && source.kind != "branches" && ["combined", "staged", "unstaged"].includes(view) && !file.conflicted
+        && !file.oldPath
+        && ![file.oldMode, file.newMode].some(mode => mode == "120000" || mode == "160000")
     if (file.oldMode != file.newMode && file.oldMode && file.newMode)
         summary.push(describeModeChange(file.oldMode, file.newMode))
     if (file.oldPath)

@@ -122,18 +122,25 @@ function registerHandlers() {
         }
     })
     ipcMain.handle("local:operation", async (_event, repositoryId: unknown, value: unknown, token: unknown): Promise<LocalActionResult> => {
+        let requestDirectory: string | undefined
         try {
             if (typeof repositoryId != "string" || (token !== undefined && typeof token != "string"))
                 throw new Error("Choose a repository operation.")
             const request = LocalRequestSchema.parse(value)
             const repository = repositories.worktreeRepository(repositoryId)
+            let requestArgs = ["--request", JSON.stringify(request)]
+            if (request.action == "compose") {
+                requestDirectory = await mkdtemp(join(tmpdir(), "workbench-composition-request-"))
+                const requestPath = join(requestDirectory, "request.json")
+                await writeFile(requestPath, JSON.stringify(request))
+                requestArgs = ["--request-file", requestPath]
+            }
             const output = await runEngineCommand({
                 enginePath,
                 cwd: repository.descriptor.mainWorktree,
                 args: [
                     token ? "local" : "local-preview",
-                    "--request",
-                    JSON.stringify(request),
+                    ...requestArgs,
                     ...(token ? ["--expected", token] : []),
                     "--git-path",
                     repository.descriptor.git.path,
@@ -145,6 +152,11 @@ function registerHandlers() {
             return { ok: true, result }
         } catch (error) {
             return { ok: false, error: { message: error instanceof Error ? error.message : String(error) } }
+        } finally {
+            if (requestDirectory) {
+                await rm(join(requestDirectory, "request.json"), { force: true })
+                await rmdir(requestDirectory)
+            }
         }
     })
     ipcMain.handle("commit:draft", async (_event, repositoryId: unknown, path: unknown, value: unknown) => {

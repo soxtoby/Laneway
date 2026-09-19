@@ -363,12 +363,12 @@ export async function executeConflict(repo: RepositoryGit, request: ConflictRequ
             const current = await workingTree(repo, working.path)
             const target = request.action == "accept"
                 ? await replaceTreeFiles(repo, subject.tree, candidate.files)
-                : await gitText(repo, ["rev-parse", `${working.head}^{tree}`])
+                : working.beforeTree ?? await gitText(repo, ["rev-parse", `${working.head}^{tree}`])
             const restored = await replayTree(repo, subject.tree, current, target, crypto.randomUUID())
             if (restored.conflict)
                 throw new Error("Later Working Changes overlap this result. Preserve or explicitly include them before accepting or keeping the stash.")
             await repo.command(working.path, ["read-tree", "--reset", "-u", restored.tree])
-            await repo.command(working.path, ["read-tree", working.head])
+            await repo.command(working.path, ["read-tree", (request.action == "accept" ? working.afterIndex : working.beforeIndex) ?? working.head])
             if (request.action == "accept")
                 await dropStash(repo, working.stash, changes)
             state.working = state.working.filter(w => w != working)
@@ -490,6 +490,17 @@ async function rebaseStack(repo: RepositoryGit, stack: UnresolvedStack, cancelle
             left: `Before this commit at ${parent.slice(0, 8)}`,
             right: `This commit ${step.source.slice(0, 8)}`,
         })
+        // Composition may retain conflict markers while changing unrelated lines.
+        // Those regions remain explicit conflicts even when their replay is clean.
+        if (!merged.conflict && previous) {
+            const entries = await treeEntries(repo, merged.tree)
+            const stillPresent = await Promise.all(previous.files.map(async file => {
+                const content = await blob(repo, entries.get(file.path) ?? null)
+                return !file.text || Boolean(content && hasConflictMarkers(content.toString(), previous))
+            }))
+            if (stillPresent.some(Boolean))
+                merged.conflict = { ...previous, tree: merged.tree }
+        }
         if (merged.conflict && previous?.input == merged.conflict.input) {
             merged.tree = await replaceTreeFiles(repo, merged.tree, Object.fromEntries(previous.files.map(file => [file.path, file.provisional])))
             merged.conflict = { ...previous, tree: merged.tree }

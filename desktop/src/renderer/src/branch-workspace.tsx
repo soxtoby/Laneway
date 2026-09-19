@@ -95,6 +95,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
     let localMutations = 0
     const conflicts = createConflictResolution({
         api: options.api,
+        update: options.update,
         changed: repositoryId => read(repositoryId, false, false),
     })
     const inspection = createInspection({
@@ -102,6 +103,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         update: options.update,
         signal: options.signal,
         localChanged: repositoryId => read(repositoryId, false, false),
+        resolveWorkingConflict: (repositoryId, subject) => conflicts.open(repositoryId, subject),
         localBusyChanged: busy => {
             localMutations += busy ? 1 : -1
         },

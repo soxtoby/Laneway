@@ -37,6 +37,9 @@ export const UnresolvedStackSchema = z.object({
     steps: z.array(ReplayStepSchema),
 })
 export const WorkingConflictSchema = z.object({
+    beforeTree: oid.optional(),
+    beforeIndex: oid.optional(),
+    afterIndex: oid.optional(),
     id,
     path: z.string(),
     branch: z.string().nullable(),

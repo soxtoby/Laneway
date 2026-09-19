@@ -1,7 +1,9 @@
 import { z } from "zod"
+import { CompositionPreviewSchema, CompositionRequestSchema } from "./composition"
 
 const oid = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)
 export const LocalRequestSchema = z.discriminatedUnion("action", [
+    CompositionRequestSchema,
     z.object({
         action: z.literal("commit"),
         path: z.string(),
@@ -19,6 +21,7 @@ export const LocalRequestSchema = z.discriminatedUnion("action", [
 ])
 export type LocalRequest = z.infer<typeof LocalRequestSchema>
 export const LocalPreviewSchema = z.object({
+    composition: CompositionPreviewSchema.optional(),
     token: z.string(),
     affected: z.array(z.string()),
     uniqueCommits: z.boolean(),

@@ -220,7 +220,7 @@ class OperationRuntime {
             if (!await worktreeStateMatches(this.repository, before))
                 throw new OperationRuntimeError("operation.precondition-failed", "Repository content changed while preparing this operation.")
             try {
-                result = await mutateLocal(this.repository, request, before, preview, expectedRefs)
+                result = await mutateLocal(this.repository, request, before, preview, expectedRefs, () => this.cancellation.isCancelled())
             } catch (error) {
                 if (error instanceof LocalPreconditionError)
                     throw error

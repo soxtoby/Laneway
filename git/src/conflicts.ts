@@ -35,7 +35,7 @@ export async function readConflictState(repo: RepositoryGit, knownRef?: string |
 
 // A recovery commit retains the metadata plus all input, provisional and accepted objects.
 // Git GC follows tree entries and parents; object IDs written only inside JSON would not suffice.
-export async function storeConflictState(repo: RepositoryGit, state: ConflictState, before: string | null) {
+export async function storeConflictState(repo: RepositoryGit, state: ConflictState, before: string | null, publish = true) {
     const objects = new Map<string, string>()
     const parents = new Set<string>()
     for (const retained of state.retainedConflicts) {
@@ -64,9 +64,14 @@ export async function storeConflictState(repo: RepositoryGit, state: ConflictSta
         if (working.suspended)
             parents.add(working.suspended)
         retainSubject(working.conflict, objects)
+        for (const value of [working.beforeTree, working.beforeIndex, working.afterIndex]) {
+            if (value)
+                objects.set(value, "tree")
+        }
     }
     const after = await retainedDocument(repo, state, objects, [...parents])
-    await repo.updateRefs([{ ref: conflictStateRef, before, after }])
+    if (publish)
+        await repo.updateRefs([{ ref: conflictStateRef, before, after }])
     return after
 }
 function retainSubject(subject: ConflictSubject, objects: Map<string, string>) {
