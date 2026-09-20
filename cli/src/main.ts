@@ -1,10 +1,10 @@
-import { GitError } from "@git-workbench/git"
-import { readSettings, SettingsError } from "@git-workbench/settings"
-import { ENGINE_VERSION, type EngineMessage, type ErrorEvent, ExitCode } from "@git-workbench/shared"
-import { type WorktreeRequest, WorktreeRequestSchema } from "@git-workbench/shared"
-import { type LocalRequest, LocalRequestSchema } from "@git-workbench/shared"
-import { type ConflictRequest, ConflictRequestSchema } from "@git-workbench/shared"
-import { type PullRequest, PullRequestSchema } from "@git-workbench/shared"
+import { GitError } from "@laneway/git"
+import { readSettings, SettingsError } from "@laneway/settings"
+import { ENGINE_VERSION, type EngineMessage, type ErrorEvent, ExitCode } from "@laneway/shared"
+import { type WorktreeRequest, WorktreeRequestSchema } from "@laneway/shared"
+import { type LocalRequest, LocalRequestSchema } from "@laneway/shared"
+import { type ConflictRequest, ConflictRequestSchema } from "@laneway/shared"
+import { type PullRequest, PullRequestSchema } from "@laneway/shared"
 import { readFileSync, statSync } from "node:fs"
 import { executeOperationCommand, type JournalPhase, OperationCancelledError, type OperationCommand, OperationRuntimeError } from "./operation-runtime.ts"
 
@@ -25,7 +25,7 @@ function write(message: string | EngineMessage, json: boolean) {
         console.log(message.message)
     else if (message.command == "history") {
         if (message.entries.length == 0)
-            console.log("No Workbench Operations.")
+            console.log("No Laneway Operations.")
         else {
             for (const entry of message.entries)
                 console.log(`${entry.isNextUndo ? "undo" : entry.isNextRedo ? "redo" : entry.state} ${entry.id} ${entry.summary}`)
@@ -122,7 +122,7 @@ function parseEchoArguments(commandArguments: string[]): ParsedEchoArguments {
         ok: true,
         json,
         delayMs,
-        message: message ?? "Workbench Engine is running.",
+        message: message ?? "Laneway Engine is running.",
     }
 }
 
@@ -314,7 +314,7 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
             index += 1
             continue
         }
-        if (command == "test-mutation" && argument == "--hold-after-intent-ms" && process.env.WORKBENCH_ENABLE_TEST_COMMANDS == "1") {
+        if (command == "test-mutation" && argument == "--hold-after-intent-ms" && process.env.LANEWAY_ENABLE_TEST_COMMANDS == "1") {
             const value = commandArguments[index + 1]
             const parsedValue = Number(value)
             if (value == undefined || !/^\d+$/.test(value) || !Number.isSafeInteger(parsedValue))
@@ -327,7 +327,7 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
             (command == "test-mutation" || command == "worktree" || command == "local" || command == "conflict" || command == "pull" || command == "undo"
                 || command == "redo")
             && argument == "--crash-after"
-            && process.env.WORKBENCH_ENABLE_TEST_COMMANDS == "1"
+            && process.env.LANEWAY_ENABLE_TEST_COMMANDS == "1"
         ) {
             const phase = commandArguments[index + 1]
             const phases: JournalPhase[] = [
@@ -402,7 +402,7 @@ async function runOperationCommand(command: OperationCommand["command"], command
 
     const cancellation = monitorCancellation()
     try {
-        const settings = await readSettings(process.env.WORKBENCH_SETTINGS_PATH)
+        const settings = await readSettings(process.env.LANEWAY_SETTINGS_PATH)
         const command = parsed.command.command == "pull"
             ? {
                 ...parsed.command,
@@ -445,7 +445,7 @@ async function runOperationCommand(command: OperationCommand["command"], command
 }
 
 if (args.length == 1 && args[0] == "--version")
-    console.log(`workbench-engine ${ENGINE_VERSION}`)
+    console.log(`lane ${ENGINE_VERSION}`)
 else if (args[0] == "echo") {
     const parsed = parseEchoArguments(args.slice(1))
     if (!parsed.ok) {
@@ -459,7 +459,7 @@ else if (args[0] == "echo") {
     || args[0] == "recover" || args[0] == "conflict" || args[0] == "pull"
 ) {
     process.exitCode = await runOperationCommand(args[0], args.slice(1))
-} else if (args[0] == "test-mutation" && process.env.WORKBENCH_ENABLE_TEST_COMMANDS == "1")
+} else if (args[0] == "test-mutation" && process.env.LANEWAY_ENABLE_TEST_COMMANDS == "1")
     process.exitCode = await runOperationCommand("test-mutation", args.slice(1))
 else {
     const command = args[0] ?? ""

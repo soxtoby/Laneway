@@ -1,4 +1,4 @@
-import type { DiffLine, FileDiffPage } from "@git-workbench/shared"
+import type { DiffLine, FileDiffPage } from "@laneway/shared"
 import { processFile } from "@pierre/diffs"
 
 // Rebuild only the loaded patch, retaining Git's line numbers and hunk boundaries.

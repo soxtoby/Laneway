@@ -1,4 +1,4 @@
-import type { ConflictSubject } from "@git-workbench/shared"
+import type { ConflictSubject } from "@laneway/shared"
 import { UnresolvedFile } from "@pierre/diffs"
 import { css, type Handle, ref } from "remix/ui"
 

@@ -1,15 +1,15 @@
-import type { Appearance, EntryProgress, Workspace } from "@git-workbench/shared"
+import type { Appearance, EntryProgress, Workspace } from "@laneway/shared"
 import { css, type Handle, on } from "remix/ui"
 import { type BranchWorkspace, createBranchWorkspace } from "./branch-workspace"
 import { errorMessage, FatalError, Notice, type NoticeState } from "./feedback"
 import { activateSelectionsOnMouseDown } from "./mouse-activation"
 import { createRepositoryEntry, type RepositoryEntry } from "./repository-entry"
 import { createGitSettings, type GitSettings } from "./settings"
-import { RepositoryRailToggle, Welcome, WorkbenchHeader } from "./workspace"
+import { LanewayHeader, RepositoryRailToggle, Welcome } from "./workspace"
 
-type AppState = Awaited<ReturnType<Window["workbench"]["getState"]>>
+type AppState = Awaited<ReturnType<Window["laneway"]["getState"]>>
 
-export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
+export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
     activateSelectionsOnMouseDown(document, handle.signal)
     let initial: AppState | undefined
     let workspace: Workspace | undefined
@@ -33,7 +33,7 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
                 : (
                     <main class="bootstrap-state" mix={bootstrapState} aria-live="polite">
                         <p mix={bootstrapStateP}>
-                            Starting Git Workbench…
+                            Starting Laneway…
                         </p>
                     </main>
                 )
@@ -46,7 +46,7 @@ export function WorkbenchApp(handle: Handle<{ api: Window["workbench"] }>) {
         return (
             <>
                 <main class={`shell ${railCollapsed ? "rail-collapsed" : ""}`} mix={shell}>
-                    <WorkbenchHeader
+                    <LanewayHeader
                         openLens={branchWorkspace.openLens}
                         busy={busy}
                         appearance={appearance}

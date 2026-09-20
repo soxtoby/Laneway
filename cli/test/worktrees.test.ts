@@ -1,5 +1,5 @@
-import { connectRepository, previewWorktree, readRegisteredWorktrees } from "@git-workbench/git"
-import type { WorktreeRequest } from "@git-workbench/shared"
+import { connectRepository, previewWorktree, readRegisteredWorktrees } from "@laneway/git"
+import type { WorktreeRequest } from "@laneway/shared"
 import { afterEach, expect, test } from "bun:test"
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -21,7 +21,7 @@ async function fixture() {
     const path = await mkdtemp(join(tmpdir(), "worktree-lifecycle-"))
     temporary.push(path, `${path}.worktrees`)
     git(path, "init", "-q", "-b", "main")
-    git(path, "config", "user.name", "Workbench Test")
+    git(path, "config", "user.name", "Laneway Test")
     git(path, "config", "user.email", "test@example.invalid")
     await writeFile(join(path, "a.txt"), "base\n")
     await writeFile(join(path, ".gitignore"), "ignored.txt\n")
@@ -78,7 +78,7 @@ test("removal restores exact discarded Git state, excludes ignored files, and gu
     await transition(path, "redo")
     await transition(path, "undo")
     await writeFile(join(linked, "new.txt"), "external\n")
-    await expect(transition(path, "redo")).rejects.toThrow("outside Workbench")
+    await expect(transition(path, "redo")).rejects.toThrow("outside Laneway")
     expect(await readFile(join(linked, "new.txt"), "utf8")).toBe("external\n")
 }, 60_000)
 
@@ -128,7 +128,7 @@ test("dirty populated submodules survive preserving removal and undo", async () 
     await perform(path, { action: "create", branch: "feature", move: false })
     const linked = join(`${path}.worktrees`, "feature")
     git(linked, "-c", "protocol.file.allow=always", "submodule", "update", "--init")
-    git(join(linked, "module"), "config", "user.name", "Workbench Test")
+    git(join(linked, "module"), "config", "user.name", "Laneway Test")
     git(join(linked, "module"), "config", "user.email", "test@example.invalid")
     await writeFile(join(linked, "module", "a.txt"), "module edits\n")
     await expect(perform(path, { action: "rename", path: linked, basename: "no" })).rejects.toThrow("populated submodules")
@@ -175,15 +175,15 @@ test("detached unique commits are protected before switching, and an external pr
     await perform(path, { action: "unlock", path: linked })
     await rm(linked, { recursive: true })
     git(path, "worktree", "prune", "--expire", "now")
-    await expect(transition(path, "undo")).rejects.toThrow("outside Workbench")
+    await expect(transition(path, "undo")).rejects.toThrow("outside Laneway")
 }, 60_000)
 
 test("compiled engine recovers worktree apply and undo at durable journal boundaries", async () => {
-    const executable = resolve(import.meta.dir, "../bin/workbench-engine.exe")
+    const executable = resolve(import.meta.dir, "../bin/lane.exe")
     async function engine(path: string, args: string[], expected = 0) {
         const child = Bun.spawn([executable, ...args, "--json"], {
             cwd: path,
-            env: { ...process.env, WORKBENCH_ENABLE_TEST_COMMANDS: "1", WORKBENCH_SETTINGS_PATH: join(path, "settings.json") },
+            env: { ...process.env, LANEWAY_ENABLE_TEST_COMMANDS: "1", LANEWAY_SETTINGS_PATH: join(path, "settings.json") },
             stdout: "pipe",
             stderr: "pipe",
         })

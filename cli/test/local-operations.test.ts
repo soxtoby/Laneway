@@ -1,4 +1,4 @@
-import type { LocalRequest, LocalResult } from "@git-workbench/shared"
+import type { LocalRequest, LocalResult } from "@laneway/shared"
 import { afterEach, expect, test } from "bun:test"
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -20,10 +20,10 @@ function git(cwd: string, ...args: string[]) {
     return result.stdout.toString().trim()
 }
 async function fixture(initial = true, format = "sha1") {
-    const path = await mkdtemp(join(tmpdir(), "workbench-local-test-"))
+    const path = await mkdtemp(join(tmpdir(), "laneway-local-test-"))
     temporary.push(path)
     git(path, "init", "-q", "-b", "main", `--object-format=${format}`)
-    git(path, "config", "user.name", "Workbench Test")
+    git(path, "config", "user.name", "Laneway Test")
     git(path, "config", "user.email", "test@example.invalid")
     git(path, "config", "commit.gpgsign", "false")
     await writeFile(join(path, "a.txt"), "base\n")
@@ -67,7 +67,7 @@ test("SHA-256 commits honor clean filters, staged modes and signing failures", a
     const request: LocalRequest = { action: "commit", path, title: "filtered", message: "body" }
     const original = git(path, "rev-parse", "HEAD")
     git(path, "config", "commit.gpgsign", "true")
-    git(path, "config", "gpg.program", "workbench-missing-signing-program")
+    git(path, "config", "gpg.program", "laneway-missing-signing-program")
     expect((await perform(path, request)).status).toBe("failed")
     expect(git(path, "rev-parse", "HEAD")).toBe(original)
     git(path, "config", "commit.gpgsign", "false")
@@ -75,7 +75,7 @@ test("SHA-256 commits honor clean filters, staged modes and signing failures", a
     expect(git(path, "rev-parse", "HEAD")).toHaveLength(64)
     expect(git(path, "show", "HEAD:a.txt")).toBe("FILTERED")
     expect(git(path, "ls-tree", "HEAD", "a.txt")).toStartWith("100755")
-    expect(git(path, "log", "-1", "--format=%an <%ae>")).toBe("Workbench Test <test@example.invalid>")
+    expect(git(path, "log", "-1", "--format=%an <%ae>")).toBe("Laneway Test <test@example.invalid>")
 }, 60_000)
 
 test("virtual branch creation remains independently undoable after a failed commit", async () => {

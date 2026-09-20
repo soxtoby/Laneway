@@ -1,5 +1,5 @@
 import { createRoot } from "remix/ui"
-import { WorkbenchApp } from "../../src/renderer/src/app"
+import { LanewayApp } from "../../src/renderer/src/app"
 import { inspectionScenario } from "../renderer-fixtures"
 import { checkBranchGraphScroll } from "./branch-graph-scroll"
 
@@ -93,7 +93,7 @@ async function checkRenderer() {
     }
     scenario.page.lines.push({ id: 3, kind: "notice", text: "\\ No newline at end of file", hunk: 0 })
     const root = createRoot(document.querySelector<HTMLElement>("#app")!)
-    root.render(<WorkbenchApp api={scenario.api} />)
+    root.render(<LanewayApp api={scenario.api} />)
 
     async function settle() {
         for (let index = 0; index < 8; index++) {
@@ -441,14 +441,14 @@ async function checkRenderer() {
     element(".lens-button").click()
     await settle()
     const reopenedSearch = element<HTMLInputElement>(".command-lens input")
-    reopenedSearch.value = "feature/workbench"
+    reopenedSearch.value = "feature/laneway"
     reopenedSearch.dispatchEvent(new Event("input", { bubbles: true }))
     await settle()
     const columnCount = document.querySelectorAll(".branch-column").length
     press(reopenedSearch, "Enter")
     await settle()
     const activatedBranch = !document.querySelector(".command-lens")
-        && element(".graph-row.selected").dataset.nodeId == "branch:refs/heads/feature/workbench"
+        && element(".graph-row.selected").dataset.nodeId == "branch:refs/heads/feature/laneway"
         && document.querySelectorAll(".branch-column").length == columnCount
     const columnBeforeCollapse = element(".branch-column").getBoundingClientRect()
     const collapseButton = element(".branch-column [title='Collapse column']")
@@ -479,7 +479,7 @@ async function checkRenderer() {
     showGraphButton.click()
     await settle()
     const graphRestored = element(".graph-sidebar").getBoundingClientRect().width > 0
-    element("[data-node-id='branch:refs/heads/feature/workbench']").dispatchEvent(
+    element("[data-node-id='branch:refs/heads/feature/laneway']").dispatchEvent(
         new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 90, clientY: 120 }),
     )
     await settle()
@@ -495,7 +495,7 @@ async function checkRenderer() {
     element(".lens-results button").click()
     await settle()
     const comparison = element(".branch-comparison")
-    const comparisonContextMenu = document.activeElement == comparison && comparison.textContent!.includes("feature/workbench → main")
+    const comparisonContextMenu = document.activeElement == comparison && comparison.textContent!.includes("feature/laneway → main")
         && !comparison.querySelector(".comparison-context") && comparison.previousElementSibling?.classList.contains("branch-column")
     const comparisonLazy = !comparison.querySelector(".pierre-diff")
     const comparisonRow = element(".branch-comparison .change-file")
@@ -776,7 +776,7 @@ async function checkVirtualWorktree() {
         inventory: { source: request.source, files: [], version: "clean", parents: [] },
     })
     const root = createRoot(document.querySelector<HTMLElement>("#app")!)
-    root.render(<WorkbenchApp api={scenario.api} />)
+    root.render(<LanewayApp api={scenario.api} />)
     const settle = async () => {
         for (let index = 0; index < 8; index++) {
             await new Promise(resolve => setTimeout(resolve, 0))

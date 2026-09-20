@@ -1,5 +1,5 @@
 {
-    "name": "@git-workbench/desktop",
+    "name": "@laneway/desktop",
     "private": true,
     "type": "module",
     "main": "./out/main/index.js",
@@ -10,9 +10,9 @@
     },
     "dependencies": {
         "@atlaskit/pragmatic-drag-and-drop": "^3.1.0",
-        "@git-workbench/git": "workspace:*",
-        "@git-workbench/settings": "workspace:*",
-        "@git-workbench/shared": "workspace:*",
+        "@laneway/git": "workspace:*",
+        "@laneway/settings": "workspace:*",
+        "@laneway/shared": "workspace:*",
         "@pierre/diffs": "^1.4.1",
         "remix": "next"
     },

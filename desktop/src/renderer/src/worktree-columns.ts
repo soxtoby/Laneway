@@ -1,4 +1,4 @@
-import type { BranchGraph, WorkspaceColumn } from "@git-workbench/shared"
+import type { BranchGraph, WorkspaceColumn } from "@laneway/shared"
 
 // Graph rows coalesce equivalent refs. Workspace columns retain each local branch identity.
 export function workspaceGraph(graph: BranchGraph): BranchGraph {

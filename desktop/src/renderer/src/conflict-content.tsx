@@ -1,4 +1,4 @@
-import type { ConflictResult, DiffLine, FileDiffPage } from "@git-workbench/shared"
+import type { ConflictResult, DiffLine, FileDiffPage } from "@laneway/shared"
 import { css, type Handle } from "remix/ui"
 import { DiffLines } from "./diff"
 

@@ -1,14 +1,14 @@
-import type { ChangesResult, EntryProgress, EntryResult, FileDiffResult, WorktreeRequest } from "@git-workbench/shared"
+import type { ChangesResult, EntryProgress, EntryResult, FileDiffResult, WorktreeRequest } from "@laneway/shared"
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { Window as HappyWindow } from "happy-dom"
 import type { createElement as createRemixElement, createRoot as createRemixRoot, VirtualRoot } from "remix/ui"
-import type { WorkbenchApp as WorkbenchAppComponent } from "../src/renderer/src/app"
-import { appState, branchGraph, fakeWorkbench, inspectionScenario, openedWorkspace, repositoryInfo } from "./renderer-fixtures"
+import type { LanewayApp as LanewayAppComponent } from "../src/renderer/src/app"
+import { appState, branchGraph, fakeLaneway, inspectionScenario, openedWorkspace, repositoryInfo } from "./renderer-fixtures"
 
 let browserWindow: HappyWindow
 let createElement: typeof createRemixElement
 let createRoot: typeof createRemixRoot
-let WorkbenchApp: typeof WorkbenchAppComponent
+let LanewayApp: typeof LanewayAppComponent
 
 beforeAll(async () => {
     browserWindow = new HappyWindow({ url: "file:///renderer/index.html" })
@@ -59,7 +59,7 @@ beforeAll(async () => {
         },
     })
     ;({ createElement, createRoot } = await import("remix/ui"))
-    ;({ WorkbenchApp } = await import("../src/renderer/src/app"))
+    ;({ LanewayApp } = await import("../src/renderer/src/app"))
 })
 
 afterAll(() => browserWindow.close())
@@ -156,7 +156,7 @@ test("worktree row renames inline and switches through branch search; removal st
         const switchBranch = row.querySelector<HTMLButtonElement>("[aria-label='Switch worktree branch']")!
         click(switchBranch)
         await flush(root)
-        expect(container.querySelector(".lens-results")!.textContent).not.toContain("feature/workbench")
+        expect(container.querySelector(".lens-results")!.textContent).not.toContain("feature/laneway")
         input(container.querySelector<HTMLInputElement>("[aria-label='Command Lens search']")!, "main")
         await flush(root)
         click(container.querySelector<HTMLButtonElement>(".lens-results button")!)
@@ -208,7 +208,7 @@ test("worktree row renames inline and switches through branch search; removal st
 describe("Remix repository entry renderer", () => {
     test("initializes a repository and opens the resulting workspace", async () => {
         const repository = repositoryInfo("D:\\Source\\new-project")
-        const api = fakeWorkbench({
+        const api = fakeLaneway({
             initializeRepository: async (path, branch) => {
                 expect(path).toBe("D:\\Source\\new-project")
                 expect(branch).toBe("trunk")
@@ -234,7 +234,7 @@ describe("Remix repository entry renderer", () => {
 
     test("updates Git settings without entering the repository operation state", async () => {
         let chooseCalls = 0
-        const api = fakeWorkbench({
+        const api = fakeLaneway({
             chooseGit: async () => {
                 chooseCalls++
                 return {
@@ -265,7 +265,7 @@ describe("Remix repository entry renderer", () => {
         let finishClone: (result: EntryResult) => void = () => undefined
         let cancelCalls = 0
         const cloneResult = new Promise<EntryResult>(resolve => finishClone = resolve)
-        const api = fakeWorkbench({
+        const api = fakeLaneway({
             cloneRepository: () => cloneResult,
             cancelEntry: async () => {
                 cancelCalls++
@@ -313,7 +313,7 @@ describe("Remix repository entry renderer", () => {
 
     test("applies the saved appearance and persists a toggle", async () => {
         const saved: string[] = []
-        const api = fakeWorkbench({
+        const api = fakeLaneway({
             getState: async () => ({ ...appState(), appearance: "dark" as const }),
             setAppearance: async appearance => {
                 saved.push(appearance)
@@ -334,7 +334,7 @@ describe("Remix repository entry renderer", () => {
 
     test("shows a retryable fatal state when bootstrap rejects", async () => {
         let attempts = 0
-        const api = fakeWorkbench({
+        const api = fakeLaneway({
             getState: async () => {
                 attempts++
                 if (attempts == 1)
@@ -345,7 +345,7 @@ describe("Remix repository entry renderer", () => {
         const { container, root, dispose } = render(api)
 
         await flush(root)
-        expect(container.textContent).toContain("Git Workbench could not start.")
+        expect(container.textContent).toContain("Laneway could not start.")
         expect(container.textContent).toContain("Preload unavailable")
 
         click(button(container, "Retry"))
@@ -358,7 +358,7 @@ describe("Remix repository entry renderer", () => {
     test("separates graph selection, branch opening, filtering, and Command Lens navigation", async () => {
         const repository = repositoryInfo("D:\\Source\\graph-project")
         const graph = branchGraph(repository.id)
-        const api = fakeWorkbench({
+        const api = fakeLaneway({
             getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
             readBranchGraph: async () => ({ ok: true, graph }),
             selectRepository: async () => openedWorkspace(repository),
@@ -366,7 +366,7 @@ describe("Remix repository entry renderer", () => {
         const { container, root, dispose } = render(api)
 
         await flush(root)
-        expect(container.textContent).toContain("feature/workbench")
+        expect(container.textContent).toContain("feature/laneway")
         expect(container.textContent).not.toContain("other/team")
         expect(container.querySelector(".graph-row svg path")).not.toBeNull()
         click(container.querySelector<HTMLButtonElement>("[aria-label='Collapse repository sidebar']")!)
@@ -392,7 +392,7 @@ describe("Remix repository entry renderer", () => {
         root.flush()
         expect(container.textContent).toContain("other/team")
 
-        const feature = container.querySelector<HTMLElement>("[data-node-id='branch:refs/heads/feature/workbench']")!
+        const feature = container.querySelector<HTMLElement>("[data-node-id='branch:refs/heads/feature/laneway']")!
         feature.dispatchEvent(new MouseEvent("mousedown", { button: 0, detail: 1, bubbles: true, cancelable: true }))
         root.flush()
         expect(feature.classList.contains("selected")).toBe(true)
@@ -403,14 +403,14 @@ describe("Remix repository entry renderer", () => {
 
         click(feature.querySelector<HTMLButtonElement>(".open-branch")!)
         await flush(root)
-        expect(container.querySelector(".branch-column")?.textContent).toContain("feature/workbench")
+        expect(container.querySelector(".branch-column")?.textContent).toContain("feature/laneway")
 
         window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }))
         root.flush()
         expect(container.querySelector(".command-lens")?.textContent).toContain("Search open repositories and branches.")
-        input(container.querySelector<HTMLInputElement>("[aria-label='Command Lens search']")!, "workbench")
+        input(container.querySelector<HTMLInputElement>("[aria-label='Command Lens search']")!, "laneway")
         root.flush()
-        expect(container.querySelector(".lens-results")?.textContent).toContain("feature/workbench")
+        expect(container.querySelector(".lens-results")?.textContent).toContain("feature/laneway")
         dispose()
     })
 
@@ -436,7 +436,7 @@ describe("Remix repository entry renderer", () => {
             lineId: graph.branches[0].id,
             parentIds: [],
         }]
-        const api = fakeWorkbench({
+        const api = fakeLaneway({
             getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
             readBranchGraph: async () => ({ ok: true, graph }),
         })
@@ -460,7 +460,7 @@ describe("Remix repository entry renderer", () => {
         let calls = 0
         let finishRefresh: () => void = () => {}
         const refresh = new Promise<void>(resolve => finishRefresh = resolve)
-        const api = fakeWorkbench({
+        const api = fakeLaneway({
             getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
             readBranchGraph: async () => {
                 calls++
@@ -506,7 +506,7 @@ describe("Remix repository entry renderer", () => {
             }],
             activeRepositoryId: repository.id,
         }
-        const api = fakeWorkbench({
+        const api = fakeLaneway({
             getState: async () => ({ ...appState(), workspace: saved }),
             readBranchGraph: async () => ({ ok: true, graph }),
             updateWorkspace: async workspace => saved = structuredClone(workspace) as typeof saved,
@@ -564,10 +564,10 @@ test("Pull latest freezes open-column scope, streams progress with Cancel, and s
     }
     let requested: unknown
     let progress: ((value: { repositoryId: string; message: string; completed: number; total: number }) => void) | undefined
-    let finish: ((value: Awaited<ReturnType<Window["workbench"]["pullLatest"]>>) => void) | undefined
+    let finish: ((value: Awaited<ReturnType<Window["laneway"]["pullLatest"]>>) => void) | undefined
     let cancelled = 0
     let graphReads = 0
-    const api = fakeWorkbench({
+    const api = fakeLaneway({
         getState: async () => ({ ...appState(), workspace: saved }),
         readBranchGraph: async () => {
             graphReads++
@@ -598,9 +598,9 @@ test("Pull latest freezes open-column scope, streams progress with Cancel, and s
     expect(container.querySelector(".masthead .pull-latest")).toBeNull()
     expect(container.querySelector(".masthead .pull-progress")?.textContent).toContain("Fetching…")
     expect(container.querySelector<HTMLButtonElement>('.masthead [aria-label="Undo last operation"]')?.disabled).toBe(true)
-    progress!({ repositoryId: repository.id, message: "Updating feature/workbench…", completed: 1, total: 2 })
+    progress!({ repositoryId: repository.id, message: "Updating feature/laneway…", completed: 1, total: 2 })
     await flush(root)
-    expect(container.querySelector(".masthead .pull-progress")?.textContent).toContain("Updating feature/workbench…")
+    expect(container.querySelector(".masthead .pull-progress")?.textContent).toContain("Updating feature/laneway…")
     click(button(container, "Cancel pull"))
     await flush(root)
     expect(cancelled).toBe(1)
@@ -615,7 +615,7 @@ test("Pull latest freezes open-column scope, streams progress with Cancel, and s
             fetches: [{ remote: "origin", status: "fetched" }],
             stacks: [{ id: "a", branches: ["main"], status: "updated", message: undefined }, {
                 id: "b",
-                branches: ["main", "feature/workbench"],
+                branches: ["main", "feature/laneway"],
                 status: "needs-resolution",
                 message: "1 commit conflict deferred for inline resolution.",
                 conflicts: 1,
@@ -633,7 +633,7 @@ test("Pull latest freezes open-column scope, streams progress with Cancel, and s
     expect(stacks[1].open).toBe(true)
     expect(stacks[1].textContent).toContain("1 commit conflict deferred")
     expect(container.querySelector(".masthead .pull-latest")).not.toBeNull()
-    click(button(outcome as HTMLElement, "Resolve in feature/workbench"))
+    click(button(outcome as HTMLElement, "Resolve in feature/laneway"))
     await flush(root)
     expect(container.querySelector(".pull-outcome")).toBeNull()
     expect(document.activeElement?.getAttribute("data-column-id")).toBe(feature.id)
@@ -643,7 +643,7 @@ test("Pull latest freezes open-column scope, streams progress with Cancel, and s
 test("an uneventful Pull latest confirms in passing without a dialog", async () => {
     const repository = repositoryInfo("D:\Source\quiet-pull")
     const graph = branchGraph(repository.id)
-    const api = fakeWorkbench({
+    const api = fakeLaneway({
         getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
         readBranchGraph: async () => ({ ok: true, graph }),
         pullLatest: async () => ({
@@ -654,7 +654,7 @@ test("an uneventful Pull latest confirms in passing without a dialog", async () 
                 status: "updated",
                 message: "Pull complete: 1 updated, 1 already current.",
                 fetches: [{ remote: "origin", status: "fetched" }],
-                stacks: [{ id: "a", branches: ["main"], status: "updated" }, { id: "b", branches: ["main", "feature/workbench"], status: "current" }],
+                stacks: [{ id: "a", branches: ["main"], status: "updated" }, { id: "b", branches: ["main", "feature/laneway"], status: "current" }],
             },
         }),
     })
@@ -670,7 +670,7 @@ test("an uneventful Pull latest confirms in passing without a dialog", async () 
 test("Pull latest is disabled without remotes and explains why", async () => {
     const repository = repositoryInfo("D:\Source\no-remotes")
     const graph = { ...branchGraph(repository.id), availableRemotes: [], selectedRemote: undefined }
-    const api = fakeWorkbench({
+    const api = fakeLaneway({
         getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
         readBranchGraph: async () => ({ ok: true, graph }),
     })
@@ -739,7 +739,7 @@ describe("Branch Comparison", () => {
         const cancelled: string[] = []
         const signal = new AbortController().signal
         const comparisons = createBranchComparisons({
-            api: fakeWorkbench({
+            api: fakeLaneway({
                 readChanges: async (_repo, id) => new Promise<ChangesResult>(resolve => pending.set(id, resolve)),
                 cancelInspection: async (_repo, id) => {
                     cancelled.push(id)
@@ -785,7 +785,7 @@ describe("Branch Comparison", () => {
         const requested: string[] = []
         const api = {
             ...scenario.api,
-            readChanges: async (...args: Parameters<Window["workbench"]["readChanges"]>): Promise<ChangesResult> => {
+            readChanges: async (...args: Parameters<Window["laneway"]["readChanges"]>): Promise<ChangesResult> => {
                 const request = args[2]
                 if (request.source.kind != "branches" && request.source.kind != "comparison")
                     return scenario.api.readChanges(...args)
@@ -821,7 +821,7 @@ describe("Branch Comparison", () => {
                     },
                 }
             },
-            readFileDiff: async (...args: Parameters<Window["workbench"]["readFileDiff"]>) => {
+            readFileDiff: async (...args: Parameters<Window["laneway"]["readFileDiff"]>) => {
                 if (args[2].source.kind != "comparison")
                     return scenario.api.readFileDiff(...args)
                 patches++
@@ -929,7 +929,7 @@ describe("Working Changes inspection", () => {
                 tip: candidate.tip,
             })),
         }
-        const requests: Parameters<Window["workbench"]["readBranchHistory"]>[1][] = []
+        const requests: Parameters<Window["laneway"]["readBranchHistory"]>[1][] = []
         scenario.api.readBranchHistory = async (_repositoryId, request) => {
             requests.push(request)
             return {
@@ -954,10 +954,10 @@ describe("Working Changes inspection", () => {
         const { container, root, dispose } = render(scenario.api)
         await flush(root)
         expect(requests[0]).toMatchObject({ limit: 50, baseTips: candidates.map(candidate => candidate.tip) })
-        expect(container.querySelector("[aria-label='Branch after feature/workbench']")).toBeNull()
+        expect(container.querySelector("[aria-label='Branch after feature/laneway']")).toBeNull()
         click(button(container, "Load more"))
         await flush(root)
-        const continuation = container.querySelector<HTMLSelectElement>("[aria-label='Branch after feature/workbench']")!
+        const continuation = container.querySelector<HTMLSelectElement>("[aria-label='Branch after feature/laneway']")!
         expect(continuation).not.toBeNull()
         expect([...continuation.options].map(option => option.textContent)).toEqual(["Choose branch…", "main", "other/team"])
         continuation.value = graph.branches[0].id
@@ -1131,12 +1131,12 @@ describe("Working Changes inspection", () => {
         let commitDiffs = 0
         const api = {
             ...scenario.api,
-            readChanges: async (...args: Parameters<Window["workbench"]["readChanges"]>) => {
+            readChanges: async (...args: Parameters<Window["laneway"]["readChanges"]>) => {
                 if (args[2].source.kind == "commit")
                     commitInventories++
                 return scenario.api.readChanges(...args)
             },
-            readFileDiff: async (...args: Parameters<Window["workbench"]["readFileDiff"]>) => {
+            readFileDiff: async (...args: Parameters<Window["laneway"]["readFileDiff"]>) => {
                 if (args[2].source.kind == "commit")
                     commitDiffs++
                 return scenario.api.readFileDiff(...args)
@@ -1201,7 +1201,7 @@ describe("Working Changes inspection", () => {
 
     test("opens file diffs independently beneath their rows and isolates pending reads", async () => {
         const scenario = inspectionScenario()
-        const pending = new Map<string, { id: string; finish(result: FileDiffResult): void; request: Parameters<Window["workbench"]["readFileDiff"]>[2] }>()
+        const pending = new Map<string, { id: string; finish(result: FileDiffResult): void; request: Parameters<Window["laneway"]["readFileDiff"]>[2] }>()
         const { container, root, dispose } = render({
             ...scenario.api,
             readFileDiff: async (_repositoryId, id, request) => new Promise<FileDiffResult>(finish => pending.set(request.path, { id, request, finish })),
@@ -1271,7 +1271,7 @@ describe("Working Changes inspection", () => {
         let reads = 0
         const api = {
             ...scenario.api,
-            readFileDiff: async (...args: Parameters<Window["workbench"]["readFileDiff"]>) => {
+            readFileDiff: async (...args: Parameters<Window["laneway"]["readFileDiff"]>) => {
                 reads++
                 return scenario.api.readFileDiff(...args)
             },
@@ -1338,7 +1338,7 @@ describe("Working Changes inspection", () => {
         let version = "one"
         const api = {
             ...scenario.api,
-            readFileDiff: async (...args: Parameters<Window["workbench"]["readFileDiff"]>) => {
+            readFileDiff: async (...args: Parameters<Window["laneway"]["readFileDiff"]>) => {
                 if (first) {
                     first = false
                     return new Promise<FileDiffResult>(resolve => finish = resolve)
@@ -1387,11 +1387,11 @@ describe("Working Changes inspection", () => {
         let historyReads = 0
         const api = {
             ...scenario.api,
-            readBranchHistory: async (...args: Parameters<Window["workbench"]["readBranchHistory"]>) => {
+            readBranchHistory: async (...args: Parameters<Window["laneway"]["readBranchHistory"]>) => {
                 historyReads++
                 return scenario.api.readBranchHistory(...args)
             },
-            readFileDiff: async (...args: Parameters<Window["workbench"]["readFileDiff"]>) => {
+            readFileDiff: async (...args: Parameters<Window["laneway"]["readFileDiff"]>) => {
                 const result = await scenario.api.readFileDiff(...args)
                 return result.ok
                     ? {
@@ -1622,7 +1622,7 @@ test("commit composer reveals staging controls, retains cancelled drafts, and co
     let staged = false, committed = false, version = 0
     let draft = { title: "", message: "", branch: "" }
     const mutations: string[] = []
-    const api: Window["workbench"] = {
+    const api: Window["laneway"] = {
         ...scenario.api,
         readCommitDraft: async () => ({ ...draft }),
         saveCommitDraft: async (_id, _path, value) => {
@@ -1666,9 +1666,9 @@ test("commit composer reveals staging controls, retains cancelled drafts, and co
                         token: String(version),
                         affected: [],
                         uniqueCommits: false,
-                        branch: "feature/workbench",
+                        branch: "feature/laneway",
                         unborn: false,
-                        suggestedBranch: "feature/workbench",
+                        suggestedBranch: "feature/laneway",
                         staged,
                         files: [],
                         stashes: [],
@@ -1726,11 +1726,11 @@ test("commit composer reveals staging controls, retains cancelled drafts, and co
     }
 })
 
-function render(api: Window["workbench"]) {
+function render(api: Window["laneway"]) {
     const container = document.createElement("div")
     document.body.append(container)
     const root = createRoot(container)
-    root.render(createElement(WorkbenchApp, { api }))
+    root.render(createElement(LanewayApp, { api }))
     root.flush()
     return {
         container,

@@ -1,4 +1,4 @@
-import type { RegisteredWorktree, WorktreePreview, WorktreeRequest } from "@git-workbench/shared"
+import type { RegisteredWorktree, WorktreePreview, WorktreeRequest } from "@laneway/shared"
 import { createHash } from "node:crypto"
 import { lstat, readdir, readFile, readlink } from "node:fs/promises"
 import { basename, dirname, isAbsolute, join, resolve } from "node:path"

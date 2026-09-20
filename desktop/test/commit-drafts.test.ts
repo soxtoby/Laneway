@@ -5,7 +5,7 @@ import { join, resolve, sep } from "node:path"
 import { CommitDrafts } from "../src/main/commit-drafts"
 
 test("drafts serialize edits, survive restart, and isolate worktrees", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "workbench-drafts-"))
+    const directory = await mkdtemp(join(tmpdir(), "laneway-drafts-"))
     try {
         const path = join(directory, "drafts.json")
         const store = new CommitDrafts(path)

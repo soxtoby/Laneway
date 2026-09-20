@@ -1,5 +1,5 @@
 import { draggable, dropTargetForElements, monitorForElements } from "@atlaskit/pragmatic-drag-and-drop/adapter/element-adapter"
-import type { CompositionRequest, CompositionSource, CompositionTarget, LocalPreview } from "@git-workbench/shared"
+import type { CompositionRequest, CompositionSource, CompositionTarget, LocalPreview } from "@laneway/shared"
 import { createMixin, css, on, type RemixNode } from "remix/ui"
 
 interface Selection {
@@ -61,7 +61,7 @@ export const compositionStyles = css({
     },
 })
 export function createComposition(options: {
-    api: Pick<Window["workbench"], "localOperation">
+    api: Pick<Window["laneway"], "localOperation">
     signal: AbortSignal
     update(): Promise<AbortSignal>
     changed?(repositoryId: string): Promise<void>

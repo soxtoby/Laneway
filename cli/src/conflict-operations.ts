@@ -1,5 +1,5 @@
-import { blob, candidateReady, conflictHunks, conflictStateRef, gitText, hasConflictMarkers, isText, normalize, readConflictState, readRegisteredWorktrees, replaceTreeFiles, replayTree, type RepositoryGit, retainedDocument, rewriteCommit, storeConflictState, temporaryBranchPrefix, treeEntries, withConflictScratch } from "@git-workbench/git"
-import { type ConflictFile, type ConflictRequest, type ConflictResult, type ConflictState, type ConflictSubject, type ResolutionCandidate, ResolutionCandidateSchema, type UnresolvedStack } from "@git-workbench/shared"
+import { blob, candidateReady, conflictHunks, conflictStateRef, gitText, hasConflictMarkers, isText, normalize, readConflictState, readRegisteredWorktrees, replaceTreeFiles, replayTree, type RepositoryGit, retainedDocument, rewriteCommit, storeConflictState, temporaryBranchPrefix, treeEntries, withConflictScratch } from "@laneway/git"
+import { type ConflictFile, type ConflictRequest, type ConflictResult, type ConflictState, type ConflictSubject, type ResolutionCandidate, ResolutionCandidateSchema, type UnresolvedStack } from "@laneway/shared"
 import { createHash } from "node:crypto"
 import { lstat, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
@@ -7,7 +7,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 type Changes = Map<string, string | null>
 export const conflictMutation = (request: ConflictRequest) =>
     ["rewrite", "accept", "keep-stashed", "restore", "discard", "resume-working"].includes(request.action)
-const candidateRef = (subject: ConflictSubject) => `refs/workbench/conflict-candidates/${subject.id}/${subject.input}`
+const candidateRef = (subject: ConflictSubject) => `refs/laneway/conflict-candidates/${subject.id}/${subject.input}`
 const commitParent = (repo: RepositoryGit, commit: string) => gitText(repo, ["rev-parse", `${commit}^`])
 const branchRef = (name: string) => name.startsWith("refs/heads/") ? name : `refs/heads/${name}`
 
@@ -783,7 +783,7 @@ async function runMergeTool(repo: RepositoryGit, subject: ConflictSubject, file:
         throw new Error("Configure Git merge.tool before opening an external merge tool.")
     const directory = join(
         repo.descriptor.commonDirectory,
-        "workbench",
+        "laneway",
         "resolutions",
         subject.id,
         subject.input,
@@ -835,7 +835,7 @@ async function runMergeTool(repo: RepositoryGit, subject: ConflictSubject, file:
 }
 
 async function cleanupResolutionFiles(repo: RepositoryGit, subject: ConflictSubject, file?: string) {
-    const root = resolve(repo.descriptor.commonDirectory, "workbench", "resolutions")
+    const root = resolve(repo.descriptor.commonDirectory, "laneway", "resolutions")
     const path = resolve(root, subject.id, subject.input, ...(file ? [createHash("sha256").update(file).digest("hex")] : []))
     if (isAbsolute(relative(root, path)) || relative(root, path).startsWith(".."))
         throw new Error("Invalid resolution directory")

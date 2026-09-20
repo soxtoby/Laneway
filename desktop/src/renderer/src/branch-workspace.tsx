@@ -1,5 +1,5 @@
-import type { AvailableOpenRepository, BranchGraph, BranchGraphBranchNode, BranchGraphMarker, RepositoryGraphSettings, Workspace, WorkspaceColumn } from "@git-workbench/shared"
-import type { DiffLayout } from "@git-workbench/shared"
+import type { AvailableOpenRepository, BranchGraph, BranchGraphBranchNode, BranchGraphMarker, RepositoryGraphSettings, Workspace, WorkspaceColumn } from "@laneway/shared"
+import type { DiffLayout } from "@laneway/shared"
 import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 import radio from "remix/ui/radio"
 import { graphLineColor, graphRowHeight, type GraphRowLayout, layoutBranchGraph } from "./branch-graph-layout"
@@ -42,7 +42,7 @@ interface RepositoryGraphState {
 }
 
 interface BranchWorkspaceOptions {
-    api: Window["workbench"]
+    api: Window["laneway"]
     update(): Promise<AbortSignal>
     signal: AbortSignal
     notify(notice: NoticeState): void
@@ -1338,7 +1338,7 @@ function BranchRow(
                 draggable={!branch.remoteOnly}
                 mix={[
                     graphRow,
-                    on("dragstart", event => event.dataTransfer?.setData("application/x-workbench-branch", branch.preferredRef)),
+                    on("dragstart", event => event.dataTransfer?.setData("application/x-laneway-branch", branch.preferredRef)),
                     on("click", props.select),
                     ref((element, signal) => {
                         element.addEventListener("contextmenu", event => handle.props.contextMenu(event), { signal })
@@ -1580,7 +1580,7 @@ function BranchColumns(
                                                     if (source)
                                                         props.commitMove(source)
                                                     else {
-                                                        const branch = event.dataTransfer?.getData("application/x-workbench-branch")
+                                                        const branch = event.dataTransfer?.getData("application/x-laneway-branch")
                                                         if (branch)
                                                             props.dropBranch(column.id, branch)
                                                     }

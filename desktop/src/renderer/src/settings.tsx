@@ -1,11 +1,11 @@
-import type { GitSettingsState } from "@git-workbench/shared"
+import type { GitSettingsState } from "@laneway/shared"
 import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 import { errorMessage, type NoticeState } from "./feedback"
 
 type SettingsAction = "idle" | "choosing" | "path" | "resetting" | "opening-file" | "saving-identities"
 
 interface SettingsOptions {
-    api: Window["workbench"]
+    api: Window["laneway"]
     initial: GitSettingsState
     update(): Promise<AbortSignal>
     notify(notice: NoticeState): void

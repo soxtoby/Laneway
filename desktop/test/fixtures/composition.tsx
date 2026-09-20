@@ -1,4 +1,4 @@
-import type { CompositionRequest, LocalRequest } from "@git-workbench/shared"
+import type { CompositionRequest, LocalRequest } from "@laneway/shared"
 import { createRoot, css, type Handle, on } from "remix/ui"
 import { compositionStyles, createComposition } from "../../src/renderer/src/composition"
 
@@ -36,7 +36,7 @@ const api = {
             },
         }
     },
-} satisfies Pick<Window["workbench"], "localOperation">
+} satisfies Pick<Window["laneway"], "localOperation">
 let resolved = false
 function Fixture(handle: Handle) {
     let selected = false, wholeCommit = false, tip = "2".repeat(40)

@@ -17,7 +17,7 @@ function git(cwd: string, ...args: string[]) {
     return result.stdout.toString().trim()
 }
 async function repository(format = "sha1", commit = true) {
-    const path = await mkdtemp(resolve(tmpdir(), "workbench-diff-"))
+    const path = await mkdtemp(resolve(tmpdir(), "laneway-diff-"))
     roots.push(path)
     git(path, "init", "-q", "--initial-branch=main", `--object-format=${format}`)
     git(path, "config", "user.name", "Diff Test")

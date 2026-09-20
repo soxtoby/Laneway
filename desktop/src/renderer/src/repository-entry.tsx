@@ -1,4 +1,4 @@
-import type { EntryError, EntryProgress, EntryResult, Workspace } from "@git-workbench/shared"
+import type { EntryError, EntryProgress, EntryResult, Workspace } from "@laneway/shared"
 import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 import { errorMessage, type NoticeState } from "./feedback"
 import { type EntryActions, EntryOptions } from "./workspace"
@@ -20,7 +20,7 @@ interface InitState {
 }
 
 interface RepositoryEntryOptions {
-    api: Window["workbench"]
+    api: Window["laneway"]
     defaultCloneParent: string
     update(): Promise<AbortSignal>
     workspaceOpened(workspace: Workspace): void

@@ -1,4 +1,4 @@
-import { gitText, type RepositoryGit } from "@git-workbench/git"
+import { gitText, type RepositoryGit } from "@laneway/git"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
@@ -6,7 +6,7 @@ import { join, resolve, sep } from "node:path"
 // Hooks see the actual proposed commit in an isolated checkout and index. Their
 // configured commands and filters still come from the destination repository.
 export async function compositionCommit(repo: RepositoryGit, parent: string, tree: string, source?: string, message = "", cancelled = () => false) {
-    const root = resolve(tmpdir()), scratch = await mkdtemp(join(root, "workbench-composition-hook-"))
+    const root = resolve(tmpdir()), scratch = await mkdtemp(join(root, "laneway-composition-hook-"))
     let retain = false
     try {
         await repo.command(scratch, ["init", "-q", `--object-format=${repo.descriptor.objectFormat}`])

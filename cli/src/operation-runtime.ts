@@ -1,10 +1,10 @@
-import { connectRepository, GitError, type RepositoryGit } from "@git-workbench/git"
-import { pathExists, previewWorktree, worktreeBasename } from "@git-workbench/git"
-import { type OperationAvailability, type OperationAvailabilityReason, type OperationHistoryEntry, type OperationHistoryResult, type OperationSummary, OperationSummarySchema, type OperationTransitionResult, type RecoveredExecution, type RecoveryResult, type TestMutationResult } from "@git-workbench/shared"
-import type { WorktreeRequest, WorktreeResult } from "@git-workbench/shared"
-import type { LocalRequest, LocalResult } from "@git-workbench/shared"
-import type { ConflictRequest, ConflictResult } from "@git-workbench/shared"
-import type { BranchGraphReadOptions, PullRequest, PullResult } from "@git-workbench/shared"
+import { connectRepository, GitError, type RepositoryGit } from "@laneway/git"
+import { pathExists, previewWorktree, worktreeBasename } from "@laneway/git"
+import { type OperationAvailability, type OperationAvailabilityReason, type OperationHistoryEntry, type OperationHistoryResult, type OperationSummary, OperationSummarySchema, type OperationTransitionResult, type RecoveredExecution, type RecoveryResult, type TestMutationResult } from "@laneway/shared"
+import type { WorktreeRequest, WorktreeResult } from "@laneway/shared"
+import type { LocalRequest, LocalResult } from "@laneway/shared"
+import type { ConflictRequest, ConflictResult } from "@laneway/shared"
+import type { BranchGraphReadOptions, PullRequest, PullResult } from "@laneway/shared"
 import { link, lstat, mkdir, open, readdir, readFile, readlink, rename, unlink } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { z } from "zod"
@@ -14,7 +14,7 @@ import { executePull, preparePull, type PullPreparation, type PullProgressReport
 import { mutateWorktree } from "./worktree-mutations"
 import { captureWorktreeState, relocateRemovedState, restoreWorktreeState, retainWorktreeState, stateIdentity, worktreeStateMatches, WorktreeStateSchema } from "./worktree-state"
 
-const fixtureRef = "refs/workbench/test/fixture"
+const fixtureRef = "refs/laneway/test/fixture"
 const journalFileName = "journal.jsonl"
 const historyFileName = "history.jsonl"
 
@@ -752,7 +752,7 @@ class OperationStore {
     private readonly lockPath: string
 
     constructor(commonDirectory: string) {
-        this.directory = resolve(commonDirectory, "workbench")
+        this.directory = resolve(commonDirectory, "laneway")
         this.journalPath = resolve(this.directory, journalFileName)
         this.historyPath = resolve(this.directory, historyFileName)
         this.lockPath = resolve(this.directory, "mutation.lock")
@@ -778,7 +778,7 @@ class OperationStore {
                     if (await reclaimStaleLock(this.lockPath))
                         continue
                     if (noWait)
-                        throw new OperationRuntimeError("operation.locked", "Another Workbench mutation holds the repository lock.")
+                        throw new OperationRuntimeError("operation.locked", "Another Laneway mutation holds the repository lock.")
                     if (await cancellation.wait(50))
                         throw new OperationCancelledError("Cancellation acknowledged while waiting for the repository lock.")
                     continue
@@ -809,7 +809,7 @@ class OperationStore {
             if (event.type == "operation") {
                 validateOperationIntegrity(event.operation, "operation.history-corrupt")
                 if (operationIds.has(event.operation.id))
-                    throw new OperationRuntimeError("operation.history-corrupt", "Operation History contains a duplicate Workbench Operation.")
+                    throw new OperationRuntimeError("operation.history-corrupt", "Operation History contains a duplicate Laneway Operation.")
                 operationIds.add(event.operation.id)
                 projection.operations.splice(projection.position)
                 projection.operations.push(event.operation)
@@ -866,7 +866,7 @@ class OperationStore {
                 throw new OperationRuntimeError("operation.journal-corrupt", "The recovery journal contains an invalid record.")
             if (event.phase == "intent") {
                 if (!event.operation)
-                    throw new OperationRuntimeError("operation.journal-corrupt", "A recovery intent does not contain its Workbench Operation.")
+                    throw new OperationRuntimeError("operation.journal-corrupt", "A recovery intent does not contain its Laneway Operation.")
                 validateOperationIntegrity(event.operation, "operation.journal-corrupt")
                 if (executions.has(event.executionId))
                     throw new OperationRuntimeError("operation.journal-corrupt", "The recovery journal contains a duplicate intent.")
@@ -921,7 +921,7 @@ function validateOperationIntegrity(
 ) {
     const { integrity, ...content } = operation
     if (integrity !== operationIntegrity(content))
-        throw new OperationRuntimeError(code, "A stored Workbench Operation failed its integrity check.")
+        throw new OperationRuntimeError(code, "A stored Laneway Operation failed its integrity check.")
 }
 
 function operationIntegrity(content: z.output<typeof StoredOperationContentSchema>) {
@@ -994,14 +994,14 @@ async function retainOperation(repository: RepositoryGit, operation: StoredOpera
     }
     for (const [index, change] of operation.refChanges.entries()) {
         if (change.before)
-            await repository.updateRef(`refs/workbench/recovery/${operation.id}/before/${index}`, change.before)
+            await repository.updateRef(`refs/laneway/recovery/${operation.id}/before/${index}`, change.before)
         if (change.after)
-            await repository.updateRef(`refs/workbench/recovery/${operation.id}/after/${index}`, change.after)
+            await repository.updateRef(`refs/laneway/recovery/${operation.id}/after/${index}`, change.after)
     }
 }
 
 async function releaseOperation(repository: RepositoryGit, operationId: string) {
-    const prefix = `refs/workbench/recovery/${operationId}/`
+    const prefix = `refs/laneway/recovery/${operationId}/`
     const refs = await repository.listRefs(prefix)
     if (refs.length)
         await repository.command(repository.descriptor.mainWorktree, ["update-ref", "--stdin"], refs.map(ref => `delete ${ref}\n`).join(""))
@@ -1013,7 +1013,7 @@ async function applyRefChanges(repository: RepositoryGit, changes: RefChange[]) 
     } catch (error) {
         throw new OperationRuntimeError(
             "operation.precondition-failed",
-            "Repository state changed before the Workbench Operation could be applied.",
+            "Repository state changed before the Laneway Operation could be applied.",
             error instanceof GitError ? error.details : undefined,
         )
     }
@@ -1035,7 +1035,7 @@ async function validatePreconditions(repository: RepositoryGit, operation: Store
             })
         }
         if (!matches) {
-            throw new OperationRuntimeError("operation.precondition-failed", "Worktree files, registration, HEAD, index, or refs changed outside Workbench.", {
+            throw new OperationRuntimeError("operation.precondition-failed", "Worktree files, registration, HEAD, index, or refs changed outside Laneway.", {
                 reason: "worktree-changed",
             })
         }
@@ -1048,7 +1048,7 @@ async function validatePreconditions(repository: RepositoryGit, operation: Store
         if (actual !== expected) {
             throw new OperationRuntimeError(
                 "operation.precondition-failed",
-                `Repository ref ${change.ref} changed outside Workbench.`,
+                `Repository ref ${change.ref} changed outside Laneway.`,
                 { reason: "ref-changed", ref: change.ref, expected, actual },
             )
         }
@@ -1060,14 +1060,14 @@ async function validatePreconditions(repository: RepositoryGit, operation: Store
         if (actual.index !== expected.index) {
             throw new OperationRuntimeError(
                 "operation.precondition-failed",
-                `The index at ${change.path} changed outside Workbench.`,
+                `The index at ${change.path} changed outside Laneway.`,
                 { reason: "index-changed", worktree: change.path },
             )
         }
         if (actual.worktree !== expected.worktree) {
             throw new OperationRuntimeError(
                 "operation.precondition-failed",
-                `The worktree at ${change.path} changed outside Workbench.`,
+                `The worktree at ${change.path} changed outside Laneway.`,
                 { reason: "worktree-changed", worktree: change.path },
             )
         }
@@ -1115,7 +1115,7 @@ function sameStrings(left: string[], right: string[]) {
 function gitLockfileError(lockfiles: string[]) {
     return new OperationRuntimeError(
         "operation.precondition-failed",
-        `Git lockfiles prevent the Workbench Operation: ${lockfiles.join(", ")}.`,
+        `Git lockfiles prevent the Laneway Operation: ${lockfiles.join(", ")}.`,
         { reason: "git-lockfile-present", lockfiles },
     )
 }

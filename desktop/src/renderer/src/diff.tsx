@@ -1,4 +1,4 @@
-import type { DiffLayout, FileDiffPage } from "@git-workbench/shared"
+import type { DiffLayout, FileDiffPage } from "@laneway/shared"
 import { DiffHunksRenderer, wrapCoreCSS, wrapThemeCSS } from "@pierre/diffs"
 import { css, type Handle, ref } from "remix/ui"
 import { pierrePatch } from "./diff-patch"

@@ -1,4 +1,4 @@
-import type { BranchGraph, BranchGraphBranchNode } from "@git-workbench/shared"
+import type { BranchGraph, BranchGraphBranchNode } from "@laneway/shared"
 
 export type GraphNode =
     | { kind: "branch"; id: string; branch: BranchGraphBranchNode }

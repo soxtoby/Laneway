@@ -1,4 +1,4 @@
-import type { AuthorIdentitySettings, BranchGraph, BranchGraphBase, BranchGraphBranchNode, BranchGraphMarker, BranchGraphReadOptions, BranchGraphTagNode, BranchGraphVirtualBranch, BranchGraphWorktree, BranchHistoryCommit, BranchHistoryPage, BranchHistoryRequest } from "@git-workbench/shared"
+import type { AuthorIdentitySettings, BranchGraph, BranchGraphBase, BranchGraphBranchNode, BranchGraphMarker, BranchGraphReadOptions, BranchGraphTagNode, BranchGraphVirtualBranch, BranchGraphWorktree, BranchHistoryCommit, BranchHistoryPage, BranchHistoryRequest } from "@laneway/shared"
 import { readFile } from "node:fs/promises"
 import { basename, join } from "node:path"
 import { graphHistory } from "./graph-history"
@@ -159,7 +159,7 @@ async function readVerifiedGraph(
     }
     throw new GitError(
         "git.command-failed",
-        "Repository refs kept changing while Workbench read the Branch Graph. Workbench will retry while the graph is visible.",
+        "Repository refs kept changing while Laneway read the Branch Graph. Laneway will retry while the graph is visible.",
     )
 }
 
@@ -206,7 +206,7 @@ async function readEvidence(runner: GraphRunner, descriptor: RepositoryDescripto
     const stashText = text(stashResult)
     let associations: Record<string, string | null> = {}
     try {
-        associations = JSON.parse(await readFile(join(descriptor.commonDirectory, "workbench-local.json"), "utf8")).stashes ?? {}
+        associations = JSON.parse(await readFile(join(descriptor.commonDirectory, "laneway-local.json"), "utf8")).stashes ?? {}
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code != "ENOENT")
             throw error
@@ -806,7 +806,7 @@ async function readHistoryPage(descriptor: RepositoryDescriptor, runner: GraphRu
         ? request.tip
         : optionalText(await runner.run(["rev-parse", "--verify", "--quiet", request.branchRef], [0, 1]))
     if (before != request.tip)
-        throw new GitError("git.command-failed", "The branch moved before Workbench could expand its commits. Refresh the Branch Graph and try again.")
+        throw new GitError("git.command-failed", "The branch moved before Laneway could expand its commits. Refresh the Branch Graph and try again.")
     const offset = Math.max(0, request.offset ?? 0)
     const limit = Math.min(200, Math.max(1, request.limit ?? 100))
     const output = text(
@@ -827,7 +827,7 @@ async function readHistoryPage(descriptor: RepositoryDescriptor, runner: GraphRu
         ? request.tip
         : optionalText(await runner.run(["rev-parse", "--verify", "--quiet", request.branchRef], [0, 1]))
     if (after != request.tip)
-        throw new GitError("git.command-failed", "The branch moved while Workbench expanded its commits. Refresh the Branch Graph and try again.")
+        throw new GitError("git.command-failed", "The branch moved while Laneway expanded its commits. Refresh the Branch Graph and try again.")
     return {
         branchRef: request.branchRef,
         tip: request.tip,
@@ -978,7 +978,7 @@ function withoutInternals(branch: MutableBranch): BranchGraphBranchNode {
 function validateObjectId(descriptor: RepositoryDescriptor, objectId: string) {
     const length = descriptor.objectFormat == "sha1" ? 40 : 64
     if (!new RegExp(`^[0-9a-f]{${length}}$`).test(objectId))
-        throw new GitError("git.command-failed", `Workbench received an invalid ${descriptor.objectFormat} object ID.`)
+        throw new GitError("git.command-failed", `Laneway received an invalid ${descriptor.objectFormat} object ID.`)
 }
 
 function cancelledError() {

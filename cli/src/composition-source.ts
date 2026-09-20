@@ -1,5 +1,5 @@
-import { blob, gitText, isText, replaceTreeFiles, type RepositoryGit, treeEntries, withConflictScratch } from "@git-workbench/git"
-import type { CompositionRequest, DiffLine, FileDiffPage } from "@git-workbench/shared"
+import { blob, gitText, isText, replaceTreeFiles, type RepositoryGit, treeEntries, withConflictScratch } from "@laneway/git"
+import type { CompositionRequest, DiffLine, FileDiffPage } from "@laneway/shared"
 import { join } from "node:path"
 
 export async function workingTree(repo: RepositoryGit, path: string) {

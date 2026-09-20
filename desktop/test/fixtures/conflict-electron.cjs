@@ -93,8 +93,8 @@ app.on("browser-window-created", (_event, window) => {
                     if (${JSON.stringify(phase)} == 'unresolved') {
                         row('file.txt').querySelector('button[title="file.txt"]').click();
                         await wait(() => row('file.txt').querySelector('.pierre-merge')?.shadowRoot?.querySelector('diffs-container')?.shadowRoot?.querySelector('[data-line]'));
-                        const state = await window.workbench.getState();
-                        await window.workbench.updateWorkspace(state.workspace);
+                        const state = await window.laneway.getState();
+                        await window.laneway.updateWorkspace(state.workspace);
                         if (violations.length) throw new Error('CSP: ' + violations.join(','));
                         return { unresolved: true };
                     }
@@ -115,11 +115,11 @@ app.on("browser-window-created", (_event, window) => {
                     if (markerLabels.some(label => /Updated stack|Replayed commit/.test(label))) throw new Error('Internal marker labels remain visible');
                     if (!row('file.txt').querySelector('.merge-sides').textContent.includes('topic change')) throw new Error('Source commit context missing');
                     if (button('Edit result', column) || button('Save changes', column) || root().querySelector('[contenteditable="true"]')) throw new Error('Custom editing UI remains');
-                    const listed = await window.workbench.conflictOperation('fixture', { action: 'list' });
+                    const listed = await window.laneway.conflictOperation('fixture', { action: 'list' });
                     if (!listed.ok) throw new Error(listed.error.message);
                     const subject = listed.result.conflicts.find(conflict => conflict.kind == 'commit').id;
                     const savedFile = async () => {
-                        const response = await window.workbench.conflictOperation('fixture', { action: 'inspect', subject });
+                        const response = await window.laneway.conflictOperation('fixture', { action: 'inspect', subject });
                         if (!response.ok) throw new Error(response.error.message);
                         return response.result.view.files.find(file => file.path == 'file.txt');
                     };
@@ -160,8 +160,8 @@ app.on("browser-window-created", (_event, window) => {
                     column.querySelector('.resolution-footer').scrollIntoView({ block: 'nearest' });
                     const bounds = column.getBoundingClientRect();
                     if (bounds.width < 350 || bounds.height < 200) throw new Error('Resolution column did not lay out');
-                    const state = await window.workbench.getState();
-                    await window.workbench.updateWorkspace(state.workspace);
+                    const state = await window.laneway.getState();
+                    await window.laneway.updateWorkspace(state.workspace);
                     if (violations.length) throw new Error('CSP: ' + violations.join(','));
                     return { candidate: true };
                 }
@@ -191,7 +191,7 @@ app.on("browser-window-created", (_event, window) => {
                     for (let i = 0; i < 100; i++) {
                         await new Promise(resolve => setTimeout(resolve, 100));
                         const column = document.querySelector('.resolution-footer');
-                        if (document.documentElement.dataset.appearance == 'dark' && (await window.workbench.getState()).appearance == 'dark') return;
+                        if (document.documentElement.dataset.appearance == 'dark' && (await window.laneway.getState()).appearance == 'dark') return;
                     }
                     throw new Error('Conflict column did not adopt dark appearance');
                 })()`)

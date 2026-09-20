@@ -1,5 +1,5 @@
-import { branchSlug, hasUniqueCommits, normalize, populatedSubmodules, type RepositoryGit } from "@git-workbench/git"
-import type { RegisteredWorktree, WorktreePreview } from "@git-workbench/shared"
+import { branchSlug, hasUniqueCommits, normalize, populatedSubmodules, type RepositoryGit } from "@laneway/git"
+import type { RegisteredWorktree, WorktreePreview } from "@laneway/shared"
 import { mkdir, rm } from "node:fs/promises"
 import { dirname } from "node:path"
 
@@ -69,7 +69,7 @@ async function preserveBeforeSwitch(repository: RepositoryGit, worktree: Registe
     for (const path of [...paths, worktree.path]) {
         const status = await repository.command(path, ["status", "--porcelain", "--untracked-files=all"])
         if (status.length) {
-            await repository.command(path, ["stash", "push", "--include-untracked", "-m", `Workbench: ${branch ?? worktree.name}`])
+            await repository.command(path, ["stash", "push", "--include-untracked", "-m", `Laneway: ${branch ?? worktree.name}`])
             if (path == worktree.path)
                 changedRefs.add("refs/stash")
         }

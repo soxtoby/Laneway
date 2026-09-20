@@ -1,10 +1,10 @@
-import type { BranchGraph, BranchGraphBranchNode, BranchGraphVirtualBranch, WorktreePreview, WorktreeRequest } from "@git-workbench/shared"
+import type { BranchGraph, BranchGraphBranchNode, BranchGraphVirtualBranch, WorktreePreview, WorktreeRequest } from "@laneway/shared"
 import { css, type Handle, on, ref } from "remix/ui"
 import { CommandLens } from "./command-lens"
 
 type Column = BranchGraphBranchNode | BranchGraphVirtualBranch
 interface Options {
-    api: Window["workbench"]
+    api: Window["laneway"]
     update(): Promise<AbortSignal>
     completed(repositoryId: string, request: WorktreeRequest, columnId?: string): Promise<void>
 }

@@ -3,7 +3,7 @@ import { defineConfig } from "electron-vite"
 export default defineConfig({
     main: {
         build: {
-            externalizeDeps: { exclude: ["@git-workbench/git", "@git-workbench/settings", "@git-workbench/shared"] },
+            externalizeDeps: { exclude: ["@laneway/git", "@laneway/settings", "@laneway/shared"] },
         },
     },
     preload: {

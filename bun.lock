@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "git-workbench",
+      "name": "laneway",
       "devDependencies": {
         "@eslint/js": "^10.0.1",
         "@types/bun": "^1.4.0",
@@ -15,21 +15,21 @@
       },
     },
     "cli": {
-      "name": "@git-workbench/cli",
+      "name": "@laneway/cli",
       "dependencies": {
-        "@git-workbench/git": "workspace:*",
-        "@git-workbench/settings": "workspace:*",
-        "@git-workbench/shared": "workspace:*",
+        "@laneway/git": "workspace:*",
+        "@laneway/settings": "workspace:*",
+        "@laneway/shared": "workspace:*",
         "zod": "^4.4.3",
       },
     },
     "desktop": {
-      "name": "@git-workbench/desktop",
+      "name": "@laneway/desktop",
       "dependencies": {
         "@atlaskit/pragmatic-drag-and-drop": "^3.1.0",
-        "@git-workbench/git": "workspace:*",
-        "@git-workbench/settings": "workspace:*",
-        "@git-workbench/shared": "workspace:*",
+        "@laneway/git": "workspace:*",
+        "@laneway/settings": "workspace:*",
+        "@laneway/shared": "workspace:*",
         "@pierre/diffs": "^1.4.1",
         "remix": "next",
       },
@@ -43,19 +43,19 @@
       },
     },
     "git": {
-      "name": "@git-workbench/git",
+      "name": "@laneway/git",
       "dependencies": {
-        "@git-workbench/shared": "workspace:*",
+        "@laneway/shared": "workspace:*",
       },
     },
     "settings": {
-      "name": "@git-workbench/settings",
+      "name": "@laneway/settings",
       "dependencies": {
-        "@git-workbench/shared": "workspace:*",
+        "@laneway/shared": "workspace:*",
       },
     },
     "shared": {
-      "name": "@git-workbench/shared",
+      "name": "@laneway/shared",
       "dependencies": {
         "zod": "^4.4.3",
       },
@@ -213,15 +213,15 @@
 
     "@eslint/plugin-kit": ["@eslint/plugin-kit@0.7.2", "", { "dependencies": { "@eslint/core": "^1.2.1", "levn": "^0.4.1" } }, "sha512-+CNAzxglkrpNf/kKywqQfk74QjtceuOE7Qm+AF8miRvPF/wmmK5+OJOgVh3AVTT3RP2mH3+FOaxlE5v72owk0A=="],
 
-    "@git-workbench/cli": ["@git-workbench/cli@workspace:cli"],
+    "@laneway/cli": ["@laneway/cli@workspace:cli"],
 
-    "@git-workbench/desktop": ["@git-workbench/desktop@workspace:desktop"],
+    "@laneway/desktop": ["@laneway/desktop@workspace:desktop"],
 
-    "@git-workbench/git": ["@git-workbench/git@workspace:git"],
+    "@laneway/git": ["@laneway/git@workspace:git"],
 
-    "@git-workbench/settings": ["@git-workbench/settings@workspace:settings"],
+    "@laneway/settings": ["@laneway/settings@workspace:settings"],
 
-    "@git-workbench/shared": ["@git-workbench/shared@workspace:shared"],
+    "@laneway/shared": ["@laneway/shared@workspace:shared"],
 
     "@humanfs/core": ["@humanfs/core@0.19.2", "", { "dependencies": { "@humanfs/types": "^0.15.0" } }, "sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA=="],
 

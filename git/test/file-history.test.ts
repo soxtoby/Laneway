@@ -7,7 +7,7 @@ import { openRepository } from "../src/index"
 
 const roots: string[] = []
 test("sparse file history batches metadata and stops at a bounded revision window without loading diffs", async () => {
-    const root = await mkdtemp(resolve(tmpdir(), "workbench-history-sparse-"))
+    const root = await mkdtemp(resolve(tmpdir(), "laneway-history-sparse-"))
     roots.push(root)
     git(root, "init", "-q", "--initial-branch=main")
     git(root, "config", "log.showRoot", "false")
@@ -54,7 +54,7 @@ test("sparse file history batches metadata and stops at a bounded revision windo
     expect(last.cursor).toBeUndefined()
 })
 test("copy ties require a validated choice; related evidence is ranked and Primary history is protected", async () => {
-    const root = await mkdtemp(resolve(tmpdir(), "workbench-history-evidence-"))
+    const root = await mkdtemp(resolve(tmpdir(), "laneway-history-evidence-"))
     roots.push(root)
     git(root, "init", "-q", "--initial-branch=main")
     git(root, "config", "user.name", "History Test")
@@ -111,7 +111,7 @@ function git(cwd: string, ...args: string[]) {
 }
 for (const format of ["sha1", "sha256"]) {
     test(`file history follows renames, pages, fixes commit sources, and reads blame (${format})`, async () => {
-        const root = await mkdtemp(resolve(tmpdir(), "workbench-history-"))
+        const root = await mkdtemp(resolve(tmpdir(), "laneway-history-"))
         roots.push(root)
         git(root, "init", "-q", "--initial-branch=main", `--object-format=${format}`)
         git(root, "config", "user.name", "History Test")

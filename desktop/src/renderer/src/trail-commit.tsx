@@ -1,4 +1,4 @@
-import type { FileHistoryEntry, FileHistoryPage, FileHistorySource } from "@git-workbench/shared"
+import type { FileHistoryEntry, FileHistoryPage, FileHistorySource } from "@laneway/shared"
 import { css, on, type RemixNode } from "remix/ui"
 
 export interface TrailCommitState {
@@ -13,7 +13,7 @@ export interface TrailCommitState {
     requests: Set<string>
     alive: boolean
 }
-export function createTrailCommits(options: { api: Window["workbench"]; update(): Promise<AbortSignal>; signal: AbortSignal }) {
+export function createTrailCommits(options: { api: Window["laneway"]; update(): Promise<AbortSignal>; signal: AbortSignal }) {
     const states = new Set<TrailCommitState>()
     let sequence = 0
     const update = () => {

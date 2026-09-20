@@ -1,4 +1,4 @@
-import type { FileHistoryEntry, FileHistoryPage, FileHistorySource } from "@git-workbench/shared"
+import type { FileHistoryEntry, FileHistoryPage, FileHistorySource } from "@laneway/shared"
 import { css, on, type RemixNode } from "remix/ui"
 import { InspectionItem } from "./file-list"
 
@@ -20,7 +20,7 @@ export interface FileHistoryState {
 }
 export function createFileHistories(
     options: {
-        api: Window["workbench"]
+        api: Window["laneway"]
         update(): Promise<AbortSignal>
         signal: AbortSignal
         changed?(state: FileHistoryState): void

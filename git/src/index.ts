@@ -1,4 +1,4 @@
-import type { BranchGraphReadOptions, BranchHistoryRequest, ChangesRequest, DiffSource, FileDiffRequest } from "@git-workbench/shared"
+import type { BranchGraphReadOptions, BranchHistoryRequest, ChangesRequest, DiffSource, FileDiffRequest } from "@laneway/shared"
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
 import { constants } from "node:fs"
 import { access, lstat, mkdir, readdir, readFile, realpath } from "node:fs/promises"
@@ -142,7 +142,7 @@ export async function selectGit(override?: string): Promise<GitInstallation> {
     } catch (error) {
         if (error instanceof GitError)
             throw error
-        throw new GitError("git.unavailable", `Workbench could not start Git at ${path}.`, { path })
+        throw new GitError("git.unavailable", `Laneway could not start Git at ${path}.`, { path })
     }
     if (result.exitCode != 0)
         throw new GitError("git.unavailable", redactGitText(result.stderr.toString()) || `Git at ${path} could not run.`, { path })
@@ -217,7 +217,7 @@ export async function connectRepository(path: string, git?: GitSelection, requir
     if (bare.stdout.toString().trim() == "true") {
         throw new GitError(
             "git.bare-repository",
-            "Bare repositories are unsupported because Workbench requires a Main Worktree for changes, columns, and recovery.",
+            "Bare repositories are unsupported because Laneway requires a Main Worktree for changes, columns, and recovery.",
             { path: selectedPath },
         )
     }
@@ -257,7 +257,7 @@ export async function connectRepository(path: string, git?: GitSelection, requir
     if (objectFormat != "sha1" && objectFormat != "sha256") {
         throw new GitError(
             "git.unsupported-format",
-            `Workbench does not support Git object format "${redactGitText(objectFormat)}". Supported formats are SHA-1 and SHA-256.`,
+            `Laneway does not support Git object format "${redactGitText(objectFormat)}". Supported formats are SHA-1 and SHA-256.`,
             { objectFormat: redactGitText(objectFormat) },
         )
     }
@@ -381,7 +381,7 @@ export class RepositoryGit {
         }
         commands.push("prepare", "commit", "")
         const result = await this.run(this.descriptor.selectedWorktree, ["update-ref", "--stdin"], commands.join("\n"))
-        this.throwIfFailed(result, "Repository refs changed before Workbench could update them.")
+        this.throwIfFailed(result, "Repository refs changed before Laneway could update them.")
     }
 
     async readWorktreeState(worktree: string): Promise<WorktreeGitState> {
@@ -522,7 +522,7 @@ export async function startCloneRepository(options: {
         if ((error as NodeJS.ErrnoException).code == "ENOENT")
             destinationExisted = false
         else
-            throw new GitError("git.destination-conflict", `Workbench cannot use the clone destination: ${destination}.`, { destination })
+            throw new GitError("git.destination-conflict", `Laneway cannot use the clone destination: ${destination}.`, { destination })
     }
 
     const execution = startGitProcess({
@@ -631,7 +631,7 @@ function startGitProcess(options: GitRunOptions) {
             windowsHide: true,
         })
     } catch {
-        throw new GitError("git.unavailable", `Workbench could not start Git at ${options.installation.path}.`, { path: options.installation.path })
+        throw new GitError("git.unavailable", `Laneway could not start Git at ${options.installation.path}.`, { path: options.installation.path })
     }
 
     const stdout: Buffer[] = []
@@ -655,7 +655,7 @@ function startGitProcess(options: GitRunOptions) {
         child.stdin.end(options.input)
 
     const result = new Promise<GitRunResult>((resolveResult, rejectResult) => {
-        child.once("error", () => rejectResult(new GitError("git.unavailable", `Workbench could not start Git at ${options.installation.path}.`)))
+        child.once("error", () => rejectResult(new GitError("git.unavailable", `Laneway could not start Git at ${options.installation.path}.`)))
         child.once("close", code => {
             if (forceTimer)
                 clearTimeout(forceTimer)
@@ -694,7 +694,7 @@ async function terminateProcessTree(pid: number, force: boolean) {
         // The process may have exited between the completion check and signal.
     }
 }
-import type { FileHistoryRequest } from "@git-workbench/shared"
+import type { FileHistoryRequest } from "@laneway/shared"
 import { startFileHistoryRead } from "./file-history"
 export * from "./conflicts"
 export * from "./worktrees"

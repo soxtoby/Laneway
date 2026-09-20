@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
 
 test("Pragmatic drag bindings, conflict approval and keyboard transfers under production CSP", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "workbench-composition-browser-"))
+    const directory = await mkdtemp(join(tmpdir(), "laneway-composition-browser-"))
     try {
         const build = await Bun.build({ entrypoints: [join(import.meta.dir, "fixtures/composition.tsx")], outdir: directory, target: "browser" })
         expect(build.success, build.logs.join("\n")).toBe(true)

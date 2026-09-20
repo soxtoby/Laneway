@@ -1,12 +1,12 @@
-import type { Appearance, AuthorIdentitySettings, BranchHistoryRequest, EntryProgress, RepositoryGraphSettings, Workspace } from "@git-workbench/shared"
-import type { ChangesRequest, FileDiffRequest } from "@git-workbench/shared"
-import type { WorktreeRequest } from "@git-workbench/shared"
-import type { CommitDraft, LocalRequest } from "@git-workbench/shared"
-import type { ConflictRequest } from "@git-workbench/shared"
-import type { PullProgress, PullRequest } from "@git-workbench/shared"
+import type { Appearance, AuthorIdentitySettings, BranchHistoryRequest, EntryProgress, RepositoryGraphSettings, Workspace } from "@laneway/shared"
+import type { ChangesRequest, FileDiffRequest } from "@laneway/shared"
+import type { WorktreeRequest } from "@laneway/shared"
+import type { CommitDraft, LocalRequest } from "@laneway/shared"
+import type { ConflictRequest } from "@laneway/shared"
+import type { PullProgress, PullRequest } from "@laneway/shared"
 import { contextBridge, ipcRenderer } from "electron"
 
-contextBridge.exposeInMainWorld("workbench", {
+contextBridge.exposeInMainWorld("laneway", {
     pullLatest: (repositoryId: string, request: PullRequest) => ipcRenderer.invoke("pull:latest", repositoryId, request),
     cancelPull: (repositoryId: string) => ipcRenderer.invoke("pull:cancel", repositoryId),
     onPullProgress: (listener: (progress: PullProgress) => void) => {
@@ -57,4 +57,4 @@ contextBridge.exposeInMainWorld("workbench", {
         return () => ipcRenderer.off("entry:progress", handler)
     },
 })
-import type { FileHistoryRequest } from "@git-workbench/shared"
+import type { FileHistoryRequest } from "@laneway/shared"

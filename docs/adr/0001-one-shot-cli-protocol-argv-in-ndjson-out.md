@@ -1,6 +1,6 @@
 # One-shot CLI protocol: argv requests, NDJSON responses, no envelope versioning
 
-The Workbench Engine is invoked as a fresh process per command by the GUI, people, and agents (per SOX-107). Requests are ordinary CLI arguments; stdout carries NDJSON results and progress events when `--json` is passed, human-readable text otherwise; stderr is always free-form human diagnostics. We deliberately dropped an earlier idea of versioned JSON request envelopes with in-band protocol negotiation: GUI and CLI ship together, so mismatched majors are not a realistic failure mode, and a one-shot process has nobody to negotiate with. Compatibility is checked out-of-band via `--version` before spawning when a caller needs assurance.
+The Laneway Engine is invoked as a fresh process per command by the GUI, people, and agents (per SOX-107). Requests are ordinary CLI arguments; stdout carries NDJSON results and progress events when `--json` is passed, human-readable text otherwise; stderr is always free-form human diagnostics. We deliberately dropped an earlier idea of versioned JSON request envelopes with in-band protocol negotiation: GUI and CLI ship together, so mismatched majors are not a realistic failure mode, and a one-shot process has nobody to negotiate with. Compatibility is checked out-of-band via `--version` before spawning when a caller needs assurance.
 
 ## Considered Options
 

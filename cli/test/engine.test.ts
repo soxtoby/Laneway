@@ -3,8 +3,8 @@ import { access, mkdir, mkdtemp, open, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { resolve } from "node:path"
 
-const enginePath = resolve(import.meta.dir, "../bin/workbench-engine.exe")
-const testSettingsPath = resolve(tmpdir(), `workbench-engine-tests-${process.pid}.json`)
+const enginePath = resolve(import.meta.dir, "../bin/lane.exe")
+const testSettingsPath = resolve(tmpdir(), `lane-tests-${process.pid}.json`)
 
 async function runEngineAt(
     cwd: string,
@@ -13,7 +13,7 @@ async function runEngineAt(
 ) {
     const child = Bun.spawn([enginePath, ...args], {
         cwd,
-        env: { ...process.env, WORKBENCH_SETTINGS_PATH: testSettingsPath, ...environment },
+        env: { ...process.env, LANEWAY_SETTINGS_PATH: testSettingsPath, ...environment },
         stderr: "pipe",
         stdout: "pipe",
     })
@@ -32,10 +32,10 @@ function runGitAt(cwd: string, ...args: string[]) {
 }
 
 async function createRepository(objectFormat: "sha1" | "sha256" = "sha1") {
-    const repository = await mkdtemp(resolve(tmpdir(), "workbench-mutation-"))
+    const repository = await mkdtemp(resolve(tmpdir(), "laneway-mutation-"))
     expect(runGitAt(repository, "init", "--quiet", `--object-format=${objectFormat}`).exitCode).toBe(0)
-    expect(runGitAt(repository, "config", "user.name", "Workbench Test").exitCode).toBe(0)
-    expect(runGitAt(repository, "config", "user.email", "workbench@example.invalid").exitCode).toBe(0)
+    expect(runGitAt(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
+    expect(runGitAt(repository, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
     await writeFile(resolve(repository, "README.md"), "initial\n")
     expect(runGitAt(repository, "add", "README.md").exitCode).toBe(0)
     expect(runGitAt(repository, "commit", "--quiet", "-m", "Initial").exitCode).toBe(0)
@@ -58,31 +58,31 @@ function parseNdjson(output: string): unknown[] {
     return output.trimEnd().split("\n").map(line => JSON.parse(line))
 }
 
-describe("Workbench Engine executable", () => {
+describe("Laneway Engine executable", () => {
     test("reports its version", async () => {
         const result = await runEngine("--version")
 
         expect(result).toEqual({
             exitCode: 0,
             stderr: "",
-            stdout: "workbench-engine 0.1.0\n",
+            stdout: "lane 0.1.0\n",
         })
     })
 
     test("echo writes human-readable progress and its result", async () => {
-        const result = await runEngine("echo", "Hello, Workbench", "--delay-ms", "0")
+        const result = await runEngine("echo", "Hello, Laneway", "--delay-ms", "0")
 
         expect(result).toEqual({
             exitCode: 0,
             stderr: "",
-            stdout: "Preparing echo\nEchoing message\nHello, Workbench\n",
+            stdout: "Preparing echo\nEchoing message\nHello, Laneway\n",
         })
     })
 
     test("echo streams machine-readable progress and its result", async () => {
         const result = await runEngine(
             "echo",
-            "Hello, Workbench",
+            "Hello, Laneway",
             "--delay-ms",
             "0",
             "--json",
@@ -102,7 +102,7 @@ describe("Workbench Engine executable", () => {
             completed: 1,
             total: 2,
             message: "Echoing message",
-        }, { type: "result", command: "echo", message: "Hello, Workbench" }])
+        }, { type: "result", command: "echo", message: "Hello, Laneway" }])
     })
 
     test("echo uses its default payload when only options are passed", async () => {
@@ -112,7 +112,7 @@ describe("Workbench Engine executable", () => {
         expect(parseNdjson(result.stdout).at(-1)).toEqual({
             type: "result",
             command: "echo",
-            message: "Workbench Engine is running.",
+            message: "Laneway Engine is running.",
         })
     })
 
@@ -176,9 +176,9 @@ describe("Workbench Engine executable", () => {
         }])
     })
 
-    test("a Workbench Operation can be undone and redone by later Engine processes", async () => {
+    test("a Laneway Operation can be undone and redone by later Engine processes", async () => {
         const repository = await createRepository()
-        const testEnvironment = { WORKBENCH_ENABLE_TEST_COMMANDS: "1" }
+        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
 
         try {
             const mutation = await runEngineAt(
@@ -187,7 +187,7 @@ describe("Workbench Engine executable", () => {
                 testEnvironment,
             )
             expect(mutation.exitCode).toBe(0)
-            expect(runGitAt(repository, "show", "refs/workbench/test/fixture").stdout.toString()).toBe("first")
+            expect(runGitAt(repository, "show", "refs/laneway/test/fixture").stdout.toString()).toBe("first")
 
             const undo = await runEngineAt(repository, ["undo", "--json"], testEnvironment)
             expect(undo.exitCode).toBe(0)
@@ -196,7 +196,7 @@ describe("Workbench Engine executable", () => {
                 command: "undo",
                 status: "performed",
             })
-            expect(runGitAt(repository, "rev-parse", "--verify", "--quiet", "refs/workbench/test/fixture").exitCode).toBe(1)
+            expect(runGitAt(repository, "rev-parse", "--verify", "--quiet", "refs/laneway/test/fixture").exitCode).toBe(1)
 
             const redo = await runEngineAt(repository, ["redo", "--json"], testEnvironment)
             expect(redo.exitCode).toBe(0)
@@ -205,7 +205,7 @@ describe("Workbench Engine executable", () => {
                 command: "redo",
                 status: "performed",
             })
-            expect(runGitAt(repository, "show", "refs/workbench/test/fixture").stdout.toString()).toBe("first")
+            expect(runGitAt(repository, "show", "refs/laneway/test/fixture").stdout.toString()).toBe("first")
 
             const history = await runEngineAt(repository, ["history", "--json"], testEnvironment)
             expect(history.exitCode).toBe(0)
@@ -218,7 +218,7 @@ describe("Workbench Engine executable", () => {
                     kind: "test.ref-update",
                     summary: "Set the test fixture to first",
                     state: "applied",
-                    affectedRefs: ["refs/workbench/test/fixture"],
+                    affectedRefs: ["refs/laneway/test/fixture"],
                     affectedWorktrees: [repository],
                     isNextUndo: true,
                     isNextRedo: false,
@@ -229,7 +229,7 @@ describe("Workbench Engine executable", () => {
         }
     })
 
-    test("a Workbench Operation supports SHA-256 and an ephemeral Git path", async () => {
+    test("a Laneway Operation supports SHA-256 and an ephemeral Git path", async () => {
         const repository = await createRepository("sha256")
         const gitPath = Bun.which("git")
         expect(gitPath).toBeTruthy()
@@ -238,10 +238,10 @@ describe("Workbench Engine executable", () => {
             const mutation = await runEngineAt(
                 repository,
                 ["test-mutation", "--value", "sha256", "--git-path", gitPath!, "--json"],
-                { WORKBENCH_ENABLE_TEST_COMMANDS: "1" },
+                { LANEWAY_ENABLE_TEST_COMMANDS: "1" },
             )
             expect(mutation.exitCode).toBe(0)
-            expect(runGitAt(repository, "rev-parse", "refs/workbench/test/fixture").stdout.toString().trim()).toHaveLength(64)
+            expect(runGitAt(repository, "rev-parse", "refs/laneway/test/fixture").stdout.toString().trim()).toHaveLength(64)
             expect((await runEngineAt(repository, ["undo", "--git-path", gitPath!, "--json"])).exitCode).toBe(0)
         } finally {
             await rm(repository, { recursive: true, force: true })
@@ -250,7 +250,7 @@ describe("Workbench Engine executable", () => {
 
     test("an external worktree change creates an undo boundary without changing refs", async () => {
         const repository = await createRepository()
-        const testEnvironment = { WORKBENCH_ENABLE_TEST_COMMANDS: "1" }
+        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
 
         try {
             expect(
@@ -260,9 +260,9 @@ describe("Workbench Engine executable", () => {
                     testEnvironment,
                 )).exitCode,
             ).toBe(0)
-            const fixtureOid = runGitAt(repository, "rev-parse", "refs/workbench/test/fixture").stdout.toString().trim()
+            const fixtureOid = runGitAt(repository, "rev-parse", "refs/laneway/test/fixture").stdout.toString().trim()
 
-            await writeFile(resolve(repository, "README.md"), "changed outside Workbench\n")
+            await writeFile(resolve(repository, "README.md"), "changed outside Laneway\n")
             const undo = await runEngineAt(repository, ["undo", "--json"], testEnvironment)
 
             expect(undo.exitCode).toBe(1)
@@ -271,7 +271,7 @@ describe("Workbench Engine executable", () => {
                 code: "operation.precondition-failed",
                 details: { reason: "worktree-changed" },
             })
-            expect(runGitAt(repository, "rev-parse", "refs/workbench/test/fixture").stdout.toString().trim()).toBe(fixtureOid)
+            expect(runGitAt(repository, "rev-parse", "refs/laneway/test/fixture").stdout.toString().trim()).toBe(fixtureOid)
 
             const history = await runEngineAt(repository, ["history", "--json"], testEnvironment)
             expect(parseNdjson(history.stdout).at(-1)).toMatchObject({
@@ -284,7 +284,7 @@ describe("Workbench Engine executable", () => {
 
     test("recover finalizes a mutation that crashed after its ref transaction", async () => {
         const repository = await createRepository()
-        const testEnvironment = { WORKBENCH_ENABLE_TEST_COMMANDS: "1" }
+        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
 
         try {
             const crashed = await runEngineAt(
@@ -293,7 +293,7 @@ describe("Workbench Engine executable", () => {
                 testEnvironment,
             )
             expect(crashed.exitCode).toBe(86)
-            expect(runGitAt(repository, "show", "refs/workbench/test/fixture").stdout.toString()).toBe("survived")
+            expect(runGitAt(repository, "show", "refs/laneway/test/fixture").stdout.toString()).toBe("survived")
 
             const recovery = await runEngineAt(repository, ["recover", "--json"], testEnvironment)
             expect(recovery.exitCode).toBe(0)
@@ -305,7 +305,7 @@ describe("Workbench Engine executable", () => {
             })
 
             expect((await runEngineAt(repository, ["undo", "--json"], testEnvironment)).exitCode).toBe(0)
-            expect(runGitAt(repository, "rev-parse", "--verify", "--quiet", "refs/workbench/test/fixture").exitCode).toBe(1)
+            expect(runGitAt(repository, "rev-parse", "--verify", "--quiet", "refs/laneway/test/fixture").exitCode).toBe(1)
         } finally {
             await rm(repository, { recursive: true, force: true })
         }
@@ -313,7 +313,7 @@ describe("Workbench Engine executable", () => {
 
     test("recover finalizes an undo that crashed after its ref transaction", async () => {
         const repository = await createRepository()
-        const testEnvironment = { WORKBENCH_ENABLE_TEST_COMMANDS: "1" }
+        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
 
         try {
             expect(
@@ -330,7 +330,7 @@ describe("Workbench Engine executable", () => {
                 testEnvironment,
             )
             expect(crashed.exitCode).toBe(86)
-            expect(runGitAt(repository, "rev-parse", "--verify", "--quiet", "refs/workbench/test/fixture").exitCode).toBe(1)
+            expect(runGitAt(repository, "rev-parse", "--verify", "--quiet", "refs/laneway/test/fixture").exitCode).toBe(1)
 
             const recovery = await runEngineAt(repository, ["recover", "--json"], testEnvironment)
             expect(recovery.exitCode).toBe(0)
@@ -340,7 +340,7 @@ describe("Workbench Engine executable", () => {
             })
 
             expect((await runEngineAt(repository, ["redo", "--json"], testEnvironment)).exitCode).toBe(0)
-            expect(runGitAt(repository, "show", "refs/workbench/test/fixture").stdout.toString()).toBe("undo-me")
+            expect(runGitAt(repository, "show", "refs/laneway/test/fixture").stdout.toString()).toBe("undo-me")
         } finally {
             await rm(repository, { recursive: true, force: true })
         }
@@ -348,7 +348,7 @@ describe("Workbench Engine executable", () => {
 
     test("lock cleanup preserves candidates still being written", async () => {
         const repository = await createRepository()
-        const directory = resolve(repository, ".git", "workbench")
+        const directory = resolve(repository, ".git", "laneway")
         await mkdir(directory)
         const path = resolve(directory, "mutation.lock.candidate-writing")
         const candidate = await open(path, "wx")
@@ -363,7 +363,7 @@ describe("Workbench Engine executable", () => {
             expect(await Bun.file(stale).exists()).toBe(false)
         } finally {
             await candidate.close()
-            if (!repository.startsWith(resolve(tmpdir(), "workbench-mutation-")))
+            if (!repository.startsWith(resolve(tmpdir(), "laneway-mutation-")))
                 throw new Error("Invalid fixture path")
             await rm(repository, { recursive: true, force: true })
         }
@@ -371,8 +371,8 @@ describe("Workbench Engine executable", () => {
 
     test("a held repository lock can fail immediately and its operation can cancel safely", async () => {
         const repository = await createRepository()
-        const testEnvironment = { ...process.env, WORKBENCH_ENABLE_TEST_COMMANDS: "1" }
-        const lockPath = resolve(repository, ".git", "workbench", "mutation.lock")
+        const testEnvironment = { ...process.env, LANEWAY_ENABLE_TEST_COMMANDS: "1" }
+        const lockPath = resolve(repository, ".git", "laneway", "mutation.lock")
 
         try {
             const held = Bun.spawn(
@@ -394,7 +394,7 @@ describe("Workbench Engine executable", () => {
             const [exitCode, stdout] = await Promise.all([held.exited, new Response(held.stdout).text()])
             expect(exitCode).toBe(3)
             expect(parseNdjson(stdout).at(-1)).toMatchObject({ type: "cancelled", command: "test-mutation" })
-            expect(runGitAt(repository, "rev-parse", "--verify", "--quiet", "refs/workbench/test/fixture").exitCode).toBe(1)
+            expect(runGitAt(repository, "rev-parse", "--verify", "--quiet", "refs/laneway/test/fixture").exitCode).toBe(1)
 
             const recovery = await runEngineAt(repository, ["recover", "--json"], testEnvironment)
             expect(parseNdjson(recovery.stdout).at(-1)).toMatchObject({ status: "clean", recovered: [] })
@@ -403,9 +403,9 @@ describe("Workbench Engine executable", () => {
         }
     })
 
-    test("a Git lockfile blocks a Workbench mutation before refs change", async () => {
+    test("a Git lockfile blocks a Laneway mutation before refs change", async () => {
         const repository = await createRepository()
-        const testEnvironment = { WORKBENCH_ENABLE_TEST_COMMANDS: "1" }
+        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
 
         try {
             await writeFile(resolve(repository, ".git", "index.lock"), "external Git owns this lock")
@@ -421,15 +421,15 @@ describe("Workbench Engine executable", () => {
                 code: "operation.precondition-failed",
                 details: { reason: "git-lockfile-present" },
             })
-            expect(runGitAt(repository, "rev-parse", "--verify", "--quiet", "refs/workbench/test/fixture").exitCode).toBe(1)
+            expect(runGitAt(repository, "rev-parse", "--verify", "--quiet", "refs/laneway/test/fixture").exitCode).toBe(1)
         } finally {
             await rm(repository, { recursive: true, force: true })
         }
     })
 
-    test("an unrelated .lock file in the Git directory does not block a Workbench mutation", async () => {
+    test("an unrelated .lock file in the Git directory does not block a Laneway mutation", async () => {
         const repository = await createRepository()
-        const testEnvironment = { WORKBENCH_ENABLE_TEST_COMMANDS: "1" }
+        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
 
         try {
             await writeFile(resolve(repository, ".git", "project.lock"), "")
@@ -441,7 +441,7 @@ describe("Workbench Engine executable", () => {
 
             expect(mutation.exitCode).toBe(0)
             expect(parseNdjson(mutation.stdout).at(-1)).toMatchObject({ type: "result", command: "test-mutation" })
-            expect(runGitAt(repository, "show", "refs/workbench/test/fixture").stdout.toString()).toBe("allowed")
+            expect(runGitAt(repository, "show", "refs/laneway/test/fixture").stdout.toString()).toBe("allowed")
         } finally {
             await rm(repository, { recursive: true, force: true })
         }
@@ -449,14 +449,14 @@ describe("Workbench Engine executable", () => {
 
     test("corrupt Operation History fails safely with a stable error", async () => {
         const repository = await createRepository()
-        const testEnvironment = { WORKBENCH_ENABLE_TEST_COMMANDS: "1" }
+        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
         const head = runGitAt(repository, "rev-parse", "HEAD").stdout.toString().trim()
 
         try {
-            const workbenchDirectory = resolve(repository, ".git", "workbench")
-            await mkdir(workbenchDirectory, { recursive: true })
+            const lanewayDirectory = resolve(repository, ".git", "laneway")
+            await mkdir(lanewayDirectory, { recursive: true })
             await writeFile(
-                resolve(workbenchDirectory, "history.jsonl"),
+                resolve(lanewayDirectory, "history.jsonl"),
                 `${JSON.stringify({ schemaVersion: 1, type: "operation", executionId: "missing-operation" })}\n`,
             )
 
@@ -471,7 +471,7 @@ describe("Workbench Engine executable", () => {
 
     test("valid JSON corruption cannot redirect undo onto an ordinary branch", async () => {
         const repository = await createRepository()
-        const testEnvironment = { WORKBENCH_ENABLE_TEST_COMMANDS: "1" }
+        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
         const head = runGitAt(repository, "rev-parse", "HEAD").stdout.toString().trim()
 
         try {
@@ -483,7 +483,7 @@ describe("Workbench Engine executable", () => {
                 )).exitCode,
             ).toBe(0)
 
-            const historyPath = resolve(repository, ".git", "workbench", "history.jsonl")
+            const historyPath = resolve(repository, ".git", "laneway", "history.jsonl")
             const event = JSON.parse(await Bun.file(historyPath).text()) as {
                 operation: {
                     affectedRefs: string[]
@@ -531,7 +531,7 @@ describe("Workbench Engine executable", () => {
 
     test("history centres ten entries and a new operation abandons the redo path", async () => {
         const repository = await createRepository()
-        const testEnvironment = { WORKBENCH_ENABLE_TEST_COMMANDS: "1" }
+        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
         const operationIds: string[] = []
 
         try {
@@ -573,7 +573,7 @@ describe("Workbench Engine executable", () => {
             expect(branched).toMatchObject({ position: 9, total: 9, redo: { available: false, reason: "empty" } })
 
             for (const operationId of operationIds.slice(8)) {
-                const refs = runGitAt(repository, "for-each-ref", "--format=%(refname)", `refs/workbench/recovery/${operationId}/`)
+                const refs = runGitAt(repository, "for-each-ref", "--format=%(refname)", `refs/laneway/recovery/${operationId}/`)
                 expect(refs.stdout.toString()).toBe("")
             }
         } finally {
@@ -582,7 +582,7 @@ describe("Workbench Engine executable", () => {
     }, 30_000)
 
     test("ignored files stay outside recovery while index and ref changes create boundaries", async () => {
-        const testEnvironment = { WORKBENCH_ENABLE_TEST_COMMANDS: "1" }
+        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
 
         const ignoredRepository = await createRepository()
         try {
@@ -611,7 +611,7 @@ describe("Workbench Engine executable", () => {
                     testEnvironment,
                 )).exitCode,
             ).toBe(0)
-            await writeFile(resolve(indexRepository, "README.md"), "staged outside Workbench\n")
+            await writeFile(resolve(indexRepository, "README.md"), "staged outside Laneway\n")
             expect(runGitAt(indexRepository, "add", "README.md").exitCode).toBe(0)
             const undo = await runEngineAt(indexRepository, ["undo", "--json"])
             expect(parseNdjson(undo.stdout).at(-1)).toMatchObject({
@@ -631,14 +631,14 @@ describe("Workbench Engine executable", () => {
                     testEnvironment,
                 )).exitCode,
             ).toBe(0)
-            expect(runGitAt(refRepository, "update-ref", "refs/workbench/test/fixture", "HEAD").exitCode).toBe(0)
-            const externalOid = runGitAt(refRepository, "rev-parse", "refs/workbench/test/fixture").stdout.toString().trim()
+            expect(runGitAt(refRepository, "update-ref", "refs/laneway/test/fixture", "HEAD").exitCode).toBe(0)
+            const externalOid = runGitAt(refRepository, "rev-parse", "refs/laneway/test/fixture").stdout.toString().trim()
             const undo = await runEngineAt(refRepository, ["undo", "--json"])
             expect(parseNdjson(undo.stdout).at(-1)).toMatchObject({
                 code: "operation.precondition-failed",
                 details: { reason: "ref-changed" },
             })
-            expect(runGitAt(refRepository, "rev-parse", "refs/workbench/test/fixture").stdout.toString().trim()).toBe(externalOid)
+            expect(runGitAt(refRepository, "rev-parse", "refs/laneway/test/fixture").stdout.toString().trim()).toBe(externalOid)
         } finally {
             await rm(refRepository, { recursive: true, force: true })
         }
@@ -646,9 +646,9 @@ describe("Workbench Engine executable", () => {
 
     test("linked worktrees share repository-wide Operation History", async () => {
         const repository = await createRepository()
-        const linkedContainer = await mkdtemp(resolve(tmpdir(), "workbench-linked-"))
+        const linkedContainer = await mkdtemp(resolve(tmpdir(), "laneway-linked-"))
         const linkedWorktree = resolve(linkedContainer, "worktree")
-        const testEnvironment = { WORKBENCH_ENABLE_TEST_COMMANDS: "1" }
+        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
 
         try {
             expect(runGitAt(repository, "worktree", "add", "--quiet", "-b", "linked-test", linkedWorktree).exitCode).toBe(0)
@@ -663,7 +663,7 @@ describe("Workbench Engine executable", () => {
             const linkedHistory = parseNdjson((await runEngineAt(linkedWorktree, ["history", "--json"])).stdout).at(-1)
             expect(linkedHistory).toMatchObject({ position: 1, total: 1 })
             expect((await runEngineAt(linkedWorktree, ["undo", "--json"])).exitCode).toBe(0)
-            expect(runGitAt(repository, "rev-parse", "--verify", "--quiet", "refs/workbench/test/fixture").exitCode).toBe(1)
+            expect(runGitAt(repository, "rev-parse", "--verify", "--quiet", "refs/laneway/test/fixture").exitCode).toBe(1)
         } finally {
             runGitAt(repository, "worktree", "remove", "--force", linkedWorktree)
             await rm(linkedContainer, { recursive: true, force: true })
@@ -673,7 +673,7 @@ describe("Workbench Engine executable", () => {
 
     test("every journal boundary recovers apply, undo, and redo idempotently", async () => {
         const phases = ["intent", "recovery-retained", "preconditions-verified", "refs-committed", "history-committed", "finalized"]
-        const testEnvironment = { WORKBENCH_ENABLE_TEST_COMMANDS: "1" }
+        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
 
         for (const phase of phases) {
             const repository = await createRepository()
@@ -686,7 +686,7 @@ describe("Workbench Engine executable", () => {
                     )).exitCode,
                 ).toBe(86)
                 expect((await runEngineAt(repository, ["recover", "--json"])).exitCode).toBe(0)
-                expect(runGitAt(repository, "show", "refs/workbench/test/fixture").stdout.toString()).toBe(phase)
+                expect(runGitAt(repository, "show", "refs/laneway/test/fixture").stdout.toString()).toBe(phase)
 
                 expect(
                     (await runEngineAt(
@@ -696,7 +696,7 @@ describe("Workbench Engine executable", () => {
                     )).exitCode,
                 ).toBe(86)
                 expect((await runEngineAt(repository, ["recover", "--json"])).exitCode).toBe(0)
-                expect(runGitAt(repository, "rev-parse", "--verify", "--quiet", "refs/workbench/test/fixture").exitCode).toBe(1)
+                expect(runGitAt(repository, "rev-parse", "--verify", "--quiet", "refs/laneway/test/fixture").exitCode).toBe(1)
 
                 expect(
                     (await runEngineAt(
@@ -706,7 +706,7 @@ describe("Workbench Engine executable", () => {
                     )).exitCode,
                 ).toBe(86)
                 expect((await runEngineAt(repository, ["recover", "--json"])).exitCode).toBe(0)
-                expect(runGitAt(repository, "show", "refs/workbench/test/fixture").stdout.toString()).toBe(phase)
+                expect(runGitAt(repository, "show", "refs/laneway/test/fixture").stdout.toString()).toBe(phase)
             } finally {
                 await rm(repository, { recursive: true, force: true })
             }
@@ -718,9 +718,9 @@ describe("Workbench Engine executable", () => {
         const head = runGitAt(repository, "rev-parse", "HEAD").stdout.toString().trim()
 
         try {
-            const workbenchDirectory = resolve(repository, ".git", "workbench")
-            await mkdir(workbenchDirectory, { recursive: true })
-            await writeFile(resolve(workbenchDirectory, "journal.jsonl"), "{not-json\n")
+            const lanewayDirectory = resolve(repository, ".git", "laneway")
+            await mkdir(lanewayDirectory, { recursive: true })
+            await writeFile(resolve(lanewayDirectory, "journal.jsonl"), "{not-json\n")
 
             const recovery = await runEngineAt(repository, ["recover", "--json"])
             expect(recovery.exitCode).toBe(1)
@@ -733,7 +733,7 @@ describe("Workbench Engine executable", () => {
 
     test("recovery refuses to resume when crash preconditions no longer match", async () => {
         const repository = await createRepository()
-        const testEnvironment = { WORKBENCH_ENABLE_TEST_COMMANDS: "1" }
+        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
 
         try {
             expect(
@@ -752,7 +752,7 @@ describe("Workbench Engine executable", () => {
                 code: "operation.recovery-blocked",
                 details: { reason: "worktree-changed" },
             })
-            expect(runGitAt(repository, "rev-parse", "--verify", "--quiet", "refs/workbench/test/fixture").exitCode).toBe(1)
+            expect(runGitAt(repository, "rev-parse", "--verify", "--quiet", "refs/laneway/test/fixture").exitCode).toBe(1)
         } finally {
             await rm(repository, { recursive: true, force: true })
         }

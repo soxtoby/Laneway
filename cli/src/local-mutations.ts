@@ -1,5 +1,5 @@
-import { normalize, pathExists, readRegisteredWorktrees, type RepositoryGit } from "@git-workbench/git"
-import type { LocalPreview, LocalRequest, LocalResult } from "@git-workbench/shared"
+import { normalize, pathExists, readRegisteredWorktrees, type RepositoryGit } from "@laneway/git"
+import type { LocalPreview, LocalRequest, LocalResult } from "@laneway/shared"
 import { createHash } from "node:crypto"
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -14,11 +14,11 @@ interface LocalMetadata {
 }
 export class LocalPreconditionError extends Error {}
 async function metadata(repository: RepositoryGit): Promise<LocalMetadata> {
-    const path = join(repository.descriptor.commonDirectory, "workbench-local.json")
+    const path = join(repository.descriptor.commonDirectory, "laneway-local.json")
     return await pathExists(path) ? JSON.parse(await readFile(path, "utf8")) : { stashes: {} }
 }
 async function saveMetadata(repository: RepositoryGit, value: LocalMetadata) {
-    const path = join(repository.descriptor.commonDirectory, "workbench-local.json")
+    const path = join(repository.descriptor.commonDirectory, "laneway-local.json")
     await writeFile(`${path}.tmp`, JSON.stringify(value))
     await rename(`${path}.tmp`, path)
 }
@@ -328,7 +328,7 @@ export async function mutateLocal(
 
 async function checkStashApplication(repository: RepositoryGit, path: string, objectId: string) {
     const root = resolve(tmpdir())
-    const scratch = await mkdtemp(join(root, "workbench-stash-"))
+    const scratch = await mkdtemp(join(root, "laneway-stash-"))
     try {
         const gitDirectory = await text(repository, path, ["rev-parse", "--absolute-git-dir"])
         const worktree = join(scratch, "worktree")

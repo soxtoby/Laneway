@@ -1,4 +1,4 @@
-import { type FileHistoryEntry, type FileHistoryPage, type FileHistoryRequest, FileHistoryRequestSchema } from "@git-workbench/shared"
+import { type FileHistoryEntry, type FileHistoryPage, type FileHistoryRequest, FileHistoryRequestSchema } from "@laneway/shared"
 import { realpath } from "node:fs/promises"
 import { GitError, type GitTask, type RepositoryDescriptor } from "./index"
 import { type FileChange, parseFileChanges, rankRelatedFiles } from "./related-files"

@@ -1,4 +1,4 @@
-import { normalize, pathExists, populatedSubmodules, readRegisteredWorktrees, type RepositoryGit } from "@git-workbench/git"
+import { normalize, pathExists, populatedSubmodules, readRegisteredWorktrees, type RepositoryGit } from "@laneway/git"
 import { chmod, lstat, mkdir, readdir, readlink, rename, rm, rmdir, symlink, unlink, writeFile } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { z } from "zod"
@@ -69,7 +69,7 @@ export async function captureWorktreeState(repository: RepositoryGit, paths: str
                     names.push(".git")
             }
         } else if (root.kind == "main")
-            names = ["HEAD", "index", "logs/HEAD", "config", "workbench-local.json"]
+            names = ["HEAD", "index", "logs/HEAD", "config", "laneway-local.json"]
         else if (root.kind == "stash")
             names = ["stash"]
         else
@@ -115,8 +115,8 @@ export async function captureWorktreeState(repository: RepositoryGit, paths: str
             "refs/heads",
             "refs/tags",
             "refs/stash",
-            "refs/workbench/conflicts/current",
-            "refs/workbench/conflict-candidates",
+            "refs/laneway/conflicts/current",
+            "refs/laneway/conflict-candidates",
         ])).toString()
     for (const line of output.trim().split("\n").filter(Boolean)) {
         const [ref, oid] = line.split(" ")
@@ -199,7 +199,7 @@ export async function retainWorktreeState(repository: RepositoryGit, id: string,
         await repository.command(
             repository.descriptor.mainWorktree,
             ["update-ref", "--stdin"],
-            [...objects].map((object, index) => `update refs/workbench/recovery/${id}/${side}/state-${index} ${object}\n`).join(""),
+            [...objects].map((object, index) => `update refs/laneway/recovery/${id}/${side}/state-${index} ${object}\n`).join(""),
         )
     }
 }

@@ -1,5 +1,5 @@
 // THROWAWAY: compare compact inline, expandable, and real-index staging on the existing route.
-// All mutations are simulated. Nothing in this module calls the Workbench IPC API.
+// All mutations are simulated. Nothing in this module calls the Laneway IPC API.
 import { addEventListeners, css, type Handle, on } from "remix/ui"
 
 type Variant = "A" | "B" | "C"
@@ -25,7 +25,7 @@ export function CommitPrototype(handle: Handle) {
     let stashForm = false
     let stashLabel = ""
     let virtual = false
-    let branch = "feature/workbench"
+    let branch = "feature/laneway"
     let scenario = "ordinary"
     let notice = ""
     let preview: { path: string; kind: "work" | "staged" } | undefined
@@ -33,8 +33,8 @@ export function CommitPrototype(handle: Handle) {
     let hookEdited = false
     let freshnessPending = false
     let applyTarget: number | undefined
-    let destination = "inspection · feature/workbench"
-    let stashes: Stash[] = [{ label: "Branch filtering experiment", branch: "feature/workbench", files: sample() }]
+    let destination = "inspection · feature/laneway"
+    let stashes: Stash[] = [{ label: "Branch filtering experiment", branch: "feature/laneway", files: sample() }]
     let operations: string[] = []
     let undo: (() => void) | undefined
 
@@ -94,7 +94,7 @@ export function CommitPrototype(handle: Handle) {
         operations = []
         applyTarget = undefined
         virtual = value == "virtual" || value == "initial"
-        branch = value == "initial" ? "main" : virtual ? "worktree/inspection" : "feature/workbench"
+        branch = value == "initial" ? "main" : virtual ? "worktree/inspection" : "feature/laneway"
         if (value == "staged" || value == "edited")
             files[0].staged = files[0].work
         if (value == "edited")
@@ -392,7 +392,7 @@ export function CommitPrototype(handle: Handle) {
                                     update()
                                 })}
                             >
-                                <option>inspection · feature/workbench</option>
+                                <option>inspection · feature/laneway</option>
                                 <option>review · main</option>
                             </select>
                         </label>

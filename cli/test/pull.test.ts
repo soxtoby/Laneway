@@ -1,5 +1,5 @@
-import { connectRepository, readConflictState } from "@git-workbench/git"
-import type { ConflictRequest, ConflictResult, PullResult } from "@git-workbench/shared"
+import { connectRepository, readConflictState } from "@laneway/git"
+import type { ConflictRequest, ConflictResult, PullResult } from "@laneway/shared"
 import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -29,7 +29,7 @@ async function commit(path: string, file: string, content: string, message: stri
 // A shared bare "origin" with a separate contributor clone that publishes upstream changes,
 // and the local clone under test with main and a two-branch stack tracking origin.
 async function fixture() {
-    const root = await mkdtemp(join(tmpdir(), "workbench-pull-test-"))
+    const root = await mkdtemp(join(tmpdir(), "laneway-pull-test-"))
     fixtures.push(root)
     const origin = join(root, "origin.git"), other = join(root, "other"), local = join(root, "local")
     git(root, "init", "-q", "--bare", "-b", "main", origin)

@@ -1,4 +1,4 @@
-import type { BranchGraph } from "@git-workbench/shared"
+import type { BranchGraph } from "@laneway/shared"
 import { expect, test } from "bun:test"
 import { layoutBranchGraph } from "../src/renderer/src/branch-graph-layout"
 import { branchGraph } from "./renderer-fixtures"

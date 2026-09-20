@@ -1,4 +1,4 @@
-import type { ChangedFile } from "@git-workbench/shared"
+import type { ChangedFile } from "@laneway/shared"
 import { css, type Handle, on, type RemixNode } from "remix/ui"
 
 export function InspectionItem(

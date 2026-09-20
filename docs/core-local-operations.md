@@ -8,7 +8,7 @@ Behavior decisions for [SOX-135](https://linear.app/soxtoby/issue/SOX-135/implem
 - Changed source content refreshes the preview and requires another commit attempt. Existing staged content remains authoritative; newly appearing files remain unstaged. With no staged changes, the refreshed action explicitly commits all changes.
 - Ordinary tip commits are exposed here. This issue establishes the new-commit seam primitive; SOX-140 owns historical insertion and descendant replay with composition.
 - Creating a branch at a chosen commit opens a branch-only Workspace Column. Checkout remains explicit.
-- A Workbench branch rename follows local identity through open columns and associated stashes, preserving upstream association without renaming the remote branch.
+- A Laneway branch rename follows local identity through open columns and associated stashes, preserving upstream association without renaming the remote branch.
 - Deleting a checked-out branch is allowed and leaves its worktree detached at the same HEAD commit. Unique commits require confirmation. Associated stashes become unassigned; branch-only columns close; a Registered Worktree retains its column as a Virtual Branch. Deleted Git state remains available through undo.
 - Apply stash targets an explicitly chosen worktree, including another branch, and initially requires clean Working Changes. Successful restoration consumes the ordinary stash while retaining it privately for undo. Conflicts retain the ordinary stash until resolution or explicit keep.
 - Explicit Stash Working Changes stashes all Working Changes with an optional label. Partial stashing belongs with composition.

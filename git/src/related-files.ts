@@ -1,4 +1,4 @@
-import type { RelatedFile } from "@git-workbench/shared"
+import type { RelatedFile } from "@laneway/shared"
 
 export interface FileChange {
     status: string

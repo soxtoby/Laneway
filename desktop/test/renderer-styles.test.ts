@@ -7,7 +7,7 @@ import { dirname, join } from "node:path"
 
 test("Remix renderer styles and controls work under production CSP in Electron", async () => {
     const temporaryRoot = await realpath(tmpdir())
-    const directory = await mkdtemp(join(temporaryRoot, "workbench-renderer-"))
+    const directory = await mkdtemp(join(temporaryRoot, "laneway-renderer-"))
     try {
         const build = await Bun.build({
             entrypoints: [join(import.meta.dir, "fixtures/renderer-styles.tsx")],

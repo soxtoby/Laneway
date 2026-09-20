@@ -1,4 +1,4 @@
-import type { BranchGraph, BranchGraphBranchNode, BranchGraphVirtualBranch, BranchHistoryPage, ChangedFile, ChangeSelection, ChangesInventory, CompositionSource, DiffLayout, DiffSource, DiffView, FileDiffPage } from "@git-workbench/shared"
+import type { BranchGraph, BranchGraphBranchNode, BranchGraphVirtualBranch, BranchHistoryPage, ChangedFile, ChangeSelection, ChangesInventory, CompositionSource, DiffLayout, DiffSource, DiffView, FileDiffPage } from "@laneway/shared"
 import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 import * as accordion from "remix/ui/accordion/primitives"
 import { AuxiliaryColumns } from "./auxiliary-columns"
@@ -13,7 +13,7 @@ import { FileMenu } from "./file-menu"
 
 type Column = BranchGraphBranchNode | BranchGraphVirtualBranch
 interface Options {
-    api: Window["workbench"]
+    api: Window["laneway"]
     update(): Promise<AbortSignal>
     signal: AbortSignal
     layout(repositoryId: string, columnId: string): DiffLayout
@@ -2584,7 +2584,7 @@ const closeDiffColumnButton = css({
     minWidth: "26px",
     minHeight: "26px",
 })
-import type { FileHistorySource } from "@git-workbench/shared"
-import type { FileHistoryEntry } from "@git-workbench/shared"
+import type { FileHistorySource } from "@laneway/shared"
+import type { FileHistoryEntry } from "@laneway/shared"
 import { createFileHistories, type FileHistoryState } from "./file-history"
 import { createTrailCommits, type TrailCommitState } from "./trail-commit"

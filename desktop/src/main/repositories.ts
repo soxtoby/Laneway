@@ -1,6 +1,6 @@
-import { GitError, type GitInstallation, type GitTask, inferCloneDirectoryName, initializeRepository, openRepository, type RepositoryGit, selectGit, startCloneRepository } from "@git-workbench/git"
-import { defaultSettingsPath, readSettings, SettingsError, WorkspaceStateError, writeSettings } from "@git-workbench/settings"
-import type { Appearance, AuthorIdentitySettings, BranchGraph, BranchGraphReadOptions, BranchHistoryPage, BranchHistoryRequest, ChangesRequest, EntryError, FileDiffRequest, GitSettingsState, RepositoryGraphSettings, RepositoryInfo } from "@git-workbench/shared"
+import { GitError, type GitInstallation, type GitTask, inferCloneDirectoryName, initializeRepository, openRepository, type RepositoryGit, selectGit, startCloneRepository } from "@laneway/git"
+import { defaultSettingsPath, readSettings, SettingsError, WorkspaceStateError, writeSettings } from "@laneway/settings"
+import type { Appearance, AuthorIdentitySettings, BranchGraph, BranchGraphReadOptions, BranchHistoryPage, BranchHistoryRequest, ChangesRequest, EntryError, FileDiffRequest, GitSettingsState, RepositoryGraphSettings, RepositoryInfo } from "@laneway/shared"
 import { resolve } from "node:path"
 
 export class OpenRepositories {
@@ -286,4 +286,4 @@ export function entryError(error: unknown): EntryError {
         return { code: error.code, message: error.message }
     return { code: "git.command-failed", message: error instanceof Error ? error.message : String(error) }
 }
-import type { FileHistoryRequest } from "@git-workbench/shared"
+import type { FileHistoryRequest } from "@laneway/shared"

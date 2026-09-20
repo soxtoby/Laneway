@@ -1,6 +1,6 @@
-import { blob, conflictHunks, conflictStateRef, gitText, normalize, pathExists, readConflictState, readRegisteredWorktrees, replaceTreeFiles, replayTree, type RepositoryGit, retainedDocument, storeConflictState, temporaryBranchPrefix, treeEntries } from "@git-workbench/git"
-import type { CompositionPreview, CompositionRequest, ConflictState, ConflictSubject, LocalPreview, LocalResult, ReplayStep, ResolutionCandidate, UnresolvedStack } from "@git-workbench/shared"
-import { CompositionRequestSchema } from "@git-workbench/shared"
+import { blob, conflictHunks, conflictStateRef, gitText, normalize, pathExists, readConflictState, readRegisteredWorktrees, replaceTreeFiles, replayTree, type RepositoryGit, retainedDocument, storeConflictState, temporaryBranchPrefix, treeEntries } from "@laneway/git"
+import type { CompositionPreview, CompositionRequest, ConflictState, ConflictSubject, LocalPreview, LocalResult, ReplayStep, ResolutionCandidate, UnresolvedStack } from "@laneway/shared"
+import { CompositionRequestSchema } from "@laneway/shared"
 import { createHash } from "node:crypto"
 import { join } from "node:path"
 import { compositionCommit } from "./composition-commits"
@@ -404,7 +404,7 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
         return current
     }
     async function carryCandidate(subject: ConflictSubject, old: string, next: string, updated = subject) {
-        const ref = `refs/workbench/conflict-candidates/${subject.id}/${subject.input}`, before = await repo.resolveRef(ref)
+        const ref = `refs/laneway/conflict-candidates/${subject.id}/${subject.input}`, before = await repo.resolveRef(ref)
         if (!before || old == next)
             return
         const candidate: ResolutionCandidate = JSON.parse((await repo.command(repo.descriptor.mainWorktree, ["show", `${before}:state.json`])).toString())
@@ -415,7 +415,7 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
         const files = await treeEntries(repo, carried.tree)
         for (const path of Object.keys(candidate.files))
             candidate.files[path] = files.get(path) ?? null
-        const nextRef = `refs/workbench/conflict-candidates/${updated.id}/${updated.input}`
+        const nextRef = `refs/laneway/conflict-candidates/${updated.id}/${updated.input}`
         candidate.input = updated.input
         candidates.push({ ref: nextRef, before: nextRef == ref ? before : await repo.resolveRef(nextRef) ?? "", candidate })
     }
@@ -610,7 +610,7 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
     }
     if (!await worktreeStateMatches(repo, before))
         throw new Error("Repository content changed while preparing the transfer. Select and review it again.")
-    const remoteRefs = await gitText(repo, ["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes", "refs/workbench/conflict-candidates"])
+    const remoteRefs = await gitText(repo, ["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes", "refs/laneway/conflict-candidates"])
     const token = id(stateIdentity(before), remoteRefs, JSON.stringify(CompositionRequestSchema.parse({ ...request, allowConflicts: false })))
     const local: LocalPreview = {
         token,

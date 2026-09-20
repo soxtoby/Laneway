@@ -1,19 +1,19 @@
-import { type ConflictFile, type ConflictState, ConflictStateSchema, type ConflictSubject, type ResolutionCandidate } from "@git-workbench/shared"
+import { type ConflictFile, type ConflictState, ConflictStateSchema, type ConflictSubject, type ResolutionCandidate } from "@laneway/shared"
 import { createHash } from "node:crypto"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
 import type { RepositoryGit } from "./index"
 
-export const conflictStateRef = "refs/workbench/conflicts/current"
-export const temporaryBranchPrefix = "refs/heads/git-workbench/unresolved/"
+export const conflictStateRef = "refs/laneway/conflicts/current"
+export const temporaryBranchPrefix = "refs/heads/laneway/unresolved/"
 export const gitText = async (repo: RepositoryGit, args: string[], input?: string | Uint8Array, env?: Record<string, string>) =>
     (await repo.command(repo.descriptor.mainWorktree, args, input, env)).toString().trim()
 const recoveryIdentity = {
-    GIT_AUTHOR_NAME: "Git Workbench",
-    GIT_AUTHOR_EMAIL: "recovery@workbench.invalid",
-    GIT_COMMITTER_NAME: "Git Workbench",
-    GIT_COMMITTER_EMAIL: "recovery@workbench.invalid",
+    GIT_AUTHOR_NAME: "Laneway",
+    GIT_AUTHOR_EMAIL: "recovery@laneway.invalid",
+    GIT_COMMITTER_NAME: "Laneway",
+    GIT_COMMITTER_EMAIL: "recovery@laneway.invalid",
 }
 
 const conflictStateCache = new WeakMap<RepositoryGit, { ref: string; state: ConflictState }>()
@@ -91,12 +91,12 @@ export async function retainedDocument(repo: RepositoryGit, value: unknown, obje
     for (const [object, type] of objects)
         entries.push(`${type == "tree" ? "040000" : "100644"} ${type} ${object}\t${object}\0`)
     const tree = await gitText(repo, ["mktree", "-z"], entries.join(""))
-    return gitText(repo, ["commit-tree", tree, ...parents.flatMap(parent => ["-p", parent])], "Workbench conflict recovery\n", recoveryIdentity)
+    return gitText(repo, ["commit-tree", tree, ...parents.flatMap(parent => ["-p", parent])], "Laneway conflict recovery\n", recoveryIdentity)
 }
 
 export async function withConflictScratch<T>(action: (path: string) => Promise<T>) {
     const root = resolve(tmpdir())
-    const path = await mkdtemp(join(root, "workbench-conflict-"))
+    const path = await mkdtemp(join(root, "laneway-conflict-"))
     try {
         return await action(path)
     } finally {

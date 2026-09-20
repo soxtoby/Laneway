@@ -1,4 +1,4 @@
-import type { DiffLayout, ObjectFormat, Workspace, WorkspaceColumn } from "@git-workbench/shared"
+import type { DiffLayout, ObjectFormat, Workspace, WorkspaceColumn } from "@laneway/shared"
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, resolve } from "node:path"
@@ -37,10 +37,10 @@ export function defaultWorkspacePath(
     environment: NodeJS.ProcessEnv = process.env,
 ) {
     if (platform == "win32")
-        return resolve(environment.APPDATA ?? resolve(homedir(), "AppData", "Roaming"), "Git Workbench", "workspace.json")
+        return resolve(environment.APPDATA ?? resolve(homedir(), "AppData", "Roaming"), "Laneway", "workspace.json")
     if (platform == "darwin")
-        return resolve(homedir(), "Library", "Application Support", "Git Workbench", "workspace.json")
-    return resolve(environment.XDG_CONFIG_HOME ?? resolve(homedir(), ".config"), "git-workbench", "workspace.json")
+        return resolve(homedir(), "Library", "Application Support", "Laneway", "workspace.json")
+    return resolve(environment.XDG_CONFIG_HOME ?? resolve(homedir(), ".config"), "laneway", "workspace.json")
 }
 
 export function parseWorkspacePresentation(value: unknown) {
@@ -67,7 +67,7 @@ export async function readWorkspace(path = defaultWorkspacePath()): Promise<{ wo
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code == "ENOENT")
             return { workspace: emptyWorkspace(), skipped: 0 }
-        throw new WorkspaceStateError("workspace.corrupt", `Workbench could not read Workspace State at ${path}.`, path)
+        throw new WorkspaceStateError("workspace.corrupt", `Laneway could not read Workspace State at ${path}.`, path)
     }
     let value: unknown
     try {
@@ -114,7 +114,7 @@ export async function writeWorkspace(workspace: StoredWorkspace, path = defaultW
         await rename(temporaryPath, path)
     } catch {
         await rm(temporaryPath, { force: true }).catch(() => undefined)
-        throw new WorkspaceStateError("workspace.write-failed", `Workbench could not save Workspace State at ${path}.`, path)
+        throw new WorkspaceStateError("workspace.write-failed", `Laneway could not save Workspace State at ${path}.`, path)
     }
 }
 

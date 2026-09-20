@@ -1,5 +1,5 @@
-import { connectRepository, readConflictState } from "@git-workbench/git"
-import type { ConflictRequest, ConflictResult, LocalRequest, LocalResult } from "@git-workbench/shared"
+import { connectRepository, readConflictState } from "@laneway/git"
+import type { ConflictRequest, ConflictResult, LocalRequest, LocalResult } from "@laneway/shared"
 import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -28,7 +28,7 @@ async function commit(path: string, file: string, content: string | Buffer, mess
     return git(path, "rev-parse", "HEAD")
 }
 async function fixture(format = "sha1") {
-    const path = await mkdtemp(join(tmpdir(), "workbench-conflict-test-"))
+    const path = await mkdtemp(join(tmpdir(), "laneway-conflict-test-"))
     fixtures.push(path)
     git(path, "init", "-q", "-b", "main", `--object-format=${format}`)
     git(path, "config", "user.name", "Conflict Test")
@@ -63,7 +63,7 @@ test("rewrite completes with committed markers, explicit durable resolution, und
     const result = await conflict(path, { action: "rewrite", branches: ["topic"], base, path })
     expect(result.conflicts).toHaveLength(1)
     const subject = result.conflicts[0].id
-    expect(git(path, "symbolic-ref", "--short", "HEAD")).toStartWith("git-workbench/unresolved/topic/")
+    expect(git(path, "symbolic-ref", "--short", "HEAD")).toStartWith("laneway/unresolved/topic/")
     expect(git(path, "rev-parse", "topic")).toBe(before)
     expect(git(path, "status", "--porcelain")).toBe("")
     const marked = await readFile(join(path, "a.txt"), "utf8")
@@ -80,7 +80,7 @@ test("rewrite completes with committed markers, explicit durable resolution, und
     expect((await accept(path, subject)).conflicts).toHaveLength(0)
     expect(git(path, "branch", "--show-current")).toBe("topic")
     expect(await readFile(join(path, "a.txt"), "utf8")).toBe("topic\n")
-    expect(git(path, "branch", "--list", "git-workbench/*")).toBe("")
+    expect(git(path, "branch", "--list", "laneway/*")).toBe("")
     await transition(path, "undo")
     expect((await conflict(path, { action: "list" })).conflicts).toHaveLength(1)
     expect(await readFile(join(path, "a.txt"), "utf8")).toBe(marked)
@@ -209,11 +209,11 @@ test("switching follows the unresolved branch and suspends Working Changes confl
 }, 180_000)
 
 test("compiled recovery survives rewrite and acceptance crashes with GC retaining candidates", async () => {
-    const engine = resolve(import.meta.dir, "../bin/workbench-engine.exe")
+    const engine = resolve(import.meta.dir, "../bin/lane.exe")
     async function run(path: string, args: string[], expected = 0) {
         const child = Bun.spawn([engine, ...args, "--json"], {
             cwd: path,
-            env: { ...process.env, WORKBENCH_ENABLE_TEST_COMMANDS: "1" },
+            env: { ...process.env, LANEWAY_ENABLE_TEST_COMMANDS: "1" },
             stdout: "pipe",
             stderr: "pipe",
         })
@@ -284,13 +284,13 @@ test("exact-input candidates survive explicit updates; changed inputs preserve s
 test("configured external tool edits temporary files, failure and restart retain results", async () => {
     const { path, base } = await fixture()
     const subject = (await conflict(path, { action: "rewrite", branches: ["topic"], base, path })).conflicts[0].id
-    git(path, "config", "merge.tool", "workbench-test")
-    git(path, "config", "mergetool.workbench-test.cmd", 'printf "tool result\\n" > "$MERGED"; exit 1')
-    git(path, "config", "mergetool.workbench-test.trustExitCode", "true")
+    git(path, "config", "merge.tool", "laneway-test")
+    git(path, "config", "mergetool.laneway-test.cmd", 'printf "tool result\\n" > "$MERGED"; exit 1')
+    git(path, "config", "mergetool.laneway-test.trustExitCode", "true")
     const view = (await conflict(path, { action: "inspect", subject })).view!
     const request = { action: "tool" as const, subject, input: view.subject.input, revision: view.candidate.revision, file: "a.txt" }
     await expect(conflict(path, request)).rejects.toThrow("Saved edits remain")
-    git(path, "config", "mergetool.workbench-test.cmd", 'test "$(cat "$MERGED")" = "tool result"')
+    git(path, "config", "mergetool.laneway-test.cmd", 'test "$(cat "$MERGED")" = "tool result"')
     const result = await conflict(path, request)
     expect(result.view!.files[0].resultText).toBe("tool result\n")
     expect(await readFile(join(path, "a.txt"), "utf8")).toContain("<<<<<<<")
@@ -310,7 +310,7 @@ test("multiple branch boundaries and a dependent stack restack together", async 
     const provisionalBase = state.stacks[0].branches[0].current
     await conflict(path, { action: "rewrite", branches: ["sibling"], base: provisionalBase })
     const graph = await repo.startReadBranchGraph({ authorIdentities: { primary: "conflict@example.invalid", secondary: [] }, remotePatterns: [] }).result
-    expect(graph.branches.some(b => b.name.startsWith("git-workbench/"))).toBe(false)
+    expect(graph.branches.some(b => b.name.startsWith("laneway/"))).toBe(false)
     expect(graph.branches.find(b => b.name == "topic")!.tip).not.toBe(before)
     expect(graph.branches.find(b => b.name == "lower")!.unresolved).toBeDefined()
     const comparison = await repo.startReadChanges({ source: { kind: "branches", fromRef: "refs/heads/main", toRef: "refs/heads/topic" } }).result

@@ -1,11 +1,11 @@
-import { isText, normalize, previewWorktree, readRegisteredWorktrees } from "@git-workbench/git"
-import { defaultWorkspacePath } from "@git-workbench/settings"
-import { ChangesRequestSchema, type ChangesResult, FileDiffRequestSchema, type FileDiffResult } from "@git-workbench/shared"
-import type { AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryResult, RepositoryGraphSettings, Workspace } from "@git-workbench/shared"
-import { type WorktreeActionResult, type WorktreePreviewResult, WorktreeRequestSchema } from "@git-workbench/shared"
-import { CommitDraftSchema, type LocalActionResult, LocalRequestSchema } from "@git-workbench/shared"
-import { type ConflictActionResult, ConflictRequestSchema } from "@git-workbench/shared"
-import { type PullActionResult, type PullProgress, PullRequestSchema } from "@git-workbench/shared"
+import { isText, normalize, previewWorktree, readRegisteredWorktrees } from "@laneway/git"
+import { defaultWorkspacePath } from "@laneway/settings"
+import { ChangesRequestSchema, type ChangesResult, FileDiffRequestSchema, type FileDiffResult } from "@laneway/shared"
+import type { AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryResult, RepositoryGraphSettings, Workspace } from "@laneway/shared"
+import { type WorktreeActionResult, type WorktreePreviewResult, WorktreeRequestSchema } from "@laneway/shared"
+import { CommitDraftSchema, type LocalActionResult, LocalRequestSchema } from "@laneway/shared"
+import { type ConflictActionResult, ConflictRequestSchema } from "@laneway/shared"
+import { type PullActionResult, type PullProgress, PullRequestSchema } from "@laneway/shared"
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron"
 import { mkdtemp, rm, rmdir, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -19,13 +19,13 @@ import { WorkspaceManager } from "./workspace-manager"
 
 const workspacePath = resolve(app.getAppPath(), "..")
 const enginePath = resolveEnginePath({
-    override: process.env.WORKBENCH_ENGINE_PATH,
+    override: process.env.LANEWAY_ENGINE_PATH,
     isPackaged: app.isPackaged,
     applicationPath: process.execPath,
     workspacePath,
 })
-const repositories = new OpenRepositories(process.env.WORKBENCH_SETTINGS_PATH)
-const workspace = new WorkspaceManager(repositories, process.env.WORKBENCH_WORKSPACE_PATH ?? defaultWorkspacePath())
+const repositories = new OpenRepositories(process.env.LANEWAY_SETTINGS_PATH)
+const workspace = new WorkspaceManager(repositories, process.env.LANEWAY_WORKSPACE_PATH ?? defaultWorkspacePath())
 const commitDrafts = new CommitDrafts(resolve(app.getPath("userData"), "commit-drafts.json"))
 const draftWorktrees = new Map<string, string>()
 const conflictInspections = new Map<string, ConflictActionResult>()
@@ -39,7 +39,7 @@ const cancelledEntry = () =>
     }) satisfies EntryResult
 const entryQueue = new EntryQueue<EntryResult>(cancelledEntry)
 let engineStatus:
-    | { state: "ready"; path: string; name: "workbench-engine"; version: string }
+    | { state: "ready"; path: string; name: "lane"; version: string }
     | { state: "error"; path: string; error: string }
 
 async function inspectEngineAtStartup() {
@@ -83,8 +83,8 @@ function registerHandlers() {
                 (await repository.command(repository.descriptor.mainWorktree, [
                     "for-each-ref",
                     "--format=%(refname) %(objectname)",
-                    "refs/workbench/conflicts/current",
-                    ...(request.action == "inspect" ? [`refs/workbench/conflict-candidates/${request.subject}/`] : []),
+                    "refs/laneway/conflicts/current",
+                    ...(request.action == "inspect" ? [`refs/laneway/conflict-candidates/${request.subject}/`] : []),
                 ])).toString()
             const version = request.action == "inspect" ? await inspectionVersion() : undefined
             const cacheKey = JSON.stringify([repository.descriptor.commonDirectory, request, version])
@@ -95,7 +95,7 @@ function registerHandlers() {
             }
             let requestArgs = ["--request", JSON.stringify(request)]
             if (request.action == "edit") {
-                requestDirectory = await mkdtemp(join(tmpdir(), "workbench-conflict-request-"))
+                requestDirectory = await mkdtemp(join(tmpdir(), "laneway-conflict-request-"))
                 const requestPath = join(requestDirectory, "request.json")
                 await writeFile(requestPath, JSON.stringify(request))
                 requestArgs = ["--request-file", requestPath]
@@ -180,7 +180,7 @@ function registerHandlers() {
             const repository = repositories.worktreeRepository(repositoryId)
             let requestArgs = ["--request", JSON.stringify(request)]
             if (request.action == "compose") {
-                requestDirectory = await mkdtemp(join(tmpdir(), "workbench-composition-request-"))
+                requestDirectory = await mkdtemp(join(tmpdir(), "laneway-composition-request-"))
                 const requestPath = join(requestDirectory, "request.json")
                 await writeFile(requestPath, JSON.stringify(request))
                 requestArgs = ["--request-file", requestPath]
@@ -521,7 +521,7 @@ function createWindow(backgroundColor: string) {
         minHeight: 620,
         backgroundColor,
         show: true,
-        title: "Git Workbench",
+        title: "Laneway",
         webPreferences: {
             contextIsolation: true,
             nodeIntegration: false,
@@ -574,4 +574,4 @@ app.on("window-all-closed", () => {
     if (process.platform != "darwin")
         app.quit()
 })
-import { FileHistoryRequestSchema, type FileHistoryResult } from "@git-workbench/shared"
+import { FileHistoryRequestSchema, type FileHistoryResult } from "@laneway/shared"

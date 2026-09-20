@@ -1,4 +1,4 @@
-import type { ChangedFile, ChangesInventory, ChangesRequest, DiffLine, DiffSource, FileDiffPage, FileDiffRequest } from "@git-workbench/shared"
+import type { ChangedFile, ChangesInventory, ChangesRequest, DiffLine, DiffSource, FileDiffPage, FileDiffRequest } from "@laneway/shared"
 import { createHash } from "node:crypto"
 import { lstat, realpath } from "node:fs/promises"
 import { isAbsolute, relative, resolve, sep } from "node:path"

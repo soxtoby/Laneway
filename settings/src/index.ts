@@ -1,11 +1,11 @@
-import type { Appearance, AuthorIdentitySettings, RepositoryGraphSettings } from "@git-workbench/shared"
+import type { Appearance, AuthorIdentitySettings, RepositoryGraphSettings } from "@laneway/shared"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, resolve } from "node:path"
 
 export * from "./workspace"
 
-export interface WorkbenchSettings {
+export interface LanewaySettings {
     version: 1
     gitPath?: string
     virtualBranchPrefix?: string
@@ -29,20 +29,20 @@ export function defaultSettingsPath(
     environment: NodeJS.ProcessEnv = process.env,
 ) {
     if (platform == "win32")
-        return resolve(environment.APPDATA ?? resolve(homedir(), "AppData", "Roaming"), "Git Workbench", "settings.json")
+        return resolve(environment.APPDATA ?? resolve(homedir(), "AppData", "Roaming"), "Laneway", "settings.json")
     if (platform == "darwin")
-        return resolve(homedir(), "Library", "Application Support", "Git Workbench", "settings.json")
-    return resolve(environment.XDG_CONFIG_HOME ?? resolve(homedir(), ".config"), "git-workbench", "settings.json")
+        return resolve(homedir(), "Library", "Application Support", "Laneway", "settings.json")
+    return resolve(environment.XDG_CONFIG_HOME ?? resolve(homedir(), ".config"), "laneway", "settings.json")
 }
 
-export async function readSettings(path = defaultSettingsPath()): Promise<WorkbenchSettings> {
+export async function readSettings(path = defaultSettingsPath()): Promise<LanewaySettings> {
     let content: string
     try {
         content = await readFile(path, "utf8")
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code == "ENOENT")
             return { version: 1 }
-        throw new SettingsError("settings.corrupt", `Workbench could not read its settings file at ${path}.`, path)
+        throw new SettingsError("settings.corrupt", `Laneway could not read its settings file at ${path}.`, path)
     }
 
     try {
@@ -70,7 +70,7 @@ export async function readSettings(path = defaultSettingsPath()): Promise<Workbe
     } catch {
         throw new SettingsError(
             "settings.corrupt",
-            `Workbench settings at ${path} are invalid. Repair the file or reset settings before using Git.`,
+            `Laneway settings at ${path} are invalid. Repair the file or reset settings before using Git.`,
             path,
         )
     }
@@ -126,7 +126,7 @@ function nonEmptyString(value: unknown): value is string {
     return typeof value == "string" && value.trim() != ""
 }
 
-export async function writeSettings(settings: WorkbenchSettings, path = defaultSettingsPath()) {
+export async function writeSettings(settings: LanewaySettings, path = defaultSettingsPath()) {
     const temporaryPath = `${path}.${crypto.randomUUID()}.tmp`
     try {
         await mkdir(dirname(path), { recursive: true })
@@ -134,6 +134,6 @@ export async function writeSettings(settings: WorkbenchSettings, path = defaultS
         await rename(temporaryPath, path)
     } catch {
         await rm(temporaryPath, { force: true }).catch(() => undefined)
-        throw new SettingsError("settings.write-failed", `Workbench could not save settings at ${path}.`, path)
+        throw new SettingsError("settings.write-failed", `Laneway could not save settings at ${path}.`, path)
     }
 }

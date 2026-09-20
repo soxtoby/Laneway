@@ -1,11 +1,11 @@
 {
-    "name": "@git-workbench/settings",
+    "name": "@laneway/settings",
     "private": true,
     "type": "module",
     "exports": {
         ".": "./src/index.ts"
     },
     "dependencies": {
-        "@git-workbench/shared": "workspace:*"
+        "@laneway/shared": "workspace:*"
     }
 }

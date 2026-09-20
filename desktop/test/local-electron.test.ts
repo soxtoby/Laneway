@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
 
 test("rebuilt desktop commits through production IPC and restores drafts across process restart", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "workbench-local-electron-"))
+    const directory = await mkdtemp(join(tmpdir(), "laneway-local-electron-"))
     const root = resolve(import.meta.dir, "../..")
     function git(...args: string[]) {
         const result = Bun.spawnSync(["git", ...args], { cwd: join(directory, "repository"), stdout: "pipe", stderr: "pipe" })
@@ -45,9 +45,9 @@ test("rebuilt desktop commits through production IPC and restores drafts across 
                 await writeFile(join(directory, "repository", "file.txt"), "composed desktop change\n")
             const env: NodeJS.ProcessEnv = {
                 ...process.env,
-                WORKBENCH_ENGINE_PATH: join(root, "cli/bin/workbench-engine.exe"),
-                WORKBENCH_SETTINGS_PATH: join(directory, "settings.json"),
-                WORKBENCH_WORKSPACE_PATH: join(directory, "workspace.json"),
+                LANEWAY_ENGINE_PATH: join(root, "cli/bin/lane.exe"),
+                LANEWAY_SETTINGS_PATH: join(directory, "settings.json"),
+                LANEWAY_WORKSPACE_PATH: join(directory, "workspace.json"),
             }
             delete env.ELECTRON_RUN_AS_NODE
             let errors = ""

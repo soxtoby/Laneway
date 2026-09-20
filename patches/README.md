@@ -1,6 +1,6 @@
 # Pierre 1.4.1 and Electron CSP
 
-Workbench keeps its strict renderer CSP. Pierre's native `UnresolvedFile` (built on `FileDiff`) otherwise inserts inline style tags and HTML style attributes that Electron rejects.
+Laneway keeps its strict renderer CSP. Pierre's native `UnresolvedFile` (built on `FileDiff`) otherwise inserts inline style tags and HTML style attributes that Electron rejects.
 
 `@pierre%2Fdiffs@1.4.1.patch` renders diff HAST through DOM/CSSOM APIs and uses adopted stylesheets for themes. Bun applies it through `patchedDependencies`; no CSP exception is required. Merge behavior and controls come from Pierre unchanged.
 

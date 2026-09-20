@@ -1,30 +1,30 @@
-import type { EngineMessage } from "@git-workbench/shared"
+import type { EngineMessage } from "@laneway/shared"
 import { describe, expect, test } from "bun:test"
 import { join } from "node:path"
 import { inspectEngine, parseEngineIdentity, parseEngineMessage, resolveEnginePath, runEngineCommand } from "../src/main/engine"
 
-const enginePath = join(import.meta.dir, "../../cli/bin/workbench-engine.exe")
+const enginePath = join(import.meta.dir, "../../cli/bin/lane.exe")
 
-describe("Workbench Engine client", () => {
+describe("Laneway Engine client", () => {
     test("accepts the shipped Engine identity", () => {
-        expect(parseEngineIdentity("workbench-engine 0.1.0\n")).toEqual({
-            name: "workbench-engine",
+        expect(parseEngineIdentity("lane 0.1.0\n")).toEqual({
+            name: "lane",
             version: "0.1.0",
         })
     })
 
     test("rejects malformed and incompatible Engine identities", () => {
         expect(() => parseEngineIdentity("hello\n")).toThrow(
-            "The selected Workbench Engine returned an invalid --version response.",
+            "The selected Laneway Engine returned an invalid --version response.",
         )
-        expect(() => parseEngineIdentity("workbench-engine 0.2.0\n")).toThrow(
-            "Incompatible Workbench Engine version 0.2.0; expected 0.1.0.",
+        expect(() => parseEngineIdentity("lane 0.2.0\n")).toThrow(
+            "Incompatible Laneway Engine version 0.2.0; expected 0.1.0.",
         )
     })
 
     test("resolves override, packaged, and development Engine paths", () => {
-        const applicationPath = join("D:\\Apps", "Workbench.exe")
-        const workspacePath = join("D:\\src", "GitWorkbench")
+        const applicationPath = join("D:\\Apps", "Laneway.exe")
+        const workspacePath = join("D:\\src", "Laneway")
 
         expect(resolveEnginePath({
             override: join("D:\\tools", "custom-engine.exe"),
@@ -36,18 +36,18 @@ describe("Workbench Engine client", () => {
             isPackaged: true,
             applicationPath,
             workspacePath,
-        })).toBe(join("D:\\Apps", "workbench-engine.exe"))
+        })).toBe(join("D:\\Apps", "lane.exe"))
         expect(resolveEnginePath({
             isPackaged: false,
             applicationPath,
             workspacePath,
-        })).toBe(join(workspacePath, "cli", "bin", "workbench-engine.exe"))
+        })).toBe(join(workspacePath, "cli", "bin", "lane.exe"))
     })
 
     test("inspects the selected Engine executable", async () => {
         await expect(inspectEngine(enginePath)).resolves.toEqual({
             path: enginePath,
-            name: "workbench-engine",
+            name: "lane",
             version: "0.1.0",
         })
     })
@@ -75,10 +75,10 @@ describe("Workbench Engine client", () => {
 
     test("rejects malformed Engine output", () => {
         expect(() => parseEngineMessage("not json")).toThrow(
-            "Workbench Engine returned malformed NDJSON: not json",
+            "Laneway Engine returned malformed NDJSON: not json",
         )
         expect(() => parseEngineMessage('{"type":"result","command":"other"}')).toThrow(
-            'Workbench Engine returned malformed NDJSON: {"type":"result","command":"other"}',
+            'Laneway Engine returned malformed NDJSON: {"type":"result","command":"other"}',
         )
     })
 

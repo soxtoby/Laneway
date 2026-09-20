@@ -1,6 +1,6 @@
-import { pathExists } from "@git-workbench/git"
-import { parseWorkspacePresentation, readWorkspace, resetWorkspace, type StoredRepository, type StoredWorkspace, WorkspaceStateError, writeWorkspace } from "@git-workbench/settings"
-import type { EntryError, OpenRepository, RepositoryInfo, Workspace } from "@git-workbench/shared"
+import { pathExists } from "@laneway/git"
+import { parseWorkspacePresentation, readWorkspace, resetWorkspace, type StoredRepository, type StoredWorkspace, WorkspaceStateError, writeWorkspace } from "@laneway/settings"
+import type { EntryError, OpenRepository, RepositoryInfo, Workspace } from "@laneway/shared"
 import { basename, dirname } from "node:path"
 import { entryError, type OpenRepositories } from "./repositories"
 

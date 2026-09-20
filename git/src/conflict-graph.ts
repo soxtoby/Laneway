@@ -1,4 +1,4 @@
-import type { BranchGraph, BranchHistoryPage, BranchHistoryRequest, DiffSource } from "@git-workbench/shared"
+import type { BranchGraph, BranchHistoryPage, BranchHistoryRequest, DiffSource } from "@laneway/shared"
 import { conflictStateRef, readConflictState, temporaryBranchPrefix } from "./conflicts"
 import type { RepositoryGit } from "./index"
 

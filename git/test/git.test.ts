@@ -53,10 +53,10 @@ describe("system Git", () => {
     })
 
     test("requires an exact repository root and accepts a linked worktree", async () => {
-        const repository = await temporaryDirectory("workbench git root ")
+        const repository = await temporaryDirectory("laneway git root ")
         expect(runGit(repository, "init", "--quiet").exitCode).toBe(0)
-        expect(runGit(repository, "config", "user.name", "Workbench Test").exitCode).toBe(0)
-        expect(runGit(repository, "config", "user.email", "workbench@example.invalid").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
         await writeFile(resolve(repository, "README.md"), "initial\n")
         expect(runGit(repository, "add", "README.md").exitCode).toBe(0)
         expect(runGit(repository, "commit", "--quiet", "-m", "Initial").exitCode).toBe(0)
@@ -66,7 +66,7 @@ describe("system Git", () => {
         await expect(openRepository(child)).rejects.toMatchObject({ code: "git.invalid-root" })
         expect((await connectRepository(child)).descriptor.root).toBe(repository)
 
-        const linked = await temporaryDirectory("workbench linked ")
+        const linked = await temporaryDirectory("laneway linked ")
         expect(runGit(repository, "worktree", "add", "--detach", linked).exitCode).toBe(0)
         const opened = await openRepository(linked)
         expect(opened.descriptor.mainWorktree).toBe(repository)
@@ -75,7 +75,7 @@ describe("system Git", () => {
     })
 
     test("rejects bare repositories with an explanation", async () => {
-        const repository = await temporaryDirectory("workbench-bare-")
+        const repository = await temporaryDirectory("laneway-bare-")
         expect(runGit(repository, "init", "--bare", "--quiet").exitCode).toBe(0)
 
         await expect(openRepository(repository)).rejects.toMatchObject({
@@ -85,12 +85,12 @@ describe("system Git", () => {
     })
 
     test("explains a linked worktree whose Main Worktree is missing", async () => {
-        const repository = await temporaryDirectory("workbench-missing-main-")
-        const linkedParent = await temporaryDirectory("workbench-missing-main-linked-")
+        const repository = await temporaryDirectory("laneway-missing-main-")
+        const linkedParent = await temporaryDirectory("laneway-missing-main-linked-")
         const linked = resolve(linkedParent, "linked")
         expect(runGit(repository, "init", "--quiet").exitCode).toBe(0)
-        expect(runGit(repository, "config", "user.name", "Workbench Test").exitCode).toBe(0)
-        expect(runGit(repository, "config", "user.email", "workbench@example.invalid").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
         await writeFile(resolve(repository, "README.md"), "initial\n")
         expect(runGit(repository, "add", "README.md").exitCode).toBe(0)
         expect(runGit(repository, "commit", "--quiet", "-m", "Initial").exitCode).toBe(0)
@@ -105,24 +105,24 @@ describe("system Git", () => {
 
     for (const objectFormat of ["sha1", "sha256"] as const) {
         test(`initializes and mutates a ${objectFormat} repository`, async () => {
-            const repository = resolve(await temporaryDirectory(`workbench-${objectFormat}-`), "repository")
+            const repository = resolve(await temporaryDirectory(`laneway-${objectFormat}-`), "repository")
             expect(runGit(resolve(repository, ".."), "init", `--object-format=${objectFormat}`, "--quiet", repository).exitCode).toBe(0)
             const git = await openRepository(repository)
             expect(git.descriptor.objectFormat).toBe(objectFormat)
 
             const objectId = await git.hashObject(`${objectFormat}\n`)
-            await git.updateRefs([{ ref: "refs/workbench/test/object-format", before: null, after: objectId }])
-            expect(await git.resolveRef("refs/workbench/test/object-format")).toBe(objectId)
-            await git.updateRefs([{ ref: "refs/workbench/test/object-format", before: objectId, after: null }])
-            expect(await git.resolveRef("refs/workbench/test/object-format")).toBeNull()
+            await git.updateRefs([{ ref: "refs/laneway/test/object-format", before: null, after: objectId }])
+            expect(await git.resolveRef("refs/laneway/test/object-format")).toBe(objectId)
+            await git.updateRefs([{ ref: "refs/laneway/test/object-format", before: objectId, after: null }])
+            expect(await git.resolveRef("refs/laneway/test/object-format")).toBeNull()
         })
 
         test(`reads a verified ${objectFormat} Branch Graph and lazy history`, async () => {
-            const repository = resolve(await temporaryDirectory(`workbench-graph-${objectFormat}-`), "repository")
+            const repository = resolve(await temporaryDirectory(`laneway-graph-${objectFormat}-`), "repository")
             expect(runGit(resolve(repository, ".."), "init", `--object-format=${objectFormat}`, "--initial-branch=main", "--quiet", repository).exitCode).toBe(
                 0,
             )
-            expect(runGit(repository, "config", "user.name", "Workbench Test").exitCode).toBe(0)
+            expect(runGit(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
             expect(runGit(repository, "config", "user.email", "primary@example.invalid").exitCode).toBe(0)
             await commitFile(repository, "README.md", "initial\n", "Initial")
             const mainTip = gitText(repository, "rev-parse", "HEAD")
@@ -133,7 +133,7 @@ describe("system Git", () => {
             expect(runGit(repository, "config", "branch.main.merge", "refs/heads/main").exitCode).toBe(0)
 
             expect(runGit(repository, "checkout", "-q", "-b", "feature/base").exitCode).toBe(0)
-            await writeFile(resolve(repository, ".mailmap"), "Secondary Author <secondary@example.invalid> Workbench Test <legacy@example.invalid>\n")
+            await writeFile(resolve(repository, ".mailmap"), "Secondary Author <secondary@example.invalid> Laneway Test <legacy@example.invalid>\n")
             expect(runGit(repository, "add", ".mailmap").exitCode).toBe(0)
             await commitFile(repository, "base.txt", "base\n", "Base work")
             const baseTip = gitText(repository, "rev-parse", "HEAD")
@@ -149,7 +149,7 @@ describe("system Git", () => {
             await writeFile(resolve(repository, "working.txt"), "stashed\n")
             expect(runGit(repository, "add", "working.txt").exitCode).toBe(0)
             expect(runGit(repository, "stash", "push", "-m", "Graph marker").exitCode).toBe(0)
-            const detached = resolve(await temporaryDirectory(`workbench-graph-detached-${objectFormat}-`), "detached")
+            const detached = resolve(await temporaryDirectory(`laneway-graph-detached-${objectFormat}-`), "detached")
             expect(runGit(repository, "worktree", "add", "--detach", detached, mainTip).exitCode).toBe(0)
 
             const opened = await openRepository(repository)
@@ -196,10 +196,10 @@ describe("system Git", () => {
     }
 
     test("retains divergent upstream tips and reports an ambiguous Base without a Primary Branch", async () => {
-        const repository = await temporaryDirectory("workbench-graph-ambiguous-")
+        const repository = await temporaryDirectory("laneway-graph-ambiguous-")
         expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)
-        expect(runGit(repository, "config", "user.name", "Workbench Test").exitCode).toBe(0)
-        expect(runGit(repository, "config", "user.email", "workbench@example.invalid").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
         await commitFile(repository, "README.md", "initial\n", "Initial")
         const initial = gitText(repository, "rev-parse", "HEAD")
         expect(runGit(repository, "checkout", "-q", "-b", "candidate/left").exitCode).toBe(0)
@@ -218,7 +218,7 @@ describe("system Git", () => {
         expect(runGit(repository, "config", "branch.feature/ambiguous.merge", "refs/heads/feature/ambiguous").exitCode).toBe(0)
 
         const graph = await (await openRepository(repository)).startReadBranchGraph({
-            authorIdentities: { primary: "workbench@example.invalid", secondary: [] },
+            authorIdentities: { primary: "laneway@example.invalid", secondary: [] },
             remotePatterns: ["origin/**"],
         }).result
         const feature = graph.branches.find(branch => branch.preferredRef == "refs/heads/feature/ambiguous")!
@@ -240,10 +240,10 @@ describe("system Git", () => {
     })
 
     test("reads branch history along the first parent of merge commits", async () => {
-        const repository = await temporaryDirectory("workbench-graph-first-parent-")
+        const repository = await temporaryDirectory("laneway-graph-first-parent-")
         expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)
-        expect(runGit(repository, "config", "user.name", "Workbench Test").exitCode).toBe(0)
-        expect(runGit(repository, "config", "user.email", "workbench@example.invalid").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
         await commitFile(repository, "README.md", "initial\n", "Initial")
         const baseTip = gitText(repository, "rev-parse", "HEAD")
         expect(runGit(repository, "checkout", "-q", "-b", "side").exitCode).toBe(0)
@@ -266,10 +266,10 @@ describe("system Git", () => {
     })
 
     test("reads a many-branch graph in under one second", async () => {
-        const repository = await temporaryDirectory("workbench-graph-performance-")
+        const repository = await temporaryDirectory("laneway-graph-performance-")
         expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)
-        expect(runGit(repository, "config", "user.name", "Workbench Test").exitCode).toBe(0)
-        expect(runGit(repository, "config", "user.email", "workbench@example.invalid").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
         await commitFile(repository, "README.md", "initial\n", "Initial")
         const initial = gitText(repository, "rev-parse", "HEAD")
         const tree = gitText(repository, "rev-parse", "HEAD^{tree}")
@@ -281,7 +281,7 @@ describe("system Git", () => {
         const opened = await openRepository(repository)
         const started = performance.now()
         const graph = await opened.startReadBranchGraph({
-            authorIdentities: { primary: "workbench@example.invalid", secondary: [] },
+            authorIdentities: { primary: "laneway@example.invalid", secondary: [] },
             remotePatterns: [],
         }).result
         const elapsed = performance.now() - started
@@ -291,21 +291,21 @@ describe("system Git", () => {
     }, 30_000)
 
     test("initializes populated directories and clones a disposable local remote", async () => {
-        const populated = await temporaryDirectory("workbench-init-")
+        const populated = await temporaryDirectory("laneway-init-")
         await writeFile(resolve(populated, "kept.txt"), "keep me")
         const initialized = await initializeRepository({ path: populated, initialBranch: "entry-test" })
         expect(initialized.descriptor.root).toBe(populated)
         expect(await Bun.file(resolve(populated, "kept.txt")).text()).toBe("keep me")
 
-        const destination = resolve(await temporaryDirectory("workbench-clone-parent-"), "cloned repository")
+        const destination = resolve(await temporaryDirectory("laneway-clone-parent-"), "cloned repository")
         const clone = await startCloneRepository({ source: populated, destination })
         expect((await clone.result).descriptor.root).toBe(destination)
     })
 
     test("rejects a non-empty clone destination without changing it", async () => {
-        const source = await temporaryDirectory("workbench-clone-source-")
+        const source = await temporaryDirectory("laneway-clone-source-")
         expect(runGit(source, "init", "--quiet").exitCode).toBe(0)
-        const destination = await temporaryDirectory("workbench-clone-conflict-")
+        const destination = await temporaryDirectory("laneway-clone-conflict-")
         await writeFile(resolve(destination, "keep.txt"), "keep me")
 
         await expect(startCloneRepository({ source, destination })).rejects.toMatchObject({
@@ -315,17 +315,17 @@ describe("system Git", () => {
         expect(await Bun.file(resolve(destination, "keep.txt")).text()).toBe("keep me")
     })
 
-    test("cancels clone without deleting a destination Workbench created", async () => {
-        const source = await temporaryDirectory("workbench-cancel-source-")
+    test("cancels clone without deleting a destination Laneway created", async () => {
+        const source = await temporaryDirectory("laneway-cancel-source-")
         expect(runGit(source, "init", "--quiet").exitCode).toBe(0)
-        expect(runGit(source, "config", "user.name", "Workbench Test").exitCode).toBe(0)
-        expect(runGit(source, "config", "user.email", "workbench@example.invalid").exitCode).toBe(0)
+        expect(runGit(source, "config", "user.name", "Laneway Test").exitCode).toBe(0)
+        expect(runGit(source, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
         for (let index = 0; index < 250; index += 1)
             await writeFile(resolve(source, `file-${index}.txt`), `${"content ".repeat(500)}${index}\n`)
         expect(runGit(source, "add", ".").exitCode).toBe(0)
         expect(runGit(source, "commit", "--quiet", "-m", "Clone source").exitCode).toBe(0)
 
-        const destination = resolve(await temporaryDirectory("workbench-cancel-parent-"), "partial")
+        const destination = resolve(await temporaryDirectory("laneway-cancel-parent-"), "partial")
         const clone = await startCloneRepository({ source: `file:///${source.replaceAll("\\", "/")}`, destination })
         clone.cancel()
 

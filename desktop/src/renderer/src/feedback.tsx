@@ -31,7 +31,7 @@ export function FatalError(handle: Handle<{ message: string; retry(): void }>) {
                     Application startup failed
                 </p>
                 <h1 mix={bootstrapStateH1}>
-                    Git Workbench could not start.
+                    Laneway could not start.
                 </h1>
                 <p mix={bootstrapStateP}>
                     {handle.props.message}

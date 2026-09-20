@@ -36,9 +36,9 @@ app.on("browser-window-created", (_event, window) => {
                     await wait(() => button('Cancel'));
                     button('Cancel').click();
                     // Reading waits for queued writes through the production IPC handler.
-                    const state = await window.workbench.getState();
+                    const state = await window.laneway.getState();
                     const repository = state.workspace.repositories[0];
-                    const draft = await window.workbench.readCommitDraft(repository.id, repository.info.mainWorktree);
+                    const draft = await window.laneway.readCommitDraft(repository.id, repository.info.mainWorktree);
                     if (draft.title != 'Persistent desktop commit') throw new Error('Draft was not saved');
                     return { draft: true };
                 }

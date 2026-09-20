@@ -1,4 +1,4 @@
-import type { BranchGraphPoint } from "@git-workbench/shared"
+import type { BranchGraphPoint } from "@laneway/shared"
 
 /** Keep the first-parent lines of visible refs, plus their actual merge connections.
  * Ordinary commits are compressed; heads, tags, forks and merges remain waypoints. */

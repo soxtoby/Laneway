@@ -1,14 +1,14 @@
-import type { Appearance, AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryProgress, EntryResult, GitSettingsState, RepositoryGraphSettings, Workspace } from "@git-workbench/shared"
-import type { ChangesRequest, ChangesResult, FileDiffRequest, FileDiffResult } from "@git-workbench/shared"
-import type { WorktreeActionResult, WorktreePreviewResult, WorktreeRequest } from "@git-workbench/shared"
-import type { CommitDraft, LocalActionResult, LocalRequest } from "@git-workbench/shared"
-import type { ConflictActionResult, ConflictRequest } from "@git-workbench/shared"
-import type { PullActionResult, PullProgress, PullRequest } from "@git-workbench/shared"
+import type { Appearance, AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryProgress, EntryResult, GitSettingsState, RepositoryGraphSettings, Workspace } from "@laneway/shared"
+import type { ChangesRequest, ChangesResult, FileDiffRequest, FileDiffResult } from "@laneway/shared"
+import type { WorktreeActionResult, WorktreePreviewResult, WorktreeRequest } from "@laneway/shared"
+import type { CommitDraft, LocalActionResult, LocalRequest } from "@laneway/shared"
+import type { ConflictActionResult, ConflictRequest } from "@laneway/shared"
+import type { PullActionResult, PullProgress, PullRequest } from "@laneway/shared"
 
 interface EngineStatusReady {
     state: "ready"
     path: string
-    name: "workbench-engine"
+    name: "lane"
     version: string
 }
 
@@ -28,7 +28,7 @@ interface AppState {
 
 declare global {
     interface Window {
-        workbench: {
+        laneway: {
             pullLatest(repositoryId: string, request: PullRequest): Promise<PullActionResult>
             cancelPull(repositoryId: string): Promise<boolean>
             onPullProgress(listener: (progress: PullProgress) => void): () => void
@@ -73,4 +73,4 @@ declare global {
 }
 
 export {}
-import type { FileHistoryRequest, FileHistoryResult } from "@git-workbench/shared"
+import type { FileHistoryRequest, FileHistoryResult } from "@laneway/shared"

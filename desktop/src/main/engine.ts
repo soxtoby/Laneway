@@ -1,4 +1,4 @@
-import { ENGINE_VERSION, type EngineMessage, EngineMessageSchema } from "@git-workbench/shared"
+import { ENGINE_VERSION, type EngineMessage, EngineMessageSchema } from "@laneway/shared"
 import { execFile, spawn } from "node:child_process"
 import { dirname, join, resolve } from "node:path"
 import { createInterface } from "node:readline"
@@ -18,22 +18,22 @@ export function resolveEnginePath(options: EnginePathOptions) {
         return resolve(options.override)
 
     if (options.isPackaged)
-        return join(dirname(options.applicationPath), "workbench-engine.exe")
+        return join(dirname(options.applicationPath), "lane.exe")
 
-    return join(options.workspacePath, "cli", "bin", "workbench-engine.exe")
+    return join(options.workspacePath, "cli", "bin", "lane.exe")
 }
 
 export function parseEngineIdentity(output: string) {
-    const match = /^workbench-engine (\d+\.\d+\.\d+)\r?\n?$/.exec(output)
+    const match = /^lane (\d+\.\d+\.\d+)\r?\n?$/.exec(output)
 
     if (!match)
-        throw new Error("The selected Workbench Engine returned an invalid --version response.")
+        throw new Error("The selected Laneway Engine returned an invalid --version response.")
 
     const version = match[1]
     if (version != ENGINE_VERSION)
-        throw new Error(`Incompatible Workbench Engine version ${version}; expected ${ENGINE_VERSION}.`)
+        throw new Error(`Incompatible Laneway Engine version ${version}; expected ${ENGINE_VERSION}.`)
 
-    return { name: "workbench-engine" as const, version }
+    return { name: "lane" as const, version }
 }
 
 export async function inspectEngine(enginePath: string) {
@@ -49,7 +49,7 @@ export function parseEngineMessage(line: string) {
     try {
         return EngineMessageSchema.parse(JSON.parse(line))
     } catch {
-        throw new Error(`Workbench Engine returned malformed NDJSON: ${line}`)
+        throw new Error(`Laneway Engine returned malformed NDJSON: ${line}`)
     }
 }
 
@@ -101,7 +101,7 @@ export function runEngineCommand(options: EngineCommandOptions) {
                 messages.push(message)
                 options.onMessage?.(message)
             } catch {
-                protocolError = new Error(`Workbench Engine returned malformed NDJSON: ${line}`)
+                protocolError = new Error(`Laneway Engine returned malformed NDJSON: ${line}`)
             }
         }
 

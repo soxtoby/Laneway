@@ -1,5 +1,5 @@
 import { createRoot } from "remix/ui"
-import { WorkbenchApp } from "../../src/renderer/src/app"
+import { LanewayApp } from "../../src/renderer/src/app"
 import { inspectionScenario } from "../renderer-fixtures"
 
 export async function checkBranchGraphScroll() {
@@ -28,7 +28,7 @@ export async function checkBranchGraphScroll() {
         return result
     }
     const root = createRoot(document.querySelector<HTMLElement>("#app")!)
-    root.render(<WorkbenchApp api={scenario.api} />)
+    root.render(<LanewayApp api={scenario.api} />)
     async function settle() {
         for (let frame = 0; frame < 3; frame++) {
             await new Promise(resolve => setTimeout(resolve, 20))

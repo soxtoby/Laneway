@@ -1,4 +1,4 @@
-import type { DiffLayout } from "@git-workbench/shared"
+import type { DiffLayout } from "@laneway/shared"
 import { css, type Handle, on } from "remix/ui"
 import { fileActionButton } from "./file-list"
 

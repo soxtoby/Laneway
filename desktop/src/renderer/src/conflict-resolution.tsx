@@ -1,11 +1,11 @@
-import type { BranchGraphBranchNode, ChangedFile, ConflictRequest, ConflictResult } from "@git-workbench/shared"
+import type { BranchGraphBranchNode, ChangedFile, ConflictRequest, ConflictResult } from "@laneway/shared"
 import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 import { ResolutionReview, resolutionReview } from "./conflict-content"
 import { fileActionButton, fileLabel, InspectionItem } from "./file-list"
 import { type ConflictSides, MergeResolution } from "./merge-resolution"
 
 interface Options {
-    api: Window["workbench"]
+    api: Window["laneway"]
     changed(repositoryId: string): Promise<void>
     update(): Promise<AbortSignal>
 }
@@ -37,7 +37,7 @@ export function createConflictResolution(options: Options) {
 function ConflictControls(
     handle: Handle<
         {
-            api: Window["workbench"]
+            api: Window["laneway"]
             repository: string
             branch: BranchGraphBranchNode
             path?: string
@@ -164,7 +164,7 @@ const conflictFileCache = new Map<string, ConflictView>()
 
 export function ConflictResolution(
     handle: Handle<{
-        api: Window["workbench"]
+        api: Window["laneway"]
         repository: string
         subject: string
         path?: string

@@ -1,4 +1,4 @@
-import type { BranchGraph, ChangedFile, FileDiffPage, Workspace } from "@git-workbench/shared"
+import type { BranchGraph, ChangedFile, FileDiffPage, Workspace } from "@laneway/shared"
 
 export function inspectionScenario() {
     const repository = repositoryInfo("D:\\Source\\inspection")
@@ -37,7 +37,7 @@ export function inspectionScenario() {
             hunk: 0,
         }],
     }
-    const api = fakeWorkbench({
+    const api = fakeLaneway({
         getState: async () => ({ ...appState(), workspace }),
         updateWorkspace: async next => workspace = structuredClone(next),
         readBranchGraph: async () => ({ ok: true, graph }),
@@ -83,7 +83,7 @@ export function appState() {
             git: { path: "C:\\Program Files\\Git\\cmd\\git.exe", version: "2.51.1" },
             authorIdentities: { secondary: [] },
         },
-        engine: { state: "ready" as const, path: "D:\\GitWorkbench\\cli\\bin\\workbench-engine.exe", name: "workbench-engine" as const, version: "0.1.0" },
+        engine: { state: "ready" as const, path: "D:\\Laneway\\cli\\bin\\lane.exe", name: "lane" as const, version: "0.1.0" },
         appearance: "light" as const,
         defaultCloneParent: "C:\\Users\\developer\\Documents",
     }
@@ -155,8 +155,8 @@ export function branchGraph(repositoryId: string) {
         remotePatterns: [],
         authorIdentities: { primary: "developer@example.test", secondary: [] },
         effectiveAuthorEmail: "developer@example.test",
-        branches: [main, branch("feature/workbench", "involved"), branch("other/team", "uninvolved")],
-        history: [{ objectId: "2".repeat(40), lineId: "branch:refs/heads/feature/workbench", parentIds: [main.tip] }, {
+        branches: [main, branch("feature/laneway", "involved"), branch("other/team", "uninvolved")],
+        history: [{ objectId: "2".repeat(40), lineId: "branch:refs/heads/feature/laneway", parentIds: [main.tip] }, {
             objectId: "3".repeat(40),
             lineId: "branch:refs/heads/other/team",
             parentIds: [main.tip],
@@ -168,7 +168,7 @@ export function branchGraph(repositoryId: string) {
     }
 }
 
-export function fakeWorkbench(overrides: Partial<Window["workbench"]> = {}): Window["workbench"] {
+export function fakeLaneway(overrides: Partial<Window["laneway"]> = {}): Window["laneway"] {
     return {
         pullLatest: async () => ({ ok: false, error: { message: "Pull latest unavailable" } }),
         cancelPull: async () => false,
@@ -185,9 +185,9 @@ export function fakeWorkbench(overrides: Partial<Window["workbench"]> = {}): Win
                     token: "fixture",
                     affected: [],
                     uniqueCommits: false,
-                    branch: "feature/workbench",
+                    branch: "feature/laneway",
                     unborn: false,
-                    suggestedBranch: "feature/workbench",
+                    suggestedBranch: "feature/laneway",
                     staged: true,
                     files: [],
                     stashes: [],

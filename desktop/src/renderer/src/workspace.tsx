@@ -1,4 +1,4 @@
-import type { Appearance, GitSettingsState } from "@git-workbench/shared"
+import type { Appearance, GitSettingsState } from "@laneway/shared"
 import { css, type Handle, on } from "remix/ui"
 import type { PullControl } from "./pull-latest"
 
@@ -9,7 +9,7 @@ export interface EntryActions {
     openInitialize(): void
 }
 
-export function WorkbenchHeader(
+export function LanewayHeader(
     handle: Handle<{
         busy: boolean
         openLens?(): void
@@ -31,7 +31,7 @@ export function WorkbenchHeader(
                     </i>
                 </span>
                 <span mix={brandSpan}>
-                    Git Workbench
+                    Laneway
                 </span>
             </div>
             {handle.props.openLens && (

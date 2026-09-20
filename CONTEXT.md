@@ -1,15 +1,15 @@
-# Git Workbench
+# Laneway
 
-Git Workbench is an opinionated standalone Git client for general developers. Its language centres on understanding and reshaping lines of work.
+Laneway is an opinionated standalone Git client for general developers. Its language centres on understanding and reshaping lines of work.
 
 ## Language
 
-**Workbench**:
-The product as a whole: a standalone Git client with deliberate workflow opinions.
-_Avoid_: Git GUI, companion tool
+**Laneway**:
+The product as a whole: a standalone Git client with deliberate workflow opinions. Its desktop application, its Engine, and its data all carry the Laneway name.
+_Avoid_: Git GUI, companion tool, Git Workbench, Workbench
 
 **V1**:
-The first supported Workbench release: a Windows product covering the settled local workflows and ordinary Git remote synchronization and publication. macOS and mainstream Linux are best-effort; hosted-provider and AI-assisted workflows are later releases.
+The first supported Laneway release: a Windows product covering the settled local workflows and ordinary Git remote synchronization and publication. macOS and mainstream Linux are best-effort; hosted-provider and AI-assisted workflows are later releases.
 _Avoid_: MVP, technical preview
 
 **Repository Icon**:
@@ -25,7 +25,7 @@ A resizable view of an Active Stack ending at one branch. It may be branch-only,
 _Avoid_: Worktree column
 
 **Workspace State**:
-The persisted presentation of repositories and Workspace Columns, including their order, size, collapse state, focus, and each column's unified or side-by-side diff preference. Workbench restores it after restart but does not restore broken-out diffs, focused inspection, selected files, selected changes, or scroll positions; Git facts are always recomputed.
+The persisted presentation of repositories and Workspace Columns, including their order, size, collapse state, focus, and each column's unified or side-by-side diff preference. Laneway restores it after restart but does not restore broken-out diffs, focused inspection, selected files, selected changes, or scroll positions; Git facts are always recomputed.
 _Avoid_: Repository cache, persisted Git state
 
 **Open Repository**:
@@ -37,7 +37,7 @@ Worktree Backing is the association between one filesystem worktree and one Work
 _Avoid_: Switch column, replace column
 
 **Main Worktree**:
-Git's permanent repository worktree, unrelated to the Primary Branch. It may change branches, but Workbench never moves, removes, or cleans it; if its path disappears, the repository remains unavailable until the user locates it.
+Git's permanent repository worktree, unrelated to the Primary Branch. It may change branches, but Laneway never moves, removes, or cleans it; if its path disappears, the repository remains unavailable until the user locates it.
 _Avoid_: Primary Worktree
 
 **Worktree Home**:
@@ -45,27 +45,27 @@ The parent directory for newly created linked worktrees: a `<repository>.worktre
 _Avoid_: Worktree storage
 
 **Registered Worktree**:
-Any Main or linked worktree recorded by Git, regardless of which tool created it. Workbench discovers and surfaces every Registered Worktree automatically.
+Any Main or linked worktree recorded by Git, regardless of which tool created it. Laneway discovers and surfaces every Registered Worktree automatically.
 _Avoid_: Managed worktree, external worktree
 
 **Locked Worktree**:
-A linked worktree protected by a Git worktree lock and its optional reason. Workbench blocks rename and removal until the user explicitly unlocks it.
+A linked worktree protected by a Git worktree lock and its optional reason. Laneway blocks rename and removal until the user explicitly unlocks it.
 _Avoid_: Read-only worktree
 
 **Missing Worktree**:
-A registered linked worktree whose directory is unavailable at its recorded path while its per-worktree HEAD and index remain in Git's shared administrative data. The user may locate and repair it or explicitly remove its registration; Workbench never prunes it automatically, and external Git pruning creates an undo boundary.
+A registered linked worktree whose directory is unavailable at its recorded path while its per-worktree HEAD and index remain in Git's shared administrative data. The user may locate and repair it or explicitly remove its registration; Laneway never prunes it automatically, and external Git pruning creates an undo boundary.
 _Avoid_: Deleted worktree, stale worktree
 
 **Worktree Removal**:
-An explicit operation that unregisters and deletes a linked worktree after offering to preserve its Working Changes and Worktree-only Commits, recursively stashing populated submodules where needed. Workbench privately retains all affected Git state for undo, while ignored files remain outside undo; preserved stashes remain Branch Markers until explicitly applied, unless undo reapplies them while recreating the worktree.
+An explicit operation that unregisters and deletes a linked worktree after offering to preserve its Working Changes and Worktree-only Commits, recursively stashing populated submodules where needed. Laneway privately retains all affected Git state for undo, while ignored files remain outside undo; preserved stashes remain Branch Markers until explicitly applied, unless undo reapplies them while recreating the worktree.
 _Avoid_: Close column, prune worktree
 
 **Worktree Rename**:
-An explicit change to a linked worktree directory's basename within its current parent, with its Git registration repaired as one Workbench Operation. Workbench does not relocate worktrees between parent directories, and renaming is unavailable when the worktree contains populated submodules.
+An explicit change to a linked worktree directory's basename within its current parent, with its Git registration repaired as one Laneway Operation. Laneway does not relocate worktrees between parent directories, and renaming is unavailable when the worktree contains populated submodules.
 _Avoid_: Worktree label
 
-**Workbench Engine**:
-The headless CLI executable that performs coarse-grained, scriptable Workbench actions. The Workbench invokes one process per action; people and agents may invoke the same actions directly, while repository-entry mechanics need not be CLI commands.
+**Laneway Engine**:
+The headless CLI executable, named `lane`, that performs coarse-grained, scriptable Laneway actions. The desktop application invokes one process per action; people and agents may invoke the same actions directly, while repository-entry mechanics need not be CLI commands.
 _Avoid_: Git service, daemon, utility process
 
 **Branch Graph**:
@@ -81,7 +81,7 @@ A branch represented by a Workspace Column. Opening creates or focuses its colum
 _Avoid_: Selected branch
 
 **Author Identity**:
-An email address Workbench treats as belonging to the current developer after repository mailmap canonicalization. One application-wide primary address and any number of secondary addresses determine branch involvement.
+An email address Laneway treats as belonging to the current developer after repository mailmap canonicalization. One application-wide primary address and any number of secondary addresses determine branch involvement.
 _Avoid_: User account, Git identity
 
 **Involved Branch**:
@@ -112,12 +112,12 @@ _Avoid_: Push, push stack
 A durable record of intended and completed remote ref updates for one Publish, including a partial sequential outcome. It enables Resume and lease-guarded restoration; it is not an ordinary undo entry.
 _Avoid_: Publish undo, push log
 
-**Workbench Operation**:
+**Laneway Operation**:
 An immediate Git mutation recorded in a persistent linear undo/redo history. Undo and redo are transitions through eligible operations, not new operations themselves; a new operation after undo makes the abandoned redo path unavailable. External repository changes may create a boundary beyond which replay is unsafe; files outside Git state, including ignored files, are outside undo.
 _Avoid_: Command, action
 
 **Operation History**:
-The repository-wide persistent linear record of Workbench Operations around the current undo/redo position, shared across linked worktrees. It is distinct from Git commit history and the recovery journal.
+The repository-wide persistent linear record of Laneway Operations around the current undo/redo position, shared across linked worktrees. It is distinct from Git commit history and the recovery journal.
 _Avoid_: History, journal, reflog
 
 **Branch Node**:
@@ -153,15 +153,15 @@ A read-only auxiliary column for inspecting one commit's complete diff against o
 _Avoid_: Diff Workspace Column
 
 **Working Changes Diff Column**:
-A transient auxiliary column that breaks the selected Working Changes diff out from its source Workspace Column. Closing it or restarting Workbench returns the source column to inline diff.
+A transient auxiliary column that breaks the selected Working Changes diff out from its source Workspace Column. Closing it or restarting Laneway returns the source column to inline diff.
 _Avoid_: Diff Column, Commit Diff Column
 
 **Working Changes**:
-The uncommitted, non-ignored changes belonging to one worktree. Before checkout changes, Workbench stores them in an ordinary Git stash associated with the old branch and exposes that stash as a Branch Marker. When Worktree Backing transfers between open columns, the old column keeps them visible as Stashed Working Changes. Ordinary commits use Git's staged snapshot when present, otherwise all Working Changes; transfers to arbitrary destinations use Change Selection.
+The uncommitted, non-ignored changes belonging to one worktree. Before checkout changes, Laneway stores them in an ordinary Git stash associated with the old branch and exposes that stash as a Branch Marker. When Worktree Backing transfers between open columns, the old column keeps them visible as Stashed Working Changes. Ordinary commits use Git's staged snapshot when present, otherwise all Working Changes; transfers to arbitrary destinations use Change Selection.
 _Avoid_: Staged changes, unstaged changes
 
 **Change Selection**:
-A selection of files, hunks, or complete lines from exact Working Changes or committed content for a later Workbench Operation. Within-file selection belongs to one visible file diff, never automatically includes paired lines, and becomes invalid when its source content changes; partial-line fragments and text derived by a custom diff program are not selectable.
+A selection of files, hunks, or complete lines from exact Working Changes or committed content for a later Laneway Operation. Within-file selection belongs to one visible file diff, never automatically includes paired lines, and becomes invalid when its source content changes; partial-line fragments and text derived by a custom diff program are not selectable.
 _Avoid_: Staging, highlighted text
 
 **Historical Edit**:
@@ -189,7 +189,7 @@ Inline resolution within a Workspace Column. Conflicted files in a commit expand
 _Avoid_: Conflict modal
 
 **Provider Overlay**:
-Optional hosted metadata and actions attached to local Git evidence. It refreshes explicitly and by polling, exposes cache freshness, and may be unavailable or unauthenticated without preventing local Workbench use.
+Optional hosted metadata and actions attached to local Git evidence. It refreshes explicitly and by polling, exposes cache freshness, and may be unavailable or unauthenticated without preventing local Laneway use.
 _Avoid_: Hosted source of truth
 
 **Provider Repository**:
@@ -209,7 +209,7 @@ A ticket association discovered from a stable textual reference or provider-nati
 _Avoid_: Commit metadata
 
 **Agent Handoff**:
-The fire-and-forget transfer of one Review Comment and its immutable Review/diff context to the configured external agent app. Workbench neither tracks nor controls the result; when direct launch is unavailable it copies an inspectable prompt.
+The fire-and-forget transfer of one Review Comment and its immutable Review/diff context to the configured external agent app. Laneway neither tracks nor controls the result; when direct launch is unavailable it copies an inspectable prompt.
 _Avoid_: AI Run, tracked agent task
 
 **Copy Reference**:
@@ -221,15 +221,15 @@ The single application-wide prompt-and-response integration used for every in-pr
 _Avoid_: Per-action agent
 
 **AI Run**:
-The Workbench-orchestrated execution record for a long-running in-product AI-assisted action. It retains progress, logs, and resumable Workbench state while the Workbench presents bounded problems and applicable repository instructions to the AI Provider, owns all Git operations, and enforces the action's fixed mutation boundary.
+The Laneway-orchestrated execution record for a long-running in-product AI-assisted action. It retains progress, logs, and resumable Laneway state while Laneway presents bounded problems and applicable repository instructions to the AI Provider, owns all Git operations, and enforces the action's fixed mutation boundary.
 _Avoid_: Agent Workspace, AI chat
 
 **Reshape Stack with AI**:
-An AI-assisted Workbench Operation that may split, squash, reorder, and reword commits in the focused Active Stack while preserving its final tree and branch membership. It reorganizes existing changes but does not author source changes. Workbench owns replay and feeds resulting Git conflicts through the same AI Run; unresolved failures remain an Unresolved Stack.
+An AI-assisted Laneway Operation that may split, squash, reorder, and reword commits in the focused Active Stack while preserving its final tree and branch membership. It reorganizes existing changes but does not author source changes. Laneway owns replay and feeds resulting Git conflicts through the same AI Run; unresolved failures remain an Unresolved Stack.
 _Avoid_: Restack, AI refactoring
 
 **Branch Comparison**:
-An ordered live diff from one branch identity to another, recomputed when either tip moves. It follows an explicit Workbench branch rename; an external replacement requires user confirmation. A branch's unique changes are inspected by expanding its commits.
+An ordered live diff from one branch identity to another, recomputed when either tip moves. It follows an explicit Laneway branch rename; an external replacement requires user confirmation. A branch's unique changes are inspected by expanding its commits.
 _Avoid_: Three-dot diff
 
 **Branch Comparison Column**:

@@ -1,8 +1,8 @@
-import type { BranchGraphBranchNode, LocalPreview, LocalRequest } from "@git-workbench/shared"
+import type { BranchGraphBranchNode, LocalPreview, LocalRequest } from "@laneway/shared"
 import { css, on, ref } from "remix/ui"
 
 export function createLocalBranchActions(options: {
-    api: Window["workbench"]
+    api: Window["laneway"]
     update(): Promise<AbortSignal>
     completed(repositoryId: string, request: LocalRequest): Promise<void>
 }) {

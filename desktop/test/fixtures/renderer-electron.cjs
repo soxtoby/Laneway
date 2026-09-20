@@ -38,8 +38,8 @@ app.whenReady().then(async () => {
     })`)
     window.webContents.sendInputEvent({ type: "mouseMove", ...menuPoint })
     const result = await window.webContents.executeJavaScript("window.rendererChecks")
-    if (process.env.WORKBENCH_TEST_SCREENSHOT)
-        fs.writeFileSync(process.env.WORKBENCH_TEST_SCREENSHOT, (await window.webContents.capturePage()).toPNG())
+    if (process.env.LANEWAY_TEST_SCREENSHOT)
+        fs.writeFileSync(process.env.LANEWAY_TEST_SCREENSHOT, (await window.webContents.capturePage()).toPNG())
     fs.writeFileSync(path.join(directory, "result.json"), JSON.stringify(result))
     app.quit()
 }).catch(error => {

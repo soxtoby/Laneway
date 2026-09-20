@@ -1,4 +1,4 @@
-import type { BranchGraph, PullProgress, PullResult, PullStackOutcome, PullStackStatus } from "@git-workbench/shared"
+import type { BranchGraph, PullProgress, PullResult, PullStackOutcome, PullStackStatus } from "@laneway/shared"
 import { css, type Handle, on, ref } from "remix/ui"
 
 export interface PullControl {
@@ -11,7 +11,7 @@ export interface PullControl {
 }
 
 interface Options {
-    api: Window["workbench"]
+    api: Window["laneway"]
     update(): Promise<AbortSignal>
     signal: AbortSignal
     // Open Workspace Column branch refs, frozen when Pull latest is activated.

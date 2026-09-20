@@ -1,4 +1,4 @@
-import type { BranchGraph, BranchGraphBranchNode, ChangesInventory, DiffLayout, FileDiffPage } from "@git-workbench/shared"
+import type { BranchGraph, BranchGraphBranchNode, ChangesInventory, DiffLayout, FileDiffPage } from "@laneway/shared"
 import { css, on, type RemixNode } from "remix/ui"
 import { DiffLines } from "./diff"
 import { DiffControls } from "./diff-controls"
@@ -23,7 +23,7 @@ export interface BranchComparisonState {
     alive: boolean
 }
 
-export function createBranchComparisons(options: { api: Window["workbench"]; update(): Promise<AbortSignal>; signal: AbortSignal }) {
+export function createBranchComparisons(options: { api: Window["laneway"]; update(): Promise<AbortSignal>; signal: AbortSignal }) {
     const states = new Set<BranchComparisonState>()
     let sequence = 0
     let activeRepositoryId: string | undefined
@@ -364,4 +364,4 @@ const comparison = css({
     "& small, & .auxiliary-source": { color: "var(--muted)" },
     "& .comparison-patch": { minWidth: 0, overflow: "hidden" },
 })
-import type { FileHistorySource } from "@git-workbench/shared"
+import type { FileHistorySource } from "@laneway/shared"

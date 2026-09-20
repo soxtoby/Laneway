@@ -1,5 +1,5 @@
-import { connectRepository, readConflictState } from "@git-workbench/git"
-import type { CompositionRequest, ConflictRequest, ConflictResult, LocalResult } from "@git-workbench/shared"
+import { connectRepository, readConflictState } from "@laneway/git"
+import type { CompositionRequest, ConflictRequest, ConflictResult, LocalResult } from "@laneway/shared"
 import { afterEach, expect, test } from "bun:test"
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -22,7 +22,7 @@ function git(cwd: string, ...args: string[]) {
     return r.stdout.toString().trim()
 }
 async function fixture(format = "sha1") {
-    const path = await mkdtemp(join(tmpdir(), "workbench-compose-test-"))
+    const path = await mkdtemp(join(tmpdir(), "laneway-compose-test-"))
     temporary.push(path)
     git(path, "init", "-q", "-b", "main", `--object-format=${format}`)
     git(path, "config", "user.name", "Test")
@@ -245,7 +245,7 @@ test("composition honors filters and preserves author; signing and hook failure 
     expect(git(path, "status", "--porcelain")).toBe(before)
     await rm(hook)
     git(path, "config", "commit.gpgsign", "true")
-    git(path, "config", "gpg.program", "workbench-missing-signing-program")
+    git(path, "config", "gpg.program", "laneway-missing-signing-program")
     await expect(perform(path, r)).rejects.toThrow()
     expect(git(path, "rev-parse", "HEAD")).toBe(base)
     git(path, "config", "commit.gpgsign", "false")
@@ -300,11 +300,11 @@ test("incoming Working Changes conflicts preserve staging and can be accepted or
 }, 180_000)
 
 test("compiled composition recovers across journal boundaries and remains undoable after GC", async () => {
-    const engine = resolve(import.meta.dir, "../bin/workbench-engine.exe")
+    const engine = resolve(import.meta.dir, "../bin/lane.exe")
     async function run(path: string, args: string[], expected = 0) {
         const child = Bun.spawn([engine, ...args, "--json"], {
             cwd: path,
-            env: { ...process.env, WORKBENCH_ENABLE_TEST_COMMANDS: "1" },
+            env: { ...process.env, LANEWAY_ENABLE_TEST_COMMANDS: "1" },
             stdout: "pipe",
             stderr: "pipe",
         })
@@ -501,7 +501,7 @@ test("preflight conflicts leave files unchanged until explicitly continued", asy
     expect((await preview(path, r)).composition?.conflicts.length).toBeGreaterThan(0)
     expect(git(path, "rev-parse", "HEAD")).toBe(destination)
     await perform(path, { ...r, allowConflicts: true })
-    expect(git(path, "branch", "--show-current")).toStartWith("git-workbench/unresolved/")
+    expect(git(path, "branch", "--show-current")).toStartWith("laneway/unresolved/")
     expect(git(path, "rev-parse", "destination")).toBe(destination)
     expect(git(path, "ls-files", "--unmerged")).toBe("")
     const result = await executeOperationCommand({ command: "conflict", request: { action: "list" }, noWait: false }, path)

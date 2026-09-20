@@ -1,9 +1,9 @@
-import type { ChangesInventory, CommitDraft, LocalPreview, LocalRequest, LocalResult } from "@git-workbench/shared"
+import type { ChangesInventory, CommitDraft, LocalPreview, LocalRequest, LocalResult } from "@laneway/shared"
 import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 
 export function CommitComposer(
     handle: Handle<{
-        api: Window["workbench"]
+        api: Window["laneway"]
         repositoryId: string
         path: string
         virtual: boolean

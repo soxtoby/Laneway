@@ -1,4 +1,4 @@
-import type { CommitDraft } from "@git-workbench/shared"
+import type { CommitDraft } from "@laneway/shared"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
 

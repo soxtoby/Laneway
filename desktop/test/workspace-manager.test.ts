@@ -23,10 +23,10 @@ function runGit(cwd: string, ...args: string[]) {
 
 describe("Workspace manager", () => {
     test("restores stable repository identity and column presentation", async () => {
-        const repositoryPath = await temporaryDirectory("workbench-workspace-repository-")
+        const repositoryPath = await temporaryDirectory("laneway-workspace-repository-")
         expect(runGit(repositoryPath, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)
-        const statePath = resolve(await temporaryDirectory("workbench-workspace-state-"), "workspace.json")
-        const settingsPath = resolve(await temporaryDirectory("workbench-workspace-settings-"), "settings.json")
+        const statePath = resolve(await temporaryDirectory("laneway-workspace-state-"), "workspace.json")
+        const settingsPath = resolve(await temporaryDirectory("laneway-workspace-settings-"), "settings.json")
         const manager = new WorkspaceManager(new OpenRepositories(settingsPath), statePath)
         await manager.load()
         const opened = await manager.open(repositoryPath)
@@ -65,10 +65,10 @@ describe("Workspace manager", () => {
     })
 
     test("rejects the whole presentation before changing memory or disk", async () => {
-        const repositoryPath = await temporaryDirectory("workbench-workspace-admission-")
+        const repositoryPath = await temporaryDirectory("laneway-workspace-admission-")
         expect(runGit(repositoryPath, "init", "--quiet").exitCode).toBe(0)
-        const statePath = resolve(await temporaryDirectory("workbench-workspace-state-"), "workspace.json")
-        const settingsPath = resolve(await temporaryDirectory("workbench-workspace-settings-"), "settings.json")
+        const statePath = resolve(await temporaryDirectory("laneway-workspace-state-"), "workspace.json")
+        const settingsPath = resolve(await temporaryDirectory("laneway-workspace-settings-"), "settings.json")
         const manager = new WorkspaceManager(new OpenRepositories(settingsPath), statePath)
         const opened = await manager.open(repositoryPath)
         const presentation = opened
@@ -114,10 +114,10 @@ describe("Workspace manager", () => {
     })
 
     test("retains unavailable repositories and their layout", async () => {
-        const repositoryPath = await temporaryDirectory("workbench-workspace-missing-")
+        const repositoryPath = await temporaryDirectory("laneway-workspace-missing-")
         expect(runGit(repositoryPath, "init", "--quiet").exitCode).toBe(0)
-        const statePath = resolve(await temporaryDirectory("workbench-workspace-state-"), "workspace.json")
-        const settingsPath = resolve(await temporaryDirectory("workbench-workspace-settings-"), "settings.json")
+        const statePath = resolve(await temporaryDirectory("laneway-workspace-state-"), "workspace.json")
+        const settingsPath = resolve(await temporaryDirectory("laneway-workspace-settings-"), "settings.json")
         const manager = new WorkspaceManager(new OpenRepositories(settingsPath), statePath)
         await manager.load()
         const opened = await manager.open(repositoryPath)
@@ -129,11 +129,11 @@ describe("Workspace manager", () => {
     })
 
     test("remembers the parent of the last opened repository", async () => {
-        const parentPath = await temporaryDirectory("workbench-workspace-parent-")
+        const parentPath = await temporaryDirectory("laneway-workspace-parent-")
         const repositoryPath = resolve(parentPath, "repository")
         expect(runGit(parentPath, "init", "--initial-branch=main", "--quiet", repositoryPath).exitCode).toBe(0)
-        const statePath = resolve(await temporaryDirectory("workbench-workspace-state-"), "workspace.json")
-        const settingsPath = resolve(await temporaryDirectory("workbench-workspace-settings-"), "settings.json")
+        const statePath = resolve(await temporaryDirectory("laneway-workspace-state-"), "workspace.json")
+        const settingsPath = resolve(await temporaryDirectory("laneway-workspace-settings-"), "settings.json")
         const manager = new WorkspaceManager(new OpenRepositories(settingsPath), statePath)
         await manager.load()
 

@@ -12,7 +12,7 @@ afterEach(async () => {
 
 describe("Workspace State", () => {
     test("uses a separate application-data document", () => {
-        expect(defaultWorkspacePath("win32", { APPDATA: "D:\\Profile\\Roaming" })).toBe("D:\\Profile\\Roaming\\Git Workbench\\workspace.json")
+        expect(defaultWorkspacePath("win32", { APPDATA: "D:\\Profile\\Roaming" })).toBe("D:\\Profile\\Roaming\\Laneway\\workspace.json")
     })
 
     test("round-trips presentation state and ignores unknown fields", async () => {
@@ -79,14 +79,14 @@ describe("Workspace State", () => {
 })
 
 async function temporarySettingsPath() {
-    const directory = await mkdtemp(resolve(tmpdir(), "workbench-settings-"))
+    const directory = await mkdtemp(resolve(tmpdir(), "laneway-settings-"))
     temporaryDirectories.push(directory)
     return resolve(directory, "nested", "settings.json")
 }
 
-describe("Workbench settings", () => {
+describe("Laneway settings", () => {
     test("uses the platform configuration directory", () => {
-        expect(defaultSettingsPath("win32", { APPDATA: "D:\\Profile\\Roaming" })).toBe("D:\\Profile\\Roaming\\Git Workbench\\settings.json")
+        expect(defaultSettingsPath("win32", { APPDATA: "D:\\Profile\\Roaming" })).toBe("D:\\Profile\\Roaming\\Laneway\\settings.json")
     })
 
     test("returns defaults when no file exists", async () => {

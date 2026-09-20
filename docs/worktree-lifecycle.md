@@ -20,7 +20,7 @@ Existing protections and preservation rules in CONTEXT.md and SOX-122 continue t
 
 ## Engine and recovery
 
-`workbench-engine worktree --request '<JSON>'` accepts create, switch, rename, repair, remove, and unlock requests. Create chooses a local `branch` or immutable `commit`; switch takes `path`, `branch`, and explicit `move` authorization for an occupied branch. Removal takes `preserve` and `allowIgnoredLoss`; the desktop always permits ignored-file deletion without showing or enumerating ignored files. The desktop highlights Working Changes and Worktree-only Commits instead. It then supplies `--expected <token>` to reject changed inputs. These operations share the existing repository lock, journal, and linear undo/redo history.
+`lane worktree --request '<JSON>'` accepts create, switch, rename, repair, remove, and unlock requests. Create chooses a local `branch` or immutable `commit`; switch takes `path`, `branch`, and explicit `move` authorization for an occupied branch. Removal takes `preserve` and `allowIgnoredLoss`; the desktop always permits ignored-file deletion without showing or enumerating ignored files. The desktop highlights Working Changes and Worktree-only Commits instead. It then supplies `--expected <token>` to reject changed inputs. These operations share the existing repository lock, journal, and linear undo/redo history.
 
 Undoing removal can use `undo --worktree-basename <name>` when the original directory is occupied; the UI offers the same choice. Column presentation is reconciled from Git and current Workspace State rather than added to the recovery journal. `virtualBranchPrefix` in application settings controls protective branch names and defaults to `worktree/`.
 

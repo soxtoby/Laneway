@@ -6,10 +6,10 @@ import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
 
 test("production conflict IPC, candidate isolation, column restart and acceptance under Electron CSP", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "workbench-conflict-electron-"))
+    const directory = await mkdtemp(join(tmpdir(), "laneway-conflict-electron-"))
     const root = resolve(import.meta.dir, "../..")
     const repository = join(directory, "repository")
-    const engine = join(root, "cli/bin/workbench-engine.exe")
+    const engine = join(root, "cli/bin/lane.exe")
     function git(...args: string[]) {
         const result = Bun.spawnSync(["git", ...args], { cwd: repository, stdout: "pipe", stderr: "pipe" })
         if (result.exitCode)
@@ -22,9 +22,9 @@ test("production conflict IPC, candidate isolation, column restart and acceptanc
         git("config", "user.name", "Desktop Test")
         git("config", "user.email", "test@example.invalid")
         git("config", "commit.gpgsign", "false")
-        git("config", "merge.tool", "workbench-test")
-        git("config", "mergetool.workbench-test.cmd", 'cat "$REMOTE" > "$MERGED"')
-        git("config", "mergetool.workbench-test.trustExitCode", "true")
+        git("config", "merge.tool", "laneway-test")
+        git("config", "mergetool.laneway-test.cmd", 'cat "$REMOTE" > "$MERGED"')
+        git("config", "mergetool.laneway-test.trustExitCode", "true")
         await writeFile(join(repository, "file.txt"), "Order summary\nDelivery: five business days.\nTracking is included.\n")
         await writeFile(join(repository, "payment.txt"), "Payment: cash\n")
         await writeFile(join(repository, "contact.ts"), 'export const support = "email"\n')
@@ -71,9 +71,9 @@ test("production conflict IPC, candidate isolation, column restart and acceptanc
         for (const phase of ["unresolved", "candidate", "accept"]) {
             const env: NodeJS.ProcessEnv = {
                 ...process.env,
-                WORKBENCH_ENGINE_PATH: engine,
-                WORKBENCH_SETTINGS_PATH: join(directory, "settings.json"),
-                WORKBENCH_WORKSPACE_PATH: join(directory, "workspace.json"),
+                LANEWAY_ENGINE_PATH: engine,
+                LANEWAY_SETTINGS_PATH: join(directory, "settings.json"),
+                LANEWAY_WORKSPACE_PATH: join(directory, "workspace.json"),
             }
             delete env.ELECTRON_RUN_AS_NODE
             let errors = ""

@@ -1,4 +1,4 @@
-import type { BranchGraph, WorkspaceColumn } from "@git-workbench/shared"
+import type { BranchGraph, WorkspaceColumn } from "@laneway/shared"
 import { expect, test } from "bun:test"
 import { reconcileWorktreeColumns, workspaceGraph } from "../src/renderer/src/worktree-columns"
 import { branchGraph } from "./renderer-fixtures"

@@ -1,5 +1,5 @@
-import { selectGit } from "@git-workbench/git"
-import { readSettings } from "@git-workbench/settings"
+import { selectGit } from "@laneway/git"
+import { readSettings } from "@laneway/settings"
 import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -24,10 +24,10 @@ function runGit(cwd: string, ...args: string[]) {
 
 describe("open repositories", () => {
     test("isolates inspection cancellation by request and cancels reads on close", async () => {
-        const path = await temporaryDirectory("workbench-inspection-requests-")
+        const path = await temporaryDirectory("laneway-inspection-requests-")
         expect(runGit(path, "init", "--quiet").exitCode).toBe(0)
         await writeFile(resolve(path, "file.txt"), "content\n")
-        const settingsPath = resolve(await temporaryDirectory("workbench-inspection-settings-"), "settings.json")
+        const settingsPath = resolve(await temporaryDirectory("laneway-inspection-settings-"), "settings.json")
         const repositories = new OpenRepositories(settingsPath)
         const repository = await repositories.open(path)
         const source = { kind: "working" as const, worktreePath: path }
@@ -46,17 +46,17 @@ describe("open repositories", () => {
     })
 
     test("deduplicates a repository and focuses the selected worktree", async () => {
-        const repository = await temporaryDirectory("workbench-open-repository-")
-        const linkedParent = await temporaryDirectory("workbench-open-repository-linked-")
+        const repository = await temporaryDirectory("laneway-open-repository-")
+        const linkedParent = await temporaryDirectory("laneway-open-repository-linked-")
         const linked = resolve(linkedParent, "linked")
         expect(runGit(repository, "init", "--quiet").exitCode).toBe(0)
-        expect(runGit(repository, "config", "user.name", "Workbench Test").exitCode).toBe(0)
-        expect(runGit(repository, "config", "user.email", "workbench@example.invalid").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
         await writeFile(resolve(repository, "README.md"), "initial\n")
         expect(runGit(repository, "add", "README.md").exitCode).toBe(0)
         expect(runGit(repository, "commit", "--quiet", "-m", "Initial").exitCode).toBe(0)
         expect(runGit(repository, "worktree", "add", "--detach", linked).exitCode).toBe(0)
-        const settingsPath = resolve(await temporaryDirectory("workbench-open-repository-settings-"), "settings.json")
+        const settingsPath = resolve(await temporaryDirectory("laneway-open-repository-settings-"), "settings.json")
         const repositories = new OpenRepositories(settingsPath)
 
         await repositories.open(repository)
@@ -66,16 +66,16 @@ describe("open repositories", () => {
     })
 
     test("keeps its collection in memory only", async () => {
-        const repository = await temporaryDirectory("workbench-open-repository-memory-")
+        const repository = await temporaryDirectory("laneway-open-repository-memory-")
         expect(runGit(repository, "init", "--quiet").exitCode).toBe(0)
-        const settingsPath = resolve(await temporaryDirectory("workbench-open-repository-settings-"), "settings.json")
+        const settingsPath = resolve(await temporaryDirectory("laneway-open-repository-settings-"), "settings.json")
 
         await new OpenRepositories(settingsPath).open(repository)
         expect(new OpenRepositories(settingsPath).list()).toEqual([])
     })
 
     test("caches Git selection until its setting changes", async () => {
-        const settingsPath = resolve(await temporaryDirectory("workbench-open-repository-settings-"), "settings.json")
+        const settingsPath = resolve(await temporaryDirectory("laneway-open-repository-settings-"), "settings.json")
         const installation = await selectGit()
         let selections = 0
         const repositories = new OpenRepositories(settingsPath, async () => {
@@ -96,15 +96,15 @@ describe("open repositories", () => {
     })
 
     test("seeds graph identity and single-remote settings without persisting workspace state", async () => {
-        const repository = await temporaryDirectory("workbench-open-repository-graph-")
+        const repository = await temporaryDirectory("laneway-open-repository-graph-")
         expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)
-        expect(runGit(repository, "config", "user.name", "Workbench Test").exitCode).toBe(0)
-        expect(runGit(repository, "config", "user.email", "workbench@example.invalid").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
         await writeFile(resolve(repository, "README.md"), "initial\n")
         expect(runGit(repository, "add", "README.md").exitCode).toBe(0)
         expect(runGit(repository, "commit", "--quiet", "-m", "Initial").exitCode).toBe(0)
         expect(runGit(repository, "remote", "add", "origin", ".").exitCode).toBe(0)
-        const settingsPath = resolve(await temporaryDirectory("workbench-open-repository-settings-"), "settings.json")
+        const settingsPath = resolve(await temporaryDirectory("laneway-open-repository-settings-"), "settings.json")
         const repositories = new OpenRepositories(settingsPath)
         const opened = await repositories.open(repository)
         const repositoryId = opened.id
@@ -112,7 +112,7 @@ describe("open repositories", () => {
         const graph = await (await repositories.startBranchGraph(repositoryId)).result
         expect(graph.selectedRemote).toBe("origin")
         expect(await readSettings(settingsPath)).toMatchObject({
-            authorIdentities: { primary: "workbench@example.invalid", secondary: [] },
+            authorIdentities: { primary: "laneway@example.invalid", secondary: [] },
             repositories: { [repositoryId]: { selectedRemote: "origin", remotePatterns: [] } },
         })
 

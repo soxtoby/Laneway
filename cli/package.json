@@ -1,11 +1,11 @@
 {
-    "name": "@git-workbench/cli",
+    "name": "@laneway/cli",
     "private": true,
     "type": "module",
     "dependencies": {
-        "@git-workbench/git": "workspace:*",
-        "@git-workbench/settings": "workspace:*",
-        "@git-workbench/shared": "workspace:*",
+        "@laneway/git": "workspace:*",
+        "@laneway/settings": "workspace:*",
+        "@laneway/shared": "workspace:*",
         "zod": "^4.4.3"
     }
 }

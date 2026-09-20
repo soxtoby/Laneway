@@ -1,5 +1,5 @@
-import { gitText, readRegisteredWorktrees, type RepositoryGit } from "@git-workbench/git"
-import type { BranchGraphBranchNode, BranchGraphReadOptions, PullFetch, PullRequest, PullStackOutcome } from "@git-workbench/shared"
+import { gitText, readRegisteredWorktrees, type RepositoryGit } from "@laneway/git"
+import type { BranchGraphBranchNode, BranchGraphReadOptions, PullFetch, PullRequest, PullStackOutcome } from "@laneway/shared"
 import { type ConflictSession, gitHead, openConflictSession, rewriteStack, type StackRewritePlan } from "./conflict-operations"
 
 type Changes = Map<string, string | null>
@@ -326,7 +326,7 @@ async function updateStack(
                 if (!(await isAncestor(repo, local, previousUpstream!))) {
                     throw new PullSkip(
                         `${shortName(branch.upstream!.ref)} was rewritten and ${branch.name} has local commits. `
-                            + "Workbench cannot identify which local commits to retain. Inspect both histories, reconcile explicitly, then pull again.",
+                            + "Laneway cannot identify which local commits to retain. Inspect both histories, reconcile explicitly, then pull again.",
                     )
                 }
                 sources = await linear(repo, [upstream], existing ? [...placed, local] : placed)
@@ -484,7 +484,7 @@ async function linear(repo: RepositoryGit, tips: string[], placed: string[]) {
     const lines = output.split("\n").filter(Boolean)
     if (lines.some(line => line.split(" ").length != 2)) {
         throw new PullSkip(
-            "This stack contains merge commits. Workbench replays linear history only; rebase or flatten the merges explicitly, then pull again.",
+            "This stack contains merge commits. Laneway replays linear history only; rebase or flatten the merges explicitly, then pull again.",
         )
     }
     return lines.map(line => line.split(" ")[0]!)
