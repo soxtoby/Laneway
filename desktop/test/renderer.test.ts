@@ -537,7 +537,7 @@ describe("Remix repository entry renderer", () => {
         expect(saved.repositories[0].columns.map(column => column.id)).toEqual([feature.id, main.id])
         expect(document.activeElement?.getAttribute("data-column-id")).toBe(main.id)
 
-        const divider = container.querySelector<HTMLElement>(`[data-column-id='${main.id}'] [role='separator']`)!
+        const divider = container.querySelector<HTMLElement>(`[data-column-id='${main.id}'] + [role='separator']`)!
         divider.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))
         await flush(root)
         expect(saved.repositories[0].columns.find(column => column.id == main.id)?.width).toBe(390)
@@ -704,7 +704,8 @@ test("retains worktree columns and restores collapse in place across restart", a
     expect([...view.container.querySelectorAll("[data-column-id]")].map(node => node.getAttribute("data-column-id"))).toEqual([branch.id, main.id])
     const column = view.container.querySelector<HTMLElement>(".branch-column")!
     expect(column.querySelector('[title="Close column"]')).toBeNull()
-    const divider = column.querySelector<HTMLElement>('[aria-label="Resize branch column"]')!
+    const divider = column.nextElementSibling as HTMLElement
+    expect(divider.getAttribute("aria-label")).toBe("Resize branch column")
     divider.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))
     await flush(view.root)
     click(column.querySelector<HTMLButtonElement>('[title="Collapse column"]')!)
@@ -861,7 +862,7 @@ describe("Branch Comparison", () => {
         await chooseComparison()
         const comparison = container.querySelector<HTMLElement>(".branch-comparison")!
         expect(comparison).not.toBeNull()
-        expect(comparison.previousElementSibling?.classList.contains("branch-column")).toBe(true)
+        expect(comparison.previousElementSibling?.previousElementSibling?.classList.contains("branch-column")).toBe(true)
         expect(comparison.textContent).toContain(`${feature.name} → ${main.name}`)
         expect(document.activeElement).toBe(comparison)
         expect(requested).toEqual([`${feature.preferredRef} -> ${main.preferredRef}`])
@@ -1055,18 +1056,17 @@ describe("Working Changes inspection", () => {
         down(commit)
         await flush(root)
         expect(commit.getAttribute("aria-expanded")).toBe("false")
-        const ignored = container.querySelector<HTMLInputElement>(".ignored-toggle input")!
-        const label = ignored.closest("label")!
-        down(label)
+        const checkbox = container.querySelector<HTMLInputElement>("[aria-label='Select file src/file.txt']")!
+        down(checkbox)
         await flush(root)
-        expect(ignored.checked).toBe(true)
-        release(label)
+        expect(checkbox.checked).toBe(true)
+        release(checkbox)
         await flush(root)
-        expect(ignored.checked).toBe(true)
-        ignored.disabled = true
-        down(label)
+        expect(checkbox.checked).toBe(true)
+        checkbox.disabled = true
+        down(checkbox)
         await flush(root)
-        expect(ignored.checked).toBe(true)
+        expect(checkbox.checked).toBe(true)
         dispose()
     })
 
@@ -1099,7 +1099,7 @@ describe("Working Changes inspection", () => {
         click(file())
         await flush(root)
         version = "two"
-        click(container.querySelector<HTMLButtonElement>("[aria-label='Refresh Working Changes']")!)
+        window.dispatchEvent(new Event("focus"))
         await flush(root)
         click(file())
         await flush(root)
@@ -1311,7 +1311,7 @@ describe("Working Changes inspection", () => {
         expect(scenario.saved().repositories[0].columns[0].diffLayout).toBe("split")
         click(button(container, "Break out diff"))
         await flush(root)
-        expect(container.querySelector(".branch-column")?.nextElementSibling?.classList.contains("inspection-breakout")).toBe(true)
+        expect(container.querySelector(".branch-column + .column-divider")?.nextElementSibling?.classList.contains("inspection-breakout")).toBe(true)
         const breakout = container.querySelector<HTMLElement>(".inspection-breakout")!
         expect(document.activeElement).toBe(breakout)
         expect(breakout.dataset.sourceColumnId).toBe(container.querySelector<HTMLElement>(".branch-column")!.dataset.columnId)
@@ -1370,7 +1370,7 @@ describe("Working Changes inspection", () => {
         click(diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
         await flush(root)
         version = "two"
-        click(container.querySelector<HTMLButtonElement>("[aria-label='Refresh Working Changes']")!)
+        window.dispatchEvent(new Event("focus"))
         await flush(root)
         expect(container.textContent).toContain("Change Selection cleared")
         expect(diffRoot(container).querySelector(".diff-line.selected")).toBeNull()
@@ -1693,8 +1693,7 @@ test("commit composer reveals staging controls, retains cancelled drafts, and co
         const header = view.container.querySelector(".commit-header")!
         expect(header.textContent).toContain("Working Changes")
         expect(header.textContent).toContain("Commit…")
-        expect(header.querySelector('[aria-label="Stash Working Changes"] svg')).not.toBeNull()
-        expect(header.querySelector('[aria-label="Show stashes"] svg')).not.toBeNull()
+        expect(header.querySelector('[aria-label="More commit actions"] svg')).not.toBeNull()
         click(button(view.container, "Commit…"))
         await flush(view.root)
         expect(

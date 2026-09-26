@@ -1337,8 +1337,33 @@ export function createInspection(options: Options) {
                                 virtual={column.kind != "branch"}
                                 busyChanged={options.localBusyChanged}
                                 inventory={state.files.get("working")?.inventory}
-                                refresh={() => void readFiles(state, "working", { kind: "working", worktreePath: state.worktreePath! }, true)}
                                 stashes={column.kind == "branch" ? column.markers : []}
+                                stashOpen={stash => state.files.get(stash.objectId)?.open ?? false}
+                                toggleStash={stash => {
+                                    const files = state.files.get(stash.objectId)
+                                    if (files) {
+                                        files.open = !files.open
+                                        return void options.update()
+                                    }
+                                    // Untracked files live on the stash's third parent, so read them alongside tracked ones.
+                                    void readFiles(state, stash.objectId, { kind: "commit", objectId: stash.objectId }).then(() => {
+                                        const untracked = state.files.get(stash.objectId)?.inventory?.parents[2]
+                                        if (untracked)
+                                            return readFiles(state, untracked, { kind: "commit", objectId: untracked })
+                                    })
+                                }}
+                                renderStash={stash => {
+                                    const files = state.files.get(stash.objectId)
+                                    const untracked = files?.inventory?.parents[2]
+                                    const untrackedFiles = untracked ? state.files.get(untracked) : undefined
+                                    const tracked = files?.inventory?.files.length
+                                    return (
+                                        <>
+                                            {(tracked || !untrackedFiles?.inventory?.files.length) && fileList(state, stash.objectId, files)}
+                                            {untrackedFiles && fileList(state, untracked!, untrackedFiles)}
+                                        </>
+                                    )
+                                }}
                                 showIgnored={state.showIgnored}
                                 toggleIgnored={value => {
                                     state.showIgnored = value
@@ -1410,7 +1435,7 @@ export function createInspection(options: Options) {
                                 const columnBranch = branch.id == column.id
                                 return (
                                     <accordion.ItemContext key={branch.id} value={branch.id}>
-                                        <section class="stack-branch" mix={[stackBranch, accordion.item()]}>
+                                        <section class={branch.remoteOnly ? "stack-branch remote" : "stack-branch"} mix={[stackBranch, accordion.item()]}>
                                             {branchIndex > 0 && !stack[branchIndex - 1].remoteOnly
                                                 && composition.seam(repositoryId, {
                                                     kind: "seam",
@@ -1428,6 +1453,14 @@ export function createInspection(options: Options) {
                                                         source: { kind: "branch", branch: branch.preferredRef, tip: branch.tip },
                                                         label: branch.name,
                                                     })}
+                                                    <Icon name="branch" size={14} />
+                                                    {branch.name}
+                                                </div>
+                                            )}
+                                            {/* Remote-only branches can't receive transfers, but still get a heading. */}
+                                            {columnBranch && branch.remoteOnly && (
+                                                <div class="composition-branch-target">
+                                                    <Icon name="branch" size={14} />
                                                     {branch.name}
                                                 </div>
                                             )}
@@ -1450,12 +1483,10 @@ export function createInspection(options: Options) {
                                                     <button class="stack-heading" type="button" mix={[stackHeading, accordion.trigger()]}>
                                                         <span mix={stackHeadingName}>
                                                             <Icon name={current?.open ? "chevron-down" : "chevron-right"} size={12} />
+                                                            <Icon name="branch" size={14} />
                                                             {branch.name}
                                                         </span>
                                                         <span mix={stackHeadingStatus}>
-                                                            <small mix={stackHeadingSmall}>
-                                                                {branch.base.status == "known" ? "Unique commits" : "Commits"}
-                                                            </small>
                                                             {branch.unresolved && (
                                                                 <span
                                                                     class="stack-conflict-indicator"
@@ -2332,8 +2363,19 @@ const workingChangesH3 = css({
     margin: "0",
 })
 
+// Each branch in the stack is a card; its heading carries the branch tint and icon.
 const stackBranch = css({
-    borderTop: "0",
+    margin: "8px 8px 0",
+    overflow: "clip",
+    border: "1px solid var(--focus-edge)",
+    borderRadius: "var(--radius)",
+    background: "var(--panel)",
+    "&:last-child": { marginBottom: "8px" },
+    // Remote-only branches are read-only here, so they use a neutral slate instead of the local branch blue.
+    "&.remote": { borderColor: "var(--line-strong)" },
+    "&.remote :is(.composition-branch-target, .composition-branch-heading)": { background: "var(--panel-deep)" },
+    "&.remote .composition-branch-heading:hover": { background: "var(--control-hover)" },
+    "&.remote .composition-branch-target > svg, &.remote .composition-branch-heading svg + svg": { color: "var(--muted)" },
 })
 
 const disclosureHeading = css({
@@ -2447,17 +2489,13 @@ const commitDiffButton = css({
     },
 })
 
-const stackHeadingSmall = css({
-    color: "var(--muted)",
-    fontWeight: "500",
-})
-
 const stackHeadingName = css({
     display: "inline-flex",
     alignItems: "center",
     gap: "6px",
     minWidth: "0",
     "& svg": { color: "var(--faint)", flex: "0 0 auto" },
+    "& svg + svg": { color: "var(--focus)" },
 })
 
 const stackHeadingStatus = css({ display: "inline-flex", alignItems: "center", gap: "8px" })
@@ -2480,10 +2518,11 @@ const stackBranchButton = css({
     },
 })
 
+// An expanded commit's files sit in a recessed tray under its heading.
 const inspectCommit = css({
     position: "relative",
-    '&[data-expanded="true"]': {
-        background: "var(--panel)",
+    '&[data-expanded="true"] > :not(.disclosure-heading)': {
+        background: "var(--panel-deep)",
     },
 })
 

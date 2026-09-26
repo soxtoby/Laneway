@@ -186,7 +186,7 @@ async function checkRenderer() {
     fileButton.dispatchEvent(new MouseEvent("click", { detail: 1, bubbles: true, cancelable: true, composed: true }))
     await settle()
     const noSecondToggle = fileButton.getAttribute("aria-expanded") == "true"
-    const selectedFile = element<HTMLInputElement>(".ignored-toggle input[type=checkbox]")
+    const selectedFile = element<HTMLInputElement>(".change-file input[type=checkbox]")
     selectedFile.dispatchEvent(new MouseEvent("mousedown", { button: 0, detail: 1, bubbles: true, cancelable: true, composed: true }))
     await settle()
     const selectedOnMouseDown = selectedFile.checked
@@ -376,7 +376,7 @@ async function checkRenderer() {
     const breakout = element(".inspection-breakout")
     const auxiliarySourceVisible = !!breakout.querySelector(".auxiliary-source")
         && getComputedStyle(breakout).borderLeftWidth == "3px"
-        && breakout.previousElementSibling?.classList.contains("branch-column")
+        && breakout.previousElementSibling?.previousElementSibling?.classList.contains("branch-column")
         && document.activeElement == breakout
     const inlineDiffsHiddenAfterBreakout = !document.querySelector(".branch-column .diff-inspector")
     breakout.scrollTop = breakout.scrollHeight
@@ -497,7 +497,7 @@ async function checkRenderer() {
     await settle()
     const comparison = element(".branch-comparison")
     const comparisonContextMenu = document.activeElement == comparison && comparison.textContent!.includes("feature/laneway → main")
-        && !comparison.querySelector(".comparison-context") && comparison.previousElementSibling?.classList.contains("branch-column")
+        && !comparison.querySelector(".comparison-context") && comparison.previousElementSibling?.previousElementSibling?.classList.contains("branch-column")
     const comparisonLazy = !comparison.querySelector(".pierre-diff")
     const comparisonRow = element(".branch-comparison .change-file")
     const comparisonSharedRows = comparisonRow.getBoundingClientRect().height <= 31

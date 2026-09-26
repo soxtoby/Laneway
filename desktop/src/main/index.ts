@@ -6,7 +6,7 @@ import { type WorktreeActionResult, type WorktreePreviewResult, WorktreeRequestS
 import { CommitDraftSchema, type LocalActionResult, LocalRequestSchema } from "@laneway/shared"
 import { type ConflictActionResult, ConflictRequestSchema } from "@laneway/shared"
 import { type PullActionResult, type PullProgress, PullRequestSchema } from "@laneway/shared"
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron"
 import { mkdtemp, rm, rmdir, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
@@ -453,7 +453,12 @@ function registerHandlers() {
     })
     ipcMain.handle(
         "settings:appearance",
-        (_event, request: { appearance?: unknown }) => repositories.setAppearance(request?.appearance == "dark" ? "dark" : "light"),
+        async (_event, request: { appearance?: unknown }) => {
+            const appearance = await repositories.setAppearance(request?.appearance == "dark" ? "dark" : "light")
+            for (const window of BrowserWindow.getAllWindows())
+                window.setTitleBarOverlay?.(titleBarOverlay(appearance))
+            return appearance
+        },
     )
     ipcMain.handle("settings:open-file", async () => {
         const state = await repositories.gitSettings()
@@ -513,15 +518,24 @@ function isBranchHistoryRequest(value: unknown): value is BranchHistoryRequest {
         && (request.limit == undefined || Number.isSafeInteger(request.limit))
 }
 
-function createWindow(backgroundColor: string) {
+// Window controls are drawn over the renderer's header, so they share its colours; they stop 1px short to leave its bottom border visible.
+function titleBarOverlay(appearance: string) {
+    return appearance == "dark"
+        ? { color: "#1c222d", symbolColor: "#e9edf3", height: 47 }
+        : { color: "#ffffff", symbolColor: "#141a24", height: 47 }
+}
+
+function createWindow(appearance: string) {
     const window = new BrowserWindow({
         width: 1180,
         height: 760,
         minWidth: 820,
         minHeight: 620,
-        backgroundColor,
+        backgroundColor: appearance == "dark" ? "#1a1e1b" : "#f4f5f4",
         show: true,
         title: "Laneway",
+        titleBarStyle: "hidden",
+        titleBarOverlay: process.platform == "darwin" ? undefined : titleBarOverlay(appearance),
         webPreferences: {
             contextIsolation: true,
             nodeIntegration: false,
@@ -536,6 +550,10 @@ function createWindow(backgroundColor: string) {
         void window.loadFile(fileURLToPath(new URL("../renderer/index.html", import.meta.url)))
 }
 
+// Overlay scrollbars leave rows flush with the column edge; disabling their fade keeps the thumbs easy to grab.
+app.commandLine.appendSwitch("enable-features", "OverlayScrollbar:mode/overlay")
+app.commandLine.appendSwitch("disable-features", "ScrollbarAnimations")
+
 const singleInstance = app.requestSingleInstanceLock()
 if (!singleInstance)
     app.quit()
@@ -544,7 +562,8 @@ void app.whenReady().then(async () => {
     await inspectEngineAtStartup()
     await workspace.load()
     registerHandlers()
-    createWindow(await repositories.appearance() == "dark" ? "#1a1e1b" : "#f4f5f4")
+    Menu.setApplicationMenu(null)
+    createWindow(await repositories.appearance())
 })
 
 app.on("second-instance", () => {
@@ -567,7 +586,7 @@ app.on("before-quit", event => {
 
 app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length == 0)
-        void repositories.appearance().then(appearance => createWindow(appearance == "dark" ? "#1a1e1b" : "#f4f5f4"))
+        void repositories.appearance().then(createWindow)
 })
 
 app.on("window-all-closed", () => {

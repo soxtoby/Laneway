@@ -211,6 +211,7 @@ const repositoryRow = css({
 
 const repositoryItem = css({
     "&.collapsed": { width: "36px", height: "36px", padding: "0", gridTemplateColumns: "1fr", gap: "0", justifyItems: "center" },
+    position: "relative",
     minWidth: "0",
     width: "100%",
     padding: "5px 26px 5px 6px",
@@ -237,7 +238,10 @@ const repositoryItem = css({
         borderRadius: "0 2px 2px 0",
         background: "var(--chrome-accent)",
     },
-    "&.collapsed.active": { background: "transparent", borderColor: "transparent" },
+    // Collapsed, the tile alone marks the selection: a solid accent tile with a side marker of the same height.
+    "&.collapsed, &.collapsed.active, &.collapsed:hover:not(:disabled)": { background: "transparent", borderColor: "transparent" },
+    "&.collapsed.active::before": { left: "-8px", top: "4px", bottom: "4px", width: "3px" },
+    "&.collapsed:focus-visible": { outline: "none" },
     "&.missing > span:first-child": { color: "var(--warning)" },
 })
 
@@ -253,6 +257,10 @@ const repositoryInitials = css({
     fontSize: "11px",
     fontWeight: "700",
     letterSpacing: "0.02em",
+    ".collapsed:not(.active) > &": { color: "var(--chrome-muted)", opacity: 0.7 },
+    ".collapsed:not(.active):hover > &": { opacity: 1, borderColor: "var(--chrome-accent)" },
+    ".collapsed.active > &": { color: "var(--accent-ink)", borderColor: "var(--chrome-accent)", background: "var(--chrome-accent)" },
+    ".collapsed:focus-visible > &": { outline: "2px solid var(--ring)", outlineOffset: "2px" },
 })
 
 const repositoryCopy = css({

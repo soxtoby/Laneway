@@ -569,7 +569,9 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                             node.dataset.columnId == column.id
                                         )
                                         element?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" })
-                                        ;(element?.querySelector<HTMLElement>(".expand-column") ?? element)?.focus({ preventScroll: true })
+                                        ;(element?.querySelector<HTMLElement>(".expand-column") ?? element)?.focus(
+                                            { preventScroll: true, focusVisible: true } as FocusOptions,
+                                        )
                                         focusColumn(active.id, column.id)
                                         void options.update()
                                     }),
@@ -1292,7 +1294,7 @@ function BranchRow(
                         </small>
                         {branch.checkedOut.map(worktree => (
                             <span class="worktree-chip" title={worktree.path} mix={worktreeChip}>
-                                <Icon name="home" size={11} />
+                                <Icon name="folder" size={11} />
                                 {worktree.name}
                             </span>
                         ))}
@@ -1529,7 +1531,7 @@ function BranchColumns(
                                                 type="button"
                                                 title="Collapse column"
                                                 aria-label={`Collapse ${column.name}`}
-                                                mix={[branchColumnButton, on("click", () => props.collapse(column.id))]}
+                                                mix={[columnCollapseButton, on("click", () => props.collapse(column.id))]}
                                             >
                                                 <Icon name="collapse-left" size={15} />
                                             </button>
@@ -1585,12 +1587,12 @@ function BranchColumns(
                                                 ? props.conflicts.controls(props.repositoryId, column, props.worktreePath(column.id))
                                                 : undefined,
                                         )}
-                                        {!props.state.maximizedBranchId && (
-                                            <ColumnDivider branchId={column.id} width={props.state.widths[column.id] ?? 380} resize={props.resize} />
-                                        )}
                                     </>
                                 )}
                         </article>
+                        {!props.state.maximizedBranchId && !props.state.collapsedColumnIds.includes(column.id) && (
+                            <ColumnDivider branchId={column.id} width={props.state.widths[column.id] ?? 380} resize={props.resize} />
+                        )}
                         {!props.state.collapsedColumnIds.includes(column.id) && props.inspection.breakout(props.repositoryId, column.id)}
                     </>
                 ))}
@@ -1630,7 +1632,7 @@ function ColumnDivider(handle: Handle<{ branchId: string; width: number; resize(
                     event.preventDefault()
                     const startX = event.clientX
                     const startWidth = handle.props.width
-                    const column = (event.currentTarget as HTMLElement).closest<HTMLElement>(".branch-column")
+                    const column = (event.currentTarget as HTMLElement).previousElementSibling as HTMLElement | null
                     const move = (next: PointerEvent) => {
                         if (column)
                             column.style.width = `${Math.max(310, startWidth + next.clientX - startX)}px`
@@ -1869,8 +1871,8 @@ function columnIdentity(column: ColumnNode, worktreePath: string | undefined) {
     const worktree = column.kind == "branch" ? column.checkedOut.find(item => item.path == worktreePath) : column.worktree
     if (worktree) {
         return worktree.main
-            ? { icon: "home" as const, kind: "Main worktree", name: worktree.name, tone: toneMain }
-            : { icon: "home" as const, kind: column.kind == "virtual" ? "Virtual worktree" : "Worktree", name: worktree.name, tone: toneWorktree }
+            ? { icon: "folder" as const, kind: "Main worktree", name: worktree.name, tone: toneMain }
+            : { icon: "folder" as const, kind: column.kind == "virtual" ? "Virtual worktree" : "Worktree", name: worktree.name, tone: toneWorktree }
     }
     return {
         icon: "branch" as const,
@@ -2035,7 +2037,7 @@ const graphPanelToggleButton = css({
     background: "transparent",
     "&:hover": { color: "var(--chrome-text)", background: "var(--chrome-2)" },
     '&[aria-expanded="true"]': { color: "var(--chrome-accent)" },
-    "&:focus-visible": { outline: "2px solid var(--focus)", outlineOffset: "1px" },
+    "&:focus-visible": { outline: "2px solid var(--ring)", outlineOffset: "1px" },
 })
 
 const graphActionsButton = css({
@@ -2468,7 +2470,7 @@ const branchColumn = css({
         position: "absolute",
         inset: "0",
         zIndex: "10",
-        border: "2px solid var(--focus)",
+        border: "2px solid var(--ring)",
         borderRadius: "inherit",
         pointerEvents: "none",
     },
@@ -2525,17 +2527,41 @@ const branchColumnButton = css({
     },
 })
 
+// The collapse control fills the header's full height at its leading edge, like a tab strip handle.
+const columnCollapseButton = css({
+    flex: "0 0 34px",
+    alignSelf: "stretch",
+    margin: "0",
+    padding: "0",
+    display: "grid",
+    placeItems: "center",
+    color: "var(--muted)",
+    border: "0",
+    borderRadius: "0",
+    background: "transparent",
+    cursor: "pointer",
+    "&:hover": {
+        color: "var(--text)",
+        background: "var(--control-hover)",
+    },
+    "&:focus-visible": {
+        outline: "2px solid var(--ring)",
+        outlineOffset: "-2px",
+    },
+})
+
+// The divider sits in the gap after its column, clear of the column's scrollbar; its negative margins cancel
+// the extra flex gap it would otherwise add.
 const columnDivider = css({
-    position: "absolute",
+    position: "relative",
     zIndex: "2",
-    top: "0",
-    right: "0",
-    bottom: "0",
-    width: "6px",
+    flex: "0 0 var(--gutter)",
+    alignSelf: "stretch",
+    margin: "0 calc(-1 * var(--gutter))",
     cursor: "col-resize",
     "&:focus-visible": {
-        outline: "2px solid var(--focus)",
-        outlineOffset: "-3px",
+        outline: "2px solid var(--ring)",
+        outlineOffset: "0",
     },
 })
 

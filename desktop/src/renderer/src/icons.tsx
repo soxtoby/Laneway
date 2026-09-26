@@ -22,12 +22,14 @@ const paths = {
     maximize: "M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9",
     restore: "M13.5 6.5h-4v-4M9.5 6.5 14 2M2.5 9.5h4v4M6.5 9.5 2 14",
     home: "M2 8l6-5.5L14 8M4 6.8v6.7h8V6.8",
+    folder: "M1.75 4.25a1 1 0 0 1 1-1h3.5l1.5 1.5h5.5a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1z",
     switch: "M2.5 5h10M10 2.5 12.5 5 10 7.5M13.5 11h-10M6 8.5 3.5 11 6 13.5",
     grip: "M6 3.5h.01M10 3.5h.01M6 8h.01M10 8h.01M6 12.5h.01M10 12.5h.01",
-    more:
-        "M2.75 8a1.25 1.25 0 1 0 2.5 0a1.25 1.25 0 1 0-2.5 0M6.75 8a1.25 1.25 0 1 0 2.5 0a1.25 1.25 0 1 0-2.5 0M10.75 8a1.25 1.25 0 1 0 2.5 0a1.25 1.25 0 1 0-2.5 0",
+    // Drawn as filled dots by Icon; strokes would render as hollow rings.
+    more: "",
     graph: "M2 3a2 2 0 1 0 4 0a2 2 0 1 0-4 0M2 13a2 2 0 1 0 4 0a2 2 0 1 0-4 0M10 5a2 2 0 1 0 4 0a2 2 0 1 0-4 0M4 5v6M6 9h2a4 4 0 0 0 4-2.2",
-    branch: "M4 3v10M4 3a1.5 1.5 0 1 0 0-.01M4 13a1.5 1.5 0 1 0 0-.01M12 5a1.5 1.5 0 1 0 0-.01M12 6.5c0 3-8 2-8 5",
+    branch:
+        "M2.5 3.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0M2.5 12.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0M10.5 4.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0M4 5v6M12 6c0 3.5-8 2.5-8 5",
     external: "M7 3H3v10h10V9M9.5 2.5h4v4M13.5 2.5 7.5 8.5",
     tag: "M2 2.5h5.5L14 9l-5 5-6.5-6.5zM5 5.5a.5.5 0 1 0 1 0a.5.5 0 1 0-1 0",
     fork: "M4 2v4a3 3 0 0 0 3 3h2a3 3 0 0 0 3-3V2M8 9v5",
@@ -49,7 +51,9 @@ export function Icon(handle: Handle<{ name: IconName; size?: number }>) {
             stroke-linecap="round"
             stroke-linejoin="round"
         >
-            <path d={paths[handle.props.name]} />
+            {handle.props.name == "more"
+                ? [3.5, 8, 12.5].map(x => <circle cx={x} cy="8" r="1.4" fill="currentColor" stroke="none" />)
+                : <path d={paths[handle.props.name]} />}
         </svg>
     )
 }
@@ -58,11 +62,16 @@ export function Icon(handle: Handle<{ name: IconName; size?: number }>) {
 const brandPath =
     "M20 8H24V48H44A4 4 0 0 0 44 40H34A2 2 0 0 1 32 38V12A4 4 0 0 1 36 8H44A12 12 0 0 1 56 20V44A12 12 0 0 1 44 56H20A12 12 0 0 1 8 44V20A12 12 0 0 1 20 8Z"
 
-export function BrandMark(handle: Handle<{ size: number }>) {
+// `plain` drops the app-icon block so the mark sits directly on light or dark chrome.
+export function BrandMark(handle: Handle<{ size: number; plain?: boolean }>) {
     return () => (
         <svg aria-hidden="true" width={handle.props.size} height={handle.props.size} viewBox="0 0 64 64" fill="none">
-            <rect width="64" height="64" rx="14" fill="var(--brand-block)" />
-            <path transform="translate(8 8) scale(.75)" fill="var(--brand-mark)" d={brandPath} />
+            {!handle.props.plain && <rect width="64" height="64" rx="14" fill="var(--brand-block)" />}
+            <path
+                transform={handle.props.plain ? undefined : "translate(8 8) scale(.75)"}
+                fill={handle.props.plain ? "var(--accent)" : "var(--brand-mark)"}
+                d={brandPath}
+            />
         </svg>
     )
 }

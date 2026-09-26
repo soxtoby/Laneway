@@ -27,6 +27,7 @@
         --accent-wash-strong: rgb(242 169 44 / 34%);
         --accent-edge: rgb(224 147 15 / 60%);
         --focus: #2f6bff;
+        --ring: #d18400;
         --focus-wash: rgb(47 107 255 / 12%);
         --focus-edge: rgb(47 107 255 / 45%);
         --graph: #2f6bff;
@@ -88,6 +89,7 @@
         --accent-wash-strong: rgb(242 169 44 / 26%);
         --accent-edge: rgb(242 169 44 / 55%);
         --focus: #5c8dff;
+        --ring: #f2a92c;
         --focus-wash: rgb(92 141 255 / 16%);
         --focus-edge: rgb(92 141 255 / 50%);
         --graph: #5c8dff;
@@ -160,11 +162,6 @@
         user-select: none;
     }
 
-    :where(*) {
-        scrollbar-width: thin;
-        scrollbar-color: var(--line-strong) transparent;
-    }
-
     button,
     input {
         font: inherit;
@@ -178,13 +175,21 @@
     button:focus-visible,
     input:focus-visible,
     [tabindex]:focus-visible {
-        outline: 2px solid var(--focus);
+        outline: 2px solid var(--ring);
         outline-offset: -2px;
     }
 
     button:disabled {
         cursor: default;
         opacity: 0.42;
+    }
+
+    /* Filled buttons turn neutral when disabled instead of fading their colour. */
+    .primary-button:disabled {
+        opacity: 1;
+        color: var(--muted);
+        border-color: var(--line);
+        background: var(--control);
     }
 
     h1,

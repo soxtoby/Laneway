@@ -27,7 +27,7 @@ export function LanewayHeader(
         return (
             <header class="masthead" mix={masthead}>
                 <div class="brand" mix={brand}>
-                    <BrandMark size={26} />
+                    <BrandMark size={24} plain />
                     <span mix={brandName}>Laneway</span>
                 </div>
                 <div class="masthead-center" mix={mastheadCenter}>
@@ -179,6 +179,10 @@ const masthead = css({
     gap: "16px",
     borderBottom: "1px solid var(--line-strong)",
     background: "var(--panel)",
+    // The header doubles as the title bar: leave room for the window controls and let empty space drag the window.
+    paddingRight: "calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 10px)",
+    WebkitAppRegion: "drag",
+    "& button, & input, & select, & [role=tab], & [role=tablist] *": { WebkitAppRegion: "no-drag" },
 })
 
 const brand = css({
@@ -259,6 +263,7 @@ const primaryButton = css({
     background: "var(--accent)",
     fontWeight: "600",
     "&:hover:not(:disabled)": { background: "var(--accent-hover)", borderColor: "var(--accent-hover)" },
+    "&:disabled": { opacity: 1, color: "var(--muted)", borderColor: "var(--line)", background: "var(--control)", fontWeight: "500" },
 })
 
 const iconButton = css({

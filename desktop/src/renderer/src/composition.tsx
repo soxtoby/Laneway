@@ -33,7 +33,15 @@ export const compositionStyles = css({
         "&:focus-visible": { outlineOffset: "-2px" },
     },
     "& :is(.change-file, .disclosure-heading, .composition-branch-target):hover .composition-handle": { color: "var(--muted)" },
-    "& .composition-branch-heading": { display: "flex", alignItems: "center", "& .stack-heading": { flex: "1", minWidth: "0" } },
+    // The row, not the button inside it, owns the heading's background and edges so they run under the grip.
+    "& .composition-branch-heading": {
+        display: "flex",
+        alignItems: "center",
+        borderBottom: "1px solid var(--line)",
+        background: "var(--focus-wash)",
+        "&:hover": { background: "color-mix(in srgb, var(--focus) 18%, var(--panel))" },
+        "& .stack-heading": { flex: "1", minWidth: "0", border: "0", background: "transparent" },
+    },
     "& .composition-over": { outline: "2px solid var(--focus)", outlineOffset: "-2px", background: "var(--focus-wash)" },
     // Seams take no space until a drag or keyboard move makes them a target.
     "& .composition-seam": {
@@ -73,9 +81,10 @@ export const compositionStyles = css({
         minHeight: "34px",
         padding: "0 12px 0 8px",
         borderBottom: "1px solid var(--line)",
-        background: "var(--panel-deep)",
+        background: "var(--focus-wash)",
         fontSize: "13px",
         fontWeight: "600",
+        "& > svg": { flex: "0 0 auto", color: "var(--focus)" },
     },
 })
 export function createComposition(options: {

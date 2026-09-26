@@ -271,64 +271,67 @@ function WorktreeControls(
             <div class="column-worktree" mix={controlStyle}>
                 {worktree
                     ? (
-                        <>
-                            {editing
-                                ? (
-                                    <input
-                                        aria-label="Worktree directory name"
-                                        value={name}
-                                        mix={[
-                                            nameInputStyle,
-                                            ref(input => {
-                                                input.focus()
-                                                input.select()
-                                            }),
-                                            on("input", event => {
-                                                name = event.currentTarget.value
-                                            }),
-                                            on("blur", rename),
-                                            on("keydown", event => {
-                                                if (event.key == "Enter") {
-                                                    event.preventDefault()
-                                                    void rename()
-                                                } else if (event.key == "Escape") {
-                                                    event.preventDefault()
-                                                    event.stopPropagation()
-                                                    editing = false
-                                                    void handle.update().then(() => nameButton.focus())
-                                                }
-                                            }),
-                                        ]}
-                                    />
-                                )
-                                : (
-                                    <button
-                                        type="button"
-                                        aria-label="Rename worktree"
-                                        title={worktree.main
-                                            ? "Main worktree"
-                                            : worktree.locked
-                                            ? "Unlock worktree to rename"
-                                            : worktree.missing
-                                            ? "Locate worktree to rename"
-                                            : "Rename directory"}
-                                        disabled={props.busy || worktree.main || worktree.locked || worktree.missing}
-                                        mix={[
-                                            nameStyle,
-                                            ref(node => nameButton = node),
-                                            on("click", () => {
-                                                name = worktree.name
-                                                editing = true
-                                                void handle.update()
-                                            }),
-                                        ]}
-                                    >
-                                        {worktree.name}
-                                    </button>
-                                )}
-                            {worktree.missing && <span mix={stateChip}>Missing</span>}
-                            {worktree.locked && <span mix={stateChip} title={worktree.lockReason ?? "Locked"}>Locked</span>}
-                        </>
+                        <div mix={titleStyle}>
+                            <div mix={titleRowStyle}>
+                                {editing
+                                    ? (
+                                        <input
+                                            aria-label="Worktree directory name"
+                                            value={name}
+                                            mix={[
+                                                nameInputStyle,
+                                                ref(input => {
+                                                    input.focus()
+                                                    input.select()
+                                                }),
+                                                on("input", event => {
+                                                    name = event.currentTarget.value
+                                                }),
+                                                on("blur", rename),
+                                                on("keydown", event => {
+                                                    if (event.key == "Enter") {
+                                                        event.preventDefault()
+                                                        void rename()
+                                                    } else if (event.key == "Escape") {
+                                                        event.preventDefault()
+                                                        event.stopPropagation()
+                                                        editing = false
+                                                        void handle.update().then(() => nameButton.focus())
+                                                    }
+                                                }),
+                                            ]}
+                                        />
+                                    )
+                                    : (
+                                        <button
+                                            type="button"
+                                            aria-label="Rename worktree"
+                                            title={worktree.main
+                                                ? "Main worktree"
+                                                : worktree.locked
+                                                ? "Unlock worktree to rename"
+                                                : worktree.missing
+                                                ? "Locate worktree to rename"
+                                                : "Rename directory"}
+                                            disabled={props.busy || worktree.main || worktree.locked || worktree.missing}
+                                            mix={[
+                                                nameStyle,
+                                                ref(node => nameButton = node),
+                                                on("click", () => {
+                                                    name = worktree.name
+                                                    editing = true
+                                                    void handle.update()
+                                                }),
+                                            ]}
+                                        >
+                                            {worktree.name}
+                                        </button>
+                                    )}
+                                {worktree.missing && <span mix={stateChip}>Missing</span>}
+                                {worktree.locked && <span mix={stateChip} title={worktree.lockReason ?? "Locked"}>Locked</span>}
+                            </div>
+                            <small class="column-worktree-path" title={worktree.path} mix={pathStyle}>{worktree.path}</small>
+                        </div>
                     )
                     : null}
                 <button
@@ -547,6 +550,27 @@ const controlStyle = css({
     display: "contents",
     color: "var(--text)",
     "& > [aria-haspopup='menu']": { order: "2" },
+})
+// The worktree's name sits over its path so the column says both what it is and where it lives.
+const titleStyle = css({
+    flex: "1 1 auto",
+    minWidth: 0,
+    display: "grid",
+    alignContent: "center",
+})
+const titleRowStyle = css({
+    minWidth: 0,
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+})
+const pathStyle = css({
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    color: "var(--muted)",
+    fontSize: "11px",
+    lineHeight: "14px",
 })
 const nameStyle = css({
     flex: "1 1 auto",
