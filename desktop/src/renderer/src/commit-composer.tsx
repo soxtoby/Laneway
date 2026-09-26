@@ -1,5 +1,6 @@
-import type { ChangesInventory, CommitDraft, LocalPreview, LocalRequest, LocalResult } from "@laneway/shared"
+import type { BranchGraphMarker, ChangesInventory, CommitDraft, LocalPreview, LocalRequest, LocalResult } from "@laneway/shared"
 import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
+import { Icon } from "./icons"
 
 export function CommitComposer(
     handle: Handle<{
@@ -14,6 +15,8 @@ export function CommitComposer(
         refresh(): void
         showIgnored: boolean
         toggleIgnored(value: boolean): void
+        /** Stashes recorded on this column's branch; shown above Working Changes. */
+        stashes?: BranchGraphMarker[]
     }>,
 ) {
     const { props } = handle
@@ -118,6 +121,42 @@ export function CommitComposer(
         })
     return () => (
         <section class="commit-composer" mix={composerStyle}>
+            {!!props.stashes?.length && (
+                <section class="branch-stashes" aria-label="Branch stashes">
+                    <header>
+                        <Icon name="stash" size={14} />
+                        <span>Stashes</span>
+                        <small>{props.stashes.length}</small>
+                    </header>
+                    {props.stashes.map(stash => (
+                        <div class="branch-stash" key={stash.id} title={stash.tooltip}>
+                            <span class="branch-stash-label">{stash.label}</span>
+                            <button
+                                type="button"
+                                class="branch-stash-apply"
+                                aria-label={`Apply stash ${stash.label}`}
+                                disabled={busy}
+                                mix={on(
+                                    "click",
+                                    () => void act(async () => void await run({ action: "stash-apply", path: props.path, objectId: stash.objectId })),
+                                )}
+                            >
+                                Apply
+                            </button>
+                            <button
+                                type="button"
+                                class="branch-stash-drop"
+                                aria-label={`Drop stash ${stash.label}`}
+                                title="Drop stash"
+                                disabled={busy}
+                                mix={on("click", () => void act(async () => void await run({ action: "stash-drop", objectId: stash.objectId })))}
+                            >
+                                <Icon name="close" size={13} />
+                            </button>
+                        </div>
+                    ))}
+                </section>
+            )}
             <header class="commit-header">
                 <h3>Working Changes</h3>
                 <div class="commit-header-actions">
@@ -154,7 +193,9 @@ export function CommitComposer(
                     >
                         {stashIcon("list")}
                     </button>
-                    <button aria-label="Refresh Working Changes" title="Refresh Working Changes" disabled={busy} mix={on("click", props.refresh)}>↻</button>
+                    <button aria-label="Refresh Working Changes" title="Refresh Working Changes" disabled={busy} mix={on("click", props.refresh)}>
+                        <Icon name="refresh" size={14} />
+                    </button>
                 </div>
             </header>
             {loaded && (!preview?.branch || preview.unborn) && (
@@ -383,17 +424,68 @@ export function CommitComposer(
 }
 
 const composerStyle = css({
+    "& .branch-stashes": { borderBottom: "1px solid var(--line)", background: "var(--stash-wash)" },
+    "& .branch-stashes > header": {
+        display: "flex",
+        alignItems: "center",
+        gap: "6px",
+        height: "30px",
+        padding: "0 12px",
+        color: "var(--stash-ink)",
+        fontSize: "12px",
+        fontWeight: 600,
+    },
+    "& .branch-stashes > header small": { padding: "0 5px", fontSize: "10.5px", borderRadius: "4px", color: "#fff", background: "var(--stash)" },
+    "& .branch-stash": { display: "flex", alignItems: "center", gap: "6px", height: "30px", padding: "0 8px 0 12px", borderTop: "1px solid var(--line)" },
+    "& .branch-stash-label": { flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "12.5px" },
+    "& .branch-stash-apply": {
+        height: "22px",
+        padding: "0 8px",
+        color: "var(--stash-ink)",
+        borderColor: "var(--stash-edge)",
+        background: "var(--panel)",
+        fontSize: "11.5px",
+        fontWeight: 600,
+    },
+    "& .branch-stash-apply:hover:not(:disabled)": { color: "#fff", background: "var(--stash)", borderColor: "var(--stash)" },
+    "& .branch-stash-drop": {
+        width: "22px",
+        height: "22px",
+        padding: 0,
+        display: "grid",
+        placeItems: "center",
+        color: "var(--muted)",
+        border: 0,
+        background: "transparent",
+    },
+    "& .branch-stash-drop:hover:not(:disabled)": { color: "var(--danger)", background: "var(--danger-wash)" },
     "& .commit-header": {
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        padding: "8px 10px",
-        background: "var(--accent-wash)",
+        minHeight: "42px",
+        padding: "0 8px 0 12px",
+        background: "var(--panel)",
         borderBottom: "1px solid var(--line)",
     },
-    "& .commit-header h3": { fontSize: "12px", margin: 0 },
+    "& .commit-header h3": { fontSize: "13.5px", fontWeight: 600, margin: 0 },
     "& .commit-header-actions": { display: "flex", alignItems: "center", gap: "4px" },
-    "& .commit-header-actions button": { minWidth: "26px", minHeight: "26px", padding: "3px 6px" },
+    "& .commit-header-actions button": {
+        minWidth: "28px",
+        height: "28px",
+        padding: "0 6px",
+        display: "inline-grid",
+        placeItems: "center",
+        background: "var(--panel)",
+    },
+    "& .commit-header-actions button:first-child": {
+        padding: "0 12px",
+        color: "var(--accent-ink)",
+        borderColor: "var(--accent)",
+        background: "var(--accent)",
+        fontWeight: 600,
+    },
+    "& .commit-header-actions button:first-child:hover:not(:disabled)": { background: "var(--accent-hover)", borderColor: "var(--accent-hover)" },
     "& .commit-header-actions svg": { display: "block" },
     "& .ignored-toggle": { display: "flex", alignItems: "center", gap: "5px", color: "var(--muted)", fontSize: "11px", padding: "5px 8px" },
     "& .ignored-toggle input": { width: "14px", height: "14px", minHeight: 0, padding: 0, margin: "0 3px 0 0", flex: "0 0 14px" },
@@ -402,7 +494,7 @@ const composerStyle = css({
         marginTop: "6px",
         padding: "7px 8px",
         border: "1px solid var(--line-strong)",
-        borderRadius: "4px",
+        borderRadius: "var(--radius)",
         background: "var(--field)",
         color: "var(--text)",
         font: "inherit",
@@ -410,7 +502,7 @@ const composerStyle = css({
     "& > textarea": { resize: "vertical" },
     "& button:not(.composition-handle)": {
         border: "1px solid var(--line-strong)",
-        borderRadius: "4px",
+        borderRadius: "var(--radius)",
         background: "var(--control)",
         color: "var(--text)",
         padding: "5px 8px",
@@ -418,7 +510,7 @@ const composerStyle = css({
     },
     "& button:disabled": { opacity: 0.5 },
     "& button:focus-visible, & input:focus-visible, & textarea:focus-visible, & select:focus-visible": {
-        outline: "2px solid var(--accent)",
+        outline: "2px solid var(--focus)",
         outlineOffset: "2px",
     },
     "& .commit-actions": { display: "flex", gap: "6px", marginTop: "8px", flexWrap: "wrap" },

@@ -1,6 +1,7 @@
 import type { BranchGraph, BranchGraphBranchNode, BranchGraphVirtualBranch, WorktreePreview, WorktreeRequest } from "@laneway/shared"
 import { css, type Handle, on, ref } from "remix/ui"
 import { CommandLens } from "./command-lens"
+import { Icon } from "./icons"
 
 type Column = BranchGraphBranchNode | BranchGraphVirtualBranch
 interface Options {
@@ -234,7 +235,7 @@ function WorktreeControls(
     }>,
 ) {
     let editing = false, name = "", menuOpen = false, choosingBranch = false, query = ""
-    let menuButton: HTMLButtonElement, nameButton: HTMLButtonElement, switchButton: HTMLButtonElement
+    let menuButton: HTMLButtonElement, nameButton: HTMLButtonElement
     const menuId = `${handle.id}-worktree-menu`
     function closeMenu(focus = false) {
         menuOpen = false
@@ -250,14 +251,13 @@ function WorktreeControls(
     }
     function closeBranches() {
         choosingBranch = false
-        void handle.update().then(() => switchButton.focus())
+        void handle.update().then(() => menuButton.focus())
     }
     return () => {
         const props = handle.props
         const worktrees = [...props.graph.branches.flatMap(branch => branch.checkedOut), ...props.graph.virtualBranches.map(branch => branch.worktree)]
             .filter((item, index, items) => items.findIndex(other => other.path == item.path) == index)
         const worktree = worktrees.find(item => item.path == props.path)
-        const parent = worktree?.path.slice(0, Math.max(worktree.path.lastIndexOf("/"), worktree.path.lastIndexOf("\\")) + 1)
         const rename = async () => {
             if (!editing || !worktree)
                 return
@@ -272,8 +272,6 @@ function WorktreeControls(
                 {worktree
                     ? (
                         <>
-                            <span aria-hidden="true">⌂</span>
-                            <span title={worktree.path} mix={pathStyle}>{parent}</span>
                             {editing
                                 ? (
                                     <input
@@ -328,30 +326,11 @@ function WorktreeControls(
                                         {worktree.name}
                                     </button>
                                 )}
-                            {worktree.missing && <span>Missing</span>}
-                            {worktree.locked && <span title={worktree.lockReason ?? "Locked"}>Locked</span>}
-                            {!worktree.missing && (
-                                <button
-                                    type="button"
-                                    aria-label="Switch worktree branch"
-                                    title="Switch branch…"
-                                    disabled={props.busy}
-                                    mix={[
-                                        iconStyle,
-                                        ref(node => switchButton = node),
-                                        on("click", () => {
-                                            choosingBranch = true
-                                            query = ""
-                                            void handle.update()
-                                        }),
-                                    ]}
-                                >
-                                    ⇄
-                                </button>
-                            )}
+                            {worktree.missing && <span mix={stateChip}>Missing</span>}
+                            {worktree.locked && <span mix={stateChip} title={worktree.lockReason ?? "Locked"}>Locked</span>}
                         </>
                     )
-                    : <span mix={emptyStyle}>No worktree</span>}
+                    : null}
                 <button
                     type="button"
                     aria-label={worktree ? "Worktree actions" : "Check out branch"}
@@ -359,7 +338,6 @@ function WorktreeControls(
                     aria-haspopup="menu"
                     aria-expanded={menuOpen}
                     aria-controls={menuId}
-                    hidden={worktree?.main}
                     disabled={props.busy}
                     mix={[
                         iconStyle,
@@ -377,7 +355,7 @@ function WorktreeControls(
                         }),
                     ]}
                 >
-                    {worktree ? "⋯" : "⌂"}
+                    <Icon name="more" size={15} />
                 </button>
                 {menuOpen && (
                     <div
@@ -418,6 +396,25 @@ function WorktreeControls(
                             }),
                         ]}
                     >
+                        {worktree && !worktree.missing && (
+                            <button
+                                type="button"
+                                role="menuitem"
+                                aria-label="Switch worktree branch"
+                                disabled={props.busy}
+                                mix={[
+                                    menuItemStyle,
+                                    on("click", () => {
+                                        menuOpen = false
+                                        choosingBranch = true
+                                        query = ""
+                                        void handle.update()
+                                    }),
+                                ]}
+                            >
+                                Switch branch…
+                            </button>
+                        )}
                         {!worktree && props.column.kind == "branch"
                             && worktrees.map(item => (
                                 <button
@@ -544,78 +541,87 @@ function WorktreeControls(
     }
 }
 
+// Lives inside the column header: `display: contents` lets the name sit beside the kind icon
+// while the overflow button lands at the far right of the header's action group.
 const controlStyle = css({
-    position: "relative",
-    display: "flex",
-    alignItems: "center",
-    gap: "3px",
-    minWidth: 0,
-    height: "28px",
-    padding: "0 8px",
-    color: "var(--muted)",
-    borderBottom: "1px solid var(--line)",
-    background: "var(--canvas)",
-    fontFamily: "var(--mono)",
-    fontSize: "10px",
-    whiteSpace: "nowrap",
+    display: "contents",
+    color: "var(--text)",
+    "& > [aria-haspopup='menu']": { order: "2" },
 })
-const pathStyle = css({ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" })
-const emptyStyle = css({ flex: 1 })
 const nameStyle = css({
+    flex: "1 1 auto",
     minWidth: 0,
-    flexShrink: 0,
-    maxWidth: "60%",
     overflow: "hidden",
     textOverflow: "ellipsis",
-    padding: "1px 2px",
+    whiteSpace: "nowrap",
+    padding: "2px 4px",
+    margin: "0 0 0 -4px",
+    textAlign: "left",
     border: "1px solid transparent",
-    borderRadius: "3px",
-    color: "inherit",
+    borderRadius: "var(--radius)",
+    color: "var(--text)",
     background: "transparent",
-    font: "inherit",
+    fontFamily: '"Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif',
+    fontSize: "15px",
+    fontWeight: 600,
+    letterSpacing: "-0.01em",
     cursor: "text",
-    "&:hover:not(:disabled)": { borderColor: "var(--line-strong)", background: "var(--panel)" },
+    "&:hover:not(:disabled)": { borderColor: "var(--line-strong)", background: "var(--panel-deep)" },
     "&:disabled": { opacity: 1, cursor: "default" },
 })
 const nameInputStyle = css({
+    flex: "1 1 auto",
     minWidth: 0,
-    width: "45%",
-    height: "22px",
-    padding: "1px 2px",
-    border: "1px solid var(--accent)",
-    borderRadius: "3px",
+    width: "auto",
+    height: "26px",
+    padding: "0 4px",
+    margin: "0 0 0 -4px",
+    border: "1px solid var(--focus)",
+    borderRadius: "var(--radius)",
     font: "inherit",
+    fontSize: "14px",
+    fontWeight: 600,
     color: "var(--text)",
     background: "var(--panel)",
 })
+const stateChip = css({
+    flex: "0 0 auto",
+    padding: "1px 6px",
+    color: "var(--warning)",
+    border: "1px solid var(--warning-edge)",
+    borderRadius: "4px",
+    background: "var(--warning-wash)",
+    fontSize: "10.5px",
+    fontWeight: 600,
+})
 const iconStyle = css({
     flexShrink: 0,
-    height: "24px",
-    minWidth: "24px",
+    width: "28px",
+    height: "28px",
     padding: 0,
-    border: 0,
-    borderRadius: "3px",
+    display: "grid",
+    placeItems: "center",
+    border: "1px solid transparent",
+    borderRadius: "var(--radius)",
     color: "var(--muted)",
     background: "transparent",
-    fontSize: "15px",
     cursor: "pointer",
-    "&:hover": { color: "var(--text)", background: "var(--raised)" },
+    "&:hover:not(:disabled)": { color: "var(--text)", borderColor: "var(--line)", background: "var(--control-hover)" },
     "&:disabled": { opacity: 0.5, cursor: "default" },
-    "&[aria-label='Switch worktree branch']": { marginLeft: "auto" },
 })
 const menuStyle = css({
     position: "absolute",
     zIndex: 20,
     top: "100%",
-    right: "4px",
+    right: "6px",
     minWidth: "220px",
     maxWidth: "calc(100% - 8px)",
     maxHeight: "320px",
     overflow: "auto",
     padding: "4px",
     border: "1px solid var(--line-strong)",
-    borderRadius: "5px",
-    background: "var(--panel)",
+    borderRadius: "var(--radius)",
+    background: "var(--raised)",
     boxShadow: "var(--shadow-popover)",
     whiteSpace: "normal",
 })

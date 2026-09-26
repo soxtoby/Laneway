@@ -1,6 +1,7 @@
 import { draggable, dropTargetForElements, monitorForElements } from "@atlaskit/pragmatic-drag-and-drop/adapter/element-adapter"
 import type { CompositionRequest, CompositionSource, CompositionTarget, LocalPreview } from "@laneway/shared"
 import { createMixin, css, on, type RemixNode } from "remix/ui"
+import { Icon } from "./icons"
 
 interface Selection {
     repositoryId: string
@@ -13,30 +14,44 @@ interface Selection {
 }
 
 export const compositionStyles = css({
+    // The handle is a quiet grip, always the leftmost thing in a row; the whole row drags.
     "& .composition-handle": {
-        flex: "0 0 22px",
-        width: "22px",
+        order: "-1",
+        flex: "0 0 18px",
+        width: "18px",
+        height: "100%",
+        minHeight: "22px",
         padding: "0",
+        display: "grid",
+        placeItems: "center",
         border: "0",
+        borderRadius: "0",
         background: "transparent",
-        color: "var(--muted)",
+        color: "var(--line-strong)",
         cursor: "grab",
-        fontSize: "17px",
-        "&:hover": { color: "var(--accent)", background: "var(--accent-wash)" },
+        "&:hover": { color: "var(--muted)" },
+        "&:focus-visible": { outlineOffset: "-2px" },
     },
+    "& :is(.change-file, .disclosure-heading, .composition-branch-target):hover .composition-handle": { color: "var(--muted)" },
     "& .composition-branch-heading": { display: "flex", alignItems: "center", "& .stack-heading": { flex: "1", minWidth: "0" } },
-    "& .composition-over": { outline: "2px solid var(--accent)", outlineOffset: "-2px", background: "var(--accent-wash)" },
+    "& .composition-over": { outline: "2px solid var(--focus)", outlineOffset: "-2px", background: "var(--focus-wash)" },
+    // Seams take no space until a drag or keyboard move makes them a target.
     "& .composition-seam": {
-        height: "6px",
+        height: "0",
         overflow: "hidden",
         fontSize: "0",
         cursor: "pointer",
         "&.available, &:focus-visible": {
             height: "24px",
+            margin: "2px 8px",
+            display: "grid",
+            placeItems: "center",
             fontSize: "11px",
-            color: "var(--accent)",
-            paddingInline: "10px",
-            borderBlock: "1px dashed var(--accent-edge)",
+            fontWeight: "600",
+            color: "var(--focus)",
+            border: "1px dashed var(--focus)",
+            borderRadius: "var(--radius)",
+            background: "var(--focus-wash)",
         },
     },
     "& .composition-review": {
@@ -55,9 +70,12 @@ export const compositionStyles = css({
         display: "flex",
         gap: "6px",
         alignItems: "center",
-        padding: "4px 8px",
+        minHeight: "34px",
+        padding: "0 12px 0 8px",
+        borderBottom: "1px solid var(--line)",
         background: "var(--panel-deep)",
-        fontSize: "12px",
+        fontSize: "13px",
+        fontWeight: "600",
     },
 })
 export function createComposition(options: {
@@ -225,10 +243,18 @@ export function createComposition(options: {
     const sourceBinding = createMixin<HTMLElement, [Selection]>(handle => {
         let selection: Selection, cleanup = () => {}
         handle.addEventListener("insert", ({ node }) => {
+            // Anything on the row that a click would not otherwise consume is a drag surface; the handle stays
+            // as the visible affordance and keyboard entry point.
+            const row = node.closest<HTMLElement>(".change-file, .disclosure-heading, .composition-branch-target") ?? node
             cleanup = draggable({
-                element: node,
+                element: row,
                 getInitialData: () => ({ [token]: selection }),
-                canDrag: () => !busy,
+                canDrag: ({ input }) => {
+                    if (busy)
+                        return false
+                    const target = document.elementFromPoint(input.clientX, input.clientY)
+                    return !target?.closest("input, textarea, select, [contenteditable], a[href]")
+                },
                 onDragStart: ({ location }) => choose(selection, location.current.input.ctrlKey ? "copy" : "move"),
             })
         })
@@ -294,7 +320,7 @@ export function createComposition(options: {
                         }),
                     ]}
                 >
-                    ⠿
+                    <Icon name="grip" size={14} />
                 </button>
             )
         },

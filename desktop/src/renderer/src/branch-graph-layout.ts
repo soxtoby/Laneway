@@ -15,7 +15,7 @@ export interface GraphRowLayout {
 
 export function graphLineColor(color: number) {
     const hues = [100, 215, 28, 275, 175, 345, 50, 315]
-    return color == 0 ? "var(--accent)" : `hsl(${hues[color] ?? (color * 137.508 + 100) % 360} 65% var(--graph-line-lightness))`
+    return color == 0 ? "var(--graph)" : `hsl(${hues[color] ?? (color * 137.508 + 100) % 360} 65% var(--graph-line-lightness))`
 }
 
 export const graphRowHeight = 40

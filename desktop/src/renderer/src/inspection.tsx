@@ -10,6 +10,7 @@ import { DiffLines } from "./diff"
 import { DiffControls } from "./diff-controls"
 import { fileLabel, FileTree } from "./file-list"
 import { FileMenu } from "./file-menu"
+import { Icon } from "./icons"
 
 type Column = BranchGraphBranchNode | BranchGraphVirtualBranch
 interface Options {
@@ -867,11 +868,11 @@ export function createInspection(options: Options) {
                     filter={state.filter}
                     files={visible}
                     expanded={expanded}
+                    leading={file => fileTransfer(state, group, file)}
                     controls={file => {
                         const diff = state.diffs.get(diffKey(group, file.path))
                         return (
                             <>
-                                {fileTransfer(state, group, file)}
                                 {diff && !state.breakout ? renderDiffControls(state, diff) : null}
                                 {stage && (
                                     <button
@@ -880,7 +881,7 @@ export function createInspection(options: Options) {
                                         disabled={busy}
                                         mix={on("click", () => stage(file.oldPath ? [file.oldPath, file.path] : [file.path]))}
                                     >
-                                        {group == "working-staged" ? "−" : "+"}
+                                        <Icon name={group == "working-staged" ? "minus" : "plus"} size={12} />
                                     </button>
                                 )}
                             </>
@@ -1318,7 +1319,7 @@ export function createInspection(options: Options) {
                                 title="Close and clear filter (Escape)"
                                 mix={[filterToggleButton, on("click", () => closeFilter(state))]}
                             >
-                                ×
+                                <Icon name="close" size={13} />
                             </button>
                         </div>
                     )}
@@ -1337,6 +1338,7 @@ export function createInspection(options: Options) {
                                 busyChanged={options.localBusyChanged}
                                 inventory={state.files.get("working")?.inventory}
                                 refresh={() => void readFiles(state, "working", { kind: "working", worktreePath: state.worktreePath! }, true)}
+                                stashes={column.kind == "branch" ? column.markers : []}
                                 showIgnored={state.showIgnored}
                                 toggleIgnored={value => {
                                     state.showIgnored = value
@@ -1446,7 +1448,10 @@ export function createInspection(options: Options) {
                                                             label: branch.name,
                                                         })}
                                                     <button class="stack-heading" type="button" mix={[stackHeading, accordion.trigger()]}>
-                                                        <span>{current?.open ? "▾" : "▸"} {branch.name}</span>
+                                                        <span mix={stackHeadingName}>
+                                                            <Icon name={current?.open ? "chevron-down" : "chevron-right"} size={12} />
+                                                            {branch.name}
+                                                        </span>
                                                         <span mix={stackHeadingStatus}>
                                                             <small mix={stackHeadingSmall}>
                                                                 {branch.base.status == "known" ? "Unique commits" : "Commits"}
@@ -2076,7 +2081,7 @@ const diffToolbar = css({
     position: "sticky",
     top: "0",
     zIndex: 5,
-    background: "var(--panel)",
+    background: "var(--panel-deep)",
     display: "flex",
     alignItems: "center",
     gap: "8px",
@@ -2319,9 +2324,7 @@ const filterChangeStatusSelect = css({
 })
 
 const workingChanges = css({
-    marginBottom: "8px",
     background: "var(--panel)",
-    borderBottom: "1px solid var(--line-strong)",
 })
 
 const workingChangesH3 = css({
@@ -2330,7 +2333,7 @@ const workingChangesH3 = css({
 })
 
 const stackBranch = css({
-    borderTop: "1px solid var(--line-strong)",
+    borderTop: "0",
 })
 
 const disclosureHeading = css({
@@ -2338,26 +2341,57 @@ const disclosureHeading = css({
     font: "inherit",
 })
 
+// The whole sticky row owns the graph line, the node, the hover and the expanded tint, so the
+// line meets the file rows below and the highlight runs under the grip too.
 const commitStickyHeading = css({
     position: "sticky",
     top: "var(--filter-height, 0px)",
     zIndex: 7,
-    height: "32px",
+    height: "34px",
     display: "flex",
-    background: "var(--control)",
-    borderRadius: "3px",
+    alignItems: "center",
+    paddingLeft: "22px",
+    background: "var(--panel)",
+    borderBottom: "1px solid var(--line)",
+    borderRadius: "0",
+    "&::before": {
+        position: "absolute",
+        top: "-1px",
+        bottom: "-1px",
+        left: "12px",
+        width: "2px",
+        content: '""',
+        background: "var(--line-strong)",
+        pointerEvents: "none",
+    },
+    // Sticky rows must stay opaque, so hover and expanded tints are mixed into the panel colour.
+    "&:hover": {
+        backgroundColor: "color-mix(in srgb, var(--text) 5%, var(--panel))",
+    },
+    '&:has(> .commit-heading[aria-expanded="true"])': {
+        backgroundColor: "color-mix(in srgb, var(--focus) 12%, var(--panel))",
+    },
+    '&:has(> .commit-heading[aria-expanded="true"]):hover': {
+        backgroundColor: "color-mix(in srgb, var(--focus) 18%, var(--panel))",
+    },
 })
 
 const stackHeading = css({
     border: "0",
+    borderTop: "1px solid var(--line-strong)",
+    borderBottom: "1px solid var(--line)",
     background: "var(--panel-deep)",
     color: "var(--text)",
-    borderRadius: "3px",
-    padding: "10px",
+    borderRadius: "0",
+    minHeight: "34px",
+    padding: "0 12px",
     font: "inherit",
+    fontSize: "13px",
+    fontWeight: "600",
     cursor: "pointer",
     width: "100%",
     display: "flex",
+    alignItems: "center",
     justifyContent: "space-between",
     textAlign: "left",
     "&:hover": {
@@ -2396,14 +2430,15 @@ const conflictIndicator = css({
 })
 const commitDiffButton = css({
     width: "32px",
-    height: "32px",
+    height: "34px",
     flex: "0 0 32px",
     display: "grid",
     placeItems: "center",
     padding: 0,
     border: "0",
-    borderRadius: "3px",
-    background: "var(--control)",
+    borderBottom: "1px solid var(--line)",
+    borderRadius: "0",
+    background: "var(--panel)",
     color: "var(--muted)",
     cursor: "pointer",
     "&:hover": {
@@ -2414,6 +2449,15 @@ const commitDiffButton = css({
 
 const stackHeadingSmall = css({
     color: "var(--muted)",
+    fontWeight: "500",
+})
+
+const stackHeadingName = css({
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    minWidth: "0",
+    "& svg": { color: "var(--faint)", flex: "0 0 auto" },
 })
 
 const stackHeadingStatus = css({ display: "inline-flex", alignItems: "center", gap: "8px" })
@@ -2438,62 +2482,44 @@ const stackBranchButton = css({
 
 const inspectCommit = css({
     position: "relative",
-    border: "1px solid transparent",
-    borderRadius: "3px",
     '&[data-expanded="true"]': {
-        borderColor: "var(--line)",
         background: "var(--panel)",
     },
 })
 
 const commitHeading = css({
-    position: "relative",
-    height: "32px",
+    height: "100%",
     border: "0",
-    background: "var(--control)",
+    background: "transparent",
     color: "var(--text)",
-    borderRadius: "3px",
-    padding: "8px 10px",
+    borderRadius: "0",
+    padding: "0 10px 0 4px",
     font: "inherit",
     cursor: "pointer",
     display: "flex",
+    alignItems: "center",
     flex: "1 1 auto",
     minWidth: 0,
     gap: "8px",
     width: "100%",
     textAlign: "left",
-    "&::before": {
-        position: "absolute",
-        top: "-1px",
-        bottom: "-1px",
-        left: "14px",
-        width: "2px",
-        content: '""',
-        background: "var(--line-strong)",
-        pointerEvents: "none",
-    },
-    "&:hover": {
-        background: "var(--control-hover)",
-    },
-    '&[aria-expanded="true"]': {
-        backgroundColor: "var(--control)",
-        backgroundImage: "linear-gradient(var(--accent-wash), var(--accent-wash))",
-    },
     '&[aria-expanded="true"] > span:first-child': {
-        background: "var(--accent)",
+        background: "var(--graph)",
     },
 })
 
 const commitNode = css({
-    position: "relative",
+    position: "absolute",
     zIndex: 2,
+    left: "8px",
+    top: "12px",
     width: "10px",
     height: "10px",
-    marginBlock: "3px",
+    margin: "0",
     flex: "0 0 auto",
-    border: "2px solid var(--accent)",
+    border: "2px solid var(--graph)",
     borderRadius: "50%",
-    background: "var(--control)",
+    background: "var(--panel)",
 })
 
 const commitHeadingSpan = css({
@@ -2513,7 +2539,7 @@ const mergeParent = css({
         position: "absolute",
         top: "-1px",
         bottom: "-1px",
-        left: "14px",
+        left: "12px",
         width: "2px",
         content: '""',
         background: "var(--line-strong)",

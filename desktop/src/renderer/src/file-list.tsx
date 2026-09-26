@@ -8,6 +8,7 @@ export function InspectionItem(
         label: RemixNode
         expanded: boolean
         actions: FileAction[]
+        leading?: RemixNode
         controls?: RemixNode
         children?: RemixNode
         checked?: boolean
@@ -21,6 +22,7 @@ export function InspectionItem(
         return (
             <FileMenu class={`file-inspection ${props.class ?? ""}`} actions={props.actions}>
                 <div class={`change-file ${props.expanded ? "active" : ""}`} mix={changeFile}>
+                    {props.leading}
                     {props.check && (
                         <input
                             type="checkbox"
@@ -58,6 +60,7 @@ export function FileTree(
             expanded: Set<string>
             diff(file: ChangedFile): RemixNode
             controls(file: ChangedFile): RemixNode
+            leading?(file: ChangedFile): RemixNode
             checked?: Set<string>
             prefix?: string
             choose(file: ChangedFile): void
@@ -100,6 +103,7 @@ export function FileTree(
                             ? () => props.check?.(file)
                             : undefined}
                         choose={() => props.choose(file)}
+                        leading={props.leading?.(file)}
                         controls={props.controls(file)}
                         label={
                             <>
@@ -211,12 +215,15 @@ const changeFile = css({
     zIndex: 5,
     background: "var(--panel)",
     display: "flex",
-    gap: "3px",
+    gap: "4px",
     alignItems: "center",
-    padding: "1px 6px",
-    minHeight: "29px",
+    padding: "1px 6px 1px 2px",
+    minHeight: "30px",
+    borderBottom: "1px solid var(--line)",
+    // Rows stick to the top while scrolling, so hover and active tints are mixed into an opaque colour.
+    "&:hover": { backgroundColor: "color-mix(in srgb, var(--text) 5%, var(--panel))" },
     ".inspect-commit &": {
-        top: "calc(var(--filter-height, 0px) + 32px)",
+        top: "calc(var(--filter-height, 0px) + 34px)",
         zIndex: 6,
         paddingLeft: "28px",
     },
@@ -224,14 +231,18 @@ const changeFile = css({
         position: "absolute",
         top: "-1px",
         bottom: "-1px",
-        left: "14px",
+        left: "12px",
         width: "2px",
         content: '""',
         background: "var(--line-strong)",
         pointerEvents: "none",
     },
     "&.active": {
-        backgroundImage: "linear-gradient(var(--accent-wash), var(--accent-wash))",
+        backgroundColor: "color-mix(in srgb, var(--focus) 12%, var(--panel))",
+        boxShadow: "inset 3px 0 var(--focus)",
+    },
+    "&.active:hover": {
+        backgroundColor: "color-mix(in srgb, var(--focus) 18%, var(--panel))",
     },
     ".file-tree details &": {
         paddingLeft: "14px",
@@ -239,7 +250,7 @@ const changeFile = css({
 })
 
 const selectFileInput = css({
-    accentColor: "var(--accent)",
+    accentColor: "var(--focus)",
     flex: "0 0 14px",
     width: "14px",
     height: "14px",
@@ -252,7 +263,7 @@ const changeFileButton = css({
     border: "0",
     background: "transparent",
     color: "var(--text)",
-    borderRadius: "3px",
+    borderRadius: "var(--radius)",
     padding: "3px 6px",
     font: "inherit",
     cursor: "pointer",
@@ -263,11 +274,10 @@ const changeFileButton = css({
     minWidth: "0",
     textAlign: "left",
     "&:hover": {
-        background: "var(--control-hover)",
+        background: "transparent",
     },
     '&[aria-expanded="true"]': {
-        background: "var(--accent-wash-strong)",
-        borderColor: "var(--accent-edge)",
+        background: "transparent",
     },
     "&:disabled": { opacity: "1", cursor: "default" },
 })
@@ -277,9 +287,9 @@ export const fileActionButton = css({
     alignItems: "center",
     justifyContent: "center",
     border: "1px solid var(--line)",
-    background: "var(--control)",
-    color: "var(--text)",
-    borderRadius: "3px",
+    background: "var(--panel)",
+    color: "var(--muted)",
+    borderRadius: "4px",
     padding: "2px",
     font: "inherit",
     cursor: "pointer",
@@ -287,7 +297,7 @@ export const fileActionButton = css({
     flexShrink: "0",
     width: "22px",
     height: "22px",
-    '&[aria-pressed="true"]': { background: "var(--accent-wash-strong)", borderColor: "var(--accent-edge)" },
+    '&[aria-pressed="true"]': { color: "var(--focus)", background: "var(--focus-wash)", borderColor: "var(--focus-edge)" },
     "&:hover:not(:disabled)": { background: "var(--control-hover)" },
     "&:disabled": { opacity: "0.45", cursor: "default" },
 })
@@ -295,10 +305,10 @@ export const fileActionButton = css({
 const fileStatus = css({
     width: "14px",
     flex: "0 0 14px",
-    color: "var(--warning)",
+    color: "var(--accent)",
     font: "11px var(--mono)",
     "&.added": {
-        color: "var(--accent)",
+        color: "var(--ok)",
     },
     "&.deleted": {
         color: "var(--danger)",

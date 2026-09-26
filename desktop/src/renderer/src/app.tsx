@@ -4,8 +4,9 @@ import { type BranchWorkspace, createBranchWorkspace } from "./branch-workspace"
 import { errorMessage, FatalError, Notice, type NoticeState } from "./feedback"
 import { activateSelectionsOnMouseDown } from "./mouse-activation"
 import { createRepositoryEntry, type RepositoryEntry } from "./repository-entry"
+import { RepositoryRail } from "./repository-rail"
 import { createGitSettings, type GitSettings } from "./settings"
-import { LanewayHeader, RepositoryRailToggle, Welcome } from "./workspace"
+import { LanewayHeader, Welcome } from "./workspace"
 
 type AppState = Awaited<ReturnType<Window["laneway"]["getState"]>>
 
@@ -20,7 +21,7 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
     let notice: NoticeState | undefined
     let fatalError: string | undefined
     let repositoryOrderBeforeDrag: string[] | undefined
-    let railCollapsed = false
+    let railCollapsed = true
     let appearance: Appearance = "light"
 
     handle.queueTask(() => void bootstrap())
@@ -53,6 +54,7 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
                         openSettings={gitSettings.open}
                         toggleAppearance={() => void toggleAppearance()}
                         repositoryActions={repositoryActions}
+                        tabs={active?.status == "available" ? branchWorkspace.columnTabs(active) : undefined}
                     />
                     {active?.status == "available"
                         ? (
@@ -323,8 +325,6 @@ function WorkspaceRecovery(handle: Handle<{ error: string; reset?(): void }>) {
     )
 }
 
-let draggingMissingRepositoryId: string | undefined
-
 function MissingRepository(
     handle: Handle<
         {
@@ -345,87 +345,19 @@ function MissingRepository(
 ) {
     return () => (
         <section class="workspace missing-repository" mix={workspace}>
-            <aside class="repository-rail" mix={repositoryRail}>
-                <div class="rail-heading" mix={railHeading}>
-                    <p class="eyebrow" mix={eyebrow}>
-                        Open repositories
-                    </p>
-                </div>
-                <nav aria-label="Open repositories" mix={openRepositoriesNav}>
-                    {handle.props.workspace.repositories.map((repository, index) => (
-                        <div
-                            draggable
-                            title="Drag to reorder · Ctrl+< / Ctrl+>"
-                            mix={[
-                                on("keydown", event => {
-                                    if (event.ctrlKey && event.shiftKey && (event.key == "<" || event.key == ">")) {
-                                        event.preventDefault()
-                                        const target = handle.props.workspace.repositories[index + (event.key == "<" ? -1 : 1)]
-                                        if (target)
-                                            handle.props.move(repository.id, target.id)
-                                    }
-                                }),
-                                on("dragstart", () => {
-                                    draggingMissingRepositoryId = repository.id
-                                }),
-                                on("dragover", event => {
-                                    event.preventDefault()
-                                    if (draggingMissingRepositoryId)
-                                        handle.props.previewMove(draggingMissingRepositoryId, repository.id)
-                                }),
-                                on("drop", event => {
-                                    event.preventDefault()
-                                    handle.props.commitOrder()
-                                    draggingMissingRepositoryId = undefined
-                                }),
-                                on("dragend", () => {
-                                    if (draggingMissingRepositoryId)
-                                        handle.props.cancelMove()
-                                    draggingMissingRepositoryId = undefined
-                                }),
-                            ]}
-                        >
-                            <button
-                                class={`repository-item ${handle.props.railCollapsed ? "collapsed" : ""} ${
-                                    repository.id == handle.props.repository.id ? "active" : ""
-                                }`}
-                                type="button"
-                                title={repository.path}
-                                aria-label={repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name}
-                                data-mousedown-activate
-                                mix={[repositoryItem, on("click", () => handle.props.select(repository.id))]}
-                            >
-                                <span mix={repositoryItemSpan}>
-                                    {initials(repository.path)}
-                                </span>
-                                {!handle.props.railCollapsed && (
-                                    <span mix={repositoryItemSpan}>
-                                        <strong mix={repositoryItemStrong}>
-                                            {repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name}
-                                        </strong>
-                                        <small mix={repositoryItemSmall}>
-                                            {repository.status == "available" ? repository.info.selectedWorktree : "Unavailable"}
-                                        </small>
-                                    </span>
-                                )}
-                            </button>
-                        </div>
-                    ))}
-                    <button
-                        class={`rail-add ${handle.props.railCollapsed ? "collapsed" : ""}`}
-                        type="button"
-                        aria-label="Add repository"
-                        title="Add repository"
-                        mix={[railAdd, on("click", handle.props.addRepository)]}
-                    >
-                        <span aria-hidden="true">+</span>
-                        {!handle.props.railCollapsed && <span class="rail-add-label">Add repository</span>}
-                    </button>
-                </nav>
-                <div class="rail-footer" mix={railFooter}>
-                    <RepositoryRailToggle collapsed={handle.props.railCollapsed} toggle={handle.props.toggleRail} />
-                </div>
-            </aside>
+            <RepositoryRail
+                railCollapsed={handle.props.railCollapsed}
+                toggleRail={handle.props.toggleRail}
+                activeId={handle.props.repository.id}
+                workspace={handle.props.workspace}
+                selectRepository={handle.props.select}
+                closeRepository={handle.props.close}
+                moveRepository={handle.props.move}
+                previewRepositoryMove={handle.props.previewMove}
+                commitRepositoryOrder={handle.props.commitOrder}
+                cancelRepositoryMove={handle.props.cancelMove}
+                addRepository={handle.props.addRepository}
+            />
             <div class="missing-copy" mix={missingCopy}>
                 <p class="eyebrow" mix={missingRepositoryEyebrow}>
                     Repository unavailable
@@ -448,15 +380,6 @@ function MissingRepository(
     )
 }
 
-function baseName(path: string) {
-    return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path
-}
-
-function initials(path: string) {
-    const words = baseName(path).split(/[-_.\s]+/).filter(Boolean)
-    return (words.length > 1 ? words[0][0] + words[1][0] : words[0]?.slice(0, 2) ?? "GW").toUpperCase()
-}
-
 const bootstrapState = css({
     height: "100%",
     padding: "32px",
@@ -471,21 +394,12 @@ const bootstrapStateP = css({
 })
 
 const shell = css({
-    "&.rail-collapsed": { "--rail": "52px" },
-    "&.rail-collapsed .rail-heading": { padding: "2px 0 6px", justifyContent: "center" },
-    "&.rail-collapsed .rail-heading .eyebrow": { display: "none" },
+    "&.rail-collapsed": { "--rail": "var(--rail-collapsed)" },
     width: "100%",
     height: "100%",
     display: "grid",
     gridTemplateRows: "var(--toolbar) minmax(0, 1fr)",
     overflow: "hidden",
-})
-
-const railFooter = css({
-    padding: "6px 2px 2px",
-    display: "flex",
-    justifyContent: "flex-end",
-    borderTop: "1px solid var(--line)",
 })
 
 const workspaceRecovery = css({
@@ -535,137 +449,6 @@ const workspace = css({
     height: "100%",
     display: "grid",
     gridTemplateColumns: "var(--rail) minmax(0, 1fr)",
-})
-
-const repositoryRail = css({
-    minWidth: "0",
-    minHeight: "0",
-    padding: "6px",
-    display: "grid",
-    gridTemplateRows: "auto minmax(0, 1fr) auto",
-    gap: "6px",
-    borderRight: "1px solid var(--line)",
-    background: "var(--panel-deep)",
-})
-
-const railHeading = css({
-    padding: "2px 2px 6px 6px",
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    borderBottom: "1px solid var(--line)",
-})
-
-const eyebrow = css({
-    color: "var(--muted)",
-    fontSize: "11px",
-    fontWeight: "600",
-    letterSpacing: "0",
-    textTransform: "none",
-    minWidth: "0",
-    flex: "1 1 auto",
-    margin: "0",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-})
-
-const railAdd = css({
-    "&.collapsed": { gridTemplateColumns: "24px", padding: "0", gap: "0", justifyContent: "center", textAlign: "center", height: "38px" },
-    margin: "6px 0 0",
-    width: "100%",
-    height: "32px",
-    gridTemplateColumns: "24px minmax(0, 1fr)",
-    gap: "8px",
-    textAlign: "left",
-    outlineOffset: "-2px",
-    flex: "0 0 auto",
-    padding: "0 6px",
-    display: "grid",
-    alignItems: "center",
-    color: "var(--muted)",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "4px",
-    background: "var(--control)",
-    fontSize: "12px",
-    lineHeight: "1",
-    "&:hover:not(:disabled)": {
-        color: "var(--text)",
-        background: "var(--control-hover)",
-    },
-})
-
-const openRepositoriesNav = css({
-    gridTemplateColumns: "minmax(0, 1fr)",
-    minWidth: "0",
-    overflowX: "hidden",
-    minHeight: "0",
-    display: "grid",
-    alignContent: "start",
-    gap: "1px",
-    overflowY: "auto",
-})
-
-const repositoryItem = css({
-    "&.collapsed": { gridTemplateColumns: "24px", padding: "5px 0", gap: "0", justifyContent: "center", height: "38px" },
-    minWidth: "0",
-    outlineOffset: "-2px",
-    width: "100%",
-    padding: "5px 6px",
-    display: "grid",
-    gridTemplateColumns: "24px minmax(0, 1fr)",
-    gap: "8px",
-    textAlign: "left",
-    border: "1px solid transparent",
-    borderRadius: "4px",
-    background: "transparent",
-    "&.active": {
-        borderColor: "var(--line)",
-        background: "var(--panel)",
-        boxShadow: "inset 2px 0 var(--accent)",
-    },
-    "&.missing > span:first-child": {
-        color: "var(--warning)",
-    },
-    "&:hover:not(:disabled)": {
-        background: "var(--hover)",
-    },
-})
-
-const repositoryItemSpan = css({
-    "&:first-child": {
-        width: "24px",
-        height: "24px",
-        display: "grid",
-        placeItems: "center",
-        color: "var(--accent)",
-        border: "1px solid var(--line-strong)",
-        borderRadius: "4px",
-        fontSize: "10px",
-        fontWeight: "600",
-    },
-    "&:nth-child(2)": {
-        minWidth: "0",
-        display: "grid",
-        alignContent: "center",
-        gap: "1px",
-    },
-})
-
-const repositoryItemStrong = css({
-    overflow: "hidden",
-    fontSize: "12px",
-    fontWeight: "600",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-})
-
-const repositoryItemSmall = css({
-    overflow: "hidden",
-    color: "var(--faint)",
-    fontFamily: "var(--mono)",
-    fontSize: "10px",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
 })
 
 const missingCopy = css({

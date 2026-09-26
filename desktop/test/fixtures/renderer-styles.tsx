@@ -117,8 +117,7 @@ async function checkRenderer() {
         throw new Error("Opening column filter did not focus its textbox")
     element<HTMLButtonElement>('[aria-label="Close file filter"]').click()
     await settle()
-    element<HTMLButtonElement>('[aria-label="Collapse repository sidebar"]').click()
-    await settle()
+    // The rail starts collapsed as an icon strip.
     const rail = element(".repository-rail").getBoundingClientRect()
     const railToggle = element('[aria-label="Expand repository sidebar"]').getBoundingClientRect()
     if (rail.bottom - railToggle.bottom > 16)
@@ -178,8 +177,8 @@ async function checkRenderer() {
     const graphColors = () => [...document.querySelectorAll(".graph-row circle")].map(node => getComputedStyle(node).stroke)
     const lightGraphColors = graphColors()
     const branchGraphColors = lightGraphColors[0] == lightGraphColors[1] && lightGraphColors[0] != lightGraphColors[2]
-        && new Set([...graphRows[0].querySelectorAll("path")].map(path => getComputedStyle(path).stroke)).size == 2
-    const fileButton = element(".change-file button")
+        && new Set([...graphRows[0].querySelector("svg")!.querySelectorAll("path")].map(path => getComputedStyle(path).stroke)).size == 2
+    const fileButton = element(".change-file button[aria-expanded]")
     fileButton.dispatchEvent(new MouseEvent("mousedown", { button: 0, detail: 1, bubbles: true, cancelable: true, composed: true }))
     await settle()
     const expandedOnMouseDown = fileButton.getAttribute("aria-expanded") == "true"
@@ -272,7 +271,7 @@ async function checkRenderer() {
     const commitPanel = element(`#${CSS.escape(commitTrigger.getAttribute("aria-controls")!)}`)
     const commitExpanded = commitTrigger.getAttribute("aria-expanded") == "true" && !commitPanel.hidden
     const commitNodes = [...document.querySelectorAll<HTMLElement>(".commit-heading > span:first-child")]
-    const commitLine = getComputedStyle(commitTrigger, "::before")
+    const commitLine = getComputedStyle(commitTrigger.parentElement!, "::before")
     const fileLine = getComputedStyle(element(".inspect-commit .change-file"), "::before")
     const commitGraph = commitNodes.length == 2
         && commitNodes.every(node => getComputedStyle(node).borderRadius == "50%")
@@ -294,7 +293,7 @@ async function checkRenderer() {
             hunk: 0,
         },
     ]
-    element(".inspect-commit .change-file button").click()
+    element(".inspect-commit .change-file button[aria-expanded]").click()
     await settle()
     const compactDiff = element(".inspect-commit .pierre-diff")
     const commitDiffClear = getComputedStyle(element(".inspect-commit .diff-inspector"), "::before").content == "none"
@@ -362,7 +361,7 @@ async function checkRenderer() {
     const stickyFile = secondFile.querySelector<HTMLElement>(".change-file")!
     const stickyCommit = secondFile.closest(".inspect-commit")!.querySelector<HTMLElement>(".commit-heading")!
     const stickyCommitRow = Math.abs(stickyCommit.getBoundingClientRect().top - outer.getBoundingClientRect().top - outer.clientTop) <= 1
-    const stickyCommitOpaque = !getComputedStyle(stickyCommit).backgroundColor.startsWith("rgba")
+    const stickyCommitOpaque = !getComputedStyle(stickyCommit.parentElement!).backgroundColor.startsWith("rgba")
     const stickyFileRow = Math.abs(stickyFile.getBoundingClientRect().top - stickyCommit.getBoundingClientRect().bottom) <= 1
     const compactFileControls = !secondFile.querySelector(".diff-toolbar")
         && stickyFile.querySelectorAll(".diff-controls button").length == 4
@@ -474,8 +473,10 @@ async function checkRenderer() {
     const showGraphButtonCompact = showGraphBounds.width < 40
     const graphToggleStaysInRail = hideGraphButtonInRail && showGraphButton.closest(".repository-rail") != null
         && showGraphButton == hideGraphButton
+    const graphDesk = element(".graph-desk")
     const graphFullyHidden = element(".graph-sidebar").getBoundingClientRect().width == 0
-        && element(".branch-columns").getBoundingClientRect().left == element(".graph-desk").getBoundingClientRect().left
+        && element(".branch-columns").getBoundingClientRect().left
+            == graphDesk.getBoundingClientRect().left + parseFloat(getComputedStyle(graphDesk).paddingLeft)
     showGraphButton.click()
     await settle()
     const graphRestored = element(".graph-sidebar").getBoundingClientRect().width > 0
@@ -502,7 +503,7 @@ async function checkRenderer() {
     const comparisonSharedRows = comparisonRow.getBoundingClientRect().height <= 31
         && !!comparisonRow.querySelector(".file-status svg")
         && getComputedStyle(element(".branch-comparison .file-folder")).textOverflow == "ellipsis"
-    element(".branch-comparison .change-file button").click()
+    element(".branch-comparison .change-file button[aria-expanded]").click()
     await settle()
     const comparisonPatch = !!comparison.querySelector(".pierre-diff")?.shadowRoot?.querySelector("[data-line]")
     const comparisonGeometry = comparison.getBoundingClientRect().width >= 620 && comparison.scrollWidth == comparison.clientWidth
@@ -585,7 +586,7 @@ async function checkRenderer() {
             : result
     }
     const addedRow = [...fileHistory.querySelectorAll<HTMLElement>(".history-entry")].at(-1)!
-    addedRow.querySelector<HTMLButtonElement>(".change-file > button")!.click()
+    addedRow.querySelector<HTMLButtonElement>(".change-file > button[aria-expanded]")!.click()
     await settle()
     let historyAddedFileScroll = true
     for (const layout of ["Unified", "Side by side"]) {
@@ -602,7 +603,7 @@ async function checkRenderer() {
         await settle()
         historyAddedFileScroll &&= addedShadow.textContent!.includes("addedLine1 =")
     }
-    addedRow.querySelector<HTMLButtonElement>(".change-file > button")!.click()
+    addedRow.querySelector<HTMLButtonElement>(".change-file > button[aria-expanded]")!.click()
     fileHistory.scrollTop = 40
     await settle()
     historyRow.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 500, clientY: 180 }))
@@ -643,10 +644,12 @@ async function checkRenderer() {
     ;[...worktreeDialog.querySelectorAll("button")].find(button => button.textContent == "Cancel")!.click()
     await settle()
     const worktreeCancelled = !document.querySelector('dialog[aria-label="Worktree operation"]') && worktreeExecutions == 0
+    // Worktree controls sit in the column header, which stays a single compact row above the inspection.
     const worktreeRow = element(".column-worktree")
-    const inspectionBounds = worktreeRow.parentElement!.querySelector(".column-inspection")!.getBoundingClientRect()
-    const rowBounds = worktreeRow.getBoundingClientRect()
-    const worktreeRowCompact = rowBounds.height <= 34 && Math.abs(inspectionBounds.top - rowBounds.bottom) <= 1
+    const worktreeColumn = worktreeRow.closest<HTMLElement>(".branch-column")!
+    const inspectionBounds = worktreeColumn.querySelector(".column-inspection")!.getBoundingClientRect()
+    const rowBounds = worktreeColumn.querySelector("header")!.getBoundingClientRect()
+    const worktreeRowCompact = rowBounds.height <= 48 && Math.abs(inspectionBounds.top - rowBounds.bottom) <= 1
     const stylesheets = document.adoptedStyleSheets.length
     root.dispose()
     const graphScrollDrift = await checkBranchGraphScroll()
@@ -786,10 +789,12 @@ async function checkVirtualWorktree() {
     try {
         await settle()
         const column = document.querySelector<HTMLElement>("[data-column-id='virtual:inspection']")!
+        // Worktree controls live inside the column header: name on the left, overflow menu on the right.
         const row = column.querySelector<HTMLElement>(".column-worktree")!
-        const bounds = row.getBoundingClientRect()
+        const header = column.querySelector<HTMLElement>("header")!
+        const bounds = header.getBoundingClientRect()
         const body = column.querySelector<HTMLElement>(".column-inspection")!
-        const compact = bounds.height <= 34 && Math.abs(body.getBoundingClientRect().top - bounds.bottom) <= 1
+        const compact = bounds.height <= 48 && Math.abs(body.getBoundingClientRect().top - bounds.bottom) <= 1
             && body.textContent!.includes("No Working Changes")
         row.querySelector<HTMLButtonElement>("[aria-label='Worktree actions']")!.click()
         await settle()
@@ -808,18 +813,20 @@ async function checkVirtualWorktree() {
         row.querySelector<HTMLButtonElement>("[aria-label='Rename worktree']")!.click()
         await settle()
         const input = row.querySelector<HTMLInputElement>("input")!
-        const inline = document.activeElement == input && input.value == "inspection" && row.getBoundingClientRect().height == bounds.height
+        const inline = document.activeElement == input && input.value == "inspection" && header.getBoundingClientRect().height == bounds.height
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
         await settle()
-        const switchButton = row.querySelector<HTMLButtonElement>("[aria-label='Switch worktree branch']")!
-        switchButton.click()
+        const menuButton = row.querySelector<HTMLButtonElement>("[aria-label='Worktree actions']")!
+        menuButton.click()
+        await settle()
+        row.querySelector<HTMLButtonElement>("[role='menu'] [aria-label='Switch worktree branch']")!.click()
         await settle()
         const search = row.querySelector<HTMLInputElement>("[aria-label='Command Lens search']")!
         const popup = row.querySelector<HTMLDialogElement>("dialog")!
         const searchable = popup.open && document.activeElement == search && popup.getBoundingClientRect().right <= innerWidth
         search.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
         await settle()
-        const controls = compact && overflow && inline && searchable && document.activeElement == switchButton && !row.querySelector("dialog, input, details")
+        const controls = compact && overflow && inline && searchable && document.activeElement == menuButton && !row.querySelector("dialog, input, details")
         scenario.api.previewWorktree = async (_id, request) => ({
             ok: true,
             preview: {
@@ -835,7 +842,7 @@ async function checkVirtualWorktree() {
         })
         row.querySelector<HTMLButtonElement>("[aria-label='Worktree actions']")!.click()
         await settle()
-        row.querySelector<HTMLButtonElement>("[role='menuitem']")!.click()
+        ;[...row.querySelectorAll<HTMLButtonElement>("[role='menuitem']")].find(item => item.textContent!.includes("Remove worktree"))!.click()
         await settle()
         const dialog = document.querySelector<HTMLDialogElement>("dialog[aria-label='Worktree operation']")!
         const remove = [...dialog.querySelectorAll("button")].find(button => button.textContent == "Remove worktree")!
@@ -851,4 +858,6 @@ async function checkVirtualWorktree() {
     }
 }
 
-Object.assign(window, { rendererChecks: checkRenderer() })
+Object.assign(window, {
+    rendererChecks: checkRenderer().catch(error => Promise.reject(new Error(error instanceof Error ? error.stack ?? error.message : String(error)))),
+})

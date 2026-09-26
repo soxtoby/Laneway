@@ -153,7 +153,9 @@ test("worktree row renames inline and switches through branch search; removal st
         click(button(container.querySelector("dialog")!, "Cancel"))
         await flush(root)
 
-        const switchBranch = row.querySelector<HTMLButtonElement>("[aria-label='Switch worktree branch']")!
+        click(row.querySelector<HTMLButtonElement>("[aria-label='Worktree actions']")!)
+        await flush(root)
+        const switchBranch = row.querySelector<HTMLButtonElement>("[role='menu'] [aria-label='Switch worktree branch']")!
         click(switchBranch)
         await flush(root)
         expect(container.querySelector(".lens-results")!.textContent).not.toContain("feature/laneway")
@@ -369,8 +371,7 @@ describe("Remix repository entry renderer", () => {
         expect(container.textContent).toContain("feature/laneway")
         expect(container.textContent).not.toContain("other/team")
         expect(container.querySelector(".graph-row svg path")).not.toBeNull()
-        click(container.querySelector<HTMLButtonElement>("[aria-label='Collapse repository sidebar']")!)
-        root.flush()
+        // The rail starts as the collapsed icon strip.
         expect(container.querySelector(".shell")?.classList.contains("rail-collapsed")).toBe(true)
         expect(container.querySelector(".repository-close")).toBeNull()
         expect(container.querySelector(".rail-footer > button")?.getAttribute("aria-label")).toBe("Expand repository sidebar")
@@ -380,6 +381,12 @@ describe("Remix repository entry renderer", () => {
         click(container.querySelector<HTMLButtonElement>("[aria-label='Expand repository sidebar']")!)
         root.flush()
         expect(container.querySelector(".shell")?.classList.contains("rail-collapsed")).toBe(false)
+        expect(container.querySelector(".repository-close")).not.toBeNull()
+        click(container.querySelector<HTMLButtonElement>("[aria-label='Collapse repository sidebar']")!)
+        root.flush()
+        expect(container.querySelector(".shell")?.classList.contains("rail-collapsed")).toBe(true)
+        click(container.querySelector<HTMLButtonElement>("[aria-label='Expand repository sidebar']")!)
+        root.flush()
         click(container.querySelector<HTMLButtonElement>(".masthead .lens-button")!)
         root.flush()
         expect(container.querySelector(".command-lens")).not.toBeNull()
@@ -875,7 +882,7 @@ describe("Branch Comparison", () => {
         click(button(comparison, "Load more files"))
         await flush(root)
         expect(comparison.querySelectorAll(".file-tree .change-file")).toHaveLength(2)
-        click(comparison.querySelector<HTMLButtonElement>(".change-file button")!)
+        click(comparison.querySelector<HTMLButtonElement>(".change-file button[aria-expanded]")!)
         await flush(root)
         expect(patches).toBe(1)
         expect(comparison.querySelector(".pierre-diff")).not.toBeNull()

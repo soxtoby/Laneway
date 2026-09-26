@@ -1,5 +1,6 @@
 import type { Appearance, GitSettingsState } from "@laneway/shared"
-import { css, type Handle, on } from "remix/ui"
+import { css, type Handle, on, type RemixNode } from "remix/ui"
+import { BrandMark, Icon } from "./icons"
 import type { PullControl } from "./pull-latest"
 
 export interface EntryActions {
@@ -17,106 +18,109 @@ export function LanewayHeader(
         openSettings(): void
         toggleAppearance(): void
         repositoryActions?: { busy: boolean; stashes(): void; undo(): void; redo(): void; pull: PullControl }
+        tabs?: RemixNode
     }>,
 ) {
-    return () => (
-        <header class="masthead" mix={masthead}>
-            <div class="brand" mix={brand}>
-                <span class="brand-mark" aria-hidden="true" mix={brandMark}>
-                    <i mix={brandMarkI}>
-                    </i>
-                    <i mix={brandMarkI}>
-                    </i>
-                    <i mix={brandMarkI}>
-                    </i>
-                </span>
-                <span mix={brandSpan}>
-                    Laneway
-                </span>
-            </div>
-            {handle.props.openLens && (
-                <button class="lens-button" type="button" mix={[lensButton, on("click", handle.props.openLens)]}>
-                    <span>⌕</span>Command Lens<kbd>Ctrl K</kbd>
-                </button>
-            )}
-            <div class="header-actions" mix={headerActions}>
-                {handle.props.repositoryActions && (
-                    <div class="repository-actions" mix={repositoryActions}>
-                        {handle.props.repositoryActions.pull.running
-                            ? (
-                                <span class="pull-progress" mix={pullProgress} role="status" aria-live="polite">
-                                    <span mix={pullProgressText}>{handle.props.repositoryActions.pull.running.message}</span>
+    return () => {
+        const props = handle.props
+        const themeLabel = props.appearance == "dark" ? "Switch to light appearance" : "Switch to dark appearance"
+        return (
+            <header class="masthead" mix={masthead}>
+                <div class="brand" mix={brand}>
+                    <BrandMark size={26} />
+                    <span mix={brandName}>Laneway</span>
+                </div>
+                <div class="masthead-center" mix={mastheadCenter}>
+                    {props.tabs}
+                </div>
+                <div class="header-actions" mix={headerActions}>
+                    {props.openLens && (
+                        <button
+                            class="lens-button"
+                            type="button"
+                            aria-label="Command Lens"
+                            title="Command Lens (Ctrl K)"
+                            mix={[iconButton, on("click", props.openLens)]}
+                        >
+                            <Icon name="search" />
+                        </button>
+                    )}
+                    {props.repositoryActions && (
+                        <div class="repository-actions" mix={repositoryActions}>
+                            {props.repositoryActions.pull.running
+                                ? (
+                                    <span class="pull-progress" mix={pullProgress} role="status" aria-live="polite">
+                                        <span mix={pullProgressText}>{props.repositoryActions.pull.running.message}</span>
+                                        <button
+                                            type="button"
+                                            class="pull-cancel"
+                                            aria-label="Cancel pull"
+                                            mix={[labeledButton, on("click", props.repositoryActions.pull.cancel)]}
+                                        >
+                                            Cancel
+                                        </button>
+                                    </span>
+                                )
+                                : (
                                     <button
                                         type="button"
-                                        class="pull-cancel"
-                                        aria-label="Cancel pull"
-                                        mix={[topBarButton, on("click", handle.props.repositoryActions.pull.cancel)]}
+                                        class="pull-latest"
+                                        title={props.repositoryActions.pull.hint}
+                                        aria-label="Pull latest"
+                                        disabled={props.repositoryActions.busy || !props.repositoryActions.pull.available}
+                                        mix={[labeledButton, primaryButton, on("click", props.repositoryActions.pull.start)]}
                                     >
-                                        Cancel
+                                        <Icon name="pull" />
+                                        <span>Pull latest</span>
                                     </button>
-                                </span>
-                            )
-                            : (
-                                <button
-                                    type="button"
-                                    class="pull-latest"
-                                    title={handle.props.repositoryActions.pull.hint}
-                                    aria-label="Pull latest"
-                                    disabled={handle.props.repositoryActions.busy || !handle.props.repositoryActions.pull.available}
-                                    mix={[topBarButton, on("click", handle.props.repositoryActions.pull.start)]}
-                                >
-                                    Pull latest
-                                </button>
-                            )}
-                        <button
-                            type="button"
-                            disabled={handle.props.repositoryActions.busy}
-                            mix={[topBarButton, on("click", handle.props.repositoryActions.stashes)]}
-                        >
-                            Stashes
-                        </button>
-                        <button
-                            type="button"
-                            aria-label="Undo last operation"
-                            title="Undo (Ctrl+Z)"
-                            disabled={handle.props.repositoryActions.busy}
-                            mix={[iconButton, on("click", handle.props.repositoryActions.undo)]}
-                        >
-                            ↶
-                        </button>
-                        <button
-                            type="button"
-                            aria-label="Redo operation"
-                            title="Redo (Ctrl+Shift+Z)"
-                            disabled={handle.props.repositoryActions.busy}
-                            mix={[iconButton, on("click", handle.props.repositoryActions.redo)]}
-                        >
-                            ↷
-                        </button>
-                    </div>
-                )}
-                <button
-                    class="icon-button"
-                    type="button"
-                    aria-label={handle.props.appearance == "dark" ? "Switch to light appearance" : "Switch to dark appearance"}
-                    title={handle.props.appearance == "dark" ? "Switch to light appearance" : "Switch to dark appearance"}
-                    mix={[iconButton, on("click", handle.props.toggleAppearance)]}
-                >
-                    {handle.props.appearance == "dark" ? "☀" : "☽"}
-                </button>
-                <button
-                    class="icon-button"
-                    type="button"
-                    aria-label="Git settings"
-                    title="Git settings"
-                    disabled={handle.props.busy}
-                    mix={[iconButton, on("click", handle.props.openSettings)]}
-                >
-                    ⚙
-                </button>
-            </div>
-        </header>
-    )
+                                )}
+                            <button type="button" disabled={props.repositoryActions.busy} mix={[labeledButton, on("click", props.repositoryActions.stashes)]}>
+                                <Icon name="stash" />
+                                <span>Stashes</span>
+                            </button>
+                            <button
+                                type="button"
+                                aria-label="Undo last operation"
+                                title="Undo (Ctrl+Z)"
+                                disabled={props.repositoryActions.busy}
+                                mix={[iconButton, on("click", props.repositoryActions.undo)]}
+                            >
+                                <Icon name="undo" />
+                            </button>
+                            <button
+                                type="button"
+                                aria-label="Redo operation"
+                                title="Redo (Ctrl+Shift+Z)"
+                                disabled={props.repositoryActions.busy}
+                                mix={[iconButton, on("click", props.repositoryActions.redo)]}
+                            >
+                                <Icon name="redo" />
+                            </button>
+                        </div>
+                    )}
+                    <button
+                        class="icon-button"
+                        type="button"
+                        aria-label={themeLabel}
+                        title={themeLabel}
+                        mix={[iconButton, on("click", props.toggleAppearance)]}
+                    >
+                        <Icon name={props.appearance == "dark" ? "sun" : "moon"} />
+                    </button>
+                    <button
+                        class="icon-button"
+                        type="button"
+                        aria-label="Git settings"
+                        title="Git settings"
+                        disabled={props.busy}
+                        mix={[iconButton, on("click", props.openSettings)]}
+                    >
+                        <Icon name="sliders" />
+                    </button>
+                </div>
+            </header>
+        )
+    }
 }
 
 export function Welcome(handle: Handle<EntryActions & { settings: GitSettingsState }>) {
@@ -168,76 +172,38 @@ function EntryCard(handle: Handle<{ title: string; description: string; disabled
 }
 
 const masthead = css({
-    padding: "0 8px 0 8px",
+    padding: "0 10px 0 14px",
     display: "grid",
     alignItems: "center",
-    gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)",
+    gridTemplateColumns: "auto minmax(0, 1fr) auto",
     gap: "16px",
-    borderBottom: "1px solid var(--line)",
-    background: "var(--panel-deep)",
+    borderBottom: "1px solid var(--line-strong)",
+    background: "var(--panel)",
 })
 
 const brand = css({
-    height: "28px",
     display: "flex",
     alignItems: "center",
-    gap: "8px",
-    textAlign: "left",
+    gap: "10px",
+    paddingRight: "4px",
+    whiteSpace: "nowrap",
 })
 
-const brandMark = css({
-    position: "relative",
-    width: "18px",
-    height: "18px",
-    flex: "0 0 auto",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "4px",
-    background: "var(--panel)",
-    "&:last-child": {
-        fontSize: "13px",
-        fontWeight: "600",
-        letterSpacing: "0.01em",
-    },
-    "&::before": {
-        position: "absolute",
-        top: "3px",
-        bottom: "3px",
-        left: "7px",
-        width: "1px",
-        content: '""',
-        background: "var(--line-strong)",
-    },
+const brandName = css({
+    fontFamily: '"Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif',
+    fontSize: "17px",
+    fontWeight: "600",
+    letterSpacing: "-0.01em",
 })
 
-const brandMarkI = css({
-    position: "absolute",
-    left: "5px",
-    width: "5px",
-    height: "5px",
-    border: "1px solid var(--accent)",
-    borderRadius: "50%",
-    background: "var(--panel)",
-    "&:nth-child(1)": {
-        top: "1px",
-    },
-    "&:nth-child(2)": {
-        top: "6px",
-    },
-    "&:nth-child(3)": {
-        top: "11px",
-    },
-})
-
-const brandSpan = css({
-    "&:last-child": {
-        fontSize: "13px",
-        fontWeight: "600",
-        letterSpacing: "0.01em",
-    },
+const mastheadCenter = css({
+    minWidth: "0",
+    alignSelf: "stretch",
+    display: "flex",
+    alignItems: "stretch",
 })
 
 const headerActions = css({
-    gridColumn: "3",
     justifySelf: "end",
     display: "flex",
     alignItems: "center",
@@ -248,16 +214,16 @@ const repositoryActions = css({
     display: "flex",
     alignItems: "center",
     gap: "4px",
-    marginRight: "4px",
-    paddingRight: "8px",
-    borderRight: "1px solid var(--line)",
+    margin: "0 4px 0 4px",
+    padding: "0 8px",
+    borderInline: "1px solid var(--line-strong)",
 })
 
 const pullProgress = css({
     display: "flex",
     alignItems: "center",
     gap: "6px",
-    height: "28px",
+    height: "30px",
     padding: "0 4px 0 8px",
     color: "var(--muted)",
     fontSize: "12px",
@@ -270,36 +236,47 @@ const pullProgressText = css({
     textOverflow: "ellipsis",
 })
 
-const topBarButton = css({
-    height: "28px",
-    padding: "0 7px",
-    color: "var(--muted)",
-    border: "1px solid transparent",
-    borderRadius: "4px",
-    background: "transparent",
+const labeledButton = css({
+    height: "30px",
+    padding: "0 10px 0 8px",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    color: "var(--text)",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "var(--radius)",
+    background: "var(--panel)",
     font: "inherit",
-    "&:hover:not(:disabled)": { color: "var(--text)", borderColor: "var(--line-strong)", background: "var(--control)" },
+    fontSize: "12.5px",
+    fontWeight: "500",
+    whiteSpace: "nowrap",
+    "&:hover:not(:disabled)": { background: "var(--control-hover)" },
+})
+
+const primaryButton = css({
+    color: "var(--accent-ink)",
+    borderColor: "var(--accent)",
+    background: "var(--accent)",
+    fontWeight: "600",
+    "&:hover:not(:disabled)": { background: "var(--accent-hover)", borderColor: "var(--accent-hover)" },
 })
 
 const iconButton = css({
-    width: "28px",
-    height: "28px",
+    width: "30px",
+    height: "30px",
     padding: "0",
     display: "grid",
     placeItems: "center",
-    color: "var(--muted)",
+    color: "var(--text)",
     border: "1px solid transparent",
-    borderRadius: "4px",
+    borderRadius: "var(--radius)",
     background: "transparent",
-    fontSize: "14px",
-    lineHeight: "1",
     "&:hover:not(:disabled)": {
-        color: "var(--text)",
         borderColor: "var(--line-strong)",
-        background: "var(--control)",
+        background: "var(--control-hover)",
     },
     "&:active:not(:disabled)": {
-        background: "var(--control-hover)",
+        background: "var(--control)",
     },
 })
 
@@ -371,46 +348,4 @@ const entryCardStrong = css({
 const entryCardSpan = css({
     color: "var(--muted)",
     fontSize: "12px",
-})
-
-const lensButton = css({
-    width: "clamp(180px, 28vw, 360px)",
-    height: "28px",
-    padding: "0 8px",
-    display: "grid",
-    gridTemplateColumns: "auto 1fr auto",
-    alignItems: "center",
-    gap: "7px",
-    overflow: "hidden",
-    color: "var(--muted)",
-    textAlign: "left",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "4px",
-    background: "var(--control)",
-    fontSize: "12px",
-    whiteSpace: "nowrap",
-    "&:hover": {
-        color: "var(--text)",
-        background: "var(--control-hover)",
-    },
-})
-
-export function RepositoryRailToggle(handle: Handle<{ collapsed: boolean; toggle(): void }>) {
-    return () => (
-        <button
-            class={`repository-rail-toggle ${handle.props.collapsed ? "collapsed" : ""}`}
-            type="button"
-            aria-label={handle.props.collapsed ? "Expand repository sidebar" : "Collapse repository sidebar"}
-            title={handle.props.collapsed ? "Expand repository sidebar" : "Collapse repository sidebar"}
-            aria-expanded={!handle.props.collapsed}
-            mix={[iconButton, repositoryRailToggle, on("click", handle.props.toggle)]}
-        >
-            {handle.props.collapsed ? "»" : "«"}
-        </button>
-    )
-}
-
-const repositoryRailToggle = css({
-    "&.collapsed": { width: "28px" },
-    width: "100%",
 })

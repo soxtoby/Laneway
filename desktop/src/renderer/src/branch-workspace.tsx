@@ -6,10 +6,11 @@ import { graphLineColor, graphRowHeight, type GraphRowLayout, layoutBranchGraph 
 import { CommandLens } from "./command-lens"
 import { createConflictResolution } from "./conflict-resolution"
 import { errorMessage, type NoticeState } from "./feedback"
+import { Icon } from "./icons"
 import { createInspection } from "./inspection"
 import { createLocalBranchActions } from "./local-branch-actions"
 import { createPullLatest, type PullControl } from "./pull-latest"
-import { RepositoryRailToggle } from "./workspace"
+import { baseName, RepositoryRail } from "./repository-rail"
 import { createWorktreeActions } from "./worktree-actions"
 import { reconcileWorktreeColumns, workspaceGraph } from "./worktree-columns"
 
@@ -61,6 +62,7 @@ export interface BranchWorkspace {
     activate(repositoryId: string): void
     deactivate(): void
     render(active: AvailableOpenRepository, workspace: Workspace, railCollapsed?: boolean, toggleRail?: () => void): RemixNode
+    columnTabs(active: AvailableOpenRepository): RemixNode
     openLens(): void
     renderLens(workspace: Workspace): RemixNode
     repositoryActions(repositoryId: string, mainWorktree: string): { busy: boolean; stashes(): void; undo(): void; redo(): void; pull: PullControl }
@@ -305,7 +307,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                     <RepositoryRail
                         railCollapsed={railCollapsed}
                         toggleRail={toggleRail}
-                        active={active}
+                        activeId={active.id}
                         workspace={workspace}
                         busy={state.loading}
                         selectRepository={options.selectRepository}
@@ -315,12 +317,24 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                         commitRepositoryOrder={options.commitRepositoryOrder}
                         cancelRepositoryMove={options.cancelRepositoryMove}
                         addRepository={options.addRepository}
-                        graphCollapsed={state.graphCollapsed}
-                        toggleGraph={() => {
-                            state.graphCollapsed = !state.graphCollapsed
-                            state.showSettings = false
-                            void options.update()
-                        }}
+                        heading={
+                            <button
+                                type="button"
+                                aria-label={state.graphCollapsed ? "Show Branch Graph" : "Hide Branch Graph"}
+                                aria-expanded={!state.graphCollapsed}
+                                title={state.graphCollapsed ? "Show Branch Graph" : "Hide Branch Graph"}
+                                mix={[
+                                    graphPanelToggleButton,
+                                    on("click", () => {
+                                        state.graphCollapsed = !state.graphCollapsed
+                                        state.showSettings = false
+                                        void options.update()
+                                    }),
+                                ]}
+                            >
+                                <Icon name="graph" size={15} />
+                            </button>
+                        }
                     />
                     <section class="graph-desk" mix={graphDesk}>
                         <div class={`graph-layout ${state.graphCollapsed ? "graph-collapsed" : ""}`} mix={graphLayout}>
@@ -353,7 +367,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                             mix={[refreshButton, on("click", () => read(active.id, true, true))]}
                                         >
                                             <span aria-hidden="true" mix={refreshButtonSpan}>
-                                                ↻
+                                                <Icon name="refresh" size={15} />
                                             </span>
                                         </button>
                                         <button
@@ -368,7 +382,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                                 }),
                                             ]}
                                         >
-                                            ⚙
+                                            <Icon name="sliders" size={15} />
                                         </button>
                                     </div>
                                     {state.showSettings && graph && (
@@ -523,6 +537,52 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                         </div>
                     </section>
                 </section>
+            )
+        },
+        columnTabs(active) {
+            const state = stateFor(active.id)
+            const graph = state.graph && workspaceGraph(state.graph)
+            if (!graph)
+                return null
+            const columns = state.openedBranchIds.map(id =>
+                graph.branches.find(branch => branch.id == id) ?? graph.virtualBranches.find(branch => branch.id == id)
+            ).filter(column => column != undefined)
+            if (columns.length == 0)
+                return null
+            return (
+                <div class="column-tabs" role="tablist" aria-label="Open columns" mix={columnTabs}>
+                    {columns.map(column => {
+                        const identity = columnIdentity(column, backingPath(active.id, column.id))
+                        const collapsed = state.collapsedColumnIds.includes(column.id)
+                        return (
+                            <button
+                                type="button"
+                                role="tab"
+                                class={`column-tab ${column.id == state.focusedColumnId ? "active" : ""} ${collapsed ? "collapsed" : ""}`}
+                                aria-selected={column.id == state.focusedColumnId}
+                                title={identity.kind}
+                                key={column.id}
+                                mix={[
+                                    columnTab,
+                                    on("click", () => {
+                                        const element = [...document.querySelectorAll<HTMLElement>("[data-column-id]")].find(node =>
+                                            node.dataset.columnId == column.id
+                                        )
+                                        element?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" })
+                                        ;(element?.querySelector<HTMLElement>(".expand-column") ?? element)?.focus({ preventScroll: true })
+                                        focusColumn(active.id, column.id)
+                                        void options.update()
+                                    }),
+                                ]}
+                            >
+                                <span mix={[columnKindIcon, identity.tone]}>
+                                    <Icon name={identity.icon} size={13} />
+                                </span>
+                                <span mix={columnTabName}>{identity.name}</span>
+                            </button>
+                        )
+                    })}
+                </div>
             )
         },
         renderLens(workspace) {
@@ -1128,140 +1188,6 @@ function branchesForDisplay(graph: BranchGraph, showAll: boolean, collapsedBranc
     })
 }
 
-let draggingRepositoryId: string | undefined
-
-function RepositoryRail(
-    handle: Handle<
-        {
-            railCollapsed: boolean
-            toggleRail(): void
-            active: AvailableOpenRepository
-            workspace: Workspace
-            busy: boolean
-            selectRepository(id: string): void
-            closeRepository(id: string): void
-            moveRepository(id: string, targetId: string): void
-            previewRepositoryMove(id: string, targetId: string): void
-            commitRepositoryOrder(): void
-            cancelRepositoryMove(): void
-            addRepository(): void
-            graphCollapsed: boolean
-            toggleGraph(): void
-        }
-    >,
-) {
-    return () => {
-        const props = handle.props
-        return (
-            <aside class="repository-rail graph-rail" mix={repositoryRail}>
-                <div class="rail-heading" mix={railHeading}>
-                    <button
-                        type="button"
-                        aria-label={props.graphCollapsed ? "Show Branch Graph" : "Hide Branch Graph"}
-                        aria-expanded={!props.graphCollapsed}
-                        title={props.graphCollapsed ? "Show Branch Graph" : "Hide Branch Graph"}
-                        mix={[graphPanelToggleButton, on("click", props.toggleGraph)]}
-                    >
-                        {branchGraphIcon()}
-                    </button>
-                    <p class="eyebrow" mix={repositoryRailEyebrow}>
-                        Open repositories
-                    </p>
-                </div>
-                <nav aria-label="Open repositories" mix={openRepositoriesNav}>
-                    {props.workspace.repositories.map((repository, index) => (
-                        <div
-                            class="repository-row"
-                            draggable={!props.busy}
-                            mix={[
-                                repositoryRow,
-                                on("keydown", event => {
-                                    if (event.ctrlKey && event.shiftKey && (event.key == "<" || event.key == ">")) {
-                                        event.preventDefault()
-                                        const target = props.workspace.repositories[index + (event.key == "<" ? -1 : 1)]
-                                        if (target)
-                                            props.moveRepository(repository.id, target.id)
-                                    }
-                                }),
-                                on("dragstart", event => {
-                                    draggingRepositoryId = repository.id
-                                    event.dataTransfer?.setData("text/plain", repository.id)
-                                }),
-                                on("dragover", event => {
-                                    event.preventDefault()
-                                    if (draggingRepositoryId)
-                                        props.previewRepositoryMove(draggingRepositoryId, repository.id)
-                                }),
-                                on("drop", event => {
-                                    event.preventDefault()
-                                    props.commitRepositoryOrder()
-                                    draggingRepositoryId = undefined
-                                }),
-                                on("dragend", () => {
-                                    if (draggingRepositoryId)
-                                        props.cancelRepositoryMove()
-                                    draggingRepositoryId = undefined
-                                }),
-                            ]}
-                        >
-                            <button
-                                class={`repository-item ${props.railCollapsed ? "collapsed" : ""} ${
-                                    repository.id == props.active.id ? "active" : ""
-                                } ${repository.status}`}
-                                type="button"
-                                disabled={props.busy}
-                                title={repository.path}
-                                aria-label={repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name}
-                                data-mousedown-activate
-                                mix={[repositoryItem, on("click", () => props.selectRepository(repository.id))]}
-                            >
-                                <span mix={repositoryItemSpan}>
-                                    {initials(repository.path)}
-                                </span>
-                                {!props.railCollapsed && (
-                                    <span mix={repositoryItemSpan}>
-                                        <strong mix={repositoryItemStrong}>
-                                            {repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name}
-                                        </strong>
-                                        <small mix={repositoryItemSmall}>
-                                            {repository.status == "available" ? repository.info.selectedWorktree : "Unavailable"}
-                                        </small>
-                                    </span>
-                                )}
-                            </button>
-                            {!props.railCollapsed && (
-                                <button
-                                    class="repository-close"
-                                    type="button"
-                                    aria-label={`Close ${repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name}`}
-                                    title="Close repository"
-                                    mix={[repositoryClose, on("click", () => props.closeRepository(repository.id))]}
-                                >
-                                    ×
-                                </button>
-                            )}
-                        </div>
-                    ))}
-                    <button
-                        class={`rail-add ${props.railCollapsed ? "collapsed" : ""}`}
-                        type="button"
-                        aria-label="Add repository"
-                        title="Add repository"
-                        disabled={props.busy}
-                        mix={[railAdd, on("click", props.addRepository)]}
-                    >
-                        <span aria-hidden="true">+</span>
-                        {!props.railCollapsed && <span class="rail-add-label">Add repository</span>}
-                    </button>
-                </nav>
-                <div class="rail-footer" mix={railFooter}>
-                    <RepositoryRailToggle collapsed={props.railCollapsed} toggle={props.toggleRail} />
-                </div>
-            </aside>
-        )
-    }
-}
-
 function GraphSummary(handle: Handle<{ graph: BranchGraph; visibleCount: number }>) {
     return () => (
         <div class="graph-summary" mix={graphSummary}>
@@ -1366,12 +1292,14 @@ function BranchRow(
                         </small>
                         {branch.checkedOut.map(worktree => (
                             <span class="worktree-chip" title={worktree.path} mix={worktreeChip}>
-                                ⌂ {worktree.name}
+                                <Icon name="home" size={11} />
+                                {worktree.name}
                             </span>
                         ))}
                         {branch.tags.map(tag => (
                             <span class="tag-chip" mix={tagChip}>
-                                ⌑ {tag}
+                                <Icon name="tag" size={11} />
+                                {tag}
                             </span>
                         ))}
                         {branch.unresolved && (
@@ -1391,7 +1319,7 @@ function BranchRow(
                                     }),
                                 ]}
                             >
-                                ◆
+                                <Icon name="stash" size={12} />
                             </button>
                         ))}
                         {(branch.ahead > 0 || branch.behind > 0) && (
@@ -1548,7 +1476,9 @@ function BranchColumns(
                                         aria-label={`Expand ${column.name}`}
                                         mix={[collapsedColumnButton, on("click", () => props.collapse(column.id))]}
                                     >
-                                        <span aria-hidden="true">»</span>
+                                        <span aria-hidden="true" mix={expandColumnIcon}>
+                                            <Icon name="collapse-right" size={14} />
+                                        </span>
                                         <span>{column.name}</span>
                                         <span>{props.inspection.workingSummary(props.repositoryId, column, props.graph, props.worktreePath(column.id))}</span>
                                     </button>
@@ -1601,17 +1531,23 @@ function BranchColumns(
                                                 aria-label={`Collapse ${column.name}`}
                                                 mix={[branchColumnButton, on("click", () => props.collapse(column.id))]}
                                             >
-                                                «
+                                                <Icon name="collapse-left" size={15} />
                                             </button>
-                                            <div mix={branchColumnDiv}>
-                                                <span class="column-kind" mix={columnKind}>
-                                                    {column.kind == "branch" ? "Branch" : "Virtual"}
-                                                </span>
+                                            {(() => {
+                                                const identity = columnIdentity(column, props.worktreePath(column.id))
+                                                return (
+                                                    <span class="column-kind" title={identity.kind} mix={[columnKindIcon, identity.tone]}>
+                                                        <Icon name={identity.icon} size={17} />
+                                                    </span>
+                                                )
+                                            })()}
+                                            {!props.worktreePath(column.id) && (
                                                 <h2 mix={branchColumnH2}>
                                                     {column.name}
                                                 </h2>
-                                            </div>
-                                            <div mix={branchColumnDiv}>
+                                            )}
+                                            {props.worktreeControls(column)}
+                                            <div mix={branchColumnActions}>
                                                 {props.inspection.conflictFilter(props.repositoryId, column, props.graph, props.worktreePath(column.id))}
                                                 {props.inspection.filterControl(
                                                     props.repositoryId,
@@ -1623,22 +1559,23 @@ function BranchColumns(
                                                 <button
                                                     type="button"
                                                     title={props.state.maximizedBranchId ? "Restore columns" : "Maximize column"}
+                                                    aria-label={props.state.maximizedBranchId ? "Restore columns" : "Maximize column"}
                                                     mix={[branchColumnButton, on("click", () => props.maximize(column.id))]}
                                                 >
-                                                    {props.state.maximizedBranchId ? "↙" : "↗"}
+                                                    <Icon name={props.state.maximizedBranchId ? "restore" : "maximize"} size={15} />
                                                 </button>
                                                 {!props.worktreePath(column.id) && (
                                                     <button
                                                         type="button"
                                                         title="Close column"
+                                                        aria-label="Close column"
                                                         mix={[branchColumnButton, on("click", () => props.close(column.id))]}
                                                     >
-                                                        ×
+                                                        <Icon name="close" size={15} />
                                                     </button>
                                                 )}
                                             </div>
                                         </header>
-                                        {props.worktreeControls(column)}
                                         {props.inspection.body(
                                             props.repositoryId,
                                             column,
@@ -1925,25 +1862,91 @@ function shortOid(objectId: string) {
     return objectId.slice(0, 8)
 }
 
-function baseName(path: string) {
-    return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path
+type ColumnNode = BranchGraph["branches"][number] | BranchGraph["virtualBranches"][number]
+
+// What a column *is* drives its icon (and the icon's tooltip); the name is the worktree or branch.
+function columnIdentity(column: ColumnNode, worktreePath: string | undefined) {
+    const worktree = column.kind == "branch" ? column.checkedOut.find(item => item.path == worktreePath) : column.worktree
+    if (worktree) {
+        return worktree.main
+            ? { icon: "home" as const, kind: "Main worktree", name: worktree.name, tone: toneMain }
+            : { icon: "home" as const, kind: column.kind == "virtual" ? "Virtual worktree" : "Worktree", name: worktree.name, tone: toneWorktree }
+    }
+    return {
+        icon: "branch" as const,
+        kind: column.kind == "branch" ? column.remoteOnly ? "Remote branch" : "Branch" : "Virtual branch",
+        name: column.name,
+        tone: toneBranch,
+    }
 }
 
-function initials(path: string) {
-    const words = baseName(path).split(/[-_.\s]+/).filter(Boolean)
-    return (words.length > 1 ? words[0][0] + words[1][0] : words[0]?.slice(0, 2) ?? "GW").toUpperCase()
-}
+const toneMain = css({ color: "var(--accent)" })
+const toneWorktree = css({ color: "var(--ok)" })
+const toneBranch = css({ color: "var(--focus)" })
 
-function branchGraphIcon() {
-    return (
-        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-            <circle cx="4" cy="3" r="2" />
-            <circle cx="12" cy="5" r="2" />
-            <circle cx="4" cy="13" r="2" />
-            <path d="M4 5v6M6 8h2a4 4 0 0 0 4-4" />
-        </svg>
-    )
-}
+const columnKindIcon = css({
+    flex: "0 0 auto",
+    display: "grid",
+    placeItems: "center",
+    width: "18px",
+    height: "18px",
+})
+
+const columnTabs = css({
+    display: "flex",
+    alignItems: "stretch",
+    minWidth: "0",
+    overflow: "hidden",
+})
+
+const columnTab = css({
+    position: "relative",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "7px",
+    maxWidth: "220px",
+    minWidth: "0",
+    padding: "0 12px",
+    color: "var(--muted)",
+    border: "0",
+    borderRadius: "0",
+    background: "transparent",
+    fontSize: "12.5px",
+    fontWeight: "500",
+    "&:hover": { color: "var(--text)", background: "var(--hover)" },
+    "&.collapsed": { color: "var(--faint)", fontStyle: "italic" },
+    "&.active": { color: "var(--text)", fontWeight: "600" },
+    "&.active::before": {
+        content: '""',
+        position: "absolute",
+        left: "8px",
+        right: "8px",
+        bottom: "-1px",
+        height: "3px",
+        borderRadius: "2px 2px 0 0",
+        background: "var(--accent)",
+    },
+    "&:focus-visible": { outlineOffset: "-2px" },
+})
+
+const columnTabName = css({
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+})
+
+const expandColumnIcon = css({
+    display: "grid",
+    placeItems: "center",
+})
+
+const branchColumnActions = css({
+    order: "1",
+    flex: "0 0 auto",
+    display: "flex",
+    alignItems: "center",
+    gap: "2px",
+})
 
 const workspaceStyle = css({
     height: "100%",
@@ -1955,23 +1958,25 @@ const graphDesk = css({
     position: "relative",
     minWidth: "0",
     minHeight: "0",
+    padding: "var(--gutter) var(--gutter) var(--gutter) 4px",
     display: "flex",
     flexDirection: "column",
     overflow: "hidden",
+    background: "var(--canvas)",
 })
 
 const graphToolbar = css({
     position: "relative",
     flexShrink: "0",
     flexWrap: "wrap",
-    minHeight: "38px",
-    padding: "0 8px 0 12px",
+    minHeight: "46px",
+    padding: "0 8px 0 14px",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     gap: "4px 8px",
     borderBottom: "1px solid var(--line)",
-    background: "var(--panel-deep)",
+    background: "var(--panel)",
 })
 
 const graphToolbarDiv = css({
@@ -1987,13 +1992,20 @@ const graphToolbarDiv = css({
 const eyebrow = css({
     margin: "0",
     flex: "0 0 auto",
+    color: "var(--faint)",
+    fontSize: "10.5px",
+    fontWeight: "700",
+    letterSpacing: "0.07em",
+    textTransform: "uppercase",
 })
 
 const graphToolbarH1 = css({
     margin: "0",
     overflow: "hidden",
-    fontSize: "14px",
+    fontFamily: '"Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif',
+    fontSize: "16px",
     fontWeight: "600",
+    letterSpacing: "-0.01em",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
 })
@@ -2012,34 +2024,33 @@ const graphActions = css({
 })
 
 const graphPanelToggleButton = css({
-    minWidth: "26px",
-    minHeight: "26px",
-    padding: "0 7px",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "var(--text)",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "4px",
-    background: "var(--raised)",
-    font: "inherit",
-    cursor: "pointer",
-    "&:hover": { borderColor: "var(--accent)", background: "var(--panel)" },
-    "&:focus-visible": { outline: "2px solid var(--accent)", outlineOffset: "1px" },
+    width: "32px",
+    height: "32px",
+    padding: "0",
+    display: "grid",
+    placeItems: "center",
+    color: "var(--chrome-muted)",
+    border: "1px solid transparent",
+    borderRadius: "6px",
+    background: "transparent",
+    "&:hover": { color: "var(--chrome-text)", background: "var(--chrome-2)" },
+    '&[aria-expanded="true"]': { color: "var(--chrome-accent)" },
+    "&:focus-visible": { outline: "2px solid var(--focus)", outlineOffset: "1px" },
 })
 
 const graphActionsButton = css({
-    minHeight: "26px",
-    padding: "0 9px",
+    height: "28px",
+    padding: "0 10px",
     color: "var(--text)",
     border: "1px solid var(--line-strong)",
-    borderRadius: "4px",
-    background: "var(--control)",
+    borderRadius: "var(--radius)",
+    background: "var(--panel)",
     fontSize: "12px",
+    fontWeight: "500",
     "&.active": {
-        color: "var(--accent)",
-        borderColor: "var(--accent-edge)",
-        background: "var(--accent-wash)",
+        color: "var(--focus)",
+        borderColor: "var(--focus-edge)",
+        background: "var(--focus-wash)",
     },
     "&:hover:not(:disabled)": {
         background: "var(--control-hover)",
@@ -2047,49 +2058,37 @@ const graphActionsButton = css({
 })
 
 const refreshButton = css({
-    minHeight: "26px",
-    padding: "0 9px",
+    width: "28px",
+    height: "28px",
+    padding: "0",
+    display: "grid",
+    placeItems: "center",
     color: "var(--text)",
     border: "1px solid var(--line-strong)",
-    borderRadius: "4px",
-    background: "var(--control)",
-    fontSize: "12px",
-    "&.refreshing": {
-        color: "var(--accent)",
-    },
-    "&.active": {
-        color: "var(--accent)",
-        borderColor: "var(--accent-edge)",
-        background: "var(--accent-wash)",
-    },
-    "&.refreshing span": {
-        animation: "graph-spin 900ms linear infinite",
-    },
-    "&:hover:not(:disabled)": {
-        background: "var(--control-hover)",
-    },
+    borderRadius: "var(--radius)",
+    background: "var(--panel)",
+    "&.refreshing": { color: "var(--focus)" },
+    "&.refreshing span": { animation: "graph-spin 900ms linear infinite" },
+    "&:hover:not(:disabled)": { background: "var(--control-hover)" },
 })
 
 const refreshButtonSpan = css({
-    display: "inline-block",
+    display: "grid",
+    placeItems: "center",
 })
 
 const branchGraphSettingsButton = css({
-    minHeight: "26px",
-    padding: "0 9px",
+    width: "28px",
+    height: "28px",
+    padding: "0",
+    display: "grid",
+    placeItems: "center",
     color: "var(--text)",
     border: "1px solid var(--line-strong)",
-    borderRadius: "4px",
-    background: "var(--control)",
-    fontSize: "12px",
-    "&.active": {
-        color: "var(--accent)",
-        borderColor: "var(--accent-edge)",
-        background: "var(--accent-wash)",
-    },
-    "&:hover:not(:disabled)": {
-        background: "var(--control-hover)",
-    },
+    borderRadius: "var(--radius)",
+    background: "var(--panel)",
+    "&.active": { color: "var(--focus)", borderColor: "var(--focus-edge)", background: "var(--focus-wash)" },
+    "&:hover:not(:disabled)": { background: "var(--control-hover)" },
 })
 
 const graphLimit = css({
@@ -2102,12 +2101,13 @@ const graphLimit = css({
 })
 
 const graphLayout = css({
-    "&.graph-collapsed": { gridTemplateColumns: "minmax(0, 1fr)" },
+    "&.graph-collapsed": { gridTemplateColumns: "minmax(0, 1fr)", gap: "0" },
     minWidth: "0",
     minHeight: "0",
     display: "grid",
     flex: "1 1 auto",
-    gridTemplateColumns: "clamp(260px, 30%, 400px) minmax(0, 1fr)",
+    gap: "var(--gutter)",
+    gridTemplateColumns: "clamp(260px, 28%, 380px) minmax(0, 1fr)",
     overflow: "hidden",
     "@media (max-width: 1080px)": {
         gridTemplateColumns: "clamp(230px, 34%, 320px) minmax(0, 1fr)",
@@ -2120,8 +2120,11 @@ const graphSidebar = css({
     minHeight: "0",
     display: "flex",
     flexDirection: "column",
-    borderRight: "1px solid var(--line)",
+    overflow: "hidden",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "var(--radius-card)",
     background: "var(--panel)",
+    boxShadow: "var(--card-shadow)",
 })
 
 const graphPanel = css({
@@ -2136,14 +2139,14 @@ const graphPanel = css({
 
 const graphRows = css({
     minHeight: "0",
-    padding: "3px",
+    padding: "0",
     overflow: "auto",
     // Virtual rows and spacers already preserve position; browser anchoring
     // otherwise compensates for their replacement and moves the viewport.
     overflowAnchor: "none",
     outline: "0",
     "&:focus-visible": {
-        boxShadow: "inset 0 0 0 2px var(--accent)",
+        boxShadow: "inset 0 0 0 2px var(--focus)",
     },
 })
 
@@ -2174,181 +2177,17 @@ const unassignedMarkersButton = css({
     textDecoration: "underline",
 })
 
-const repositoryRail = css({
-    minWidth: "0",
-    minHeight: "0",
-    padding: "6px",
-    display: "grid",
-    gridTemplateRows: "auto minmax(0, 1fr) auto",
-    gap: "6px",
-    borderRight: "1px solid var(--line)",
-    background: "var(--panel-deep)",
-})
-
-const railFooter = css({
-    padding: "6px 2px 2px",
-    display: "flex",
-    justifyContent: "flex-end",
-    borderTop: "1px solid var(--line)",
-})
-
-const railHeading = css({
-    padding: "2px 2px 6px 6px",
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    borderBottom: "1px solid var(--line)",
-})
-
-const repositoryRailEyebrow = css({
-    color: "var(--muted)",
-    fontSize: "11px",
-    fontWeight: "600",
-    letterSpacing: "0",
-    textTransform: "none",
-    minWidth: "0",
-    flex: "1 1 auto",
-    margin: "0",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-})
-
-const railAdd = css({
-    "&.collapsed": { gridTemplateColumns: "24px", padding: "0", gap: "0", justifyContent: "center", textAlign: "center", height: "38px" },
-    margin: "6px 0 0",
-    width: "100%",
-    height: "32px",
-    gridTemplateColumns: "24px minmax(0, 1fr)",
-    gap: "8px",
-    textAlign: "left",
-    outlineOffset: "-2px",
-    flex: "0 0 auto",
-    padding: "0 6px",
-    display: "grid",
-    alignItems: "center",
-    color: "var(--muted)",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "4px",
-    background: "var(--control)",
-    fontSize: "12px",
-    lineHeight: "1",
-    "&:hover:not(:disabled)": {
-        color: "var(--text)",
-        background: "var(--control-hover)",
-    },
-})
-
-const openRepositoriesNav = css({
-    gridTemplateColumns: "minmax(0, 1fr)",
-    minWidth: "0",
-    overflowX: "hidden",
-    minHeight: "0",
-    display: "grid",
-    alignContent: "start",
-    gap: "1px",
-    overflowY: "auto",
-})
-
-const repositoryRow = css({
-    position: "relative",
-})
-
-const repositoryItem = css({
-    "&.collapsed": { gridTemplateColumns: "24px", padding: "5px 0", gap: "0", justifyContent: "center", height: "38px" },
-    minWidth: "0",
-    outlineOffset: "-2px",
-    width: "100%",
-    padding: "5px 6px",
-    display: "grid",
-    gridTemplateColumns: "24px minmax(0, 1fr)",
-    gap: "8px",
-    textAlign: "left",
-    border: "1px solid transparent",
-    borderRadius: "4px",
-    background: "transparent",
-    "&.active": {
-        borderColor: "var(--line)",
-        background: "var(--panel)",
-        boxShadow: "inset 2px 0 var(--accent)",
-    },
-    paddingRight: "26px",
-    "&.missing > span:first-child": {
-        color: "var(--warning)",
-    },
-    "&:hover:not(:disabled)": {
-        background: "var(--hover)",
-    },
-})
-
-const repositoryItemSpan = css({
-    "&:first-child": {
-        width: "24px",
-        height: "24px",
-        display: "grid",
-        placeItems: "center",
-        color: "var(--accent)",
-        border: "1px solid var(--line-strong)",
-        borderRadius: "4px",
-        fontSize: "10px",
-        fontWeight: "600",
-    },
-    "&:nth-child(2)": {
-        minWidth: "0",
-        display: "grid",
-        alignContent: "center",
-        gap: "1px",
-    },
-})
-
-const repositoryItemStrong = css({
-    overflow: "hidden",
-    fontSize: "12px",
-    fontWeight: "600",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-})
-
-const repositoryItemSmall = css({
-    overflow: "hidden",
-    color: "var(--faint)",
-    fontFamily: "var(--mono)",
-    fontSize: "10px",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-})
-
-const repositoryClose = css({
-    position: "absolute",
-    top: "50%",
-    right: "5px",
-    width: "20px",
-    height: "20px",
-    padding: "0",
-    display: "grid",
-    translate: "0 -50%",
-    placeItems: "center",
-    color: "var(--faint)",
-    border: "0",
-    borderRadius: "4px",
-    background: "transparent",
-    fontSize: "13px",
-    lineHeight: "1",
-    "&:hover": {
-        color: "var(--text)",
-        background: "var(--hover)",
-    },
-})
-
 const graphSummary = css({
-    minHeight: "26px",
-    padding: "0 10px",
+    minHeight: "28px",
+    padding: "0 14px",
     display: "flex",
     alignItems: "center",
     gap: "12px",
     overflow: "hidden",
     color: "var(--muted)",
     borderBottom: "1px solid var(--line)",
-    fontSize: "11px",
+    background: "var(--panel-deep)",
+    fontSize: "11.5px",
     whiteSpace: "nowrap",
 })
 
@@ -2406,18 +2245,20 @@ const graphRow = css({
     width: "100%",
     height: "40px",
     minHeight: "40px",
-    padding: "3px 6px 3px 0",
+    padding: "3px 8px 3px 0",
     display: "flex",
     alignItems: "center",
     gap: "6px",
     color: "var(--text)",
     textAlign: "left",
     border: "0",
-    borderRadius: "4px",
+    borderRadius: "0",
     background: "transparent",
+    // Row separators are shadows so the 40px rail geometry stays exact.
+    boxShadow: "inset 0 -1px var(--line)",
     "&.selected": {
-        background: "var(--accent-wash-strong)",
-        boxShadow: "inset 2px 0 var(--accent)",
+        background: "var(--focus-wash)",
+        boxShadow: "inset 3px 0 var(--focus), inset 0 -1px var(--line)",
     },
     "&.simple": {
         paddingLeft: "0",
@@ -2442,16 +2283,16 @@ const branchCopy = css({
 
 const branchCopyStrong = css({
     overflow: "hidden",
-    fontSize: "12px",
+    fontSize: "13px",
     fontWeight: "600",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
 })
 
 const branchCopySmall = css({
-    color: "var(--faint)",
+    color: "var(--muted)",
     fontFamily: "var(--mono)",
-    fontSize: "10px",
+    fontSize: "10.5px",
     letterSpacing: "0",
     textTransform: "none",
     whiteSpace: "nowrap",
@@ -2470,70 +2311,90 @@ const branchDetails = css({
 })
 
 const worktreeChip = css({
-    maxWidth: "100px",
-    padding: "2px 6px",
+    maxWidth: "110px",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    padding: "1px 6px",
     overflow: "hidden",
-    color: "var(--muted)",
     border: "1px solid var(--line-strong)",
-    borderRadius: "10px",
-    background: "var(--panel-deep)",
+    borderRadius: "4px",
     fontFamily: "var(--mono)",
-    fontSize: "10px",
+    fontSize: "10.5px",
+    fontWeight: "600",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+    "& svg": { flex: "0 0 auto" },
+    color: "var(--ok-ink)",
+    borderColor: "var(--ok-edge)",
+    background: "var(--ok-wash)",
 })
 
 const tagChip = css({
-    maxWidth: "100px",
-    padding: "2px 6px",
+    maxWidth: "110px",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    padding: "1px 6px",
     overflow: "hidden",
-    color: "var(--warning)",
     border: "1px solid var(--line-strong)",
-    borderRadius: "10px",
-    background: "var(--warning-wash)",
+    borderRadius: "4px",
     fontFamily: "var(--mono)",
-    fontSize: "10px",
+    fontSize: "10.5px",
+    fontWeight: "600",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
-    borderColor: "var(--warning-edge)",
+    "& svg": { flex: "0 0 auto" },
+    color: "var(--warning)",
+    borderColor: "var(--accent-edge)",
+    background: "var(--accent-wash)",
 })
 
 const markerButton = css({
-    minHeight: "22px",
-    padding: "0 7px",
-    color: "var(--warning)",
-    border: "1px solid transparent",
+    width: "20px",
+    height: "18px",
+    padding: "0",
+    display: "inline-grid",
+    placeItems: "center",
+    color: "var(--stash-ink)",
+    border: "1px solid var(--stash-edge)",
     borderRadius: "4px",
-    background: "transparent",
-    fontSize: "11px",
+    background: "var(--stash-wash)",
+    "&:hover": { background: "var(--stash-edge)", color: "var(--panel)" },
 })
 
 const divergence = css({
-    maxWidth: "100px",
-    padding: "2px 6px",
+    maxWidth: "110px",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    padding: "1px 6px",
     overflow: "hidden",
-    color: "var(--muted)",
     border: "1px solid var(--line-strong)",
-    borderRadius: "10px",
-    background: "var(--panel-deep)",
+    borderRadius: "4px",
     fontFamily: "var(--mono)",
-    fontSize: "10px",
+    fontSize: "10.5px",
+    fontWeight: "600",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+    "& svg": { flex: "0 0 auto" },
+    color: "var(--muted)",
+    background: "var(--panel-deep)",
 })
 
 const openBranch = css({
-    minHeight: "22px",
-    padding: "0 7px",
-    color: "var(--muted)",
-    border: "1px solid transparent",
-    borderRadius: "4px",
-    background: "transparent",
-    fontSize: "11px",
+    height: "24px",
+    padding: "0 10px",
+    color: "var(--focus)",
+    border: "1px solid var(--focus-edge)",
+    borderRadius: "var(--radius)",
+    background: "var(--panel)",
+    fontSize: "12px",
+    fontWeight: "600",
     "&:hover": {
-        color: "var(--text)",
-        borderColor: "var(--line-strong)",
-        background: "var(--control)",
+        color: "#fff",
+        borderColor: "var(--focus)",
+        background: "var(--focus)",
     },
 })
 
@@ -2563,6 +2424,9 @@ const branchColumns = css({
     minHeight: "0",
     display: "flex",
     alignItems: "stretch",
+    gap: "var(--gutter)",
+    // Room for the 1px card ring, which sits outside each column's box.
+    padding: "1px",
     overflowX: "auto",
     overflowY: "hidden",
     "&.maximized .branch-column": {
@@ -2577,10 +2441,10 @@ const collapsedColumnButton = css({
     writingMode: "vertical-rl",
     padding: "12px",
     color: "var(--text)",
-    background: "var(--panel-deep)",
+    background: "var(--panel)",
     border: "0",
     cursor: "pointer",
-    "&:hover": { background: "var(--raised)" },
+    "&:hover": { background: "var(--control-hover)" },
 })
 
 const branchColumn = css({
@@ -2590,13 +2454,23 @@ const branchColumn = css({
     minWidth: "310px",
     flex: "0 0 auto",
     display: "grid",
-    gridTemplateRows: "auto auto minmax(0, 1fr)",
+    gridTemplateRows: "auto minmax(0, 1fr)",
     overflow: "hidden",
-    borderRight: "1px solid var(--line)",
+    // The card edge is a shadow ring so the column's content box starts at its left edge.
+    border: "0",
+    borderRadius: "var(--radius-card)",
     background: "var(--panel)",
-    "&:focus-visible": {
-        outline: "2px solid var(--accent)",
-        outlineOffset: "-2px",
+    boxShadow: "0 0 0 1px var(--line-strong), var(--card-shadow)",
+    // The focus ring is an overlay so the header and body cannot paint over it.
+    "&:focus-visible": { outline: "0" },
+    "&:focus-visible::after": {
+        content: '""',
+        position: "absolute",
+        inset: "0",
+        zIndex: "10",
+        border: "2px solid var(--focus)",
+        borderRadius: "inherit",
+        pointerEvents: "none",
     },
     "&:has(.column-inspection.focused)": {
         width: "240px !important",
@@ -2605,14 +2479,14 @@ const branchColumn = css({
 })
 
 const branchColumnHeader = css({
-    minHeight: "44px",
-    padding: "7px 8px 7px 0",
+    position: "relative",
+    minHeight: "46px",
+    padding: "0 6px 0 0",
     display: "flex",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: "10px",
+    gap: "6px",
     borderBottom: "1px solid var(--line)",
-    background: "var(--panel-deep)",
+    background: "var(--panel)",
     '&[draggable="true"]': {
         cursor: "grab",
     },
@@ -2621,49 +2495,33 @@ const branchColumnHeader = css({
     },
 })
 
-const branchColumnDiv = css({
-    minWidth: "0",
-    display: "grid",
-    flex: "1 1 auto",
-    gap: "1px",
-    "&:last-child": {
-        display: "flex",
-        flex: "0 0 auto",
-        gap: "3px",
-    },
-})
-
-const columnKind = css({
-    color: "var(--muted)",
-    fontSize: "11px",
-    fontWeight: "600",
-    letterSpacing: "0",
-    textTransform: "none",
-})
-
 const branchColumnH2 = css({
+    flex: "1 1 auto",
+    minWidth: "0",
     margin: "0",
     overflow: "hidden",
-    fontSize: "13px",
+    fontFamily: '"Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif',
+    fontSize: "15px",
     fontWeight: "600",
+    letterSpacing: "-0.01em",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
 })
 
 const branchColumnButton = css({
-    minHeight: "26px",
-    padding: "0 7px",
+    width: "28px",
+    height: "28px",
+    padding: "0",
+    display: "grid",
+    placeItems: "center",
     color: "var(--muted)",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "4px",
+    border: "1px solid transparent",
+    borderRadius: "var(--radius)",
     background: "transparent",
-    fontSize: "12px",
-    minWidth: "26px",
-    borderColor: "transparent",
     "&:hover": {
         color: "var(--text)",
-        borderColor: "var(--line-strong)",
-        background: "var(--control)",
+        borderColor: "var(--line)",
+        background: "var(--control-hover)",
     },
 })
 
@@ -2671,12 +2529,12 @@ const columnDivider = css({
     position: "absolute",
     zIndex: "2",
     top: "0",
-    right: "-4px",
+    right: "0",
     bottom: "0",
-    width: "8px",
+    width: "6px",
     cursor: "col-resize",
     "&:focus-visible": {
-        outline: "2px solid var(--accent)",
+        outline: "2px solid var(--focus)",
         outlineOffset: "-3px",
     },
 })
