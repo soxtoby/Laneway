@@ -2372,6 +2372,9 @@ const stackBranch = css({
     borderRadius: "var(--radius)",
     background: "var(--panel)",
     "&:last-child": { marginBottom: "8px" },
+    // Rows draw their own bottom rules; the card's edge replaces the last one. A trailing -1px pulls the
+    // card's bottom up over that rule, whichever row is last, and the clip hides it.
+    "&::after": { content: '""', display: "block", marginTop: "-1px" },
     // Remote-only branches are read-only here, so they use a neutral slate instead of the local branch blue.
     "&.remote": { borderColor: "var(--line-strong)" },
     "&.remote :is(.composition-branch-target, .composition-branch-heading)": { background: "var(--panel-deep)" },

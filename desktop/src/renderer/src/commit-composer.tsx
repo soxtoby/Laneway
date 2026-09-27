@@ -397,11 +397,15 @@ const composerStyle = css({
     // Stashes and working changes are cards, each tinted by kind so drawers read apart from branches.
     "& .branch-stash, & .commit-card": {
         margin: "8px 8px 0",
-        overflow: "hidden",
+        // clip, unlike hidden, leaves sticky diff headers and scrollbars pinned to the column's viewport.
+        overflow: "clip",
         border: "1px solid var(--line)",
         borderRadius: "var(--radius)",
         background: "var(--panel)",
     },
+    // Rows draw their own bottom rules; the card's edge replaces the last one. A trailing -1px pulls the
+    // card's bottom up over that rule, whichever row is last, and the card's overflow clips it.
+    "& :is(.commit-card:not(.clean), .branch-stash[data-expanded=true])::after": { content: '""', display: "block", marginTop: "-1px" },
     "& .branch-stash": { borderColor: "var(--stash-edge)" },
     "& .branch-stash > :not(.branch-stash-row)": { background: "color-mix(in srgb, var(--stash) 4%, var(--panel))" },
     "& .commit-card": { borderColor: "var(--accent-edge)" },

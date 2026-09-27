@@ -178,8 +178,9 @@ async function checkRenderer() {
     }) && graphRows[0].querySelector("circle")!.getAttribute("cx") != graphRows[2].querySelector("circle")!.getAttribute("cx")
     const graphColors = () => [...document.querySelectorAll(".graph-row circle")].map(node => getComputedStyle(node).stroke)
     const lightGraphColors = graphColors()
+    // Branch lines and the Primary rail keep distinct colours; the rail itself starts only where a branch joins it.
     const branchGraphColors = lightGraphColors[0] == lightGraphColors[1] && lightGraphColors[0] != lightGraphColors[2]
-        && new Set([...graphRows[0].querySelector("svg")!.querySelectorAll("path")].map(path => getComputedStyle(path).stroke)).size == 2
+        && new Set(graphRows.flatMap(row => [...row.querySelectorAll(".graph-rail-lines path")].map(path => getComputedStyle(path).stroke))).size == 2
     const fileButton = element(".change-file button[aria-expanded]")
     fileButton.dispatchEvent(new MouseEvent("mousedown", { button: 0, detail: 1, bubbles: true, cancelable: true, composed: true }))
     await settle()
@@ -265,6 +266,13 @@ async function checkRenderer() {
         && darkGraphColors.every((color, index) => color != "none" && color != lightGraphColors[index])
     const linkedAfterRender = [...diffShadow.querySelectorAll<HTMLElement>("[data-code]")].every(pane => pane.scrollLeft == 100)
 
+    // A card's own edge replaces its last row's bottom rule: that rule sits exactly under the clip.
+    const cards = [...document.querySelectorAll<HTMLElement>(".stack-branch, .commit-card:not(.clean)")]
+    const singleCardEdge = cards.length >= 2 && cards.every(card => {
+        const inner = card.getBoundingClientRect().bottom - parseFloat(getComputedStyle(card).borderBottomWidth)
+        const rows = [...card.children].map(child => child.getBoundingClientRect()).filter(rect => rect.height > 0)
+        return Math.max(...rows.map(rect => rect.bottom)) - inner == 1
+    })
     const branchPanel = element(".stack-branch > div")
     const branchExpanded = !element(".stack-branch").querySelector(".stack-heading") && !branchPanel.hidden
     element(".commit-heading").click()
@@ -373,6 +381,23 @@ async function checkRenderer() {
     const outerDiffScroll = outer.scrollTop > 0 && outer.scrollLeft == 0 && code.scrollLeft > 0
         && !!longDiff.shadowRoot!.querySelector("[data-line='500']")
         && longDiff.shadowRoot!.querySelectorAll("[data-line]").length <= 80
+    // Midway through the long diff its horizontal scrollbar stays pinned to the visible bottom and drives the panes.
+    const scrolledToEnd = outer.scrollTop
+    outer.scrollTop -= 300
+    outer.dispatchEvent(new Event("scroll"))
+    await settle()
+    const diffScrollbar = longDiff.parentElement!.querySelector<HTMLElement>(".diff-scrollbar")!
+    const visibleBottom = outer.getBoundingClientRect().top + outer.clientTop + outer.clientHeight
+    const pinnedCode = longDiff.shadowRoot!.querySelector<HTMLElement>("[data-code]")!
+    diffScrollbar.scrollLeft = 40
+    diffScrollbar.dispatchEvent(new Event("scroll"))
+    const stickyDiffScrollbar = !diffScrollbar.hidden && diffScrollbar.offsetHeight - diffScrollbar.clientHeight >= 8
+        && Math.abs(diffScrollbar.getBoundingClientRect().bottom - visibleBottom) <= 1
+        && longDiff.getBoundingClientRect().bottom > visibleBottom
+        && pinnedCode.scrollLeft == 40
+        && pinnedCode.offsetHeight == pinnedCode.clientHeight
+    outer.scrollTop = scrolledToEnd
+    await settle()
     secondFile.querySelector<HTMLButtonElement>("[aria-label='Break out diff']")!.click()
     await settle()
     const breakout = element(".inspection-breakout")
@@ -724,6 +749,7 @@ async function checkRenderer() {
         linkedFromRight,
         unequalWidthsStable,
         linkedAfterRender,
+        stickyDiffScrollbar,
         diffLineHeight,
         syntaxHighlighted,
         intraLineHighlight,
@@ -743,6 +769,7 @@ async function checkRenderer() {
         commitCollapsed,
         accordionKeyboard,
         radioChecked,
+        singleCardEdge,
         radioBackground,
         modal,
         navigated,

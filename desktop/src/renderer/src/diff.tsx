@@ -17,6 +17,10 @@ export function DiffLines(
     let diff: ReturnType<typeof pierrePatch>
     let rendered = ""
     let horizontalOffset = 0
+    // Pierre's own pane scrollbars sit under the rendered window of lines, often out of view. One scrollbar pinned to
+    // the bottom of the visible diff drives every pane instead.
+    let scrollbar: HTMLElement | undefined
+    let scrollbarTrack: HTMLElement | undefined
     const syncedOffsets = new WeakMap<HTMLElement, number>()
     const scroll = () => render()
     function syncHorizontal(source?: HTMLElement) {
@@ -31,6 +35,17 @@ export function DiffLines(
             // pull a wider pane back to the narrower pane's limit.
             syncedOffsets.set(pane, pane.scrollLeft)
         }
+        if (scrollbar && source != scrollbar)
+            scrollbar.scrollLeft = horizontalOffset
+    }
+    function measureScrollbar() {
+        if (!scrollbar || !scrollbarTrack)
+            return
+        const range = Math.max(0, ...[...shadow.querySelectorAll<HTMLElement>("[data-code]")].map(pane => pane.scrollWidth - pane.clientWidth))
+        scrollbar.hidden = range == 0
+        // The scrollbar's own range matches the widest pane's.
+        scrollbarTrack.style.width = `${scrollbar.clientWidth + range}px`
+        scrollbar.scrollLeft = horizontalOffset
     }
     function decorate() {
         const { page, selected, select } = handle.props
@@ -177,6 +192,7 @@ export function DiffLines(
         const key = `${layout}:${appearance}:${start}:${handle.props.showWhitespace}`
         if (!force && rendered == key) {
             decorate()
+            measureScrollbar()
             return
         }
         viewer.setOptions({
@@ -233,6 +249,7 @@ export function DiffLines(
         }
         rendered = key
         decorate()
+        measureScrollbar()
         syncHorizontal()
     }
     return () => {
@@ -277,12 +294,53 @@ export function DiffLines(
                         }),
                     ]}
                 />
+                <div
+                    class="diff-scrollbar"
+                    aria-hidden="true"
+                    mix={[
+                        diffScrollbar,
+                        ref((element, signal) => {
+                            scrollbar = element
+                            scrollbarTrack = element.firstElementChild as HTMLElement
+                            element.hidden = true
+                            element.addEventListener("scroll", () => {
+                                if (element.scrollLeft == horizontalOffset)
+                                    return
+                                horizontalOffset = element.scrollLeft
+                                syncHorizontal()
+                            }, { passive: true, signal })
+                            measureScrollbar()
+                        }),
+                    ]}
+                >
+                    <div mix={diffScrollbarTrack} />
+                </div>
             </>
         )
     }
 }
 
 const viewport = css({ overflow: "visible", userSelect: "text" })
+// Sticks to the bottom of the scrolling column while any of the diff is in view.
+const diffScrollbar = css({
+    position: "sticky",
+    bottom: "0",
+    zIndex: 4,
+    overflowX: "auto",
+    overflowY: "hidden",
+    background: "var(--panel)",
+    "&[hidden]": { display: "none" },
+    // A styled scrollbar takes up room. Windows' default overlay scrollbar has none on this 1px-tall strip.
+    "&::-webkit-scrollbar": { height: "10px" },
+    "&::-webkit-scrollbar-track": { background: "transparent" },
+    "&::-webkit-scrollbar-thumb": {
+        background: "var(--line-strong)",
+        border: "2px solid var(--panel)",
+        borderRadius: "5px",
+    },
+    "&::-webkit-scrollbar-thumb:hover": { background: "var(--faint)" },
+})
+const diffScrollbarTrack = css({ height: "1px" })
 const notice = css({ position: "static", height: "24px", font: "12px/24px var(--mono)", color: "var(--muted)" })
 
 // Apply Pierre's HAST through DOM/CSSOM APIs: HTML style attributes and style
@@ -305,8 +363,9 @@ function astNode(node: ReturnType<DiffHunksRenderer["renderFullAST"]>["children"
     return element
 }
 
-const diffCSS = `:host { --diffs-font-family: var(--mono); --diffs-font-size: 12px; --diffs-line-height: 24px; }
-    [data-code] { padding-top: 0; }
+const diffCSS = `:host { --diffs-font-family: var(--mono); --diffs-font-size: 12px; --diffs-line-height: 24px;
+        --diffs-scrollbar-gutter-override: 0px; }
+    [data-code] { padding-top: 0; scrollbar-width: none; }
     [data-whitespace] { position: relative; }
     [data-whitespace]::before { position: absolute; left: 0; color: var(--muted); pointer-events: none; user-select: none; }
     [data-whitespace=space]::before { content: "·"; }

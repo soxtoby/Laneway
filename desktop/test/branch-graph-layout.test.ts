@@ -18,8 +18,53 @@ test("draws a merged branch off the main rail and reconnects at its base", () =>
     expect(rows[1].color).not.toBe(rows[0].color)
     expect(rows[0].paths).toContainEqual({ d: `M ${rows[0].x} 20 C ${rows[0].x} 32 ${rows[1].x} 28 ${rows[1].x} 40`, color: rows[1].color })
     expect(rows[1].paths).toContainEqual({ d: `M ${rows[1].x} 20 C ${rows[1].x} 23 ${rows[0].x} 22 ${rows[0].x} 25`, color: rows[1].color })
-    expect(rows[1].paths).toContainEqual({ d: `M ${rows[0].x} 0 V 30`, color: rows[0].color })
+    // The main rail ends where feature rejoins it, not at the unlisted base commit below.
+    expect(rows[1].paths).toContainEqual({ d: `M ${rows[0].x} 0 V 25`, color: rows[0].color })
     expect(layoutBranchGraph(graph, [main]).rows.some(row => row.node.id == feature.id)).toBe(false)
+})
+
+test("draws nothing on the Primary lane above its tip until a line joins it", () => {
+    const graph: BranchGraph = branchGraph("test")
+    const [main, feature, other] = graph.branches
+    const primaryLane = (path: { d: string }) => path.d.startsWith("M 13 ")
+    // feature starts from older Primary history, so no line reaches Primary's tip from above.
+    graph.history = [{ objectId: feature.tip, lineId: feature.id, parentIds: ["base"] }, { objectId: main.tip, lineId: main.id, parentIds: ["base"] }, {
+        objectId: "base",
+        lineId: main.id,
+        parentIds: [],
+    }]
+    const separate = layoutBranchGraph(graph, [main, feature]).rows
+    expect(separate.map(row => row.node.id)).toEqual([feature.id, main.id])
+    expect(separate[0].paths.some(primaryLane)).toBe(false)
+    expect(separate[1].paths.some(path => path.d.startsWith("M 13 0 "))).toBe(false)
+    // other starts at Primary's tip, so the lane is drawn from where it joins down to the tip.
+    graph.history = [{ objectId: other.tip, lineId: other.id, parentIds: [main.tip] }, { objectId: main.tip, lineId: main.id, parentIds: ["base"] }, {
+        objectId: "base",
+        lineId: main.id,
+        parentIds: [],
+    }]
+    const joined = layoutBranchGraph(graph, [main, other]).rows
+    expect(joined[0].paths.some(path => path.d.endsWith(" 13 40"))).toBe(true)
+    expect(joined[0].paths.some(path => path.d.startsWith("M 13 0 "))).toBe(false)
+    expect(joined[1].paths.some(path => path.d.startsWith("M 13 0 "))).toBe(true)
+})
+
+test("ends the lines below the last row once the visible branches have met", () => {
+    const graph: BranchGraph = branchGraph("test")
+    const [main, feature] = graph.branches
+    // A lone rail leading on to unlisted commits is not drawn at all.
+    graph.history = [{ objectId: main.tip, lineId: main.id, parentIds: ["base"] }, { objectId: "base", lineId: main.id, parentIds: [] }]
+    expect(layoutBranchGraph(graph, [main]).rows[0].paths).toEqual([])
+    // feature meets the main rail at an unlisted base; the rail stops at that join.
+    graph.history = [{ objectId: main.tip, lineId: main.id, parentIds: ["base"] }, { objectId: feature.tip, lineId: feature.id, parentIds: ["base"] }, {
+        objectId: "base",
+        lineId: main.id,
+        parentIds: ["older"],
+    }, { objectId: "older", lineId: main.id, parentIds: [] }]
+    const rows = layoutBranchGraph(graph, [main, feature]).rows
+    const join = rows[1].paths.find(path => path.d.includes(" C "))!.d.split(" ").at(-1)
+    expect(rows[1].paths).toContainEqual({ d: `M 13 0 V ${join}`, color: rows[0].color })
+    expect(rows[1].paths.every(path => Number(path.d.split(" ").at(-1)) <= Number(join))).toBe(true)
 })
 
 test("orders tags by topology and draws uninterrupted rails through tag rows", () => {

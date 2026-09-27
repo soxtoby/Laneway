@@ -4,6 +4,9 @@ const path = require("node:path")
 
 const directory = process.argv[2]
 app.setPath("userData", path.join(directory, "profile"))
+// Match the app's scrollbars.
+app.commandLine.appendSwitch("enable-features", "OverlayScrollbar:mode/overlay")
+app.commandLine.appendSwitch("disable-features", "ScrollbarAnimations")
 app.whenReady().then(async () => {
     const window = new BrowserWindow({
         show: false,
