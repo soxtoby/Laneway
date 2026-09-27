@@ -7,6 +7,8 @@ async function checkRenderer() {
     const violations: string[] = []
     document.addEventListener("securitypolicyviolation", event => violations.push(`${event.violatedDirective}: ${event.blockedURI}`))
     const scenario = inspectionScenario()
+    // A second remote makes the settings offer a remote choice.
+    scenario.graph.availableRemotes = ["origin", "upstream"]
     let worktreeExecutions = 0
     scenario.api.previewWorktree = async (_id, request) => ({
         ok: true,
@@ -510,7 +512,7 @@ async function checkRenderer() {
     const rowTop = comparisonRow.getBoundingClientRect().top
     const patchTop = element(".comparison-patch").getBoundingClientRect().top
     holdComparison = true
-    element("[aria-label='Refresh Branch Graph']").click()
+    window.dispatchEvent(new Event("focus"))
     await settle()
     const refreshStable = () =>
         comparisonRow.getBoundingClientRect().top == rowTop

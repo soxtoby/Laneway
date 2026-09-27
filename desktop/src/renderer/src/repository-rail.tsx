@@ -13,6 +13,8 @@ export function RepositoryRail(
         workspace: Workspace
         busy?: boolean
         selectRepository(id: string): void
+        // Set when choosing the active repository toggles a panel; reports whether it is shown.
+        activeExpanded?: boolean
         closeRepository?(id: string): void
         moveRepository(id: string, targetId: string): void
         previewRepositoryMove(id: string, targetId: string): void
@@ -80,6 +82,7 @@ export function RepositoryRail(
                                     disabled={props.busy}
                                     title={repository.status == "available" ? repository.info.selectedWorktree : repository.path}
                                     aria-label={name}
+                                    aria-expanded={repository.id == props.activeId ? props.activeExpanded : undefined}
                                     data-mousedown-activate
                                     mix={[repositoryItem, on("click", () => props.selectRepository(repository.id))]}
                                 >

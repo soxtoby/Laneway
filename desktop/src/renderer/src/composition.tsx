@@ -41,7 +41,6 @@ export const compositionStyles = css({
         borderBottom: "1px solid var(--line)",
         background: "var(--focus-wash)",
         "&:hover": { background: "color-mix(in srgb, var(--focus) 18%, var(--panel))" },
-        "& .stack-heading": { flex: "1", minWidth: "0", border: "0", background: "transparent" },
     },
     "& .composition-over": { outline: "2px solid var(--focus)", outlineOffset: "-2px", background: "var(--focus-wash)" },
     // Seams take no space until a drag or keyboard move makes them a target.

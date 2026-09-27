@@ -195,7 +195,10 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             openLens()
         } else if (event.key == "Escape" && activeRepositoryId) {
             const state = stateFor(activeRepositoryId)
-            if (state.maximizedBranchId) {
+            if (state.showSettings) {
+                state.showSettings = false
+                void options.update()
+            } else if (state.maximizedBranchId) {
                 state.maximizedBranchId = undefined
                 void options.update()
             }
@@ -311,7 +314,9 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                         activeId={active.id}
                         workspace={workspace}
                         busy={state.loading}
-                        selectRepository={options.selectRepository}
+                        // Choosing the repository already shown toggles its Branch Graph instead.
+                        selectRepository={id => id == active.id ? toggleGraph(active.id) : options.selectRepository(id)}
+                        activeExpanded={!state.graphCollapsed}
                         closeRepository={options.closeRepository}
                         moveRepository={options.moveRepository}
                         previewRepositoryMove={options.previewRepositoryMove}
@@ -324,14 +329,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                 aria-label={state.graphCollapsed ? "Show Branch Graph" : "Hide Branch Graph"}
                                 aria-expanded={!state.graphCollapsed}
                                 title={state.graphCollapsed ? "Show Branch Graph" : "Hide Branch Graph"}
-                                mix={[
-                                    graphPanelToggleButton,
-                                    on("click", () => {
-                                        state.graphCollapsed = !state.graphCollapsed
-                                        state.showSettings = false
-                                        void options.update()
-                                    }),
-                                ]}
+                                mix={[graphPanelToggleButton, on("click", () => toggleGraph(active.id))]}
                             >
                                 <Icon name="graph" size={15} />
                             </button>
@@ -341,14 +339,8 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                         <div class={`graph-layout ${state.graphCollapsed ? "graph-collapsed" : ""}`} mix={graphLayout}>
                             <div class={`graph-sidebar ${state.graphCollapsed ? "collapsed" : ""}`} mix={graphSidebar}>
                                 <header class="graph-toolbar" mix={graphToolbar}>
-                                    <div mix={graphToolbarDiv}>
-                                        <p class="eyebrow" mix={eyebrow}>
-                                            Branch Graph
-                                        </p>
-                                        <h1 mix={graphToolbarH1}>
-                                            {baseName(active.info.mainWorktree)}
-                                        </h1>
-                                    </div>
+                                    {/* The repository is named by the rail and its main worktree column, so the title stays generic. */}
+                                    <h1 mix={graphToolbarH1}>Branch Graph</h1>
                                     <div class="graph-actions" mix={graphActions}>
                                         <button
                                             type="button"
@@ -359,21 +351,10 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                             {state.showAll ? "Involved only" : "Show all"}
                                         </button>
                                         <button
-                                            class={`refresh-button ${state.refreshing ? "refreshing" : ""}`}
                                             type="button"
-                                            aria-label={state.refreshing ? "Refreshing Branch Graph" : "Refresh Branch Graph"}
-                                            aria-busy={state.refreshing}
-                                            title={state.refreshing ? "Refreshing Branch Graph" : "Refresh Branch Graph"}
-                                            disabled={state.loading || state.refreshing}
-                                            mix={[refreshButton, on("click", () => read(active.id, true, true))]}
-                                        >
-                                            <span aria-hidden="true" mix={refreshButtonSpan}>
-                                                <Icon name="refresh" size={15} />
-                                            </span>
-                                        </button>
-                                        <button
-                                            type="button"
+                                            class={state.showSettings ? "active" : ""}
                                             aria-label="Branch Graph settings"
+                                            aria-expanded={state.showSettings}
                                             title="Branch Graph settings"
                                             mix={[
                                                 branchGraphSettingsButton,
@@ -780,6 +761,13 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                 column?.scrollIntoView({ block: "nearest", inline: "nearest" })
             }
         }
+    }
+
+    function toggleGraph(repositoryId: string) {
+        const state = stateFor(repositoryId)
+        state.graphCollapsed = !state.graphCollapsed
+        state.showSettings = false
+        void options.update()
     }
 
     function toggleAll(repositoryId: string) {
@@ -1653,75 +1641,75 @@ function ColumnDivider(handle: Handle<{ branchId: string; width: number; resize(
 }
 
 function GraphSettings(handle: Handle<{ graph: BranchGraph; state: RepositoryGraphState; apply(settings: RepositoryGraphSettings): void; close(): void }>) {
+    const applyPatterns = () =>
+        handle.props.apply({ selectedRemote: handle.props.graph.selectedRemote, remotePatterns: splitPatterns(handle.props.state.patterns) })
     return () => (
-        <section class="graph-settings" mix={graphSettings}>
+        <section class="graph-settings" role="dialog" aria-labelledby={handle.id + "-title"} mix={graphSettings}>
             <header mix={graphSettingsHeader}>
-                <div>
-                    <p class="eyebrow">Repository setting</p>
-                    <h2 mix={graphSettingsH2}>
-                        Graph sources
-                    </h2>
-                </div>
-                <button type="button" aria-label="Close graph settings" mix={[closeGraphSettingsButton, on("click", handle.props.close)]}>
-                    ×
+                <h2 id={handle.id + "-title"} mix={graphSettingsH2}>
+                    Branch Graph settings
+                </h2>
+                <button type="button" aria-label="Close graph settings" title="Close" mix={[closeGraphSettingsButton, on("click", handle.props.close)]}>
+                    <Icon name="close" size={12} />
                 </button>
             </header>
-            <p mix={graphSettingsP}>
-                Select one remote when the repository has several. Patterns use Git-like globs over{" "}
-                <code mix={graphSettingsCode}>
-                    remote/branch
-                </code>.
-            </p>
-            <fieldset class="remote-options" mix={remoteOptions}>
-                <legend>Remote</legend>
-                {handle.props.graph.availableRemotes.map(remote => (
-                    <label mix={remoteOptionsLabel}>
-                        <input
-                            type="radio"
-                            name={handle.id + "-remote"}
-                            value={remote}
-                            checked={handle.props.graph.selectedRemote == remote}
-                            mix={[
-                                radio(),
-                                remoteOptionsInput,
-                                on("change", event => {
-                                    if (event.currentTarget.checked)
-                                        void handle.props.apply({ selectedRemote: remote, remotePatterns: splitPatterns(handle.props.state.patterns) })
-                                }),
-                            ]}
-                        />
-                        {remote}
-                    </label>
-                ))}
-            </fieldset>
-            <label for="remote-patterns" mix={graphSettingsLabel}>
-                Additional remote branches
-            </label>
-            <input
-                id="remote-patterns"
-                value={handle.props.state.patterns}
-                placeholder="origin/release/**, upstream/topic/*"
-                mix={[on("input", event => {
-                    handle.props.state.patterns = event.currentTarget.value
-                })]}
-            />
-            <button
-                class="secondary-button"
-                type="button"
-                mix={[
-                    secondaryButton,
-                    on(
-                        "click",
-                        () =>
-                            handle.props.apply({
-                                selectedRemote: handle.props.graph.selectedRemote,
-                                remotePatterns: splitPatterns(handle.props.state.patterns),
+            {/* With a single remote there is nothing to choose. */}
+            {handle.props.graph.availableRemotes.length > 1 && (
+                <fieldset class="remote-options" mix={remoteOptions}>
+                    <legend mix={graphSettingsLabel}>Remote</legend>
+                    <p mix={graphSettingsHint}>The Primary Branch and remote branches come from this remote.</p>
+                    {handle.props.graph.availableRemotes.map(remote => (
+                        <label mix={remoteOptionsLabel}>
+                            <input
+                                type="radio"
+                                name={handle.id + "-remote"}
+                                value={remote}
+                                checked={handle.props.graph.selectedRemote == remote}
+                                mix={[
+                                    radio(),
+                                    remoteOptionsInput,
+                                    on("change", event => {
+                                        if (event.currentTarget.checked)
+                                            void handle.props.apply({ selectedRemote: remote, remotePatterns: splitPatterns(handle.props.state.patterns) })
+                                    }),
+                                ]}
+                            />
+                            {remote}
+                        </label>
+                    ))}
+                </fieldset>
+            )}
+            <div mix={graphSettingsField}>
+                <label for="remote-patterns" mix={graphSettingsLabel}>
+                    Additional remote branches
+                </label>
+                <p id="remote-patterns-hint" mix={graphSettingsHint}>
+                    Also show remote-only branches matching these comma-separated globs, such as <code mix={graphSettingsCode}>origin/release/**</code>.
+                </p>
+                <div mix={graphSettingsRow}>
+                    <input
+                        id="remote-patterns"
+                        aria-describedby="remote-patterns-hint"
+                        value={handle.props.state.patterns}
+                        placeholder="origin/release/**, upstream/topic/*"
+                        mix={[
+                            graphSettingsInput,
+                            on("input", event => {
+                                handle.props.state.patterns = event.currentTarget.value
                             }),
-                    ),
-                ]}
-            >
-                Apply patterns
-            </button>
+                            on("keydown", event => {
+                                if (event.key == "Enter") {
+                                    event.preventDefault()
+                                    applyPatterns()
+                                }
+                            }),
+                        ]}
+                    />
+                    <button class="secondary-button" type="button" mix={[secondaryButton, on("click", applyPatterns)]}>
+                        Apply
+                    </button>
+                </div>
+            </div>
         </section>
     )
 }
@@ -1982,26 +1970,6 @@ const graphToolbar = css({
     background: "var(--panel)",
 })
 
-const graphToolbarDiv = css({
-    "&:first-child": {
-        minWidth: "0",
-        display: "flex",
-        alignItems: "baseline",
-        gap: "8px",
-        overflow: "hidden",
-    },
-})
-
-const eyebrow = css({
-    margin: "0",
-    flex: "0 0 auto",
-    color: "var(--faint)",
-    fontSize: "10.5px",
-    fontWeight: "700",
-    letterSpacing: "0.07em",
-    textTransform: "uppercase",
-})
-
 const graphToolbarH1 = css({
     margin: "0",
     overflow: "hidden",
@@ -2058,26 +2026,6 @@ const graphActionsButton = css({
     "&:hover:not(:disabled)": {
         background: "var(--control-hover)",
     },
-})
-
-const refreshButton = css({
-    width: "28px",
-    height: "28px",
-    padding: "0",
-    display: "grid",
-    placeItems: "center",
-    color: "var(--text)",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "var(--radius)",
-    background: "var(--panel)",
-    "&.refreshing": { color: "var(--focus)" },
-    "&.refreshing span": { animation: "graph-spin 900ms linear infinite" },
-    "&:hover:not(:disabled)": { background: "var(--control-hover)" },
-})
-
-const refreshButtonSpan = css({
-    display: "grid",
-    placeItems: "center",
 })
 
 const branchGraphSettingsButton = css({
@@ -2571,8 +2519,10 @@ const graphSettings = css({
     zIndex: "6",
     top: "calc(100% + 4px)",
     right: "8px",
-    width: "min(400px, calc(100% - 20px))",
-    padding: "14px",
+    width: "min(360px, calc(100% - 20px))",
+    padding: "10px 12px 14px",
+    display: "grid",
+    gap: "14px",
     border: "1px solid var(--line-strong)",
     borderRadius: "6px",
     background: "var(--raised)",
@@ -2584,60 +2534,77 @@ const graphSettings = css({
 
 const graphSettingsHeader = css({
     display: "flex",
-    alignItems: "flex-start",
+    alignItems: "center",
     justifyContent: "space-between",
     gap: "12px",
 })
 
 const graphSettingsH2 = css({
     margin: "0",
-    fontSize: "14px",
+    fontSize: "13px",
     fontWeight: "600",
 })
 
+// A quiet icon button, like the other close affordances, rather than a boxed control.
 const closeGraphSettingsButton = css({
-    minHeight: "26px",
-    padding: "0 9px",
-    color: "var(--text)",
-    border: "1px solid var(--line-strong)",
+    width: "24px",
+    height: "24px",
+    padding: "0",
+    display: "grid",
+    placeItems: "center",
+    color: "var(--muted)",
+    border: "0",
     borderRadius: "4px",
-    background: "var(--control)",
-    fontSize: "12px",
-    "&.active": {
-        color: "var(--accent)",
-        borderColor: "var(--accent-edge)",
-        background: "var(--accent-wash)",
-    },
-    "&:hover:not(:disabled)": {
-        background: "var(--control-hover)",
-    },
+    background: "transparent",
+    "&:hover": { color: "var(--text)", background: "var(--control-hover)" },
 })
 
-const graphSettingsP = css({
-    margin: "12px 0",
+const graphSettingsField = css({
+    display: "grid",
+    gap: "6px",
+})
+
+const graphSettingsHint = css({
+    margin: "0",
     color: "var(--muted)",
-    fontSize: "12px",
-    lineHeight: "1.5",
+    fontSize: "11.5px",
+    lineHeight: "1.45",
 })
 
 const graphSettingsCode = css({
-    color: "var(--accent)",
+    color: "var(--text)",
+    fontFamily: "var(--mono)",
+    fontSize: "11px",
+})
+
+const graphSettingsRow = css({
+    display: "flex",
+    gap: "6px",
+    alignItems: "stretch",
+})
+
+const graphSettingsInput = css({
+    flex: "1",
+    minWidth: "0",
+    fontFamily: "var(--mono)",
+    fontSize: "12px",
 })
 
 const remoteOptions = css({
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "12px",
+    display: "grid",
+    gap: "6px",
     margin: "0",
     padding: "0",
     border: "0",
+    minWidth: "0",
 })
 
 const remoteOptionsLabel = css({
+    display: "inline-flex",
     alignItems: "center",
-    gap: "6px",
-    display: "block",
-    margin: "12px 0 5px",
+    gap: "8px",
+    fontSize: "12.5px",
+    cursor: "pointer",
 })
 
 const remoteOptionsInput = css({
@@ -2668,7 +2635,11 @@ const remoteOptionsInput = css({
 
 const graphSettingsLabel = css({
     display: "block",
-    margin: "12px 0 5px",
+    padding: "0",
+    margin: "0",
+    color: "var(--text)",
+    fontSize: "12px",
+    fontWeight: "600",
 })
 
 const secondaryButton = css({
@@ -2681,7 +2652,6 @@ const secondaryButton = css({
         background: "var(--accent-wash)",
     },
     minHeight: "28px",
-    marginTop: "12px",
     padding: "0 14px",
     borderRadius: "4px",
     fontSize: "13px",

@@ -2419,11 +2419,13 @@ const commitStickyHeading = css({
     },
 })
 
+// The surrounding branch row owns the tint, edges and hover so they run under the grip too. Each css()
+// class sits in its own cascade layer, so an override from the row's styles cannot reliably win here.
 const stackHeading = css({
+    flex: "1",
+    minWidth: "0",
     border: "0",
-    borderTop: "1px solid var(--line-strong)",
-    borderBottom: "1px solid var(--line)",
-    background: "var(--panel-deep)",
+    background: "transparent",
     color: "var(--text)",
     borderRadius: "0",
     minHeight: "34px",
@@ -2432,18 +2434,10 @@ const stackHeading = css({
     fontSize: "13px",
     fontWeight: "600",
     cursor: "pointer",
-    width: "100%",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     textAlign: "left",
-    "&:hover": {
-        background: "var(--control-hover)",
-    },
-    '&[aria-pressed="true"]': {
-        background: "var(--accent-wash-strong)",
-        borderColor: "var(--accent-edge)",
-    },
 })
 
 function conflictIcon() {

@@ -72,7 +72,7 @@ export function inspectionScenario() {
             },
         }),
     })
-    return { api, page, saved: () => workspace }
+    return { api, page, graph, saved: () => workspace }
 }
 
 export function appState() {

@@ -229,7 +229,7 @@ describe("Remix repository entry renderer", () => {
         await flush(root)
 
         expect(dialog.open).toBe(false)
-        expect(container.textContent).toContain("new-project")
+        expect(container.querySelector(".repository-item.active")?.getAttribute("aria-label")).toBe("new-project")
         expect(container.textContent).toContain("Repository initialized and opened.")
         dispose()
     })
@@ -461,7 +461,7 @@ describe("Remix repository entry renderer", () => {
         dispose()
     })
 
-    test("shows polling activity inside the fixed-size refresh control", async () => {
+    test("background refreshes leave the Branch Graph header still", async () => {
         const repository = repositoryInfo("D:\\Source\\refresh-graph")
         const graph = branchGraph(repository.id)
         let calls = 0
@@ -479,14 +479,18 @@ describe("Remix repository entry renderer", () => {
         const { container, root, dispose } = render(api)
 
         await flush(root)
-        click(container.querySelector<HTMLButtonElement>("[aria-label='Refresh Branch Graph']")!)
+        const toolbar = container.querySelector<HTMLElement>(".graph-toolbar")!
+        expect(toolbar.querySelector("h1")?.textContent).toBe("Branch Graph")
+        const before = toolbar.innerHTML
+        refreshGraph()
         await flush(root)
+        expect(calls).toBe(3)
         expect(container.querySelector(".graph-status")).toBeNull()
-        expect(container.querySelector(".refresh-button.refreshing")).not.toBeNull()
+        expect(toolbar.innerHTML).toBe(before)
 
         finishRefresh()
         await flush(root)
-        expect(container.querySelector(".refresh-button.refreshing")).toBeNull()
+        expect(toolbar.innerHTML).toBe(before)
         dispose()
     })
 
@@ -723,6 +727,41 @@ test("confirmation notices close themselves, but not while hovered", async () =>
     }
 })
 
+test("Branch Graph settings apply patterns on Enter, close on Escape, and skip a single-remote choice", async () => {
+    const repository = repositoryInfo("D:\Source\graph-settings")
+    const graph = branchGraph(repository.id)
+    const applied: unknown[] = []
+    const api = fakeLaneway({
+        getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
+        readBranchGraph: async () => ({ ok: true, graph }),
+        setRepositoryGraphSettings: async (_id, settings) => {
+            applied.push(settings)
+            return settings
+        },
+    })
+    const { container, root, dispose } = render(api)
+    await flush(root)
+    const toggle = container.querySelector<HTMLButtonElement>("[aria-label='Branch Graph settings']")!
+    click(toggle)
+    await flush(root)
+    const dialog = container.querySelector<HTMLElement>(".graph-settings")!
+    expect(toggle.getAttribute("aria-expanded")).toBe("true")
+    expect(dialog.querySelector("h2")?.textContent).toBe("Branch Graph settings")
+    expect(dialog.querySelector("input[type='radio']")).toBeNull()
+    const patterns = dialog.querySelector<HTMLInputElement>("#remote-patterns")!
+    input(patterns, "origin/release/**, upstream/topic/*")
+    patterns.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+    await flush(root)
+    expect(applied).toEqual([{ selectedRemote: "origin", remotePatterns: ["origin/release/**", "upstream/topic/*"] }])
+    expect(container.querySelector(".graph-settings")).toBeNull()
+    click(toggle)
+    await flush(root)
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))
+    await flush(root)
+    expect(container.querySelector(".graph-settings")).toBeNull()
+    dispose()
+})
+
 test("Pull latest is disabled without remotes and explains why", async () => {
     const repository = repositoryInfo("D:\Source\no-remotes")
     const graph = { ...branchGraph(repository.id), availableRemotes: [], selectedRemote: undefined }
@@ -780,8 +819,18 @@ test("retains worktree columns and restores collapse in place across restart", a
     click(view.container.querySelector<HTMLButtonElement>('[aria-label="Show Branch Graph"]')!)
     await flush(view.root)
     expect(view.container.querySelector('[aria-label="Show Branch Graph"]')).toBeNull()
+    // Choosing the repository that is already active toggles its Branch Graph.
+    const activeRepository = view.container.querySelector<HTMLButtonElement>(".repository-item.active")!
+    expect(activeRepository.getAttribute("aria-expanded")).toBe("true")
+    click(activeRepository)
+    await flush(view.root)
+    expect(view.container.querySelector(".graph-layout")?.classList.contains("graph-collapsed")).toBe(true)
+    expect(activeRepository.getAttribute("aria-expanded")).toBe("false")
+    click(activeRepository)
+    await flush(view.root)
+    expect(view.container.querySelector(".graph-layout")?.classList.contains("graph-collapsed")).toBe(false)
     main.checkedOut = []
-    click(view.container.querySelector<HTMLButtonElement>('[aria-label="Refresh Branch Graph"]')!)
+    refreshGraph()
     await flush(view.root)
     expect((await scenario.api.getState()).workspace.repositories[0].columns.map(column => column.id)).toEqual([branch.id])
     view.dispose()
@@ -938,17 +987,17 @@ describe("Branch Comparison", () => {
         expect(comparison.querySelector(".pierre-diff")).not.toBeNull()
         expect(scenario.saved().repositories[0].columns).toHaveLength(1)
         main.tip = "a".repeat(40)
-        click(container.querySelector<HTMLButtonElement>("[aria-label='Refresh Branch Graph']")!)
+        refreshGraph()
         await flush(root)
         expect(inventories).toBe(3)
         expect(patches).toBe(2)
         expect(comparison.querySelector("header strong")?.getAttribute("title")).toContain("aaaaaaaa")
         graph.branches = graph.branches.filter(branch => branch != main)
-        click(container.querySelector<HTMLButtonElement>("[aria-label='Refresh Branch Graph']")!)
+        refreshGraph()
         await flush(root)
         expect(comparison.textContent).toContain("Showing the last comparison")
         graph.branches = [...graph.branches.filter(branch => branch != feature), main]
-        click(container.querySelector<HTMLButtonElement>("[aria-label='Refresh Branch Graph']")!)
+        refreshGraph()
         await flush(root)
         const orphaned = container.querySelector<HTMLElement>(".branch-comparison")!
         expect(orphaned).not.toBeNull()
@@ -1803,6 +1852,11 @@ async function flush(root: VirtualRoot) {
         await new Promise(resolve => setTimeout(resolve, 0))
         root.flush()
     }
+}
+
+// The Branch Graph re-reads whenever the window regains focus.
+function refreshGraph() {
+    window.dispatchEvent(new Event("focus"))
 }
 
 function click(element: HTMLElement) {
