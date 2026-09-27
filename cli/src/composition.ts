@@ -106,12 +106,12 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
         return trees.get(value)!
     }
     const graph = await repo.startReadBranchGraph({ authorIdentities: { secondary: [] }, remotePatterns: [], selectedRemote: request.selectedRemote }).result
-    const primary = graph.branches.find(b => b.primary)
     const primaryLocal = graph.primaryBranch.ref && graph.primaryBranch.remote
         ? `refs/heads/${graph.primaryBranch.ref.slice(`refs/remotes/${graph.primaryBranch.remote}/`.length)}`
         : undefined
-    const primaryTips = [primary?.tip, ...(primaryLocal ? [await repo.resolveRef(primaryLocal)] : [])].filter((x): x is string => !!x)
-    const primaryReachable = primaryTips.length ? new Set((await gitText(repo, ["rev-list", ...primaryTips])).split("\n")) : new Set<string>()
+    // Only published Primary history is protected; unpushed local Primary commits stay editable.
+    const publishedTip = graph.primaryBranch.ref ? await repo.resolveRef(graph.primaryBranch.ref) : null
+    const primaryReachable = publishedTip ? new Set((await gitText(repo, ["rev-list", publishedTip])).split("\n")) : new Set<string>()
     function tip(name: string) {
         const ref = refName(name), value = tips.get(ref)
         if (!value)
@@ -120,7 +120,7 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
     }
     async function editable(commit: string) {
         if (primaryReachable.has(commit))
-            throw new Error("Primary Branch history is protected. Copy these changes instead.")
+            throw new Error("Published Primary Branch history is protected. Copy these changes instead.")
         if ((await parents(repo, commit)).length != 1)
             throw new Error("Direct editing of root or merge commits is unavailable.")
         if (!parentMap.has(commit))
@@ -259,7 +259,8 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
                 throw new Error("Enter a commit message before transferring changes.")
             if (primaryReachable.has(at) && at != destination && target.kind != "commit") {
                 const node = graph.branches.find(b => b.localRefs.includes(refName(target.branch)))
-                if (refName(target.branch) == primaryLocal || node?.base.status != "known" || node.base.tip != at)
+                const atop = refName(target.branch) == primaryLocal ? at == publishedTip : node?.base.status == "known" && node.base.tip == at
+                if (!atop)
                     throw new Error("Choose an insertion seam inside the editable branch, or atop Primary Branch.")
             }
             const result = await merge(selection!.base, at, selection!.selected, "transferred changes")

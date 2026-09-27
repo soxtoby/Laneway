@@ -186,7 +186,7 @@ test("moving a commit forward removes its old position even when the destination
     }
 }, 120_000)
 
-test("copy reports partly duplicated files and protects Primary Branch from moves", async () => {
+test("copy reports partly duplicated files and protects published Primary Branch from moves", async () => {
     const { path } = await fixture()
     await writeFile(join(path, "first.txt"), "first\n")
     git(path, "add", ".")
@@ -201,8 +201,39 @@ test("copy reports partly duplicated files and protects Primary Branch from move
     expect((await preview(path, r)).composition?.skipped).toEqual(["first.txt"])
     await perform(path, r)
     git(path, "branch", "-f", "main", source)
+    git(path, "update-ref", "refs/remotes/origin/main", source)
     await expect(preview(path, { ...r, mode: "move", target: { kind: "branch", branch: "destination", tip: git(path, "rev-parse", "destination") } })).rejects
         .toThrow("Primary Branch")
+}, 120_000)
+
+test("unpublished commits on the local Primary Branch remain editable", async () => {
+    const { path, base } = await fixture()
+    git(path, "checkout", "-q", "main")
+    await writeFile(join(path, "first.txt"), "first\n")
+    git(path, "add", ".")
+    git(path, "commit", "-qm", "first")
+    const first = git(path, "rev-parse", "HEAD")
+    await writeFile(join(path, "second.txt"), "second\n")
+    git(path, "add", ".")
+    git(path, "commit", "-qm", "second")
+    await writeFile(join(path, "extra.txt"), "extra\n")
+    await perform(
+        path,
+        request({
+            source: { kind: "working", worktreePath: path },
+            target: { kind: "commit", branch: "main", objectId: first },
+            files: [{ path: "extra.txt" }],
+        }),
+    )
+    expect(git(path, "log", "--format=%s", "origin/main..main")).toBe("second\nfirst")
+    expect(git(path, "ls-tree", "--name-only", "main~1")).toBe("a.txt\nextra.txt\nfirst.txt")
+    await writeFile(join(path, "seam.txt"), "seam\n")
+    await perform(
+        path,
+        request({ source: { kind: "working", worktreePath: path }, target: { kind: "seam", branch: "main", parentId: base }, files: [{ path: "seam.txt" }] }),
+    )
+    expect(git(path, "log", "--format=%s", "origin/main..main")).toBe("second\nfirst\nComposed")
+    expect(git(path, "rev-parse", "origin/main")).toBe(base)
 }, 120_000)
 
 test("moving untracked additions removes them from the source and leaves incoming changes unstaged", async () => {
