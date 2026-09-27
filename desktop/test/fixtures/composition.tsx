@@ -1,6 +1,7 @@
 import type { CompositionRequest, LocalRequest } from "@laneway/shared"
 import { createRoot, css, type Handle, on } from "remix/ui"
 import { compositionStyles, createComposition } from "../../src/renderer/src/composition"
+import type { NoticeState } from "../../src/renderer/src/feedback"
 
 const requests: Array<{ request: LocalRequest; token?: string }> = []
 let conflict = false
@@ -38,12 +39,22 @@ const api = {
     },
 } satisfies Pick<Window["laneway"], "localOperation">
 let resolved = false
+let toast: NoticeState | undefined
+// Read through a call so checks see updates made by the controller, not a narrowed snapshot.
+const shownToast = () => toast
 function Fixture(handle: Handle) {
     let selected = false, wholeCommit = false, tip = "2".repeat(40)
     const controller = createComposition({
         api,
         update: () => handle.update(),
         signal: handle.signal,
+        notify(notice) {
+            toast = notice
+            return () => {
+                if (toast == notice)
+                    toast = undefined
+            }
+        },
         resolve: () => {
             resolved = true
         },
@@ -109,7 +120,6 @@ function Fixture(handle: Handle) {
             >
                 Refresh branch tip
             </button>
-            {controller.status("fixture")}
         </main>
     )
 }
@@ -145,16 +155,18 @@ async function drag(target: string, copy = false, cancel = false) {
 async function checks() {
     await flush()
     await drag("#commit", false, true)
-    if (document.querySelector(".composition-seam.available, .composition-over, .composition-review, .composition-status") || requests.length)
+    if (document.querySelector(".composition-seam.available, .composition-over, .composition-review") || shownToast() || requests.length)
         throw new Error("Cancelled drag left transfer placeholders or state behind")
     await click("#select-more")
     await click("#refresh-tip")
     await drag("#branch")
     if (requests.length)
         throw new Error("Files accepted by branch")
-    if (document.querySelector(".composition-seam.available, .composition-status"))
+    if (document.querySelector(".composition-seam.available") || shownToast())
         throw new Error("Rejected drop left transfer placeholders behind")
     await drag("#commit", true)
+    if (shownToast()?.code != "composition.transferred")
+        throw new Error("Completed transfer was not announced as a toast")
     const copied = requests.at(-1)!
     if (
         copied.token != "verified" || copied.request.action != "compose" || copied.request.files?.length != 2 || copied.request.mode != "copy"

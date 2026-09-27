@@ -1,6 +1,7 @@
 import { draggable, dropTargetForElements, monitorForElements } from "@atlaskit/pragmatic-drag-and-drop/adapter/element-adapter"
 import type { CompositionRequest, CompositionSource, CompositionTarget, LocalPreview } from "@laneway/shared"
 import { createMixin, css, on, type RemixNode } from "remix/ui"
+import type { NoticeState } from "./feedback"
 import { Icon } from "./icons"
 
 interface Selection {
@@ -73,7 +74,6 @@ export const compositionStyles = css({
         "& p, & strong, & label": { margin: "0", flexBasis: "100%" },
         "& input:not([type=checkbox])": { width: "100%", boxSizing: "border-box" },
     },
-    "& .composition-status": { margin: "0", padding: "6px 10px", color: "var(--accent)", fontSize: "11px", overflowWrap: "anywhere" },
     "& .composition-branch-target": {
         display: "flex",
         gap: "6px",
@@ -91,6 +91,7 @@ export function createComposition(options: {
     api: Pick<Window["laneway"], "localOperation">
     signal: AbortSignal
     update(): Promise<AbortSignal>
+    notify(notice: NoticeState): () => void
     changed?(repositoryId: string): Promise<void>
     busyChanged?(busy: boolean): void
     resolve?(repositoryId: string): void
@@ -98,7 +99,8 @@ export function createComposition(options: {
     const token = `composition-${crypto.randomUUID()}`
     let active: Selection | undefined, mode: "move" | "copy" = "move"
     let pending: { selection: Selection; request: CompositionRequest; key: string; preview?: LocalPreview } | undefined
-    let busy = false, notice = "", generation = 0
+    // Outcomes and guidance use the app toast; progress and errors stay in the review panel at the destination.
+    let busy = false, notice = "", generation = 0, dismissGuidance = () => {}
     type Destination = { repositoryId: string; target: CompositionTarget }
     const targets = new Map<HTMLElement, () => Destination>()
     const update = () => void options.update()
@@ -114,7 +116,12 @@ export function createComposition(options: {
         active = selection
         mode = selection.source.kind == "branch" ? "move" : value
         pending = undefined
-        notice = `${value == "move" ? "Move" : "Copy"} ${selection.label} · Choose a destination, then Enter. Escape cancels.`
+        notice = ""
+        dismissGuidance()
+        dismissGuidance = options.notify({
+            code: "composition.choose",
+            message: `${value == "move" ? "Move" : "Copy"} ${selection.label} · Choose a destination, then Enter. Escape cancels.`,
+        })
         update()
     }
     function cancel() {
@@ -122,6 +129,7 @@ export function createComposition(options: {
         active = undefined
         pending = undefined
         notice = ""
+        dismissGuidance()
         update()
     }
     async function drop(selection: Selection, repositoryId: string, target: CompositionTarget, copy: boolean) {
@@ -147,6 +155,7 @@ export function createComposition(options: {
             },
         }
         notice = ""
+        dismissGuidance()
         update()
         if (target.kind != "seam")
             await prepare()
@@ -196,7 +205,8 @@ export function createComposition(options: {
                 throw new Error(result.error.message)
             if (result.result.status == "failed")
                 throw new Error(result.result.message)
-            notice = result.result.message ?? "Changes transferred."
+            notice = ""
+            options.notify({ code: "composition.transferred", message: result.result.message ?? "Changes transferred.", transient: true })
             active = undefined
             pending = undefined
             await options.changed?.(current.selection.repositoryId)
@@ -414,9 +424,6 @@ export function createComposition(options: {
                     {notice && <p role="status">{notice}</p>}
                 </section>
             )
-        },
-        status(repositoryId: string): RemixNode {
-            return notice && (!active || active.repositoryId == repositoryId) ? <p class="composition-status" role="status">{notice}</p> : null
         },
     }
 }

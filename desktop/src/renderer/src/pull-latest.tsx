@@ -18,7 +18,7 @@ interface Options {
     scope(repositoryId: string): string[]
     graph(repositoryId: string): BranchGraph | undefined
     completed(repositoryId: string): Promise<void>
-    notify(notice: { code: string; message: string }): void
+    notify(notice: { code: string; message: string; transient?: boolean }): void
     openBranch(repositoryId: string, branchName: string): void
 }
 
@@ -53,7 +53,7 @@ export function createPullLatest(options: Options) {
             if (needsAttention(response.result))
                 outcome = { repositoryId, result: response.result }
             else
-                options.notify({ code: "pull.latest", message: response.result.message })
+                options.notify({ code: "pull.latest", message: response.result.message, transient: true })
         } catch (reason) {
             error = { repositoryId, message: reason instanceof Error ? reason.message : String(reason) }
         } finally {

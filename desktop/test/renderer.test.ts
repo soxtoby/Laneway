@@ -674,6 +674,55 @@ test("an uneventful Pull latest confirms in passing without a dialog", async () 
     dispose()
 })
 
+test("confirmation notices close themselves, but not while hovered", async () => {
+    // Capture only the notice countdown so the test controls when it elapses.
+    const countdowns = new Map<number, () => void>()
+    let nextCountdown = 0
+    const { setTimeout: realSetTimeout, clearTimeout: realClearTimeout } = browserWindow
+    Object.assign(browserWindow, {
+        setTimeout(handler: () => void, delay?: number) {
+            if (delay != 5_000)
+                return realSetTimeout.call(browserWindow, handler, delay)
+            countdowns.set(++nextCountdown, handler)
+            return nextCountdown
+        },
+        clearTimeout(id: number) {
+            if (!countdowns.delete(id))
+                realClearTimeout.call(browserWindow, id as never)
+        },
+    })
+    const repository = repositoryInfo("D:\Source\quiet-pull")
+    const graph = branchGraph(repository.id)
+    const api = fakeLaneway({
+        getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
+        readBranchGraph: async () => ({ ok: true, graph }),
+        pullLatest: async () => ({
+            ok: true,
+            result: { type: "result", command: "pull", status: "fetched", message: "Pull complete: 1 already current.", fetches: [], stacks: [] },
+        }),
+    })
+    const { container, root, dispose } = render(api)
+    try {
+        await flush(root)
+        click(button(container, "Pull latest"))
+        await flush(root)
+        const notice = container.querySelector<HTMLElement>(".notice:not([hidden])")!
+        expect(notice.textContent).toContain("Pull complete")
+        expect(countdowns.size).toBe(1)
+        notice.dispatchEvent(new Event("pointerenter"))
+        expect(countdowns.size).toBe(0)
+        notice.dispatchEvent(new Event("pointerleave"))
+        expect(countdowns.size).toBe(1)
+        for (const elapse of countdowns.values())
+            elapse()
+        await flush(root)
+        expect(container.querySelector(".notice:not([hidden])")).toBeNull()
+    } finally {
+        Object.assign(browserWindow, { setTimeout: realSetTimeout, clearTimeout: realClearTimeout })
+        dispose()
+    }
+})
+
 test("Pull latest is disabled without remotes and explains why", async () => {
     const repository = repositoryInfo("D:\Source\no-remotes")
     const graph = { ...branchGraph(repository.id), availableRemotes: [], selectedRemote: undefined }

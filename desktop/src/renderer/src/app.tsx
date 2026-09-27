@@ -191,6 +191,11 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
 
     function notify(nextNotice: NoticeState) {
         notice = nextNotice
+        // Withdraws this notice only if nothing has replaced it since.
+        return () => {
+            if (notice == nextNotice)
+                notice = undefined
+        }
     }
 
     async function setOpeningRepository(value: boolean) {
@@ -206,7 +211,7 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
             if (result.ok) {
                 workspace = result.workspace
                 activateWorkspaceRepository()
-                notify({ code: "repository.opened", message: "Repository opened." })
+                notify({ code: "repository.opened", message: "Repository opened.", transient: true })
             } else if (result.error.code != "git.cancelled") {
                 notify({ code: result.error.code, message: result.error.message })
             }

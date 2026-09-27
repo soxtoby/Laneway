@@ -160,6 +160,7 @@ export function createRepositoryEntry(options: RepositoryEntryOptions): Reposito
             options.notify({
                 code: `repository.${form == "clone" ? "cloned" : "initialized"}`,
                 message: `Repository ${form == "clone" ? "cloned" : "initialized"} and opened.`,
+                transient: true,
             })
             return
         }

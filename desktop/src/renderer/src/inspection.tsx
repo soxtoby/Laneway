@@ -8,6 +8,7 @@ import { compositionStyles, createComposition } from "./composition"
 import { ConflictResolution } from "./conflict-resolution"
 import { DiffLines } from "./diff"
 import { DiffControls } from "./diff-controls"
+import type { NoticeState } from "./feedback"
 import { fileLabel, FileTree } from "./file-list"
 import { FileMenu } from "./file-menu"
 import { Icon } from "./icons"
@@ -17,6 +18,7 @@ interface Options {
     api: Window["laneway"]
     update(): Promise<AbortSignal>
     signal: AbortSignal
+    notify(notice: NoticeState): () => void
     layout(repositoryId: string, columnId: string): DiffLayout
     saveLayout(repositoryId: string, columnId: string, layout: DiffLayout): void
     compareWith(repositoryId: string, fromRef: string, replaceId?: string, toRef?: string): void
@@ -1279,7 +1281,6 @@ export function createInspection(options: Options) {
             }
             return (
                 <div class={`column-inspection ${state.filterOpen ? "filter-open" : ""}`} mix={[columnInspection, compositionStyles]}>
-                    {composition.status(repositoryId)}
                     {conflictControls}
                     {state.filterOpen && (
                         <div class="inspection-filters" mix={inspectionFilters}>

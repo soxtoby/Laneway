@@ -46,7 +46,7 @@ interface BranchWorkspaceOptions {
     api: Window["laneway"]
     update(): Promise<AbortSignal>
     signal: AbortSignal
-    notify(notice: NoticeState): void
+    notify(notice: NoticeState): () => void
     selectRepository(id: string): Promise<void>
     closeRepository(id: string): Promise<void>
     moveRepository(id: string, targetId: string): Promise<void>
@@ -105,6 +105,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         api: options.api,
         update: options.update,
         signal: options.signal,
+        notify: options.notify,
         localChanged: repositoryId => read(repositoryId, false, false),
         resolveWorkingConflict: (repositoryId, subject) => conflicts.open(repositoryId, subject),
         localBusyChanged: busy => {
@@ -871,7 +872,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         const index = state.openedBranchIds.indexOf(branchId)
         const target = index + delta
         if (index < 0 || target < 0 || target >= state.openedBranchIds.length) {
-            options.notify({ code: "column.boundary", message: target < 0 ? "Already first column." : "Already last column." })
+            options.notify({ code: "column.boundary", message: target < 0 ? "Already first column." : "Already last column.", transient: true })
             return
         }
         state.openedBranchIds.splice(index, 1)

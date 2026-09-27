@@ -3,24 +3,69 @@ import { css, type Handle, on } from "remix/ui"
 export interface NoticeState {
     code: string
     message: string
+    // Confirmations close themselves; failures and guidance wait for the user.
+    transient?: boolean
 }
 
+const transientDuration = 5_000
+
 export function Notice(handle: Handle<{ notice?: NoticeState; dismiss(): void }>) {
-    return () => (
-        <div class="notice" mix={notice} role="status" aria-live="polite" hidden={!handle.props.notice}>
-            <div>
-                <small mix={noticeSmall}>
-                    {handle.props.notice?.code ?? ""}
-                </small>
-                <p mix={noticeP}>
-                    {handle.props.notice?.message ?? ""}
-                </p>
+    let shown: NoticeState | undefined, timer: number | undefined, hovered = false, focused = false
+    const stop = () => window.clearTimeout(timer)
+    // The countdown waits while the pointer or focus is on the notice, so it never closes mid-read.
+    const schedule = () => {
+        stop()
+        if (shown?.transient && !hovered && !focused)
+            timer = window.setTimeout(() => handle.props.dismiss(), transientDuration)
+    }
+    handle.signal.addEventListener("abort", stop, { once: true })
+    return () => {
+        if (handle.props.notice != shown) {
+            shown = handle.props.notice
+            schedule()
+        }
+        return (
+            <div
+                class="notice"
+                mix={[
+                    notice,
+                    on("pointerenter", () => {
+                        hovered = true
+                        stop()
+                    }),
+                    on("pointerleave", () => {
+                        hovered = false
+                        schedule()
+                    }),
+                    on("focusin", () => {
+                        focused = true
+                        stop()
+                    }),
+                    on("focusout", event => {
+                        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                            focused = false
+                            schedule()
+                        }
+                    }),
+                ]}
+                role="status"
+                aria-live="polite"
+                hidden={!handle.props.notice}
+            >
+                <div>
+                    <small mix={noticeSmall}>
+                        {handle.props.notice?.code ?? ""}
+                    </small>
+                    <p mix={noticeP}>
+                        {handle.props.notice?.message ?? ""}
+                    </p>
+                </div>
+                <button id="notice-close" type="button" aria-label="Dismiss" mix={[noticeClose, on("click", handle.props.dismiss)]}>
+                    ×
+                </button>
             </div>
-            <button id="notice-close" type="button" aria-label="Dismiss" mix={[noticeClose, on("click", handle.props.dismiss)]}>
-                ×
-            </button>
-        </div>
-    )
+        )
+    }
 }
 
 export function FatalError(handle: Handle<{ message: string; retry(): void }>) {
