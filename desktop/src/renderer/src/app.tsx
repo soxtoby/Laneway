@@ -156,8 +156,7 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
                 openRepository,
                 workspaceOpened(nextWorkspace) {
                     workspace = nextWorkspace
-                    if (nextWorkspace.activeRepositoryId)
-                        branchWorkspace?.activate(nextWorkspace.activeRepositoryId)
+                    activateWorkspaceRepository()
                 },
             })
             if (workspace.activeRepositoryId)
@@ -206,6 +205,7 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
             const result = await handle.props.api.openRepository()
             if (result.ok) {
                 workspace = result.workspace
+                activateWorkspaceRepository()
                 notify({ code: "repository.opened", message: "Repository opened." })
             } else if (result.error.code != "git.cancelled") {
                 notify({ code: result.error.code, message: result.error.message })
@@ -234,11 +234,16 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
 
     async function closeRepository(id: string) {
         workspace = await handle.props.api.closeRepository(id)
-        if (workspace.activeRepositoryId && workspace.repositories.find(repository => repository.id == workspace!.activeRepositoryId)?.status == "available")
-            branchWorkspace?.activate(workspace.activeRepositoryId)
+        activateWorkspaceRepository()
+        await handle.update()
+    }
+
+    function activateWorkspaceRepository() {
+        const activeId = workspace?.activeRepositoryId
+        if (activeId && workspace!.repositories.find(repository => repository.id == activeId)?.status == "available")
+            branchWorkspace?.activate(activeId)
         else
             branchWorkspace?.deactivate()
-        await handle.update()
     }
 
     async function locateRepository(id: string) {
