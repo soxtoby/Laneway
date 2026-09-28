@@ -401,18 +401,48 @@ function inferBases(branches: MutableBranch[], candidates: MutableBranch[], topo
     }
     const baseObjectIds = unique([...mergeBasesByBranch.values()].flat().map(entry => entry.objectId), objectId => objectId)
     const isAncestor = topology.ancestry(baseObjectIds)
-    for (const [branch, mergeBases] of mergeBasesByBranch) {
-        const closest: typeof mergeBases = []
-        const frontier: string[] = []
-        for (const entry of mergeBases) {
-            if (frontier.some(objectId => entry.objectId != objectId && isAncestor(entry.objectId, objectId)))
-                continue
-            closest.push(entry)
-            if (!frontier.includes(entry.objectId))
-                frontier.push(entry.objectId)
-        }
-        branch.base = chooseBase(closest)
+    const candidatesById = new Map(candidates.map(candidate => [candidate.id, candidate]))
+    const excluded = new Map<MutableBranch, Set<string>>()
+    const infer = (branch: MutableBranch) => {
+        const skipped = excluded.get(branch)
+        const mergeBases = mergeBasesByBranch.get(branch)!.filter(entry => !skipped?.has(entry.candidate.id))
+        branch.base = chooseBase(closestMergeBases(mergeBases, isAncestor))
     }
+    for (const branch of mergeBasesByBranch.keys())
+        infer(branch)
+
+    // Siblings diverging from a commit that no other branch holds each see the other as closest.
+    // Neither owns the shared commits, so both fall back to the next Base below the fork.
+    for (let pending = [...mergeBasesByBranch.keys()]; pending.length > 0;) {
+        const affected: MutableBranch[] = []
+        for (const branch of pending) {
+            const base = branch.base.status == "known" ? candidatesById.get(branch.base.branchId) : undefined
+            if (!base || !mergeBasesByBranch.has(base) || base.base.status != "known" || base.base.branchId != branch.id)
+                continue
+            excluded.set(branch, (excluded.get(branch) ?? new Set()).add(base.id))
+            excluded.set(base, (excluded.get(base) ?? new Set()).add(branch.id))
+            infer(branch)
+            infer(base)
+            affected.push(branch, base)
+        }
+        pending = affected
+    }
+}
+
+function closestMergeBases(
+    mergeBases: Array<{ candidate: MutableBranch; objectId: string }>,
+    isAncestor: (ancestor: string, descendant: string) => boolean,
+) {
+    const closest: typeof mergeBases = []
+    const frontier: string[] = []
+    for (const entry of mergeBases) {
+        if (frontier.some(objectId => entry.objectId != objectId && isAncestor(entry.objectId, objectId)))
+            continue
+        closest.push(entry)
+        if (!frontier.includes(entry.objectId))
+            frontier.push(entry.objectId)
+    }
+    return closest
 }
 
 function chooseBase(entries: Array<{ candidate: MutableBranch; objectId: string }>): BranchGraphBase {

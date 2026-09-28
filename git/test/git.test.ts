@@ -239,6 +239,36 @@ describe("system Git", () => {
         }
     })
 
+    test("falls back below a fork when sibling branches would be each other's Base", async () => {
+        const repository = await temporaryDirectory("laneway-graph-siblings-")
+        expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
+        await commitFile(repository, "README.md", "initial\n", "Initial")
+        expect(runGit(repository, "checkout", "-q", "-b", "stack/base").exitCode).toBe(0)
+        await commitFile(repository, "base.txt", "base\n", "Base")
+        const baseTip = gitText(repository, "rev-parse", "HEAD")
+        expect(runGit(repository, "checkout", "-q", "-b", "stack/right").exitCode).toBe(0)
+        await commitFile(repository, "shared.txt", "shared\n", "Shared")
+        const shared = gitText(repository, "rev-parse", "HEAD")
+        await commitFile(repository, "right.txt", "one\n", "Right one")
+        await commitFile(repository, "right.txt", "two\n", "Right two")
+        expect(runGit(repository, "checkout", "-q", "-b", "stack/left", shared).exitCode).toBe(0)
+        await commitFile(repository, "left.txt", "left\n", "Left")
+
+        const opened = await openRepository(repository)
+        const graph = await opened.startReadBranchGraph({
+            authorIdentities: { primary: "laneway@example.invalid", secondary: [] },
+            remotePatterns: [],
+        }).result
+        for (const name of ["stack/left", "stack/right"]) {
+            const branch = graph.branches.find(candidate => candidate.name == name)!
+            expect(branch.base).toMatchObject({ status: "known", ref: "refs/heads/stack/base", tip: baseTip })
+            const history = await opened.startReadBranchHistory({ branchRef: branch.preferredRef, tip: branch.tip, baseTips: [baseTip], limit: 50 }).result
+            expect(history.commits.at(-1)?.objectId).toBe(shared)
+        }
+    })
+
     test("reads branch history along the first parent of merge commits", async () => {
         const repository = await temporaryDirectory("laneway-graph-first-parent-")
         expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)
