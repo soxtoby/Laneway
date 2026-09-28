@@ -14,6 +14,8 @@ import { baseName, RepositoryRail } from "./repository-rail"
 import { createWorktreeActions } from "./worktree-actions"
 import { reconcileWorktreeColumns, workspaceGraph } from "./worktree-columns"
 
+const defaultColumnWidth = 380
+
 interface RepositoryGraphState {
     graph?: BranchGraph
     loading: boolean
@@ -135,7 +137,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                     state.focusedColumnId = newId
                 if (state.selectedId == oldId)
                     state.selectedId = newId
-                state.widths[newId] = state.widths[oldId] ?? 380
+                state.widths[newId] = state.widths[oldId] ?? defaultColumnWidth
                 state.diffLayouts[newId] = state.diffLayouts[oldId] ?? "unified"
                 const repository = options.workspace().repositories.find(item => item.id == repositoryId)
                 for (const column of repository?.columns ?? []) {
@@ -686,7 +688,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                 if (!state.focusedColumnId || !state.openedBranchIds.includes(state.focusedColumnId))
                     state.focusedColumnId = state.openedBranchIds[0]
                 for (const column of [...columns.branches, ...columns.virtualBranches].filter(column => state.openedBranchIds.includes(column.id)))
-                    state.widths[column.id] ??= 380
+                    state.widths[column.id] ??= defaultColumnWidth
                 const savedRepository = options.workspace().repositories.find(repository => repository.id == repositoryId)
                 if (savedRepository?.status == "available") {
                     const reconciled = reconcileWorktreeColumns(savedRepository.columns, result.graph, savedRepository.focusedColumnId)
@@ -711,14 +713,14 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                     if (initialColumn) {
                         state.openedBranchIds.push(initialColumn.id)
                         state.focusedColumnId = initialColumn.id
-                        state.widths[initialColumn.id] = 380
+                        state.widths[initialColumn.id] = defaultColumnWidth
                     }
                     savedRepository.layoutInitialized = true
                 }
                 for (const column of [...columns.branches.filter(branch => branch.checkedOut.length > 0), ...columns.virtualBranches]) {
                     if (!state.openedBranchIds.includes(column.id))
                         state.openedBranchIds.push(column.id)
-                    state.widths[column.id] ??= 380
+                    state.widths[column.id] ??= defaultColumnWidth
                 }
                 state.openedBranchIds = [...new Set(state.openedBranchIds)]
                 if (!state.focusedColumnId || !state.openedBranchIds.includes(state.focusedColumnId))
@@ -808,7 +810,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         state.collapsedColumnIds = state.collapsedColumnIds.filter(id => id != branchId)
         state.selectedId = branchId
         state.focusedColumnId = branchId
-        state.widths[branchId] ??= 380
+        state.widths[branchId] ??= defaultColumnWidth
         state.maximizedBranchId = undefined
         void persist(repositoryId).then(() => options.update()).then(() =>
             [...document.querySelectorAll<HTMLElement>("[data-column-id]")].find(column => column.dataset.columnId == branchId)?.focus()
@@ -922,7 +924,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                     id,
                     ref: branch.preferredRef,
                     lastSeenObjectId: branch.tip,
-                    width: state.widths[id] ?? 380,
+                    width: state.widths[id] ?? defaultColumnWidth,
                     collapsed: state.collapsedColumnIds.includes(id),
                     diffLayout: state.diffLayouts[id] ?? "unified",
                     ...(backingPath(repositoryId, id) ? { worktreePath: backingPath(repositoryId, id) } : {}),
@@ -937,7 +939,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                     worktreePath: virtual.worktree.path,
                     worktreeId: virtual.worktree.id,
                     lastSeenObjectId: virtual.objectId,
-                    width: state.widths[id] ?? 380,
+                    width: state.widths[id] ?? defaultColumnWidth,
                     collapsed: state.collapsedColumnIds.includes(id),
                     diffLayout: state.diffLayouts[id] ?? "unified",
                 }]
@@ -1070,7 +1072,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                 state.openedBranchIds.push(from.id)
             state.collapsedColumnIds = state.collapsedColumnIds.filter(id => id != from.id)
             state.maximizedBranchId = undefined
-            state.widths[from.id] ??= 380
+            state.widths[from.id] ??= defaultColumnWidth
             state.focusedColumnId = from.id
             await persist(request.repositoryId)
             inspection.openComparison(request.repositoryId, from, to, graph, request.replaceId, backingPath(request.repositoryId, from.id))
@@ -1435,7 +1437,7 @@ function BranchColumns(
                             style={{
                                 width: props.state.maximizedBranchId
                                     ? "100%"
-                                    : `${props.state.collapsedColumnIds.includes(column.id) ? 52 : props.state.widths[column.id] ?? 380}px`,
+                                    : `${props.state.collapsedColumnIds.includes(column.id) ? 52 : props.state.widths[column.id] ?? defaultColumnWidth}px`,
                             }}
                             tabIndex={-1}
                             mix={[
@@ -1484,6 +1486,15 @@ function BranchColumns(
                                                 on("contextmenu", event => {
                                                     if (column.kind == "branch")
                                                         props.branchMenu(column, event)
+                                                }),
+                                                // Like a window title bar; the header's own controls keep their double-clicks.
+                                                on("dblclick", event => {
+                                                    if (
+                                                        !(event.target instanceof Element
+                                                            && event.target.closest("button, input, select, textarea, a, [role='menu'], dialog"))
+                                                    ) {
+                                                        props.maximize(column.id)
+                                                    }
                                                 }),
                                                 on("dragstart", event => {
                                                     props.state.draggingColumnId = column.id
@@ -1580,7 +1591,7 @@ function BranchColumns(
                                 )}
                         </article>
                         {!props.state.maximizedBranchId && !props.state.collapsedColumnIds.includes(column.id) && (
-                            <ColumnDivider branchId={column.id} width={props.state.widths[column.id] ?? 380} resize={props.resize} />
+                            <ColumnDivider branchId={column.id} width={props.state.widths[column.id] ?? defaultColumnWidth} resize={props.resize} />
                         )}
                         {!props.state.collapsedColumnIds.includes(column.id) && props.inspection.breakout(props.repositoryId, column.id)}
                     </>
@@ -1634,6 +1645,7 @@ function ColumnDivider(handle: Handle<{ branchId: string; width: number; resize(
                     window.addEventListener("pointermove", move)
                     window.addEventListener("pointerup", end, { once: true })
                 }),
+                on("dblclick", () => handle.props.resize(handle.props.branchId, defaultColumnWidth)),
             ]}
         >
         </div>
@@ -1949,7 +1961,8 @@ const graphDesk = css({
     position: "relative",
     minWidth: "0",
     minHeight: "0",
-    padding: "var(--gutter) var(--gutter) var(--gutter) 4px",
+    // No side padding: the branch columns scroll right up to the window edge and the repository rail.
+    padding: "var(--gutter) 0",
     display: "flex",
     flexDirection: "column",
     overflow: "hidden",
@@ -2052,12 +2065,11 @@ const graphLimit = css({
 })
 
 const graphLayout = css({
-    "&.graph-collapsed": { gridTemplateColumns: "minmax(0, 1fr)", gap: "0" },
+    "&.graph-collapsed": { gridTemplateColumns: "minmax(0, 1fr)" },
     minWidth: "0",
     minHeight: "0",
     display: "grid",
     flex: "1 1 auto",
-    gap: "var(--gutter)",
     gridTemplateColumns: "clamp(260px, 28%, 380px) minmax(0, 1fr)",
     overflow: "hidden",
     "@media (max-width: 1080px)": {
@@ -2067,15 +2079,18 @@ const graphLayout = css({
 
 const graphSidebar = css({
     "&.collapsed": { display: "none" },
+    position: "relative",
+    zIndex: "1",
     minWidth: "0",
     minHeight: "0",
+    marginLeft: "4px",
     display: "flex",
     flexDirection: "column",
     overflow: "hidden",
     border: "1px solid var(--line-strong)",
     borderRadius: "var(--radius-card)",
     background: "var(--panel)",
-    boxShadow: "var(--card-shadow)",
+    boxShadow: "var(--card-shadow), var(--edge-shadow)",
 })
 
 const graphPanel = css({
@@ -2376,10 +2391,27 @@ const branchColumns = css({
     display: "flex",
     alignItems: "stretch",
     gap: "var(--gutter)",
-    // Room for the 1px card ring, which sits outside each column's box.
-    padding: "1px",
+    // Room for the 1px card ring, which sits outside each column's box. The side padding scrolls with the
+    // columns, leaving a gap at either end while scrolled columns run to the strip's edges.
+    padding: "1px var(--gutter) 1px 4px",
+    // Beside the sidebar, the columns tuck under its rounded edge so scrolled columns disappear beneath its shadow.
+    ".graph-layout:not(.graph-collapsed) &": {
+        marginLeft: "calc(-1 * var(--radius-card))",
+        paddingLeft: "calc(var(--gutter) + var(--radius-card))",
+    },
     overflowX: "auto",
     overflowY: "hidden",
+    // Column focus rings and dividers stay beneath the Branch Graph sidebar.
+    isolation: "isolate",
+    // A styled scrollbar takes up room, so it sits under the columns instead of overlaying their bottom edge.
+    "&::-webkit-scrollbar": { height: "10px" },
+    "&::-webkit-scrollbar-track": { background: "transparent" },
+    "&::-webkit-scrollbar-thumb": {
+        background: "var(--line-strong)",
+        border: "2px solid var(--canvas)",
+        borderRadius: "5px",
+    },
+    "&::-webkit-scrollbar-thumb:hover": { background: "var(--faint)" },
     "&.maximized .branch-column": {
         width: "100%",
     },
@@ -2401,7 +2433,7 @@ const collapsedColumnButton = css({
 const branchColumn = css({
     "&.collapsed": { minWidth: "52px", gridTemplateRows: "minmax(0, 1fr)" },
     position: "relative",
-    width: "380px",
+    width: `${defaultColumnWidth}px`,
     minWidth: "310px",
     flex: "0 0 auto",
     display: "grid",

@@ -504,9 +504,31 @@ async function checkRenderer() {
     const graphFullyHidden = element(".graph-sidebar").getBoundingClientRect().width == 0
         && element(".branch-columns").getBoundingClientRect().left
             == graphDesk.getBoundingClientRect().left + parseFloat(getComputedStyle(graphDesk).paddingLeft)
+    // Without the sidebar, columns scroll right up to the repository rail.
+    const columnsMeetRail = element(".branch-columns").getBoundingClientRect().left == element(".repository-rail").getBoundingClientRect().right
     showGraphButton.click()
     await settle()
     const graphRestored = element(".graph-sidebar").getBoundingClientRect().width > 0
+    // Overflowing columns scroll horizontally on a scrollbar beneath them, not one overlaying their bottom edge.
+    const columns = element(".branch-columns")
+    const overflowSpacer = columns.appendChild(document.createElement("div"))
+    overflowSpacer.style.flex = `0 0 ${columns.clientWidth}px`
+    const columnsViewportBottom = columns.getBoundingClientRect().top + columns.clientTop + columns.clientHeight
+    const columnScrollbarBelow = columns.scrollWidth > columns.clientWidth
+        && columns.offsetHeight - columns.clientHeight >= 8
+        && element(".branch-column").getBoundingClientRect().bottom <= columnsViewportBottom
+    // Columns start a gutter clear of the sidebar, but scroll beneath its edge and out to the window's edge.
+    const sidebarBounds = element(".graph-sidebar").getBoundingClientRect()
+    const columnsRestClear = element(".branch-column").getBoundingClientRect().left - sidebarBounds.right == 6
+    columns.scrollLeft = 100
+    const scrolledColumnHit = document.elementFromPoint(sidebarBounds.right + 1, sidebarBounds.top + 60)
+    const sidebarHit = document.elementFromPoint(sidebarBounds.right - 2, sidebarBounds.top + 60)
+    const columnsReachEdges = columnsRestClear
+        && scrolledColumnHit?.closest(".branch-column") != null
+        && sidebarHit?.closest(".graph-sidebar") != null
+        && columns.getBoundingClientRect().right == document.documentElement.clientWidth
+    columns.scrollLeft = 0
+    overflowSpacer.remove()
     element("[data-node-id='branch:refs/heads/feature/laneway']").dispatchEvent(
         new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 90, clientY: 120 }),
     )
@@ -711,6 +733,9 @@ async function checkRenderer() {
         expandedWidthRestored,
         graphFullyHidden,
         graphRestored,
+        columnsMeetRail,
+        columnScrollbarBelow,
+        columnsReachEdges,
         hideGraphButtonCompact,
         showGraphButtonCompact,
         branchToggleHasIcon,
@@ -839,10 +864,15 @@ async function checkVirtualWorktree() {
             && menu.textContent!.includes("Remove worktree") && !menu.textContent!.includes("New worktree") && hover
         menu.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
         await settle()
-        row.querySelector<HTMLButtonElement>("[aria-label='Rename worktree']")!.click()
+        const renameButton = row.querySelector<HTMLButtonElement>("[aria-label='Rename worktree']")!
+        // The name and its rename input fit their text, leaving the rest of the header free.
+        const titleWidth = renameButton.parentElement!.getBoundingClientRect().width
+        const nameFits = renameButton.getBoundingClientRect().width < titleWidth / 2
+        renameButton.click()
         await settle()
         const input = row.querySelector<HTMLInputElement>("input")!
         const inline = document.activeElement == input && input.value == "inspection" && header.getBoundingClientRect().height == bounds.height
+            && nameFits && input.getBoundingClientRect().width < titleWidth / 2
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
         await settle()
         const menuButton = row.querySelector<HTMLButtonElement>("[aria-label='Worktree actions']")!

@@ -572,8 +572,9 @@ const pathStyle = css({
     fontSize: "11px",
     lineHeight: "14px",
 })
+// The name and its rename input size to their text, leaving the rest of the header free to drag and click.
 const nameStyle = css({
-    flex: "1 1 auto",
+    flex: "0 1 auto",
     minWidth: 0,
     overflow: "hidden",
     textOverflow: "ellipsis",
@@ -594,9 +595,10 @@ const nameStyle = css({
     "&:disabled": { opacity: 1, cursor: "default" },
 })
 const nameInputStyle = css({
-    flex: "1 1 auto",
-    minWidth: 0,
+    flex: "0 1 auto",
+    minWidth: "4ch",
     width: "auto",
+    fieldSizing: "content",
     height: "26px",
     padding: "0 4px",
     margin: "0 0 0 -4px",

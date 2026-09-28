@@ -51,6 +51,7 @@
         --shadow-popover: 0 8px 24px rgb(20 30 50 / 16%);
         --shadow-dialog: 0 18px 48px rgb(20 30 50 / 24%);
         --card-shadow: 0 1px 2px rgb(20 30 50 / 8%);
+        --edge-shadow: 8px 0 8px -8px rgb(20 30 50 / 24%);
         --chrome: #1b2230;
         --chrome-2: #273043;
         --chrome-line: #364056;
@@ -112,6 +113,7 @@
         --scrim: rgb(0 0 0 / 55%);
         --shadow-popover: 0 10px 30px rgb(0 0 0 / 46%);
         --card-shadow: 0 1px 2px rgb(0 0 0 / 40%);
+        --edge-shadow: 8px 0 10px -8px rgb(0 0 0 / 60%);
         --chrome: #0f141c;
         --chrome-2: #1a2130;
         --chrome-line: #2a3345;

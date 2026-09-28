@@ -777,6 +777,32 @@ test("Pull latest is disabled without remotes and explains why", async () => {
     dispose()
 })
 
+test("double-clicking a column header toggles maximizing it, but not on its controls", async () => {
+    const scenario = inspectionScenario()
+    const initial = await scenario.api.getState()
+    const graphResult = await scenario.api.readBranchGraph(initial.workspace.activeRepositoryId!, false)
+    if (!graphResult.ok)
+        throw new Error("Missing graph")
+    const main = graphResult.graph.branches[0]
+    main.checkedOut = [{ path: "D:/other", name: "other", head: main.tip, main: false }]
+    const view = render(scenario.api)
+    await flush(view.root)
+    const columnIds = () => [...view.container.querySelectorAll("[data-column-id]")].map(node => node.getAttribute("data-column-id"))
+    const opened = columnIds()
+    expect(opened.length).toBeGreaterThan(1)
+    const header = () => view.container.querySelector<HTMLElement>(`[data-column-id="${opened[1]}"] header`)!
+    header().querySelector("button")!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))
+    await flush(view.root)
+    expect(columnIds()).toEqual(opened)
+    header().dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))
+    await flush(view.root)
+    expect(columnIds()).toEqual([opened[1]])
+    header().dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))
+    await flush(view.root)
+    expect(columnIds()).toEqual(opened)
+    view.dispose()
+})
+
 test("retains worktree columns and restores collapse in place across restart", async () => {
     const scenario = inspectionScenario()
     const initial = await scenario.api.getState()
@@ -812,6 +838,10 @@ test("retains worktree columns and restores collapse in place across restart", a
     await flush(view.root)
     expect(restored.classList.contains("collapsed")).toBe(false)
     expect(restored.style.width).toBe("390px")
+    restored.nextElementSibling!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))
+    await flush(view.root)
+    expect(restored.style.width).toBe("380px")
+    expect((await scenario.api.getState()).workspace.repositories[0].columns[0]).toMatchObject({ width: 380 })
     click(view.container.querySelector<HTMLButtonElement>('[aria-label="Hide Branch Graph"]')!)
     await flush(view.root)
     expect(view.container.querySelector(".graph-layout")?.classList.contains("graph-collapsed")).toBe(true)
