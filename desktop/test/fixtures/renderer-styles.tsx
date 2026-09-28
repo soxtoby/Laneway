@@ -405,6 +405,9 @@ async function checkRenderer() {
         && getComputedStyle(breakout).borderLeftWidth == "3px"
         && breakout.previousElementSibling?.previousElementSibling?.classList.contains("branch-column")
         && document.activeElement == breakout
+    // Header controls stay clear of the column's overlay scrollbar.
+    const breakoutScrollbarClear = [element("[aria-label='Close diff column']"), element(".inspection-breakout .diff-toolbar button:last-of-type")]
+        .every(control => breakout.getBoundingClientRect().right - control.getBoundingClientRect().right >= 12)
     const inlineDiffsHiddenAfterBreakout = !document.querySelector(".branch-column .diff-inspector")
     breakout.scrollTop = breakout.scrollHeight
     breakout.scrollLeft = breakout.scrollWidth
@@ -419,6 +422,26 @@ async function checkRenderer() {
     const breakoutSwitchedTo = element(".inspection-breakout .diff-inspector").getAttribute("aria-label")
     const breakoutSwitched = breakoutSwitchedTo == "Diff for src/example.ts" && !document.querySelector(".branch-column .diff-inspector")
         && element(".inspection-breakout").querySelector(".pierre-diff")!.shadowRoot!.querySelectorAll("[data-line]").length == 2
+    // A maximized column keeps its own width beside its diff column, which takes the rest; resizing moves the split.
+    const breakoutSource = element(`[data-column-id="${element(".inspection-breakout").dataset.sourceColumnId}"]`)
+    const sourceWidth = breakoutSource.getBoundingClientRect().width
+    breakoutSource.querySelector<HTMLButtonElement>("[aria-label='Maximize column']")!.click()
+    await settle()
+    const splitColumns = element(".branch-columns")
+    const splitDiff = element(".inspection-breakout")
+    const splitEnd = splitColumns.getBoundingClientRect().right - parseFloat(getComputedStyle(splitColumns).paddingRight)
+    const splitFits = () => splitColumns.scrollWidth <= splitColumns.clientWidth && Math.abs(splitDiff.getBoundingClientRect().right - splitEnd) <= 1
+    const splitAtRest = breakoutSource.getBoundingClientRect().width == sourceWidth && splitFits()
+    const splitDivider = element<HTMLElement>(`[data-column-id="${breakoutSource.dataset.columnId}"] + .column-divider`)
+    press(splitDivider, "End")
+    await settle()
+    const splitCapped = breakoutSource.getBoundingClientRect().width > sourceWidth && splitFits()
+        && splitDiff.getBoundingClientRect().width >= 310
+    splitDivider.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))
+    await settle()
+    const maximizedSplit = splitAtRest && splitCapped && breakoutSource.getBoundingClientRect().width == 380 && splitFits()
+    element<HTMLButtonElement>("[aria-label='Restore columns']").click()
+    await settle()
     element("[aria-label='Close diff column']").click()
     await settle()
     outer.scrollTop = 0
@@ -760,6 +783,8 @@ async function checkRenderer() {
         outerDiffScroll,
         breakoutDiffScroll,
         auxiliarySourceVisible,
+        maximizedSplit,
+        breakoutScrollbarClear,
         inlineDiffsHiddenAfterBreakout,
         breakoutSwitched,
         breakoutSwitchedTo,

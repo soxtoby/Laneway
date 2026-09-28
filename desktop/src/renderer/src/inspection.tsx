@@ -1,7 +1,7 @@
 import type { BranchGraph, BranchGraphBranchNode, BranchGraphVirtualBranch, BranchHistoryPage, ChangedFile, ChangeSelection, ChangesInventory, CompositionSource, DiffLayout, DiffSource, DiffView, FileDiffPage } from "@laneway/shared"
 import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 import * as accordion from "remix/ui/accordion/primitives"
-import { AuxiliaryColumns } from "./auxiliary-columns"
+import { AuxiliaryColumns, auxiliaryColumnWidth } from "./auxiliary-columns"
 import { type BranchComparisonState, createBranchComparisons } from "./branch-comparison"
 import { CommitComposer } from "./commit-composer"
 import { compositionStyles, createComposition } from "./composition"
@@ -2117,7 +2117,8 @@ const diffToolbar = css({
     display: "flex",
     alignItems: "center",
     gap: "8px",
-    padding: "4px 6px",
+    // Only broken-out diffs show this toolbar, at the right edge of their scrolling column.
+    padding: "4px var(--scrollbar-clearance) 4px 6px",
     borderBottom: "1px solid var(--line)",
 })
 
@@ -2610,7 +2611,7 @@ const bodySelectionSummaryButton = css({
 })
 
 const inspectionBreakout = css({
-    flex: "0 0 620px",
+    ...auxiliaryColumnWidth,
     minWidth: "380px",
     overflow: "auto",
     background: "var(--panel)",
@@ -2624,7 +2625,7 @@ const inspectionBreakoutHeader = css({
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: "8px 10px",
+    padding: "8px var(--scrollbar-clearance) 8px 10px",
     background: "var(--panel-deep)",
     borderBottom: "1px solid var(--line)",
 })

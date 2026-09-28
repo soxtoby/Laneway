@@ -1,5 +1,6 @@
 import type { FileHistoryEntry, FileHistoryPage, FileHistorySource } from "@laneway/shared"
 import { css, on, type RemixNode } from "remix/ui"
+import { auxiliaryColumnWidth } from "./auxiliary-columns"
 import { InspectionItem } from "./file-list"
 
 export interface FileHistoryState {
@@ -322,7 +323,7 @@ export function createFileHistories(
     }
 }
 const historyColumn = css({
-    flex: "0 0 620px",
+    ...auxiliaryColumnWidth,
     minWidth: 0,
     overflow: "auto",
     background: "var(--panel)",
@@ -335,7 +336,7 @@ const historyColumn = css({
         alignItems: "center",
         gap: "6px",
         height: "44px",
-        padding: "0 10px",
+        padding: "0 var(--scrollbar-clearance) 0 10px",
         background: "var(--panel-deep)",
     },
     "& > header strong": { flex: 1, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" },

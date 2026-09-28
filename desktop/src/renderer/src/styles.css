@@ -63,6 +63,8 @@
         --radius: 6px;
         --radius-card: 6px;
         --gutter: 6px;
+        /* Keeps controls at a scrolling column's right edge clear of its overlay scrollbar. */
+        --scrollbar-clearance: 16px;
         --toolbar: 48px;
         --rail: 224px;
         --rail-collapsed: 52px;

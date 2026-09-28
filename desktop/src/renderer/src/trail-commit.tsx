@@ -1,5 +1,6 @@
 import type { FileHistoryEntry, FileHistoryPage, FileHistorySource } from "@laneway/shared"
 import { css, on, type RemixNode } from "remix/ui"
+import { auxiliaryColumnWidth } from "./auxiliary-columns"
 
 export interface TrailCommitState {
     kind: "trail-commit"
@@ -160,7 +161,7 @@ export function createTrailCommits(options: { api: Window["laneway"]; update(): 
     }
 }
 const column = css({
-    flex: "0 0 620px",
+    ...auxiliaryColumnWidth,
     minWidth: 0,
     overflow: "auto",
     background: "var(--panel)",
@@ -170,7 +171,7 @@ const column = css({
         top: 0,
         zIndex: 10,
         height: "44px",
-        padding: "0 10px",
+        padding: "0 var(--scrollbar-clearance) 0 10px",
         display: "flex",
         alignItems: "center",
         background: "var(--panel-deep)",

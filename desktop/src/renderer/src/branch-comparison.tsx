@@ -1,5 +1,6 @@
 import type { BranchGraph, BranchGraphBranchNode, ChangesInventory, DiffLayout, FileDiffPage } from "@laneway/shared"
 import { css, on, type RemixNode } from "remix/ui"
+import { auxiliaryColumnWidth } from "./auxiliary-columns"
 import { DiffLines } from "./diff"
 import { DiffControls } from "./diff-controls"
 import { FileTree } from "./file-list"
@@ -330,7 +331,7 @@ export function createBranchComparisons(options: { api: Window["laneway"]; updat
 }
 
 const comparison = css({
-    flex: "0 0 620px",
+    ...auxiliaryColumnWidth,
     minWidth: "380px",
     overflow: "auto",
     background: "var(--panel)",
@@ -346,7 +347,7 @@ const comparison = css({
         display: "flex",
         gap: "6px",
         alignItems: "center",
-        padding: "8px 10px",
+        padding: "8px var(--scrollbar-clearance) 8px 10px",
         background: "var(--panel-deep)",
     },
     "& > header strong": { flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },

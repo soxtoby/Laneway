@@ -1429,173 +1429,180 @@ function BranchColumns(
         const visible = props.state.maximizedBranchId ? columns.filter(column => column.id == props.state.maximizedBranchId) : columns
         return (
             <section class={`branch-columns ${props.state.maximizedBranchId ? "maximized" : ""}`} mix={branchColumns}>
-                {visible.map(column => (
-                    <>
-                        <article
-                            class={`branch-column ${props.state.collapsedColumnIds.includes(column.id) ? "collapsed" : ""}`}
-                            data-column-id={column.id}
-                            style={{
-                                width: props.state.maximizedBranchId
-                                    ? "100%"
-                                    : `${props.state.collapsedColumnIds.includes(column.id) ? 52 : props.state.widths[column.id] ?? defaultColumnWidth}px`,
-                            }}
-                            tabIndex={-1}
-                            mix={[
-                                branchColumn,
-                                on("focusin", () => props.focus(column.id)),
-                                on("keydown", event => {
-                                    if (
-                                        column.kind == "branch" && (event.key == "F2" || event.key == "Delete")
-                                        && !(event.target instanceof HTMLElement && event.target.closest("input, textarea, select"))
-                                    ) {
-                                        event.preventDefault()
-                                        props.branchAction(column, event.key == "F2" ? "branch-rename" : "branch-delete")
-                                        return
-                                    }
-                                    props.inspection.filterKeydown(props.repositoryId, column.id, event, handle.update)
-                                    if (event.ctrlKey && event.shiftKey && (event.key == "<" || event.key == ">")) {
-                                        event.preventDefault()
-                                        props.move(column.id, event.key == "<" ? -1 : 1)
-                                    }
-                                }),
-                            ]}
-                        >
-                            {props.state.collapsedColumnIds.includes(column.id)
-                                ? (
-                                    <button
-                                        class="expand-column"
-                                        type="button"
-                                        title={props.worktreePath(column.id) ?? column.name}
-                                        aria-label={`Expand ${column.name}`}
-                                        mix={[collapsedColumnButton, on("click", () => props.collapse(column.id))]}
-                                    >
-                                        <span aria-hidden="true" mix={expandColumnIcon}>
-                                            <Icon name="collapse-right" size={14} />
-                                        </span>
-                                        <span>{column.name}</span>
-                                        <span>{props.inspection.workingSummary(props.repositoryId, column, props.graph, props.worktreePath(column.id))}</span>
-                                    </button>
-                                )
-                                : (
-                                    <>
-                                        <header
-                                            draggable={!props.state.maximizedBranchId}
-                                            title="Drag to reorder · Ctrl+< / Ctrl+>"
-                                            mix={[
-                                                branchColumnHeader,
-                                                on("contextmenu", event => {
-                                                    if (column.kind == "branch")
-                                                        props.branchMenu(column, event)
-                                                }),
-                                                // Like a window title bar; the header's own controls keep their double-clicks.
-                                                on("dblclick", event => {
-                                                    if (
-                                                        !(event.target instanceof Element
-                                                            && event.target.closest("button, input, select, textarea, a, [role='menu'], dialog"))
-                                                    ) {
-                                                        props.maximize(column.id)
-                                                    }
-                                                }),
-                                                on("dragstart", event => {
-                                                    props.state.draggingColumnId = column.id
-                                                    props.state.dragOriginalIds = [...props.state.openedBranchIds]
-                                                    event.dataTransfer?.setData("text/plain", column.id)
-                                                }),
-                                                on("dragover", event => {
-                                                    event.preventDefault()
-                                                    if (props.state.draggingColumnId)
-                                                        props.previewMove(props.state.draggingColumnId, column.id)
-                                                }),
-                                                on("drop", event => {
-                                                    event.preventDefault()
-                                                    const source = props.state.draggingColumnId
-                                                    if (source)
-                                                        props.commitMove(source)
-                                                    else {
-                                                        const branch = event.dataTransfer?.getData("application/x-laneway-branch")
-                                                        if (branch)
-                                                            props.dropBranch(column.id, branch)
-                                                    }
-                                                }),
-                                                on("dragend", () => {
-                                                    if (props.state.draggingColumnId && props.state.dragOriginalIds) {
-                                                        props.state.openedBranchIds = props.state.dragOriginalIds
-                                                        void handle.update()
-                                                    }
-                                                    props.state.draggingColumnId = undefined
-                                                    props.state.dragOriginalIds = undefined
-                                                }),
-                                            ]}
+                {visible.map(column => {
+                    const collapsed = props.state.collapsedColumnIds.includes(column.id)
+                    const width = props.state.widths[column.id] ?? defaultColumnWidth
+                    const auxiliary = collapsed ? null : props.inspection.breakout(props.repositoryId, column.id)
+                    // A maximized column shares the space with its auxiliary columns, split by its own resizable width.
+                    const split = !!props.state.maximizedBranchId && Array.isArray(auxiliary) && auxiliary.length > 0
+                    return (
+                        <>
+                            <article
+                                class={`branch-column ${collapsed ? "collapsed" : ""} ${split ? "split" : ""}`}
+                                data-column-id={column.id}
+                                style={{
+                                    width: props.state.maximizedBranchId && !split ? "100%" : `${collapsed ? 52 : width}px`,
+                                }}
+                                tabIndex={-1}
+                                mix={[
+                                    branchColumn,
+                                    on("focusin", () => props.focus(column.id)),
+                                    on("keydown", event => {
+                                        if (
+                                            column.kind == "branch" && (event.key == "F2" || event.key == "Delete")
+                                            && !(event.target instanceof HTMLElement && event.target.closest("input, textarea, select"))
+                                        ) {
+                                            event.preventDefault()
+                                            props.branchAction(column, event.key == "F2" ? "branch-rename" : "branch-delete")
+                                            return
+                                        }
+                                        props.inspection.filterKeydown(props.repositoryId, column.id, event, handle.update)
+                                        if (event.ctrlKey && event.shiftKey && (event.key == "<" || event.key == ">")) {
+                                            event.preventDefault()
+                                            props.move(column.id, event.key == "<" ? -1 : 1)
+                                        }
+                                    }),
+                                ]}
+                            >
+                                {collapsed
+                                    ? (
+                                        <button
+                                            class="expand-column"
+                                            type="button"
+                                            title={props.worktreePath(column.id) ?? column.name}
+                                            aria-label={`Expand ${column.name}`}
+                                            mix={[collapsedColumnButton, on("click", () => props.collapse(column.id))]}
                                         >
-                                            <button
-                                                type="button"
-                                                title="Collapse column"
-                                                aria-label={`Collapse ${column.name}`}
-                                                mix={[columnCollapseButton, on("click", () => props.collapse(column.id))]}
+                                            <span aria-hidden="true" mix={expandColumnIcon}>
+                                                <Icon name="collapse-right" size={14} />
+                                            </span>
+                                            <span>{column.name}</span>
+                                            <span>
+                                                {props.inspection.workingSummary(props.repositoryId, column, props.graph, props.worktreePath(column.id))}
+                                            </span>
+                                        </button>
+                                    )
+                                    : (
+                                        <>
+                                            <header
+                                                draggable={!props.state.maximizedBranchId}
+                                                title="Drag to reorder · Ctrl+< / Ctrl+>"
+                                                mix={[
+                                                    branchColumnHeader,
+                                                    on("contextmenu", event => {
+                                                        if (column.kind == "branch")
+                                                            props.branchMenu(column, event)
+                                                    }),
+                                                    // Like a window title bar; the header's own controls keep their double-clicks.
+                                                    on("dblclick", event => {
+                                                        if (
+                                                            !(event.target instanceof Element
+                                                                && event.target.closest("button, input, select, textarea, a, [role='menu'], dialog"))
+                                                        ) {
+                                                            props.maximize(column.id)
+                                                        }
+                                                    }),
+                                                    on("dragstart", event => {
+                                                        props.state.draggingColumnId = column.id
+                                                        props.state.dragOriginalIds = [...props.state.openedBranchIds]
+                                                        event.dataTransfer?.setData("text/plain", column.id)
+                                                    }),
+                                                    on("dragover", event => {
+                                                        event.preventDefault()
+                                                        if (props.state.draggingColumnId)
+                                                            props.previewMove(props.state.draggingColumnId, column.id)
+                                                    }),
+                                                    on("drop", event => {
+                                                        event.preventDefault()
+                                                        const source = props.state.draggingColumnId
+                                                        if (source)
+                                                            props.commitMove(source)
+                                                        else {
+                                                            const branch = event.dataTransfer?.getData("application/x-laneway-branch")
+                                                            if (branch)
+                                                                props.dropBranch(column.id, branch)
+                                                        }
+                                                    }),
+                                                    on("dragend", () => {
+                                                        if (props.state.draggingColumnId && props.state.dragOriginalIds) {
+                                                            props.state.openedBranchIds = props.state.dragOriginalIds
+                                                            void handle.update()
+                                                        }
+                                                        props.state.draggingColumnId = undefined
+                                                        props.state.dragOriginalIds = undefined
+                                                    }),
+                                                ]}
                                             >
-                                                <Icon name="collapse-left" size={15} />
-                                            </button>
-                                            {(() => {
-                                                const identity = columnIdentity(column, props.worktreePath(column.id))
-                                                return (
-                                                    <span class="column-kind" title={identity.kind} mix={[columnKindIcon, identity.tone]}>
-                                                        <Icon name={identity.icon} size={17} />
-                                                    </span>
-                                                )
-                                            })()}
-                                            {!props.worktreePath(column.id) && (
-                                                <h2 mix={branchColumnH2}>
-                                                    {column.name}
-                                                </h2>
-                                            )}
-                                            {props.worktreeControls(column)}
-                                            <div mix={branchColumnActions}>
-                                                {props.inspection.conflictFilter(props.repositoryId, column, props.graph, props.worktreePath(column.id))}
-                                                {props.inspection.filterControl(
-                                                    props.repositoryId,
-                                                    column,
-                                                    props.graph,
-                                                    handle.update,
-                                                    props.worktreePath(column.id),
-                                                )}
                                                 <button
                                                     type="button"
-                                                    title={props.state.maximizedBranchId ? "Restore columns" : "Maximize column"}
-                                                    aria-label={props.state.maximizedBranchId ? "Restore columns" : "Maximize column"}
-                                                    mix={[branchColumnButton, on("click", () => props.maximize(column.id))]}
+                                                    title="Collapse column"
+                                                    aria-label={`Collapse ${column.name}`}
+                                                    mix={[columnCollapseButton, on("click", () => props.collapse(column.id))]}
                                                 >
-                                                    <Icon name={props.state.maximizedBranchId ? "restore" : "maximize"} size={15} />
+                                                    <Icon name="collapse-left" size={15} />
                                                 </button>
+                                                {(() => {
+                                                    const identity = columnIdentity(column, props.worktreePath(column.id))
+                                                    return (
+                                                        <span class="column-kind" title={identity.kind} mix={[columnKindIcon, identity.tone]}>
+                                                            <Icon name={identity.icon} size={17} />
+                                                        </span>
+                                                    )
+                                                })()}
                                                 {!props.worktreePath(column.id) && (
+                                                    <h2 mix={branchColumnH2}>
+                                                        {column.name}
+                                                    </h2>
+                                                )}
+                                                {props.worktreeControls(column)}
+                                                <div mix={branchColumnActions}>
+                                                    {props.inspection.conflictFilter(props.repositoryId, column, props.graph, props.worktreePath(column.id))}
+                                                    {props.inspection.filterControl(
+                                                        props.repositoryId,
+                                                        column,
+                                                        props.graph,
+                                                        handle.update,
+                                                        props.worktreePath(column.id),
+                                                    )}
                                                     <button
                                                         type="button"
-                                                        title="Close column"
-                                                        aria-label="Close column"
-                                                        mix={[branchColumnButton, on("click", () => props.close(column.id))]}
+                                                        title={props.state.maximizedBranchId ? "Restore columns" : "Maximize column"}
+                                                        aria-label={props.state.maximizedBranchId ? "Restore columns" : "Maximize column"}
+                                                        mix={[branchColumnButton, on("click", () => props.maximize(column.id))]}
                                                     >
-                                                        <Icon name="close" size={15} />
+                                                        <Icon name={props.state.maximizedBranchId ? "restore" : "maximize"} size={15} />
                                                     </button>
-                                                )}
-                                            </div>
-                                        </header>
-                                        {props.inspection.body(
-                                            props.repositoryId,
-                                            column,
-                                            props.graph,
-                                            props.worktreePath(column.id),
-                                            column.kind == "branch"
-                                                ? props.conflicts.controls(props.repositoryId, column, props.worktreePath(column.id))
-                                                : undefined,
-                                        )}
-                                    </>
-                                )}
-                        </article>
-                        {!props.state.maximizedBranchId && !props.state.collapsedColumnIds.includes(column.id) && (
-                            <ColumnDivider branchId={column.id} width={props.state.widths[column.id] ?? defaultColumnWidth} resize={props.resize} />
-                        )}
-                        {!props.state.collapsedColumnIds.includes(column.id) && props.inspection.breakout(props.repositoryId, column.id)}
-                    </>
-                ))}
+                                                    {!props.worktreePath(column.id) && (
+                                                        <button
+                                                            type="button"
+                                                            title="Close column"
+                                                            aria-label="Close column"
+                                                            mix={[branchColumnButton, on("click", () => props.close(column.id))]}
+                                                        >
+                                                            <Icon name="close" size={15} />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </header>
+                                            {props.inspection.body(
+                                                props.repositoryId,
+                                                column,
+                                                props.graph,
+                                                props.worktreePath(column.id),
+                                                column.kind == "branch"
+                                                    ? props.conflicts.controls(props.repositoryId, column, props.worktreePath(column.id))
+                                                    : undefined,
+                                            )}
+                                        </>
+                                    )}
+                            </article>
+                            {!collapsed && (!props.state.maximizedBranchId || split) && (
+                                <ColumnDivider branchId={column.id} width={width} resize={props.resize} />
+                            )}
+                            {auxiliary}
+                        </>
+                    )
+                })}
                 {unavailable.map(id => props.inspection.breakout(props.repositoryId, id))}
             </section>
         )
@@ -1603,6 +1610,15 @@ function BranchColumns(
 }
 
 function ColumnDivider(handle: Handle<{ branchId: string; width: number; resize(branchId: string, width: number): void }>) {
+    // Sizes the column ahead of the resize and returns its new width. A split column is capped to keep its auxiliary
+    // columns in view, so its width is read back rather than assumed.
+    const applyWidth = (divider: HTMLElement, width: number) => {
+        const column = divider.previousElementSibling as HTMLElement | null
+        width = Math.max(310, width)
+        if (column)
+            column.style.width = `${width}px`
+        return column?.classList.contains("split") ? column.getBoundingClientRect().width : width
+    }
     return () => (
         <div
             class="column-divider"
@@ -1617,35 +1633,33 @@ function ColumnDivider(handle: Handle<{ branchId: string; width: number; resize(
                 columnDivider,
                 on("keydown", event => {
                     const step = event.shiftKey ? 50 : 10
-                    if (event.key == "ArrowLeft" || event.key == "ArrowRight") {
+                    const width = event.key == "ArrowLeft" || event.key == "ArrowRight"
+                        ? handle.props.width + (event.key == "ArrowLeft" ? -step : step)
+                        : event.key == "Home"
+                        ? 310
+                        : event.key == "End"
+                        ? document.querySelector<HTMLElement>(".graph-layout")?.clientWidth ?? 1180
+                        : undefined
+                    if (width != undefined) {
                         event.preventDefault()
-                        handle.props.resize(handle.props.branchId, handle.props.width + (event.key == "ArrowLeft" ? -step : step))
-                    } else if (event.key == "Home") {
-                        event.preventDefault()
-                        handle.props.resize(handle.props.branchId, 310)
-                    } else if (event.key == "End") {
-                        event.preventDefault()
-                        handle.props.resize(handle.props.branchId, Math.max(310, document.querySelector<HTMLElement>(".graph-layout")?.clientWidth ?? 1180))
+                        handle.props.resize(handle.props.branchId, applyWidth(event.currentTarget, width))
                     }
                 }),
                 on("pointerdown", event => {
                     event.preventDefault()
                     const startX = event.clientX
                     const startWidth = handle.props.width
-                    const column = (event.currentTarget as HTMLElement).previousElementSibling as HTMLElement | null
-                    const move = (next: PointerEvent) => {
-                        if (column)
-                            column.style.width = `${Math.max(310, startWidth + next.clientX - startX)}px`
-                    }
+                    const divider = event.currentTarget
+                    const move = (next: PointerEvent) => applyWidth(divider, startWidth + next.clientX - startX)
                     const end = (next: PointerEvent) => {
                         window.removeEventListener("pointermove", move)
                         window.removeEventListener("pointerup", end)
-                        handle.props.resize(handle.props.branchId, startWidth + next.clientX - startX)
+                        handle.props.resize(handle.props.branchId, applyWidth(divider, startWidth + next.clientX - startX))
                     }
                     window.addEventListener("pointermove", move)
                     window.addEventListener("pointerup", end, { once: true })
                 }),
-                on("dblclick", () => handle.props.resize(handle.props.branchId, defaultColumnWidth)),
+                on("dblclick", event => handle.props.resize(handle.props.branchId, applyWidth(event.currentTarget, defaultColumnWidth))),
             ]}
         >
         </div>
@@ -2455,6 +2469,8 @@ const branchColumn = css({
         borderRadius: "inherit",
         pointerEvents: "none",
     },
+    // Leaves room for at least one auxiliary column beside a maximized column.
+    "&.split": { maxWidth: "calc(100% - 310px - var(--gutter))" },
     "&:has(.column-inspection.focused)": {
         width: "240px !important",
         minWidth: "240px !important",

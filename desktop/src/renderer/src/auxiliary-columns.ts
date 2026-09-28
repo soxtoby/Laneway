@@ -59,3 +59,9 @@ export class AuxiliaryColumns<T> {
             child.dispose()
     }
 }
+
+/** Auxiliary columns keep a fixed width, except beside a maximized column, where they share the space it leaves. */
+export const auxiliaryColumnWidth = {
+    flex: "0 0 620px",
+    ".branch-columns.maximized > &": { flex: "1 1 0", minWidth: "310px" },
+}
