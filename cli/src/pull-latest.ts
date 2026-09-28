@@ -240,11 +240,15 @@ async function updateStack(
             break
         }
     }
-    if (position == stack.branches.length - 1) {
+    // A single-branch stack also has position 0 at its last index, so check the tip itself was processed.
+    if (processed.has(stack.branches.at(-1)!.ref)) {
         const refs = new Set(stack.branches.map(branch => branch.ref))
         const conflicts = state.stacks.filter(item => item.branches.some(branch => refs.has(branch.ref)))
             .flatMap(item => item.steps).filter(step => step.conflict).length
-        const moved = stack.branches.some(branch => processed.get(branch.ref)!.before != processed.get(branch.ref)!.current)
+        const moved = stack.branches.some(branch => {
+            const entry = processed.get(branch.ref)
+            return entry != undefined && entry.before != entry.current
+        })
         return {
             id: stack.id,
             branches: names,

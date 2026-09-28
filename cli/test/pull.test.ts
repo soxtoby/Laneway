@@ -123,6 +123,20 @@ test("fetches, fast-forwards the Base, restacks open stacks, preserves Working C
     expect((await history(local)).total).toBe(total)
 }, 120_000)
 
+test("fast-forwards a stack consisting only of the primary branch", async () => {
+    const { other, local } = await fixture()
+    git(other, "switch", "-q", "main")
+    const newMain = await commit(other, "base.txt", "base updated\n", "upstream main")
+    git(other, "push", "-q", "origin", "main")
+    const before = git(local, "rev-parse", "main")
+    const result = await pull(local, ["refs/heads/main"])
+    expect(result.stacks).toHaveLength(1)
+    expect(result.stacks[0]).toMatchObject({ branches: ["main"], status: "updated", base: { before, after: newMain } })
+    expect(git(local, "rev-parse", "main")).toBe(newMain)
+    const again = await pull(local, ["refs/heads/main"])
+    expect(again.stacks[0]).toMatchObject({ branches: ["main"], status: "current" })
+}, 120_000)
+
 test("defers commit conflicts as an Unresolved Stack, skips a diverged Base, and updates the Unresolved Stack on a later pull", async () => {
     const { other, local } = await fixture()
     git(other, "switch", "-q", "main")
