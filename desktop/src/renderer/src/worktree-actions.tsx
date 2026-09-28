@@ -564,7 +564,9 @@ const titleRowStyle = css({
     alignItems: "center",
     gap: "6px",
 })
+// Too truncated to select usefully; left unselectable, a double-click on it maximizes the column like the rest of the header.
 const pathStyle = css({
+    userSelect: "none",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",

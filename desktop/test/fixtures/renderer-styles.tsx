@@ -864,10 +864,16 @@ async function checkVirtualWorktree() {
             && menu.textContent!.includes("Remove worktree") && !menu.textContent!.includes("New worktree") && hover
         menu.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
         await settle()
+        // A maximized header isn't draggable, yet its path still ignores double-clicks that restore the columns.
+        header.querySelector<HTMLButtonElement>("[aria-label='Maximize column']")!.click()
+        await settle()
+        const pathUnselectable = getComputedStyle(column.querySelector(".column-worktree-path")!).userSelect == "none"
+        column.querySelector<HTMLButtonElement>("[aria-label='Restore columns']")!.click()
+        await settle()
         const renameButton = row.querySelector<HTMLButtonElement>("[aria-label='Rename worktree']")!
         // The name and its rename input fit their text, leaving the rest of the header free.
         const titleWidth = renameButton.parentElement!.getBoundingClientRect().width
-        const nameFits = renameButton.getBoundingClientRect().width < titleWidth / 2
+        const nameFits = pathUnselectable && renameButton.getBoundingClientRect().width < titleWidth / 2
         renameButton.click()
         await settle()
         const input = row.querySelector<HTMLInputElement>("input")!
