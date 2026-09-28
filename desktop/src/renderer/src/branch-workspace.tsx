@@ -52,9 +52,6 @@ interface BranchWorkspaceOptions {
     selectRepository(id: string): Promise<void>
     closeRepository(id: string): Promise<void>
     moveRepository(id: string, targetId: string): Promise<void>
-    previewRepositoryMove(id: string, targetId: string): void
-    commitRepositoryOrder(): Promise<void>
-    cancelRepositoryMove(): void
     addRepository(): void
     workspace(): Workspace
     workspaceChanged(workspace: Workspace): void
@@ -323,9 +320,6 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                         activeExpanded={!state.graphCollapsed}
                         closeRepository={options.closeRepository}
                         moveRepository={options.moveRepository}
-                        previewRepositoryMove={options.previewRepositoryMove}
-                        commitRepositoryOrder={options.commitRepositoryOrder}
-                        cancelRepositoryMove={options.cancelRepositoryMove}
                         addRepository={options.addRepository}
                         heading={
                             <button

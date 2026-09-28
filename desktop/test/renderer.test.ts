@@ -31,6 +31,7 @@ beforeAll(async () => {
         "CSSStyleSheet",
         "EventTarget",
         "MouseEvent",
+        "PointerEvent",
         "KeyboardEvent",
         "SubmitEvent",
         "customElements",
@@ -491,6 +492,110 @@ describe("Remix repository entry renderer", () => {
         finishRefresh()
         await flush(root)
         expect(toolbar.innerHTML).toBe(before)
+        dispose()
+    })
+
+    test("drags a repository along the rail while the others step aside, committing the order on release", async () => {
+        const alpha = repositoryInfo("D:\\Source\\alpha")
+        const beta = repositoryInfo("D:\\Source\\beta")
+        const gamma = repositoryInfo("D:\\Source\\gamma")
+        let saved = {
+            repositories: [alpha, beta, gamma].flatMap(info => openedWorkspace(info).repositories),
+            activeRepositoryId: alpha.id,
+        }
+        const selected: string[] = []
+        const api = fakeLaneway({
+            getState: async () => ({ ...appState(), workspace: saved }),
+            readBranchGraph: async () => ({ ok: true, graph: branchGraph(alpha.id) }),
+            selectRepository: async id => {
+                selected.push(id)
+                return saved
+            },
+            updateWorkspace: async workspace => saved = structuredClone(workspace) as typeof saved,
+        })
+        const { container, root, dispose } = render(api)
+        await flush(root)
+        const rows = () => [...container.querySelectorAll<HTMLElement>(".repository-row")]
+        const item = (row: HTMLElement) => row.querySelector<HTMLButtonElement>(".repository-item")!
+        const order = () => rows().map(row => item(row).getAttribute("aria-label"))
+        const offsets = () => rows().map(row => row.style.transform)
+        const transitions = () => rows().map(row => row.style.transition)
+        const pointer = (type: string, target: EventTarget, clientY: number) =>
+            target.dispatchEvent(new PointerEvent(type, { pointerId: 1, button: 0, clientY, bubbles: true, cancelable: true }))
+        const settle = async () => {
+            await new Promise(resolve => setTimeout(resolve, 200))
+            await flush(root)
+        }
+        // Happy DOM has no layout: rows are 36px tall with a 4px gap.
+        for (const [index, row] of rows().entries()) {
+            row.getBoundingClientRect = () => ({ top: index * 40, height: 36 }) as DOMRect
+            row.setPointerCapture = () => undefined
+        }
+        const [first, second, third] = rows()
+
+        // Pressing to drag must not choose the repository.
+        const mousedown = new MouseEvent("mousedown", { button: 0, detail: 1, bubbles: true, cancelable: true })
+        item(second).dispatchEvent(mousedown)
+        expect(mousedown.defaultPrevented).toBe(false)
+
+        pointer("pointerdown", item(first), 18)
+        pointer("pointermove", document.body, 20)
+        await flush(root)
+        expect(first.classList.contains("dragging")).toBe(false)
+        // A neighbour steps aside once the dragged row covers half of it.
+        pointer("pointermove", document.body, 39)
+        await flush(root)
+        expect(offsets()).toEqual(["translateY(21px)", "", ""])
+        pointer("pointermove", document.body, 40)
+        await flush(root)
+        expect(offsets()).toEqual(["translateY(22px)", "translateY(-40px)", ""])
+        // The dragged row tracks the pointer directly while the others ease aside.
+        expect(transitions()).toEqual(["", "transform 150ms ease", "transform 150ms ease"])
+        pointer("pointermove", document.body, 66)
+        await flush(root)
+        expect(first.classList.contains("dragging")).toBe(true)
+        expect(offsets()).toEqual(["translateY(48px)", "translateY(-40px)", ""])
+        // The row follows the pointer but stays within the list.
+        pointer("pointermove", document.body, 500)
+        await flush(root)
+        expect(offsets()).toEqual(["translateY(80px)", "translateY(-40px)", "translateY(-40px)"])
+        pointer("pointermove", document.body, 66)
+        pointer("pointerup", first, 66)
+        item(first).dispatchEvent(new MouseEvent("click", { detail: 1, bubbles: true, cancelable: true }))
+        await flush(root)
+        // Released, the row eases into its slot before the order changes.
+        expect(offsets()).toEqual(["translateY(40px)", "translateY(-40px)", ""])
+        expect(transitions()).toEqual(["transform 150ms ease", "transform 150ms ease", "transform 150ms ease"])
+        expect(order()).toEqual(["alpha", "beta", "gamma"])
+        await settle()
+        expect(order()).toEqual(["beta", "alpha", "gamma"])
+        // Transitions clear with the offsets, so the committed order does not animate.
+        expect(offsets()).toEqual(["", "", ""])
+        expect(transitions()).toEqual(["", "", ""])
+        expect(rows()[1]).toBe(first)
+        expect(first.classList.contains("dragging")).toBe(false)
+        expect(saved.repositories.map(repository => repository.id)).toEqual([beta.id, alpha.id, gamma.id])
+        expect(selected).toEqual([])
+
+        // Escape returns the row to where it started.
+        for (const [index, row] of rows().entries())
+            row.getBoundingClientRect = () => ({ top: index * 40, height: 36 }) as DOMRect
+        pointer("pointerdown", item(third), 98)
+        pointer("pointermove", document.body, 10)
+        await flush(root)
+        expect(offsets()).toEqual(["translateY(40px)", "translateY(40px)", "translateY(-80px)"])
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))
+        await flush(root)
+        expect(offsets()).toEqual(["", "", ""])
+        await settle()
+        expect(order()).toEqual(["beta", "alpha", "gamma"])
+
+        // A press without movement is an ordinary click.
+        pointer("pointerdown", item(third), 98)
+        pointer("pointerup", item(third), 98)
+        item(third).dispatchEvent(new MouseEvent("click", { detail: 1, bubbles: true, cancelable: true }))
+        await flush(root)
+        expect(selected).toEqual([gamma.id])
         dispose()
     })
 

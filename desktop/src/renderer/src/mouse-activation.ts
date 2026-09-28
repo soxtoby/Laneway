@@ -13,6 +13,9 @@ function controlFor(event: MouseEvent) {
     for (const node of event.composedPath()) {
         if (!(node instanceof HTMLElement))
             continue
+        // Draggable controls opt back into click activation, so pressing to drag does not choose them.
+        if (node.matches("[data-click-activate]"))
+            return undefined
         if (node.matches(selectionControls))
             return node
         if (node.tagName == "LABEL") {

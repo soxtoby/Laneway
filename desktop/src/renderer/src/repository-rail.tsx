@@ -2,6 +2,29 @@ import type { Workspace } from "@laneway/shared"
 import { css, type Handle, on, type RemixNode } from "remix/ui"
 import { Icon } from "./icons"
 
+// Pointer travel before a press on a repository becomes a drag.
+const dragThreshold = 4
+const reorderDuration = 150
+
+function motionDuration() {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : reorderDuration
+}
+
+type RepositoryDrag = {
+    id: string
+    row: HTMLElement
+    pointerId: number
+    startY: number
+    // Measured once the drag begins; rows only move visually until the drop commits the order.
+    slots?: { top: number; height: number }[]
+    gap: number
+    from: number
+    to: number
+    offset: number
+    settling: boolean
+    controller: AbortController
+}
+
 // The ink-coloured repository rail on the left edge. Collapsed it is an icon strip of initials
 // tiles; expanded it adds names and worktree paths. Both views share one markup so the
 // branch workspace and the missing-repository view stay identical.
@@ -17,16 +40,95 @@ export function RepositoryRail(
         activeExpanded?: boolean
         closeRepository?(id: string): void
         moveRepository(id: string, targetId: string): void
-        previewRepositoryMove(id: string, targetId: string): void
-        commitRepositoryOrder(): void
-        cancelRepositoryMove(): void
         addRepository(): void
         heading?: RemixNode
     }>,
 ) {
-    let draggingId: string | undefined
+    let drag: RepositoryDrag | undefined
+
+    function press(event: PointerEvent, id: string, row: HTMLElement) {
+        const controller = new AbortController()
+        drag = { id, row, pointerId: event.pointerId, startY: event.clientY, gap: 0, from: 0, to: 0, offset: 0, settling: false, controller }
+        const signal = AbortSignal.any([controller.signal, handle.signal])
+        window.addEventListener("pointermove", move, { signal })
+        window.addEventListener("pointerup", release, { signal })
+        window.addEventListener("pointercancel", cancel, { signal })
+        window.addEventListener("keydown", event => {
+            if (event.key == "Escape") {
+                event.preventDefault()
+                cancel()
+            }
+        }, { signal })
+    }
+
+    function move(event: PointerEvent) {
+        if (!drag || event.pointerId != drag.pointerId)
+            return
+        const delta = event.clientY - drag.startY
+        if (!drag.slots) {
+            if (Math.abs(delta) < dragThreshold)
+                return
+            const rows = [...drag.row.parentElement!.querySelectorAll<HTMLElement>(":scope > .repository-row")]
+            drag.slots = rows.map(row => {
+                const rect = row.getBoundingClientRect()
+                return { top: rect.top, height: rect.height }
+            })
+            drag.gap = drag.slots.length > 1 ? drag.slots[1].top - drag.slots[0].top - drag.slots[0].height : 0
+            drag.from = drag.to = rows.indexOf(drag.row)
+            drag.row.setPointerCapture(drag.pointerId)
+        }
+        const slots = drag.slots
+        const own = slots[drag.from]
+        const last = slots[slots.length - 1]
+        // The row follows the pointer vertically but stays within the list.
+        drag.offset = Math.min(Math.max(delta, slots[0].top - own.top), last.top + last.height - own.top - own.height)
+        const top = own.top + drag.offset
+        const bottom = top + own.height
+        // A neighbour steps aside once the dragged row covers half of it.
+        const from = drag.from
+        drag.to = slots.filter((slot, index) => {
+            const middle = slot.top + slot.height / 2
+            return index < from ? top > middle : index > from && bottom >= middle
+        }).length
+        void handle.update()
+    }
+
+    function release(event: PointerEvent) {
+        if (drag && event.pointerId == drag.pointerId)
+            settle(drag.to)
+    }
+
+    function cancel() {
+        if (drag)
+            settle(drag.from)
+    }
+
+    // Eases the dragged row into its slot before committing, so the reordered list renders where it already appears.
+    function settle(to: number) {
+        const settling = drag
+        if (!settling || settling.settling)
+            return
+        settling.controller.abort()
+        if (!settling.slots) {
+            drag = undefined
+            return
+        }
+        settling.to = to
+        settling.offset = landing(settling)
+        settling.settling = true
+        void handle.update()
+        setTimeout(() => {
+            drag = undefined
+            const target = handle.props.workspace.repositories[to]
+            if (to != settling.from && target)
+                handle.props.moveRepository(settling.id, target.id)
+            void handle.update()
+        }, motionDuration())
+    }
+
     return () => {
         const props = handle.props
+        const dragging = drag?.slots ? drag : undefined
         return (
             <aside class="repository-rail" mix={repositoryRail}>
                 <div class="rail-heading" mix={railHeading}>
@@ -35,14 +137,23 @@ export function RepositoryRail(
                         Open repositories
                     </p>
                 </div>
-                <nav aria-label="Open repositories" mix={openRepositoriesNav}>
+                <nav aria-label="Open repositories" class={`${dragging ? "reordering" : ""} ${dragging?.settling ? "settling" : ""}`} mix={openRepositoriesNav}>
                     {props.workspace.repositories.map((repository, index) => {
                         const name = repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name
+                        const offset = !dragging ? 0 : repository.id == dragging.id ? dragging.offset : displacement(dragging, index)
+                        // Rows step aside smoothly while the dragged row tracks the pointer, then it eases into its slot on release.
+                        const eased = dragging && (repository.id != dragging.id || dragging.settling)
                         return (
                             <div
-                                class="repository-row"
-                                draggable={!props.busy}
+                                key={repository.id}
+                                class={`repository-row ${repository.id == dragging?.id ? "dragging" : ""}`}
                                 title="Drag to reorder · Ctrl+< / Ctrl+>"
+                                // The transition is inline beside the transform so both clear together when the order commits.
+                                // Remix applies that render in steps; a stylesheet transition could still catch a cleared transform.
+                                style={{
+                                    transform: offset ? `translateY(${offset}px)` : "",
+                                    transition: eased ? `transform ${motionDuration()}ms ease` : "",
+                                }}
                                 mix={[
                                     repositoryRow,
                                     on("keydown", event => {
@@ -53,24 +164,13 @@ export function RepositoryRail(
                                                 props.moveRepository(repository.id, target.id)
                                         }
                                     }),
-                                    on("dragstart", event => {
-                                        draggingId = repository.id
-                                        event.dataTransfer?.setData("text/plain", repository.id)
-                                    }),
-                                    on("dragover", event => {
-                                        event.preventDefault()
-                                        if (draggingId)
-                                            props.previewRepositoryMove(draggingId, repository.id)
-                                    }),
-                                    on("drop", event => {
-                                        event.preventDefault()
-                                        props.commitRepositoryOrder()
-                                        draggingId = undefined
-                                    }),
-                                    on("dragend", () => {
-                                        if (draggingId)
-                                            props.cancelRepositoryMove()
-                                        draggingId = undefined
+                                    on("pointerdown", event => {
+                                        if (
+                                            event.button == 0 && !props.busy && !drag
+                                            && !(event.target instanceof Element && event.target.closest(".repository-close"))
+                                        ) {
+                                            press(event, repository.id, event.currentTarget)
+                                        }
                                     }),
                                 ]}
                             >
@@ -83,8 +183,15 @@ export function RepositoryRail(
                                     title={repository.status == "available" ? repository.info.selectedWorktree : repository.path}
                                     aria-label={name}
                                     aria-expanded={repository.id == props.activeId ? props.activeExpanded : undefined}
-                                    data-mousedown-activate
-                                    mix={[repositoryItem, on("click", () => props.selectRepository(repository.id))]}
+                                    data-click-activate
+                                    mix={[
+                                        repositoryItem,
+                                        on("click", () => {
+                                            // Releasing a drag does not choose the repository.
+                                            if (!drag?.slots)
+                                                props.selectRepository(repository.id)
+                                        }),
+                                    ]}
                                 >
                                     <span mix={repositoryInitials}>
                                         {initials(repository.path)}
@@ -132,6 +239,23 @@ export function RepositoryRail(
             </aside>
         )
     }
+}
+
+// How far the row at `index` steps aside to open the dragged row's target slot.
+function displacement(drag: RepositoryDrag, index: number) {
+    const stride = drag.slots![drag.from].height + drag.gap
+    if (index > drag.from && index <= drag.to)
+        return -stride
+    if (index < drag.from && index >= drag.to)
+        return stride
+    return 0
+}
+
+// Where the dragged row comes to rest: past every row that stepped aside for it.
+function landing(drag: RepositoryDrag) {
+    const passed = drag.slots!.filter((_, index) => displacement(drag, index) != 0)
+    const distance = passed.reduce((sum, slot) => sum + slot.height + drag.gap, 0)
+    return drag.to > drag.from ? distance : -distance
 }
 
 export function RepositoryRailToggle(handle: Handle<{ collapsed: boolean; toggle(): void }>) {
@@ -210,6 +334,7 @@ const openRepositoriesNav = css({
 const repositoryRow = css({
     position: "relative",
     ".rail-collapsed &": { width: "100%", display: "grid", justifyItems: "center" },
+    "&.dragging": { zIndex: 1 },
 })
 
 const repositoryItem = css({
@@ -246,6 +371,13 @@ const repositoryItem = css({
     "&.collapsed.active::before": { left: "-8px", top: "4px", bottom: "4px", width: "3px" },
     "&.collapsed:focus-visible": { outline: "none" },
     "&.missing > span:first-child": { color: "var(--warning)" },
+    // Lifted while dragging and set back down as it settles into its slot; a shadow alone disappears against the dark rail.
+    transition: "scale 120ms ease",
+    ".reordering:not(.settling) > .dragging > &:not(.collapsed)": {
+        scale: "1.03",
+        background: "var(--chrome-line)",
+        boxShadow: "0 6px 16px rgb(0 0 0 / 0.6)",
+    },
 })
 
 const repositoryInitials = css({
@@ -264,6 +396,13 @@ const repositoryInitials = css({
     ".collapsed:not(.active):hover > &": { opacity: 1, borderColor: "var(--chrome-accent)" },
     ".collapsed.active > &": { color: "var(--accent-ink)", borderColor: "var(--chrome-accent)", background: "var(--chrome-accent)" },
     ".collapsed:focus-visible > &": { outline: "2px solid var(--ring)", outlineOffset: "2px" },
+    transition: "scale 120ms ease",
+    ".reordering:not(.settling) > .dragging > .collapsed > &": { scale: "1.12", opacity: 1, boxShadow: "0 6px 16px rgb(0 0 0 / 0.6)" },
+    ".reordering:not(.settling) > .dragging > .collapsed:not(.active) > &": {
+        color: "var(--chrome-text)",
+        borderColor: "var(--chrome-muted)",
+        background: "var(--chrome-line)",
+    },
 })
 
 const repositoryCopy = css({

@@ -20,7 +20,6 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
     let openingRepository = false
     let notice: NoticeState | undefined
     let fatalError: string | undefined
-    let repositoryOrderBeforeDrag: string[] | undefined
     let railCollapsed = true
     let appearance: Appearance = "light"
 
@@ -71,9 +70,6 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
                                 locate={locateRepository}
                                 close={closeRepository}
                                 move={moveRepository}
-                                previewMove={previewRepositoryMove}
-                                commitOrder={commitRepositoryOrder}
-                                cancelMove={cancelRepositoryMove}
                                 addRepository={() => repositoryEntry?.openAdd()}
                             />
                         )
@@ -138,9 +134,6 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
                 selectRepository,
                 closeRepository,
                 moveRepository,
-                previewRepositoryMove,
-                commitRepositoryOrder,
-                cancelRepositoryMove,
                 addRepository: () => repositoryEntry?.openAdd(),
                 workspace: () => workspace!,
                 workspaceChanged(nextWorkspace) {
@@ -271,37 +264,10 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
             return
         const [repository] = workspace.repositories.splice(from, 1)
         workspace.repositories.splice(to, 0, repository)
+        // Show the new order immediately; a dropped repository already appears in its slot.
+        void handle.update()
         workspace = await handle.props.api.updateWorkspace(workspace)
         await handle.update()
-    }
-
-    function previewRepositoryMove(id: string, targetId: string) {
-        if (!workspace)
-            return
-        repositoryOrderBeforeDrag ??= workspace.repositories.map(repository => repository.id)
-        const from = workspace.repositories.findIndex(repository => repository.id == id)
-        const to = workspace.repositories.findIndex(repository => repository.id == targetId)
-        if (from < 0 || to < 0 || from == to)
-            return
-        const [repository] = workspace.repositories.splice(from, 1)
-        workspace.repositories.splice(to, 0, repository)
-        void handle.update()
-    }
-
-    async function commitRepositoryOrder() {
-        repositoryOrderBeforeDrag = undefined
-        if (workspace)
-            workspace = await handle.props.api.updateWorkspace(workspace)
-        await handle.update()
-    }
-
-    function cancelRepositoryMove() {
-        if (!workspace || !repositoryOrderBeforeDrag)
-            return
-        const order = new Map(repositoryOrderBeforeDrag.map((id, index) => [id, index]))
-        workspace.repositories.sort((left, right) => (order.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(right.id) ?? Number.MAX_SAFE_INTEGER))
-        repositoryOrderBeforeDrag = undefined
-        void handle.update()
     }
 
     async function resetWorkspace() {
@@ -344,9 +310,6 @@ function MissingRepository(
             locate(id: string): void
             close(id: string): void
             move(id: string, targetId: string): void
-            previewMove(id: string, targetId: string): void
-            commitOrder(): void
-            cancelMove(): void
             railCollapsed: boolean
             toggleRail(): void
             addRepository(): void
@@ -363,9 +326,6 @@ function MissingRepository(
                 selectRepository={handle.props.select}
                 closeRepository={handle.props.close}
                 moveRepository={handle.props.move}
-                previewRepositoryMove={handle.props.previewMove}
-                commitRepositoryOrder={handle.props.commitOrder}
-                cancelRepositoryMove={handle.props.cancelMove}
                 addRepository={handle.props.addRepository}
             />
             <div class="missing-copy" mix={missingCopy}>
