@@ -334,6 +334,10 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                         }
                     />
                     <section class="graph-desk" mix={graphDesk}>
+                        {/* The sidebar shows full progress; with it hidden, a slim bar marks the first read. */}
+                        {!graph && state.loading && state.graphCollapsed && (
+                            <span class="graph-desk-progress" role="progressbar" aria-label="Loading repository" mix={graphDeskProgress}></span>
+                        )}
                         <div class={`graph-layout ${state.graphCollapsed ? "graph-collapsed" : ""}`} mix={graphLayout}>
                             <div class={`graph-sidebar ${state.graphCollapsed ? "collapsed" : ""}`} mix={graphSidebar}>
                                 <header class="graph-toolbar" mix={graphToolbar}>
@@ -484,6 +488,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                     </section>
                                 )}
                             </div>
+                            {!graph && state.error && state.graphCollapsed && <GraphError message={state.error} retry={() => read(active.id, false, true)} />}
                             {graph && (
                                 <BranchColumns
                                     graph={workspaceGraph(graph)}
@@ -631,7 +636,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                 focusRestored: false,
                 showSettings: false,
                 patterns: "",
-                graphCollapsed: false,
+                graphCollapsed: true,
                 collapsedColumnIds: saved?.columns.filter(column => column.collapsed).map(column => column.id) ?? [],
                 collapsedBranchIds: [],
                 remoteRefreshed: false,
@@ -1417,7 +1422,9 @@ function BranchColumns(
                         Open a branch
                     </span>
                     <p mix={columnEmptyP}>
-                        Select a Branch Node, then use Open or Enter.
+                        {props.state.graphCollapsed
+                            ? "Show the Branch Graph, select a Branch Node, then use Open or Enter."
+                            : "Select a Branch Node, then use Open or Enter."}
                     </p>
                 </section>
             )
@@ -1980,6 +1987,21 @@ const graphDesk = css({
     flexDirection: "column",
     overflow: "hidden",
     background: "var(--canvas)",
+})
+
+const graphDeskProgress = css({
+    position: "absolute",
+    top: "0",
+    left: "0",
+    zIndex: "1",
+    width: "26%",
+    height: "2px",
+    background: "var(--accent)",
+    opacity: "0.7",
+    animation: "progress-sweep 1.3s ease-in-out infinite alternate",
+    "@media (forced-colors: active)": {
+        background: "Highlight",
+    },
 })
 
 const graphToolbar = css({

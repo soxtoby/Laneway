@@ -168,6 +168,9 @@ async function checkRenderer() {
         throw new Error("Expanded Add repository must be a labeled full-width button")
     }
 
+    // The Branch Graph starts hidden.
+    element<HTMLButtonElement>("[aria-label='Show Branch Graph']").click()
+    await settle()
     const graphRows = [...document.querySelectorAll<HTMLElement>(".graph-row")]
     const branchGraphConnected = graphRows.length == 3 && graphRows.every((row, index) => {
         const rail = row.querySelector("svg")!

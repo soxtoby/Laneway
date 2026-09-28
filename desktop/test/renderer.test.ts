@@ -997,6 +997,11 @@ test("retains worktree columns and restores collapse in place across restart", a
     await flush(view.root)
     expect(restored.style.width).toBe("380px")
     expect((await scenario.api.getState()).workspace.repositories[0].columns[0]).toMatchObject({ width: 380 })
+    // The Branch Graph starts hidden.
+    expect(view.container.querySelector(".graph-layout")?.classList.contains("graph-collapsed")).toBe(true)
+    click(view.container.querySelector<HTMLButtonElement>('[aria-label="Show Branch Graph"]')!)
+    await flush(view.root)
+    expect(view.container.querySelector(".graph-layout")?.classList.contains("graph-collapsed")).toBe(false)
     click(view.container.querySelector<HTMLButtonElement>('[aria-label="Hide Branch Graph"]')!)
     await flush(view.root)
     expect(view.container.querySelector(".graph-layout")?.classList.contains("graph-collapsed")).toBe(true)
@@ -1018,6 +1023,42 @@ test("retains worktree columns and restores collapse in place across restart", a
     refreshGraph()
     await flush(view.root)
     expect((await scenario.api.getState()).workspace.repositories[0].columns.map(column => column.id)).toEqual([branch.id])
+    view.dispose()
+})
+
+test("hidden Branch Graph still shows the first read's progress and failure", async () => {
+    const scenario = inspectionScenario()
+    const readGraph = scenario.api.readBranchGraph
+    let finish = () => {}
+    let fail = false
+    scenario.api.readBranchGraph = async (...args) => {
+        await new Promise<void>(resolve => finish = resolve)
+        return fail ? { ok: false, error: { code: "git.command-failed" as const, message: "Repository is locked" } } : readGraph(...args)
+    }
+    let view = render(scenario.api)
+    await flush(view.root)
+    expect(view.container.querySelector(".graph-layout")?.classList.contains("graph-collapsed")).toBe(true)
+    expect(view.container.querySelector('[role="progressbar"][aria-label="Loading repository"]')).not.toBeNull()
+    finish()
+    await flush(view.root)
+    expect(view.container.querySelector('[role="progressbar"]')).toBeNull()
+    expect(view.container.querySelector("[data-column-id]")).not.toBeNull()
+    view.dispose()
+
+    fail = true
+    view = render(scenario.api)
+    await flush(view.root)
+    finish()
+    await flush(view.root)
+    expect(view.container.querySelector('[role="progressbar"]')).toBeNull()
+    expect(view.container.querySelector(".graph-error")?.textContent).toContain("Repository is locked")
+    fail = false
+    click(view.container.querySelector<HTMLButtonElement>(".graph-error button")!)
+    await flush(view.root)
+    finish()
+    await flush(view.root)
+    expect(view.container.querySelector(".graph-error")).toBeNull()
+    expect(view.container.querySelector("[data-column-id]")).not.toBeNull()
     view.dispose()
 })
 

@@ -37,6 +37,8 @@ export async function checkBranchGraphScroll() {
     }
     try {
         await settle()
+        document.querySelector<HTMLButtonElement>("[aria-label='Show Branch Graph']")!.click()
+        await settle()
         const scroller = document.querySelector<HTMLElement>(".graph-rows")!
         const height = scroller.scrollHeight
         let maximumDrift = 0
