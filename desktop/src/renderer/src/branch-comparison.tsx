@@ -1,9 +1,10 @@
 import type { BranchGraph, BranchGraphBranchNode, ChangesInventory, DiffLayout, FileDiffPage } from "@laneway/shared"
 import { css, on, type RemixNode } from "remix/ui"
-import { auxiliaryColumnWidth } from "./auxiliary-columns"
+import { auxiliaryCloseButton, auxiliaryColumnFrame, auxiliaryColumnHeader } from "./auxiliary-columns"
 import { DiffLines } from "./diff"
 import { DiffControls } from "./diff-controls"
 import { FileTree } from "./file-list"
+import { Icon } from "./icons"
 
 export interface BranchComparisonState {
     kind: "comparison"
@@ -232,7 +233,9 @@ export function createBranchComparisons(options: { api: Window["laneway"]; updat
                         >
                             {state.fromName} → {state.toName}
                         </strong>
-                        <button type="button" aria-label="Close comparison" mix={on("click", close)}>×</button>
+                        <button type="button" aria-label="Close comparison" mix={on("click", close)}>
+                            <Icon name="close" size={15} />
+                        </button>
                     </header>
                     {state.loading && !state.inventory && <p role="status">Reading comparison…</p>}
                     {state.error && (
@@ -331,28 +334,13 @@ export function createBranchComparisons(options: { api: Window["laneway"]; updat
 }
 
 const comparison = css({
-    ...auxiliaryColumnWidth,
+    ...auxiliaryColumnFrame,
     minWidth: "380px",
-    overflow: "auto",
-    background: "var(--panel)",
-    border: "1px solid var(--line-strong)",
-    borderLeft: "3px solid var(--accent-edge)",
-    "&:focus-visible": { outline: "2px solid var(--accent-edge)", outlineOffset: "-2px" },
-    "& > header": {
-        position: "sticky",
-        top: 0,
-        zIndex: 10,
-        height: "44px",
-        boxSizing: "border-box",
-        display: "flex",
-        gap: "6px",
-        alignItems: "center",
-        padding: "8px var(--scrollbar-clearance) 8px 10px",
-        background: "var(--panel-deep)",
-    },
+    "& > header": { ...auxiliaryColumnHeader, position: "sticky", top: 0, zIndex: 10 },
     "& > header strong": { flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-    "& .change-file": { top: "44px" },
-    "& > header button, & > p button, & .comparison-patch button:not(.diff-lines button), & > button": {
+    "& > header > button": auxiliaryCloseButton,
+    "& .change-file": { top: "46px" },
+    "& > p button, & .comparison-patch button:not(.diff-lines button), & > button": {
         font: "inherit",
         color: "var(--text)",
         background: "var(--control)",

@@ -401,9 +401,16 @@ async function checkRenderer() {
     secondFile.querySelector<HTMLButtonElement>("[aria-label='Break out diff']")!.click()
     await settle()
     const breakout = element(".inspection-breakout")
+    // The diff column joins its source column's card across a seam that still resizes the column.
+    const breakoutSeam = breakout.previousElementSibling as HTMLElement
+    const breakoutSource = breakoutSeam.previousElementSibling as HTMLElement
     const auxiliarySourceVisible = !!breakout.querySelector(".auxiliary-source")
-        && getComputedStyle(breakout).borderLeftWidth == "3px"
-        && breakout.previousElementSibling?.previousElementSibling?.classList.contains("branch-column")
+        && breakoutSource.classList.contains("branch-column")
+        && getComputedStyle(breakoutSource).borderTopRightRadius == "0px" && getComputedStyle(breakout).borderTopLeftRadius == "0px"
+        && breakoutSeam.matches(".column-divider.attached") && getComputedStyle(breakoutSeam).cursor == "col-resize"
+        && breakoutSeam.getBoundingClientRect().width == 6
+        && breakout.getBoundingClientRect().left == breakoutSeam.getBoundingClientRect().right
+        && breakout.querySelector("header")!.getBoundingClientRect().height == breakoutSource.querySelector("header")!.getBoundingClientRect().height
         && document.activeElement == breakout
     // Header controls stay clear of the column's overlay scrollbar.
     const breakoutScrollbarClear = [element("[aria-label='Close diff column']"), element(".inspection-breakout .diff-toolbar button:last-of-type")]
@@ -417,13 +424,16 @@ async function checkRenderer() {
     breakoutCode.scrollLeft = breakoutCode.scrollWidth
     const breakoutDiffScroll = breakout.scrollTop > 0 && breakout.scrollLeft == 0 && breakoutCode.scrollLeft > 0
         && !!breakout.querySelector(".pierre-diff")!.shadowRoot!.querySelector("[data-line='500']")
+    // Scrolled down, the header stays at the top with the diff's toolbar right under it.
+    const breakoutHeader = breakout.querySelector("header")!.getBoundingClientRect()
+    const breakoutStickyTop = breakout.scrollTop > 0 && breakoutHeader.top == breakout.getBoundingClientRect().top
+        && breakout.querySelector(".diff-toolbar")!.getBoundingClientRect().top == breakoutHeader.bottom
     commitFiles[0].click()
     await settle()
     const breakoutSwitchedTo = element(".inspection-breakout .diff-inspector").getAttribute("aria-label")
     const breakoutSwitched = breakoutSwitchedTo == "Diff for src/example.ts" && !document.querySelector(".branch-column .diff-inspector")
         && element(".inspection-breakout").querySelector(".pierre-diff")!.shadowRoot!.querySelectorAll("[data-line]").length == 2
     // A maximized column keeps its own width beside its diff column, which takes the rest; resizing moves the split.
-    const breakoutSource = element(`[data-column-id="${element(".inspection-breakout").dataset.sourceColumnId}"]`)
     const sourceWidth = breakoutSource.getBoundingClientRect().width
     breakoutSource.querySelector<HTMLButtonElement>("[aria-label='Maximize column']")!.click()
     await settle()
@@ -785,6 +795,7 @@ async function checkRenderer() {
         auxiliarySourceVisible,
         maximizedSplit,
         breakoutScrollbarClear,
+        breakoutStickyTop,
         inlineDiffsHiddenAfterBreakout,
         breakoutSwitched,
         breakoutSwitchedTo,

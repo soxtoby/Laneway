@@ -1,6 +1,7 @@
 import type { FileHistoryEntry, FileHistoryPage, FileHistorySource } from "@laneway/shared"
 import { css, on, type RemixNode } from "remix/ui"
-import { auxiliaryColumnWidth } from "./auxiliary-columns"
+import { auxiliaryCloseButton, auxiliaryColumnFrame, auxiliaryColumnHeader } from "./auxiliary-columns"
+import { Icon } from "./icons"
 
 export interface TrailCommitState {
     kind: "trail-commit"
@@ -105,7 +106,9 @@ export function createTrailCommits(options: { api: Window["laneway"]; update(): 
                 >
                     <header>
                         <strong>{state.entry.subject}</strong>
-                        <button type="button" aria-label="Close commit diff" mix={on("click", actions.close)}>×</button>
+                        <button type="button" aria-label="Close commit diff" mix={on("click", actions.close)}>
+                            <Icon name="close" size={15} />
+                        </button>
                     </header>
                     <small>From history · {state.entry.path} · {state.entry.objectId.slice(0, 8)}</small>
                     {state.entry.parentIds.length > 1 && (
@@ -161,23 +164,12 @@ export function createTrailCommits(options: { api: Window["laneway"]; update(): 
     }
 }
 const column = css({
-    ...auxiliaryColumnWidth,
+    ...auxiliaryColumnFrame,
     minWidth: 0,
-    overflow: "auto",
-    background: "var(--panel)",
-    borderLeft: "3px solid var(--accent-edge)",
-    "& > header": {
-        position: "sticky",
-        top: 0,
-        zIndex: 10,
-        height: "44px",
-        padding: "0 var(--scrollbar-clearance) 0 10px",
-        display: "flex",
-        alignItems: "center",
-        background: "var(--panel-deep)",
-    },
+    "& > header": { ...auxiliaryColumnHeader, position: "sticky", top: 0, zIndex: 10 },
     "& > header strong": { flex: 1, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" },
-    "& .change-file": { top: "44px" },
+    "& > header > button": auxiliaryCloseButton,
+    "& .change-file": { top: "46px" },
     "& > small, & > label, & p": { display: "block", margin: "6px 8px", fontSize: "12px", color: "var(--muted)" },
     "& .related-file": { display: "flex", gap: "8px", width: "100%", padding: "6px 8px", textAlign: "left" },
     "& .related-file small": { marginLeft: "auto", color: "var(--muted)" },

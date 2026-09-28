@@ -60,8 +60,48 @@ export class AuxiliaryColumns<T> {
     }
 }
 
-/** Auxiliary columns keep a fixed width, except beside a maximized column, where they share the space it leaves. */
-export const auxiliaryColumnWidth = {
+/**
+ * Auxiliary columns extend their source column's card: square where they join it, rounded at the card's far end.
+ * They keep a fixed width, except beside a maximized column, where they share the space it leaves.
+ */
+export const auxiliaryColumnFrame = {
     flex: "0 0 620px",
+    overflow: "auto",
+    background: "var(--panel)",
+    borderRadius: "0 var(--radius-card) var(--radius-card) 0",
+    boxShadow: "0 0 0 1px var(--line-strong), var(--card-shadow)",
+    "&:focus-visible": { outline: "2px solid var(--ring)", outlineOffset: "-2px" },
+    // Auxiliary columns opened from one another sit flush, split by the edge they share.
+    "[data-auxiliary-id] + &": { marginLeft: "calc(-1 * var(--gutter))" },
+    "&:has(+ [data-auxiliary-id])": { borderRadius: "0" },
+    // Without its source column, it starts the row itself.
+    ".branch-columns > &:first-child": { borderTopLeftRadius: "var(--radius-card)", borderBottomLeftRadius: "var(--radius-card)" },
     ".branch-columns.maximized > &": { flex: "1 1 0", minWidth: "310px" },
+}
+
+/** Matches the branch column header, so the header band runs on across the join. */
+export const auxiliaryColumnHeader = {
+    height: "46px",
+    boxSizing: "border-box",
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: "0 var(--scrollbar-clearance) 0 10px",
+    borderBottom: "1px solid var(--line)",
+    background: "var(--panel)",
+}
+
+/** Matches the branch column header's buttons. */
+export const auxiliaryCloseButton = {
+    flex: "0 0 auto",
+    width: "28px",
+    height: "28px",
+    padding: "0",
+    display: "grid",
+    placeItems: "center",
+    color: "var(--muted)",
+    border: "1px solid transparent",
+    borderRadius: "var(--radius)",
+    background: "transparent",
+    "&:hover": { color: "var(--text)", borderColor: "var(--line)", background: "var(--control-hover)" },
 }

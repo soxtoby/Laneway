@@ -803,6 +803,56 @@ test("double-clicking a column header toggles maximizing it, but not on its cont
     view.dispose()
 })
 
+test("a diff column opens beside its source column, before the next column, and maximizes it", async () => {
+    const scenario = inspectionScenario()
+    const initial = await scenario.api.getState()
+    const graphResult = await scenario.api.readBranchGraph(initial.workspace.activeRepositoryId!, false)
+    if (!graphResult.ok)
+        throw new Error("Missing graph")
+    const main = graphResult.graph.branches[0]
+    main.checkedOut = [{ path: "D:/other", name: "other", head: main.tip, main: false }]
+    const view = render(scenario.api)
+    await flush(view.root)
+    const [source, next] = view.container.querySelectorAll<HTMLElement>(".branch-column")
+    const order = () => [...view.container.querySelector(".branch-columns")!.children].map(node => node.classList[0])
+    click(source.querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
+    await flush(view.root)
+    for (let opening = 0; opening < 2; opening++) {
+        click(source.querySelector<HTMLButtonElement>("[aria-label='Break out diff']")!)
+        await flush(view.root)
+        const children = [...view.container.querySelector(".branch-columns")!.children]
+        expect(order()).toEqual(["branch-column", "column-divider", "inspection-breakout", "branch-column", "column-divider"])
+        expect([children[0], children[3]]).toEqual([source, next])
+        click(view.container.querySelector<HTMLButtonElement>("[aria-label='Close diff column']")!)
+        await flush(view.root)
+        expect(order()).toEqual(["branch-column", "column-divider", "branch-column", "column-divider"])
+    }
+    // A diff column's header button or a double-click on its header maximizes its source column, split with the diff.
+    click(source.querySelector<HTMLButtonElement>("[aria-label='Break out diff']")!)
+    await flush(view.root)
+    const split = ["branch-column", "column-divider", "inspection-breakout"]
+    const header = () => view.container.querySelector<HTMLElement>(".inspection-breakout header")!
+    click(header().querySelector<HTMLButtonElement>("[aria-label='Maximize column']")!)
+    await flush(view.root)
+    expect(order()).toEqual(split)
+    expect(view.container.querySelector(".branch-column")).toBe(source)
+    expect(source.querySelector("[aria-label='Restore columns']")).not.toBeNull()
+    click(header().querySelector<HTMLButtonElement>("[aria-label='Restore columns']")!)
+    await flush(view.root)
+    expect(order()).toEqual(["branch-column", "column-divider", "inspection-breakout", "branch-column", "column-divider"])
+    header().querySelector("button")!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))
+    await flush(view.root)
+    expect(order()).toHaveLength(5)
+    header().dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))
+    await flush(view.root)
+    expect(order()).toEqual(split)
+    // Closing the diff column leaves its source column maximized on its own.
+    click(view.container.querySelector<HTMLButtonElement>("[aria-label='Close diff column']")!)
+    await flush(view.root)
+    expect(order()).toEqual(["branch-column"])
+    view.dispose()
+})
+
 test("retains worktree columns and restores collapse in place across restart", async () => {
     const scenario = inspectionScenario()
     const initial = await scenario.api.getState()

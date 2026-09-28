@@ -1,7 +1,7 @@
 import type { BranchGraph, BranchGraphBranchNode, BranchGraphVirtualBranch, BranchHistoryPage, ChangedFile, ChangeSelection, ChangesInventory, CompositionSource, DiffLayout, DiffSource, DiffView, FileDiffPage } from "@laneway/shared"
 import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 import * as accordion from "remix/ui/accordion/primitives"
-import { AuxiliaryColumns, auxiliaryColumnWidth } from "./auxiliary-columns"
+import { auxiliaryCloseButton, auxiliaryColumnFrame, auxiliaryColumnHeader, AuxiliaryColumns } from "./auxiliary-columns"
 import { type BranchComparisonState, createBranchComparisons } from "./branch-comparison"
 import { CommitComposer } from "./commit-composer"
 import { compositionStyles, createComposition } from "./composition"
@@ -27,6 +27,8 @@ interface Options {
     localBusyChanged?(busy: boolean): void
     createBranchAt?(repositoryId: string, objectId: string): void
     resolveWorkingConflict?(repositoryId: string, subject: string): void
+    maximized(repositoryId: string): string | undefined
+    maximize(repositoryId: string, id: string): void
 }
 interface FileState {
     inventory?: ChangesInventory
@@ -1968,6 +1970,8 @@ export function createInspection(options: Options) {
                 }
                 const breakout = auxiliaryColumn.value
                 const files = breakout.kind == "commit" ? state.files.get(breakout.group) : undefined
+                // Maximizing a diff column maximizes its source column, which keeps the diff column beside it.
+                const maximized = options.maximized(repositoryId) == columnId
                 return (
                     <aside
                         key={auxiliaryColumn.id}
@@ -1978,11 +1982,28 @@ export function createInspection(options: Options) {
                         mix={inspectionBreakout}
                         aria-label={`${state.column.name} diff`}
                     >
-                        <header mix={inspectionBreakoutHeader}>
+                        <header
+                            mix={[
+                                inspectionBreakoutHeader,
+                                // Like a branch column header; the header's own controls keep their double-clicks.
+                                on("dblclick", event => {
+                                    if (!(event.target instanceof Element && event.target.closest("button")))
+                                        options.maximize(repositoryId, columnId)
+                                }),
+                            ]}
+                        >
                             <span>
                                 {breakout.kind == "commit" ? `Commit · ${breakout.subject}` : `Diff · ${state.column.name}`}
                                 <small class="auxiliary-source">From {state.column.name}</small>
                             </span>
+                            <button
+                                type="button"
+                                title={maximized ? "Restore columns" : "Maximize column"}
+                                aria-label={maximized ? "Restore columns" : "Maximize column"}
+                                mix={[closeDiffColumnButton, on("click", () => options.maximize(repositoryId, columnId))]}
+                            >
+                                <Icon name={maximized ? "restore" : "maximize"} size={15} />
+                            </button>
                             <button
                                 type="button"
                                 aria-label="Close diff column"
@@ -2002,7 +2023,7 @@ export function createInspection(options: Options) {
                                     }),
                                 ]}
                             >
-                                ×
+                                <Icon name="close" size={15} />
                             </button>
                         </header>
                         {breakout.kind == "file"
@@ -2110,14 +2131,14 @@ const diffInspector = css({
 
 const diffToolbar = css({
     "& .diff-file-menu": { flex: 1, minWidth: 0 },
+    // Only broken-out diffs show this toolbar, sticking under their diff column's sticky header.
     position: "sticky",
-    top: "0",
+    top: "46px",
     zIndex: 5,
     background: "var(--panel-deep)",
     display: "flex",
     alignItems: "center",
     gap: "8px",
-    // Only broken-out diffs show this toolbar, at the right edge of their scrolling column.
     padding: "4px var(--scrollbar-clearance) 4px 6px",
     borderBottom: "1px solid var(--line)",
 })
@@ -2611,43 +2632,20 @@ const bodySelectionSummaryButton = css({
 })
 
 const inspectionBreakout = css({
-    ...auxiliaryColumnWidth,
+    ...auxiliaryColumnFrame,
     minWidth: "380px",
-    overflow: "auto",
-    background: "var(--panel)",
-    border: "1px solid var(--line-strong)",
-    borderLeft: "3px solid var(--accent-edge)",
-    "&:focus-visible": { outline: "2px solid var(--accent-edge)", outlineOffset: "-2px" },
     "& .auxiliary-source": { display: "block", fontSize: "10px", color: "var(--muted)" },
 })
 
 const inspectionBreakoutHeader = css({
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "8px var(--scrollbar-clearance) 8px 10px",
-    background: "var(--panel-deep)",
-    borderBottom: "1px solid var(--line)",
+    ...auxiliaryColumnHeader,
+    position: "sticky",
+    top: 0,
+    zIndex: 10,
+    "& > span": { flex: "1 1 auto", minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" },
 })
 
-const closeDiffColumnButton = css({
-    border: "1px solid var(--line)",
-    background: "var(--control)",
-    color: "var(--text)",
-    borderRadius: "3px",
-    padding: "3px 6px",
-    font: "inherit",
-    cursor: "pointer",
-    "&:hover": {
-        background: "var(--control-hover)",
-    },
-    '&[aria-pressed="true"]': {
-        background: "var(--accent-wash-strong)",
-        borderColor: "var(--accent-edge)",
-    },
-    minWidth: "26px",
-    minHeight: "26px",
-})
+const closeDiffColumnButton = css(auxiliaryCloseButton)
 import type { FileHistorySource } from "@laneway/shared"
 import type { FileHistoryEntry } from "@laneway/shared"
 import { createFileHistories, type FileHistoryState } from "./file-history"

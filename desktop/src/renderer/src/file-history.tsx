@@ -1,7 +1,8 @@
 import type { FileHistoryEntry, FileHistoryPage, FileHistorySource } from "@laneway/shared"
 import { css, on, type RemixNode } from "remix/ui"
-import { auxiliaryColumnWidth } from "./auxiliary-columns"
+import { auxiliaryCloseButton, auxiliaryColumnFrame, auxiliaryColumnHeader } from "./auxiliary-columns"
 import { InspectionItem } from "./file-list"
+import { Icon } from "./icons"
 
 export interface FileHistoryState {
     kind: "history"
@@ -206,7 +207,9 @@ export function createFileHistories(
                 >
                     <header>
                         <strong title={state.path}>History · {state.path}</strong>
-                        <button type="button" aria-label="Close file history" mix={on("click", actions.close)}>×</button>
+                        <button type="button" aria-label="Close file history" mix={on("click", actions.close)}>
+                            <Icon name="close" size={15} />
+                        </button>
                     </header>
                     <small class="history-source">
                         From {source.kind == "branch" ? source.ref : source.kind == "worktree" ? source.worktreePath : source.objectId.slice(0, 8)}
@@ -323,25 +326,13 @@ export function createFileHistories(
     }
 }
 const historyColumn = css({
-    ...auxiliaryColumnWidth,
+    ...auxiliaryColumnFrame,
     minWidth: 0,
-    overflow: "auto",
-    background: "var(--panel)",
-    borderLeft: "3px solid var(--accent-edge)",
-    "& > header": {
-        position: "sticky",
-        top: 0,
-        zIndex: 10,
-        display: "flex",
-        alignItems: "center",
-        gap: "6px",
-        height: "44px",
-        padding: "0 var(--scrollbar-clearance) 0 10px",
-        background: "var(--panel-deep)",
-    },
+    "& > header": { ...auxiliaryColumnHeader, position: "sticky", top: 0, zIndex: 10 },
     "& > header strong": { flex: 1, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" },
+    "& > header > button": auxiliaryCloseButton,
     "& .history-commit": { width: "100%", textAlign: "left", padding: "8px", border: 0, borderBottom: "1px solid var(--line)" },
-    "& .change-file": { top: "44px" },
+    "& .change-file": { top: "46px" },
     "& .history-subject": { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 },
     "& small": { color: "var(--muted)", display: "block", padding: "4px 8px" },
     "& button": { color: "var(--text)", background: "var(--control)", cursor: "pointer", font: "inherit" },
