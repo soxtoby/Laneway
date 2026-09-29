@@ -112,9 +112,6 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         },
         createBranchAt: (repositoryId, commit) => localBranches.atCommit(repositoryId, commit),
         compareWith,
-        openCommitWorktree: (repositoryId, commit) => {
-            void worktreeActions.prepare(repositoryId, { action: "create", commit, move: false })
-        },
         layout: (repositoryId, columnId) => stateFor(repositoryId).diffLayouts[columnId] ?? "unified",
         saveLayout: (repositoryId, columnId, layout) => {
             stateFor(repositoryId).diffLayouts[columnId] = layout

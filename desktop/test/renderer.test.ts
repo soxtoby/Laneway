@@ -1547,6 +1547,30 @@ describe("Working Changes inspection", () => {
         dispose()
     })
 
+    test("offers Create branch here from an expanded commit's overflow menu", async () => {
+        const scenario = inspectionScenario()
+        const { container, root, dispose } = render(scenario.api)
+        await flush(root)
+        const label = "[aria-label='More actions for commit Inspect changes']"
+        expect(container.querySelector(label)).toBeNull()
+        click(container.querySelector<HTMLButtonElement>(".commit-heading")!)
+        await flush(root)
+        expect(container.querySelector("[aria-label='Create branch at Inspect changes']")).toBeNull()
+        expect(container.querySelector("[aria-label='Open commit Inspect changes in new worktree']")).toBeNull()
+        click(container.querySelector<HTMLButtonElement>(label)!)
+        await flush(root)
+        const menu = container.querySelector<HTMLElement>(`dialog${label} [role='menu']`)!
+        expect(menu.textContent).toContain("Create branch here…")
+        click(button(menu, "Create branch here…"))
+        await flush(root)
+        expect(container.querySelector(`dialog${label}`)).toBeNull()
+        const dialog = container.querySelector<HTMLDialogElement>("dialog[aria-label='Local Git operation']")!
+        expect(dialog.querySelector("h2")!.textContent).toBe("Create branch")
+        click(button(dialog, "Cancel"))
+        await flush(root)
+        dispose()
+    })
+
     test("disposes pending commit breakout reads with its source and restores no auxiliary columns", async () => {
         const scenario = inspectionScenario()
         const pending = new Map<string, (result: FileDiffResult) => void>()

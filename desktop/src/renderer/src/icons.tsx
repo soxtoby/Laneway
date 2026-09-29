@@ -34,6 +34,7 @@ const paths = {
     tag: "M2 2.5h5.5L14 9l-5 5-6.5-6.5zM5 5.5a.5.5 0 1 0 1 0a.5.5 0 1 0-1 0",
     fork: "M4 2v4a3 3 0 0 0 3 3h2a3 3 0 0 0 3-3V2M8 9v5",
     document: "M3 2h7l3 3v9H3zM10 2v3h3M5 8h6M5 11h6",
+    diff: "M8 2v5M5.5 4.5h5M5.5 12h5",
 } as const
 
 export type IconName = keyof typeof paths

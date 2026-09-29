@@ -12,6 +12,7 @@ import type { NoticeState } from "./feedback"
 import { fileLabel, FileTree } from "./file-list"
 import { FileMenu } from "./file-menu"
 import { Icon } from "./icons"
+import { OverflowMenu } from "./overflow-menu"
 
 type Column = BranchGraphBranchNode | BranchGraphVirtualBranch
 interface Options {
@@ -22,7 +23,6 @@ interface Options {
     layout(repositoryId: string, columnId: string): DiffLayout
     saveLayout(repositoryId: string, columnId: string, layout: DiffLayout): void
     compareWith(repositoryId: string, fromRef: string, replaceId?: string, toRef?: string): void
-    openCommitWorktree?(repositoryId: string, objectId: string): void
     localChanged?(repositoryId: string): Promise<void>
     localBusyChanged?(busy: boolean): void
     createBranchAt?(repositoryId: string, objectId: string): void
@@ -1617,55 +1617,28 @@ export function createInspection(options: Options) {
                                                                                 {files?.open && (
                                                                                     <button
                                                                                         type="button"
-                                                                                        title="Create branch here"
-                                                                                        aria-label={`Create branch at ${commit.subject}`}
-                                                                                        mix={[
-                                                                                            commitDiffButton,
-                                                                                            on(
-                                                                                                "click",
-                                                                                                () =>
-                                                                                                    options.createBranchAt?.(
-                                                                                                        state.repositoryId,
-                                                                                                        commit.objectId,
-                                                                                                    ),
-                                                                                            ),
-                                                                                        ]}
-                                                                                    >
-                                                                                        ⑂
-                                                                                    </button>
-                                                                                )}
-                                                                                {files?.open && (
-                                                                                    <button
-                                                                                        type="button"
                                                                                         aria-label={`Show full diff for commit ${commit.subject}`}
                                                                                         title="Show full commit diff"
                                                                                         mix={[
-                                                                                            commitDiffButton,
+                                                                                            commitToolButton,
                                                                                             on("click", () => void showCommitBreakout(state, commit)),
                                                                                         ]}
                                                                                     >
-                                                                                        {commitDiffIcon()}
+                                                                                        <Icon name="diff" size={14} />
                                                                                     </button>
                                                                                 )}
-                                                                                {files?.open && options.openCommitWorktree && (
-                                                                                    <button
-                                                                                        type="button"
-                                                                                        aria-label={`Open commit ${commit.subject} in new worktree`}
-                                                                                        title="Open commit in new worktree"
-                                                                                        mix={[
-                                                                                            commitDiffButton,
-                                                                                            on(
-                                                                                                "click",
-                                                                                                () =>
-                                                                                                    options.openCommitWorktree?.(
-                                                                                                        state.repositoryId,
-                                                                                                        commit.objectId,
-                                                                                                    ),
-                                                                                            ),
-                                                                                        ]}
-                                                                                    >
-                                                                                        ⌂
-                                                                                    </button>
+                                                                                {files?.open && options.createBranchAt && (
+                                                                                    <OverflowMenu
+                                                                                        label={`More actions for commit ${commit.subject}`}
+                                                                                        title="More actions"
+                                                                                        trigger={commitToolButton}
+                                                                                        actions={[{
+                                                                                            icon: "branch",
+                                                                                            label: "Create branch here…",
+                                                                                            run: () =>
+                                                                                                options.createBranchAt?.(state.repositoryId, commit.objectId),
+                                                                                        }]}
+                                                                                    />
                                                                                 )}
                                                                             </h4>
                                                                             {composition.panel(repositoryId, {
@@ -2046,14 +2019,6 @@ export function createInspection(options: Options) {
             })
         },
     }
-}
-
-function commitDiffIcon() {
-    return (
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" aria-hidden="true">
-            <path d="M3 2h7l3 3v9H3zM10 2v3h3M5 8h6M5 11h6" />
-        </svg>
-    )
 }
 
 function message(error: unknown) {
@@ -2493,21 +2458,22 @@ const conflictIndicator = css({
     "&:hover": { background: "var(--warning-wash)" },
     ".inspect-commit &": { height: "100%", width: "32px", alignSelf: "stretch", borderRadius: "0", padding: "0", border: "0" },
 })
-const commitDiffButton = css({
+// Tool buttons sit flush in the sticky commit row and stay transparent so the row's hover and
+// expanded tints run under them; only the hovered button darkens.
+const commitToolButton = css({
     width: "32px",
-    height: "34px",
+    alignSelf: "stretch",
     flex: "0 0 32px",
     display: "grid",
     placeItems: "center",
     padding: 0,
     border: "0",
-    borderBottom: "1px solid var(--line)",
     borderRadius: "0",
-    background: "var(--panel)",
+    background: "transparent",
     color: "var(--muted)",
     cursor: "pointer",
-    "&:hover": {
-        background: "var(--control-hover)",
+    "&:hover, &[aria-expanded=true]": {
+        background: "color-mix(in srgb, var(--text) 8%, transparent)",
         color: "var(--text)",
     },
 })

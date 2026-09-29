@@ -133,7 +133,7 @@ A tag occupying its commit's position as a history waypoint when that commit is 
 _Avoid_: Tag branch
 
 **Virtual Branch**:
-A changes-only view of a Registered Worktree's clean or dirty detached head, created by branch relocation, deletion of its checked-out branch, or explicitly opening a commit in a new worktree, with an editable default branch name. Its column remains available with commit history hidden until attached; committing first creates the real branch, while switching away from unique state creates a protective branch and stashes any Working Changes.
+A changes-only view of a Registered Worktree's clean or dirty detached head, created by branch relocation or deletion of its checked-out branch, with an editable default branch name. Its column remains available with commit history hidden until attached; committing first creates the real branch, while switching away from unique state creates a protective branch and stashes any Working Changes.
 _Avoid_: Detached HEAD
 
 **Worktree-only Commit**:
