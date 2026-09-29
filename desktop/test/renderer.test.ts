@@ -1244,6 +1244,57 @@ describe("Branch Comparison", () => {
 })
 
 describe("Working Changes inspection", () => {
+    test("marks column commits and branches their remote already has as remote", async () => {
+        const scenario = inspectionScenario()
+        const branch = scenario.graph.branches[1]
+        const local = "4".repeat(40)
+        branch.upstreamRef = "refs/remotes/origin/feature/laneway"
+        branch.remoteRefs = [branch.upstreamRef]
+        branch.remoteTips = [branch.tip]
+        branch.upstreamTip = branch.tip
+        branch.tip = local
+        branch.ahead = 1
+        branch.checkedOut[0].head = local
+        // main matches its upstream, so its card is remote even though it is a local branch.
+        const main = scenario.graph.branches[0]
+        main.upstreamRef = "refs/remotes/origin/main"
+        main.remoteRefs = [main.upstreamRef]
+        main.remoteTips = [main.tip]
+        main.upstreamTip = main.tip
+        const requests: Parameters<Window["laneway"]["readBranchHistory"]>[1][] = []
+        scenario.api.readBranchHistory = async (_repositoryId, request) => {
+            requests.push(request)
+            return {
+                ok: true,
+                page: {
+                    branchRef: request.branchRef,
+                    tip: request.tip,
+                    baseTips: request.baseTips,
+                    commits: [local, branch.upstreamTip!].map((objectId, index) => ({
+                        objectId,
+                        parentIds: [index == 0 ? branch.upstreamTip! : scenario.graph.branches[0].tip],
+                        subject: index == 0 ? "Unpublished" : "Published",
+                        authorName: "Test",
+                        authorEmail: "test@example.test",
+                        authoredAt: 1788566400,
+                        remote: index == 1,
+                    })),
+                },
+            }
+        }
+
+        const { container, root, dispose } = render(scenario.api)
+        try {
+            await flush(root)
+            expect(requests[0]).toMatchObject({ tip: local, remoteTips: [branch.upstreamTip] })
+            const commits = [...container.querySelectorAll<HTMLElement>(".inspect-commit")]
+            expect(commits.map(commit => [commit.textContent, commit.dataset.remote])).toEqual([["Unpublished", "false"], ["Published", "true"]])
+            expect([...container.querySelectorAll(".stack-branch")].map(card => card.classList.contains("remote"))).toEqual([false, true])
+        } finally {
+            dispose()
+        }
+    })
+
     test("pages unresolved branch commits before offering a continuation branch", async () => {
         const scenario = inspectionScenario()
         const graphResult = await scenario.api.readBranchGraph((await scenario.api.getState()).workspace.activeRepositoryId!, false)

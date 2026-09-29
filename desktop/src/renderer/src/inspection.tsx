@@ -710,7 +710,7 @@ export function createInspection(options: Options) {
     }
     function branchHistoryKey(branch: BranchGraphBranchNode) {
         const baseTips = branch.base.status == "known" ? [branch.base.tip] : branch.base.candidates.map(candidate => candidate.tip)
-        return JSON.stringify([branch.tip, baseTips, branch.unresolved])
+        return JSON.stringify([branch.tip, baseTips, branch.remoteTips, branch.unresolved])
     }
     async function history(state: ColumnState, branch: BranchGraphBranchNode, more = false) {
         const baseTips = branch.base.status == "known" ? [branch.base.tip] : branch.base.candidates.map(candidate => candidate.tip)
@@ -732,6 +732,7 @@ export function createInspection(options: Options) {
                 branchRef: branch.preferredRef,
                 tip: branch.tip,
                 baseTips,
+                remoteTips: branch.remoteTips,
                 limit: 50,
                 ...(more ? { offset: current.page?.nextOffset } : {}),
             })
@@ -1438,7 +1439,7 @@ export function createInspection(options: Options) {
                                 const columnBranch = branch.id == column.id
                                 return (
                                     <accordion.ItemContext key={branch.id} value={branch.id}>
-                                        <section class={branch.remoteOnly ? "stack-branch remote" : "stack-branch"} mix={[stackBranch, accordion.item()]}>
+                                        <section class={published(branch) ? "stack-branch remote" : "stack-branch"} mix={[stackBranch, accordion.item()]}>
                                             {branchIndex > 0 && !stack[branchIndex - 1].remoteOnly
                                                 && composition.seam(repositoryId, {
                                                     kind: "seam",
@@ -1551,6 +1552,7 @@ export function createInspection(options: Options) {
                                                                         <div
                                                                             class="inspect-commit"
                                                                             data-expanded={files?.open ? "true" : "false"}
+                                                                            data-remote={commit.remote ? "true" : "false"}
                                                                             mix={[inspectCommit, accordion.item()]}
                                                                         >
                                                                             <h4
@@ -2057,6 +2059,11 @@ function message(error: unknown) {
     return error instanceof Error ? error.message : String(error)
 }
 
+// A branch is published once a remote has its tip, so its card matches its tip commit.
+function published(branch: BranchGraphBranchNode) {
+    return branch.remoteOnly || branch.remoteTips.includes(branch.tip) || branch.upstreamTip != undefined && branch.ahead == 0
+}
+
 const changeFileList = css({
     position: "relative",
     ".file-tree details &": {
@@ -2397,11 +2404,11 @@ const stackBranch = css({
     // Rows draw their own bottom rules; the card's edge replaces the last one. A trailing -1px pulls the
     // card's bottom up over that rule, whichever row is last, and the clip hides it.
     "&::after": { content: '""', display: "block", marginTop: "-1px" },
-    // Remote-only branches are read-only here, so they use a neutral slate instead of the local branch blue.
-    "&.remote": { borderColor: "var(--line-strong)" },
-    "&.remote :is(.composition-branch-target, .composition-branch-heading)": { background: "var(--panel-deep)" },
-    "&.remote .composition-branch-heading:hover": { background: "var(--control-hover)" },
-    "&.remote .composition-branch-target > svg, &.remote .composition-branch-heading svg + svg": { color: "var(--muted)" },
+    // Branches whose tip their remote already has take the remote teal instead of the local branch blue.
+    "&.remote": { borderColor: "var(--remote-edge)" },
+    "&.remote :is(.composition-branch-target, .composition-branch-heading)": { background: "var(--remote-wash)" },
+    "&.remote .composition-branch-heading:hover": { background: "color-mix(in srgb, var(--remote) 18%, var(--panel))" },
+    "&.remote .composition-branch-target > svg": { color: "var(--remote)" },
 })
 
 const disclosureHeading = css({
@@ -2516,6 +2523,7 @@ const stackHeadingName = css({
     minWidth: "0",
     "& svg": { color: "var(--faint)", flex: "0 0 auto" },
     "& svg + svg": { color: "var(--focus)" },
+    ".stack-branch.remote & svg + svg": { color: "var(--remote)" },
 })
 
 const stackHeadingStatus = css({ display: "inline-flex", alignItems: "center", gap: "8px" })
@@ -2565,8 +2573,12 @@ const commitHeading = css({
     '&[aria-expanded="true"] > span:first-child': {
         background: "var(--graph)",
     },
+    '.inspect-commit[data-remote="true"] &[aria-expanded="true"] > span:first-child': {
+        background: "var(--remote)",
+    },
 })
 
+// Commits their remote already has take the remote teal, so a partly published branch changes colour along its history.
 const commitNode = css({
     position: "absolute",
     zIndex: 2,
@@ -2579,6 +2591,7 @@ const commitNode = css({
     border: "2px solid var(--graph)",
     borderRadius: "50%",
     background: "var(--panel)",
+    '.inspect-commit[data-remote="true"] &': { borderColor: "var(--remote)" },
 })
 
 const commitHeadingSpan = css({

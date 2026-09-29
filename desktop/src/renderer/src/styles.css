@@ -31,6 +31,9 @@
         --focus-wash: rgb(47 107 255 / 12%);
         --focus-edge: rgb(47 107 255 / 45%);
         --graph: #2f6bff;
+        --remote: #0b8793;
+        --remote-wash: rgb(11 135 147 / 12%);
+        --remote-edge: rgb(11 135 147 / 45%);
         --ok: #12a150;
         --ok-ink: #0b5a3a;
         --ok-wash: rgb(18 161 80 / 12%);
@@ -96,6 +99,9 @@
         --focus-wash: rgb(92 141 255 / 16%);
         --focus-edge: rgb(92 141 255 / 50%);
         --graph: #5c8dff;
+        --remote: #3cbcc7;
+        --remote-wash: rgb(60 188 199 / 16%);
+        --remote-edge: rgb(60 188 199 / 50%);
         --ok: #34c77a;
         --ok-ink: #8ce2b3;
         --ok-wash: rgb(52 199 122 / 14%);

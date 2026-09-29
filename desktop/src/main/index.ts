@@ -513,6 +513,7 @@ function isBranchHistoryRequest(value: unknown): value is BranchHistoryRequest {
     const request = value as Partial<BranchHistoryRequest>
     return typeof request.branchRef == "string" && typeof request.tip == "string"
         && Array.isArray(request.baseTips) && request.baseTips.every(tip => typeof tip == "string")
+        && (request.remoteTips == undefined || Array.isArray(request.remoteTips) && request.remoteTips.every(tip => typeof tip == "string"))
         && (request.requestId == undefined || typeof request.requestId == "string")
         && (request.offset == undefined || Number.isSafeInteger(request.offset))
         && (request.limit == undefined || Number.isSafeInteger(request.limit))

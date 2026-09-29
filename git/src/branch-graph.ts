@@ -372,6 +372,7 @@ function createBranches(refs: RefRecord[], worktrees: BranchGraphWorktree[], pri
             aliases: allRefs.map(shortRef),
             localRefs: local.map(ref => ref.ref).sort(naturalCompare),
             remoteRefs: remote.map(ref => ref.ref).sort(naturalCompare),
+            remoteTips: [...new Set(remote.map(ref => ref.objectId))],
             tip,
             upstreamRef,
             upstreamTip,
@@ -852,6 +853,9 @@ async function readHistoryPage(descriptor: RepositoryDescriptor, runner: GraphRu
     validateObjectId(descriptor, request.tip)
     for (const baseTip of request.baseTips)
         validateObjectId(descriptor, baseTip)
+    const remoteTips = request.remoteTips ?? []
+    for (const remoteTip of remoteTips)
+        validateObjectId(descriptor, remoteTip)
     const before = request.branchRef == request.tip
         ? request.tip
         : optionalText(await runner.run(["rev-parse", "--verify", "--quiet", request.branchRef], [0, 1]))
@@ -873,6 +877,17 @@ async function readHistoryPage(descriptor: RepositoryDescriptor, runner: GraphRu
         ]),
     )
     const commits = parseHistory(output)
+    if (remoteTips.includes(request.tip)) {
+        for (const commit of commits)
+            commit.remote = true
+    } else if (remoteTips.length > 0) {
+        // Only unpublished commits are listed, so the walk stays as short as the branch's lead over its remote.
+        const local = new Set(
+            text(await runner.run(["rev-list", request.tip, "--not", ...remoteTips, ...request.baseTips])).split("\n").filter(Boolean),
+        )
+        for (const commit of commits)
+            commit.remote = !local.has(commit.objectId)
+    }
     const after = request.branchRef == request.tip
         ? request.tip
         : optionalText(await runner.run(["rev-parse", "--verify", "--quiet", request.branchRef], [0, 1]))

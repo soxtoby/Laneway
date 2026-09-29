@@ -122,6 +122,7 @@ export function branchGraph(repositoryId: string) {
         aliases: ["main"],
         localRefs: ["refs/heads/main"],
         remoteRefs: [],
+        remoteTips: [],
         tip: "1".repeat(40),
         ahead: 0,
         behind: 0,

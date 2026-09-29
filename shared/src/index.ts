@@ -344,6 +344,8 @@ export interface BranchGraphBranchNode {
     aliases: string[]
     localRefs: string[]
     remoteRefs: string[]
+    /** Distinct tips of remoteRefs, which may differ from the local tip. */
+    remoteTips: string[]
     tip: string
     upstreamRef?: string
     upstreamTip?: string
@@ -421,6 +423,8 @@ export interface BranchHistoryRequest {
     branchRef: string
     tip: string
     baseTips: string[]
+    /** Remote-tracking tips; commits they reach are reported as remote. */
+    remoteTips?: string[]
     offset?: number
     limit?: number
 }
@@ -433,6 +437,8 @@ export interface BranchHistoryCommit {
     authorEmail: string
     authoredAt: number
     subject: string
+    /** Reachable from one of the request's remote tips. */
+    remote?: boolean
 }
 
 export interface BranchHistoryPage {

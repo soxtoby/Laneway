@@ -226,6 +226,7 @@ describe("system Git", () => {
         const feature = graph.branches.find(branch => branch.preferredRef == "refs/heads/feature/ambiguous")!
         expect(feature.tip).toBe(localTip)
         expect(feature.upstreamTip).toBe(remoteTip)
+        expect(feature.remoteTips).toEqual([remoteTip])
         expect(feature).toMatchObject({ ahead: 1, behind: 1 })
         expect(feature.base.status).toBe("ambiguous")
         if (feature.base.status == "ambiguous") {
@@ -306,6 +307,31 @@ describe("system Git", () => {
         expect(base("stack/right")).toMatchObject({ status: "known", ref: "refs/heads/main", tip: mainTip })
         expect(base("stack/middle")).toMatchObject({ status: "known", ref: "refs/heads/stack/right", tip: rightTip })
         expect(base("stack/top")).toMatchObject({ status: "known", ref: "refs/heads/stack/middle", tip: middleTip })
+    })
+
+    test("marks branch history commits their remote already reaches", async () => {
+        const repository = await temporaryDirectory("laneway-graph-remote-history-")
+        expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
+        await commitFile(repository, "README.md", "initial\n", "Initial")
+        const baseTip = gitText(repository, "rev-parse", "HEAD")
+        expect(runGit(repository, "checkout", "-q", "-b", "feature").exitCode).toBe(0)
+        await commitFile(repository, "feature.txt", "one\n", "Published one")
+        const publishedOne = gitText(repository, "rev-parse", "HEAD")
+        await commitFile(repository, "feature.txt", "two\n", "Published two")
+        const publishedTwo = gitText(repository, "rev-parse", "HEAD")
+        await commitFile(repository, "feature.txt", "three\n", "Local")
+        const local = gitText(repository, "rev-parse", "HEAD")
+
+        const opened = await openRepository(repository)
+        const read = (remoteTips?: string[]) =>
+            opened.startReadBranchHistory({ branchRef: "refs/heads/feature", tip: local, baseTips: [baseTip], remoteTips, limit: 50 }).result
+        const remoteFlags = (page: Awaited<ReturnType<typeof read>>) => page.commits.map(commit => [commit.objectId, commit.remote])
+
+        expect(remoteFlags(await read([publishedTwo]))).toEqual([[local, false], [publishedTwo, true], [publishedOne, true]])
+        expect(remoteFlags(await read([local]))).toEqual([[local, true], [publishedTwo, true], [publishedOne, true]])
+        expect(remoteFlags(await read())).toEqual([[local, undefined], [publishedTwo, undefined], [publishedOne, undefined]])
     })
 
     test("reads branch history along the first parent of merge commits", async () => {
