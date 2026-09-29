@@ -415,7 +415,7 @@ function inferBases(branches: MutableBranch[], candidates: MutableBranch[], topo
     const candidatesById = new Map(candidates.map(candidate => [candidate.id, candidate]))
     const excluded = new Map<MutableBranch, Set<string>>()
     const closestBase = (mergeBases: Array<{ candidate: MutableBranch; objectId: string }>) =>
-        chooseBase(lowestCandidates(closestMergeBases(mergeBases, isAncestor), topology.isAncestor))
+        chooseBase(closestMergeBases(mergeBases, isAncestor), topology.isAncestor)
     const infer = (branch: MutableBranch) => {
         const mergeBases = mergeBasesByBranch.get(branch)!
         const skippedTips = [...excluded.get(branch) ?? []].map(id => candidatesById.get(id)!.tip)
@@ -476,19 +476,25 @@ function lowestCandidates(
     )
 }
 
-function chooseBase(entries: Array<{ candidate: MutableBranch; objectId: string }>): BranchGraphBase {
+function chooseBase(
+    entries: Array<{ candidate: MutableBranch; objectId: string }>,
+    isAncestor: (ancestor: string, descendant: string) => boolean,
+): BranchGraphBase {
     const uniqueCandidates = unique(entries, entry => entry.candidate.id)
     if (uniqueCandidates.length == 0)
         return { status: "unknown", candidates: [] }
-    if (uniqueCandidates.length == 1)
-        return knownBase(uniqueCandidates[0].candidate)
+    // Candidates sharing one fork point are equally close, so the Primary Branch wins the tie
+    // before stacking is considered: branches merged beneath its tip never displace it.
     const sameTopology = new Set(uniqueCandidates.map(entry => entry.objectId)).size == 1
     const primary = sameTopology ? uniqueCandidates.find(entry => entry.candidate.primary) : undefined
     if (primary)
         return knownBase(primary.candidate)
+    const lowest = lowestCandidates(uniqueCandidates, isAncestor)
+    if (lowest.length == 1)
+        return knownBase(lowest[0].candidate)
     return {
         status: "ambiguous",
-        candidates: uniqueCandidates.map(entry => baseCandidate(entry.candidate)).sort((left, right) => naturalCompare(left.name, right.name)),
+        candidates: lowest.map(entry => baseCandidate(entry.candidate)).sort((left, right) => naturalCompare(left.name, right.name)),
     }
 }
 

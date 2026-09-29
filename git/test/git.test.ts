@@ -310,6 +310,50 @@ describe("system Git", () => {
         expect(base("stack/top")).toMatchObject({ status: "known", ref: "refs/heads/stack/middle", tip: middleTip })
     })
 
+    test("keeps the Primary Branch as Base beneath merged siblings sharing its fork point", async () => {
+        const repository = await temporaryDirectory("laneway-graph-merged-siblings-")
+        expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
+        await commitFile(repository, "README.md", "initial\n", "Initial")
+        // A stale ref on the main line beneath the fork point, like an old integration target.
+        expect(runGit(repository, "branch", "stale/target").exitCode).toBe(0)
+        await commitFile(repository, "fork.txt", "fork\n", "Fork point")
+        const fork = gitText(repository, "rev-parse", "HEAD")
+        expect(runGit(repository, "checkout", "-q", "-b", "feature/open").exitCode).toBe(0)
+        await commitFile(repository, "open.txt", "open\n", "Open work")
+        for (const name of ["merged/one", "merged/two"]) {
+            expect(runGit(repository, "checkout", "-q", "-b", name, fork).exitCode).toBe(0)
+            await commitFile(repository, `${name.replace("/", "-")}.txt`, "merged\n", `Merged ${name}`)
+            expect(runGit(repository, "checkout", "-q", "main").exitCode).toBe(0)
+            expect(runGit(repository, "merge", "--no-ff", name, "-m", `Merge ${name}`).exitCode).toBe(0)
+        }
+        // A branch fast-forwarded onto the main line after the fork point.
+        expect(runGit(repository, "checkout", "-q", "-b", "merged/fast-forward").exitCode).toBe(0)
+        await commitFile(repository, "fast-forward.txt", "fast-forward\n", "Fast-forwarded work")
+        expect(runGit(repository, "checkout", "-q", "main").exitCode).toBe(0)
+        expect(runGit(repository, "merge", "--ff-only", "merged/fast-forward").exitCode).toBe(0)
+        const mainTip = gitText(repository, "rev-parse", "HEAD")
+        expect(runGit(repository, "remote", "add", "upstream", ".").exitCode).toBe(0)
+        expect(runGit(repository, "update-ref", "refs/remotes/upstream/main", mainTip).exitCode).toBe(0)
+        expect(runGit(repository, "symbolic-ref", "refs/remotes/upstream/HEAD", "refs/remotes/upstream/main").exitCode).toBe(0)
+        expect(runGit(repository, "config", "branch.main.remote", "upstream").exitCode).toBe(0)
+        expect(runGit(repository, "config", "branch.main.merge", "refs/heads/main").exitCode).toBe(0)
+
+        const opened = await openRepository(repository)
+        const graph = await opened.startReadBranchGraph({
+            authorIdentities: { primary: "laneway@example.invalid", secondary: [] },
+            selectedRemote: "upstream",
+            remotePatterns: [],
+        }).result
+        const open = graph.branches.find(candidate => candidate.name == "feature/open")!
+        expect(open.base).toMatchObject({ status: "known", ref: "refs/heads/main", tip: mainTip })
+        expect(open.merged).toBe(false)
+        for (const name of ["merged/one", "merged/two", "stale/target"])
+            expect(graph.branches.find(candidate => candidate.name == name)?.merged).toBe(true)
+        expect(graph.branches.find(candidate => candidate.name == "main")?.localRefs).toContain("refs/heads/merged/fast-forward")
+    })
+
     test("marks branch history commits their remote already reaches", async () => {
         const repository = await temporaryDirectory("laneway-graph-remote-history-")
         expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)
