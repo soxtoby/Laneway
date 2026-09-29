@@ -202,8 +202,6 @@ async function checkRenderer() {
     const noSecondSelection = selectedFile.checked
     selectedFile.click()
     await settle()
-    ;[...document.querySelectorAll<HTMLButtonElement>(".diff-views button")].find(button => button.textContent == "Working Changes")!.click()
-    await settle()
     const diffShadow = element(".pierre-diff").shadowRoot!
     const metadata = element(".diff-summary")
     const metadataStyle = getComputedStyle(metadata)

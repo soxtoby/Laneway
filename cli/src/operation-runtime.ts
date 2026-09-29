@@ -12,7 +12,7 @@ import { conflictMutation, conflictPaths, executeConflict, suspendWorkingConflic
 import { LocalPreconditionError, mutateLocal, prepareLocal } from "./local-mutations"
 import { executePull, preparePull, type PullPreparation, type PullProgressReporter } from "./pull-latest"
 import { mutateWorktree } from "./worktree-mutations"
-import { captureWorktreeState, relocateRemovedState, restoreWorktreeState, retainWorktreeState, stateIdentity, worktreeStateMatches, WorktreeStateSchema } from "./worktree-state"
+import { captureWorktreeState, relocateRemovedState, restoreWorktreeState, retainWorktreeState, stateIdentity, type WorktreeState, worktreeStateMatches, WorktreeStateSchema } from "./worktree-state"
 
 const fixtureRef = "refs/laneway/test/fixture"
 const journalFileName = "journal.jsonl"
@@ -293,9 +293,10 @@ class OperationRuntime {
             throw new OperationRuntimeError("operation.precondition-failed", "Repository content changed. Refresh and review the operation again.")
         let result: LocalResult = { type: "result", command: "local", status: "performed" }
         const expectedRefs = new Map<string, string | null>()
-        await this.applySnapshot(preview.affected, `local.${request.action}`, request.action.replaceAll("-", " "), async () => {
-            // Recheck the reviewed snapshot after journal preparation, before running hooks or Git mutations.
-            if (!await worktreeStateMatches(this.repository, before))
+        await this.applySnapshot(preview.affected, `local.${request.action}`, request.action.replaceAll("-", " "), async journalBefore => {
+            // The journal's own snapshot, taken after preparation, doubles as the recheck of the reviewed
+            // snapshot before hooks or Git mutations run; capturing a third time would only add cost.
+            if (stateIdentity(journalBefore) != stateIdentity(before))
                 throw new OperationRuntimeError("operation.precondition-failed", "Repository content changed while preparing this operation.")
             try {
                 result = await mutateLocal(this.repository, request, before, preview, expectedRefs, () => this.cancellation.isCancelled())
@@ -348,7 +349,7 @@ class OperationRuntime {
         affected: string[],
         kind: string,
         summary: string,
-        mutate: () => Promise<Set<string> | Map<string, string | null>>,
+        mutate: (before: WorktreeState) => Promise<Set<string> | Map<string, string | null>>,
         crashAfter?: JournalPhase,
     ): Promise<OperationSummary> {
         const locks = await findGitLockfiles(this.repository.descriptor.commonDirectory)
@@ -397,7 +398,7 @@ class OperationRuntime {
         await this.cancelIfRequested(executionId, operation, "apply")
         let changedRefs: Set<string> | Map<string, string | null>
         try {
-            changedRefs = await mutate()
+            changedRefs = await mutate(before)
         } catch (error) {
             if (await worktreeStateMatches(this.repository, before))
                 await this.abortBeforeCommit(executionId, operation, "apply")

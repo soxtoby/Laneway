@@ -1403,8 +1403,6 @@ describe("Working Changes inspection", () => {
         await flush(root)
         expect(file.getAttribute("aria-expanded")).toBe("true")
         expect(Boolean(container.querySelector("[aria-label='Select file src/file.txt']"))).toBe(true)
-        click(button(container, "Working Changes"))
-        await flush(root)
         const line = diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!
         down(line)
         await flush(root)
@@ -1672,10 +1670,12 @@ describe("Working Changes inspection", () => {
     test("reads patches lazily, respects literal selection, and restores only diff layout", async () => {
         const scenario = inspectionScenario()
         let reads = 0
+        const views: string[] = []
         const api = {
             ...scenario.api,
             readFileDiff: async (...args: Parameters<Window["laneway"]["readFileDiff"]>) => {
                 reads++
+                views.push(args[2].view ?? "combined")
                 return scenario.api.readFileDiff(...args)
             },
         }
@@ -1684,20 +1684,24 @@ describe("Working Changes inspection", () => {
         expect(container.textContent).toContain("Working Changes")
         expect(container.querySelector(".staged-divider")?.textContent).toContain("Staged")
         expect(reads).toBe(0)
-        click(container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
+        // A partially staged file appears in both lists; each opens its own side without a view toggle.
+        const rows = container.querySelectorAll<HTMLButtonElement>("[title='src/file.txt']")
+        expect(rows).toHaveLength(2)
+        click(rows[0])
         await flush(root)
         expect(reads).toBe(1)
-        click(button(container, "Working Changes"))
-        await flush(root)
+        expect(views).toEqual(["staged"])
+        expect(container.querySelector(".diff-views")).toBeNull()
         click(diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
         await flush(root)
         expect(diffRoot(container).querySelectorAll(".diff-line.selected")).toHaveLength(1)
         expect(diffRoot(container).querySelector(".diff-line.addition.selected")).toBeNull()
-        click(button(container, "Staged"))
+        click(rows[1])
         await flush(root)
-        expect(diffRoot(container).querySelector(".diff-line.selected")).toBeNull()
-        expect(Boolean(diffRoot(container).querySelector("[aria-label='Select deletion line 1']"))).toBe(true)
-        click(button(container, "Working Changes"))
+        expect(views).toEqual(["staged", "unstaged"])
+        expect(container.querySelectorAll(".diff-inspector")).toHaveLength(2)
+        expect(diffRoot(container).querySelectorAll(".diff-line.selected")).toHaveLength(1)
+        click(rows[1])
         await flush(root)
         click(diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select hunk']")!)
         await flush(root)
@@ -1761,8 +1765,6 @@ describe("Working Changes inspection", () => {
         finish({ ok: true, page: scenario.page })
         await flush(root)
         expect(container.querySelector(".diff-inspector")?.getAttribute("aria-label")).toBe("Diff for other.txt")
-        click(button(container, "Working Changes"))
-        await flush(root)
         click(diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
         await flush(root)
         version = "two"
@@ -1771,9 +1773,6 @@ describe("Working Changes inspection", () => {
         expect(container.textContent).toContain("Change Selection cleared")
         expect(diffRoot(container).querySelector(".diff-line.selected")).toBeNull()
         click(container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
-        await flush(root)
-        const currentDiff = container.querySelector<HTMLElement>("[aria-label='Diff for src/file.txt']")!
-        click(button(currentDiff, "Working Changes"))
         await flush(root)
         click(diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
         await flush(root)
@@ -2085,7 +2084,7 @@ test("commit composer reveals staging controls, retains cancelled drafts, and co
     try {
         await flush(view.root)
         expect(view.container.querySelector(".staged-divider")).toBeNull()
-        expect(view.container.querySelector('[aria-label="Stage src/file.txt"]')).toBeNull()
+        expect(view.container.querySelector('[aria-label="Staged files"]')).toBeNull()
         const header = view.container.querySelector(".commit-header")!
         expect(header.textContent).toContain("Working Changes")
         expect(header.textContent).toContain("Commit…")
@@ -2098,22 +2097,26 @@ test("commit composer reveals staging controls, retains cancelled drafts, and co
         ).not.toBe(0)
         expect(view.container.querySelector(".staged-divider")).not.toBeNull()
         expect(view.container.querySelectorAll(".working-changes .change-file")).toHaveLength(2)
+        expect(view.container.querySelector('[aria-label^="Stage "]')).toBeNull()
+        expect(header.querySelector<HTMLElement>(".commit-split")!.hidden).toBe(true)
+        expect(view.container.querySelector('[aria-label="Staged files"]')!.textContent).toContain("Drop files here to stage them")
         expect(button(view.container, "Commit all changes (2)").disabled).toBe(true)
         const title = view.container.querySelector<HTMLInputElement>('[aria-label="Commit title"]')!
         title.value = "Keep snapshot"
         title.dispatchEvent(new Event("input", { bubbles: true }))
         await flush(view.root)
-        click(button(view.container, "Stage src/file.txt"))
+        // Staging is a move between the lists: choose the file, then land it on the staged list.
+        click(view.container.querySelector<HTMLButtonElement>('[aria-label="Move or copy src/file.txt"]')!)
         await flush(view.root)
-        expect(
-            view.container.querySelector('[aria-label="Unstage src/file.txt"]')!.compareDocumentPosition(
-                view.container.querySelector('[aria-label="Stage other.txt"]')!,
-            ) & Node.DOCUMENT_POSITION_FOLLOWING,
-        ).not.toBe(0)
+        click(view.container.querySelector<HTMLElement>('[aria-label="Staged files"]')!)
+        await flush(view.root)
+        expect(view.container.querySelector('[aria-label="Staged files"]')!.textContent).toContain("src/file.txt")
+        expect(view.container.querySelector('[aria-label="Staged files"]')!.textContent).not.toContain("other.txt")
         click(button(view.container, "Cancel"))
         await flush(view.root)
         expect(view.container.querySelector('[aria-label="Commit title"]')).toBeNull()
-        expect(view.container.querySelector('[aria-label="Unstage src/file.txt"]')).toBeNull()
+        expect(header.querySelector<HTMLElement>(".commit-split")!.hidden).toBe(false)
+        expect(view.container.querySelector('[aria-label="Staged files"]')!.textContent).toContain("src/file.txt")
         expect(view.container.querySelector(".staged-divider")).not.toBeNull()
         expect(draft.title).toBe("Keep snapshot")
         click(button(view.container, "Commit…"))

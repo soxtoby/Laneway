@@ -806,8 +806,7 @@ export function createInspection(options: Options) {
         state: ColumnState,
         group: string,
         files: FileState | undefined,
-        stage?: (paths: string[]) => void,
-        busy = false,
+        stage?: (paths: string[], unstage: boolean) => void,
         resolution?: { files: ChangedFile[]; renderFile(file: ChangedFile): RemixNode },
     ): RemixNode {
         if (!files)
@@ -824,8 +823,31 @@ export function createInspection(options: Options) {
             : state.breakout
             ? new Set<string>()
             : new Set([...state.diffs.values()].filter(diff => diff.group == group).map(diff => diff.path))
+        // Renamed files stage as their old and new paths together.
+        const withOldPaths = (paths: string[]) =>
+            paths.flatMap(path => {
+                const file = all.find(candidate => candidate.path == path)
+                return file?.oldPath ? [file.oldPath, path] : [path]
+            })
+        const staging = stage && files.source.kind == "working"
+            ? composition.staging({
+                repositoryId: state.repositoryId,
+                worktreePath: files.source.worktreePath,
+                view: group == "working-staged" ? "staged" : "unstaged",
+                apply: paths => stage(withOldPaths(paths), group != "working-staged"),
+            })
+            : undefined
         return (
-            <section class="change-file-list" aria-label={group.startsWith("working") ? "Working Changes files" : "Commit files"} mix={changeFileList}>
+            <section
+                class="change-file-list"
+                aria-label={group == "working-staged" ? "Staged files" : group.startsWith("working") ? "Working Changes files" : "Commit files"}
+                mix={[changeFileList, staging]}
+            >
+                {staging && group == "working-staged" && !visible.length && (
+                    <p class="staging-hint" mix={stagingHint}>
+                        Drop files here to stage them
+                    </p>
+                )}
                 {!!resolution?.files.length && (
                     <button
                         type="button"
@@ -877,21 +899,7 @@ export function createInspection(options: Options) {
                     leading={file => fileTransfer(state, group, file)}
                     controls={file => {
                         const diff = state.diffs.get(diffKey(group, file.path))
-                        return (
-                            <>
-                                {diff && !state.breakout ? renderDiffControls(state, diff) : null}
-                                {stage && (
-                                    <button
-                                        type="button"
-                                        aria-label={`${group == "working-staged" ? "Unstage" : "Stage"} ${file.path}`}
-                                        disabled={busy}
-                                        mix={on("click", () => stage(file.oldPath ? [file.oldPath, file.path] : [file.path]))}
-                                    >
-                                        <Icon name={group == "working-staged" ? "minus" : "plus"} size={12} />
-                                    </button>
-                                )}
-                            </>
-                        )
+                        return diff && !state.breakout ? renderDiffControls(state, diff) : null
                     }}
                     diff={file => {
                         const diff = state.diffs.get(diffKey(group, file.path))
@@ -1003,13 +1011,9 @@ export function createInspection(options: Options) {
                         {renderDiffControls(state, diff)}
                     </header>
                 )}
-                {page?.source.kind == "working" && (page.file.staged || page.file.conflicted) && (
+                {page?.source.kind == "working" && diffViewChoices(diff, page.file).length > 1 && (
                     <div class="diff-views" role="group" aria-label="Comparison" mix={diffViews}>
-                        {([
-                            "combined",
-                            ...(page.file.staged ? ["staged", "unstaged"] : []),
-                            ...(page.file.conflicted ? ["base", "ours", "theirs"] : []),
-                        ] as DiffView[]).map(view => (
+                        {diffViewChoices(diff, page.file).map(view => (
                             <button
                                 type="button"
                                 aria-pressed={diff.view == view}
@@ -1374,7 +1378,7 @@ export function createInspection(options: Options) {
                                     state.showIgnored = value
                                     void readFiles(state, "working", { kind: "working", worktreePath: state.worktreePath! })
                                 }}
-                                renderFiles={(view, stage, busy) => fileList(state, `working-${view}`, state.files.get(`working-${view}`), stage, busy)}
+                                renderFiles={(view, stage) => fileList(state, `working-${view}`, state.files.get(`working-${view}`), stage)}
                                 changed={async (refreshGraph = true) => {
                                     await readFiles(state, "working", { kind: "working", worktreePath: state.worktreePath! }, true)
                                     if (refreshGraph)
@@ -1693,7 +1697,6 @@ export function createInspection(options: Options) {
                                                                                                             commit.objectId,
                                                                                                             files,
                                                                                                             undefined,
-                                                                                                            false,
                                                                                                             { files: conflicts, renderFile },
                                                                                                         )}
                                                                                                 />
@@ -2021,6 +2024,16 @@ export function createInspection(options: Options) {
     }
 }
 
+// The staged and unstaged lists each show their own side of a file, so only conflict views remain
+// selectable there; the combined Working Changes view keeps its staged and unstaged toggles.
+function diffViewChoices(diff: FileDiffState, file: ChangedFile): DiffView[] {
+    const fixed = diff.group.startsWith("working-")
+    return [
+        ...(fixed ? [diff.view] : ["combined", ...(file.staged ? ["staged", "unstaged"] : [])]),
+        ...(file.conflicted ? ["base", "ours", "theirs"] : []),
+    ] as DiffView[]
+}
+
 function message(error: unknown) {
     return error instanceof Error ? error.message : String(error)
 }
@@ -2030,6 +2043,18 @@ const changeFileList = css({
     ".file-tree details &": {
         paddingLeft: "14px",
     },
+})
+
+// An empty staging list still needs somewhere to drop while the commit form is open.
+const stagingHint = css({
+    margin: "4px 10px 6px",
+    padding: "8px",
+    border: "1px dashed var(--line-strong)",
+    borderRadius: "var(--radius)",
+    color: "var(--muted)",
+    fontSize: "12px",
+    textAlign: "center",
+    pointerEvents: "none",
 })
 
 const changeFileListP = css({

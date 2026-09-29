@@ -9,7 +9,8 @@ export function CommitComposer(
         path: string
         virtual: boolean
         inventory?: ChangesInventory
-        renderFiles(view: "unstaged" | "staged", stage?: (files: string[]) => void, busy?: boolean): RemixNode
+        /** `stage` is given only while the commit form is open; dropping files on a list calls it for that list's direction. */
+        renderFiles(view: "unstaged" | "staged", stage?: (files: string[], unstage: boolean) => void): RemixNode
         changed(refreshGraph?: boolean): Promise<void>
         busyChanged?(busy: boolean): void
         showIgnored: boolean
@@ -29,12 +30,19 @@ export function CommitComposer(
     let notice = ""
     let hook: LocalResult | undefined
     let stashOpen = false, stashLabel = "", commitMenuOpen = false
+    // A preview refresh in flight; mutations wait for it so they always send the newest token.
+    let refreshing: Promise<void> | undefined
     const update = () => void handle.update()
     const previewRequest = (): LocalRequest => ({ action: "stage", path: props.path, unstage: false })
+    let previewGeneration = 0
     async function refreshPreview() {
+        // Overlapping refreshes may finish out of order; only the newest result may become the preview.
+        const generation = ++previewGeneration
         const result = await props.api.localOperation(props.repositoryId, previewRequest())
         if (!result.ok)
             throw new Error(result.error.message)
+        if (generation != previewGeneration)
+            return
         preview = result.result.preview
         if (!draft.branch)
             draft.branch = preview?.suggestedBranch ?? ""
@@ -49,6 +57,16 @@ export function CommitComposer(
         }
         update()
     })
+    // Previews take a second of Git work, so they never block the form; the engine validates the
+    // token at execution and any stale request is refreshed and reported.
+    function refreshInBackground() {
+        refreshing = refreshPreview().catch(error => {
+            notice = String(error)
+        }).finally(() => {
+            refreshing = undefined
+            update()
+        })
+    }
     async function save() {
         try {
             await props.api.saveCommitDraft(props.repositoryId, props.path, { ...draft })
@@ -57,21 +75,18 @@ export function CommitComposer(
             update()
         }
     }
-    async function run(request: LocalRequest, expected?: string) {
-        const fresh = await props.api.localOperation(props.repositoryId, request)
-        if (!fresh.ok)
-            throw new Error(fresh.error.message)
-        const token = fresh.result.preview!.token
-        if (expected && expected != token) {
-            await props.changed()
-            preview = fresh.result.preview
-            throw new Error("Working Changes changed. Review the refreshed files, then try again.")
-        }
-        const response = await props.api.localOperation(props.repositoryId, request, token)
-        if (!response.ok)
+    async function run(request: LocalRequest) {
+        await refreshing
+        const response = await props.api.localOperation(props.repositoryId, request, preview?.token)
+        if (!response.ok) {
+            // A rejected token means Working Changes moved on; show the current files for another attempt.
+            await props.changed(false)
+            refreshInBackground()
             throw new Error(response.error.message)
-        await props.changed(request.action != "commit" && request.action != "branch-create")
-        await refreshPreview()
+        }
+        // Only stash operations change what the Branch Graph shows; commits refresh it themselves.
+        await props.changed(request.action.startsWith("stash"))
+        refreshInBackground()
         if (response.result.status == "failed") {
             await props.changed()
             throw new Error(response.result.message)
@@ -98,11 +113,8 @@ export function CommitComposer(
     async function commit() {
         await save()
         if (!preview?.branch || preview.unborn && draft.branch != preview.branch)
-            await run({ action: "branch-create", name: draft.branch, path: props.path }, preview?.token)
-        const result = await run(
-            { action: "commit", path: props.path, title: draft.title, message: draft.message, acceptHooks: hook?.hookToken },
-            preview?.token,
-        )
+            await run({ action: "branch-create", name: draft.branch, path: props.path })
+        const result = await run({ action: "commit", path: props.path, title: draft.title, message: draft.message, acceptHooks: hook?.hookToken })
         if (result.status == "hook-review") {
             hook = result
             return
@@ -119,7 +131,7 @@ export function CommitComposer(
     const stage = (paths: string[], unstage: boolean) =>
         void act(async () => {
             hook = undefined
-            await run({ action: "stage", path: props.path, files: paths, unstage }, preview?.token)
+            await run({ action: "stage", path: props.path, files: paths, unstage })
         })
     const clean = () => Boolean(props.inventory) && !files().length && !open && !stashOpen
     return () => (
@@ -176,8 +188,9 @@ export function CommitComposer(
                         <Icon name="folder" size={14} />
                         {clean() ? "No Working Changes" : "Working Changes"}
                     </h3>
+                    {/* The form's own Commit button takes over while composing. */}
                     <div
-                        hidden={clean()}
+                        hidden={clean() || open}
                         class="commit-split"
                         mix={[
                             on("keydown", event => {
@@ -198,11 +211,11 @@ export function CommitComposer(
                         <button
                             class="commit-open"
                             disabled={busy || !loaded || !files().length}
-                            mix={on("click", () =>
-                                void act(async () => {
-                                    await refreshPreview()
-                                    open = true
-                                }))}
+                            mix={on("click", () => {
+                                open = true
+                                update()
+                                refreshInBackground()
+                            })}
                         >
                             Commit…
                         </button>
@@ -305,13 +318,6 @@ export function CommitComposer(
                             </div>
                             <div class="commit-actions">
                                 <button
-                                    class="commit-submit"
-                                    disabled={busy || !draft.title.trim() || !files().length || (!preview?.branch && !draft.branch.trim()) || Boolean(hook)}
-                                    mix={on("click", () => void act(commit))}
-                                >
-                                    {busy ? "Working…" : staged().length ? `Commit staged (${staged().length})` : `Commit all changes (${files().length})`}
-                                </button>
-                                <button
                                     disabled={busy}
                                     mix={on("click", () => {
                                         open = false
@@ -321,6 +327,13 @@ export function CommitComposer(
                                     })}
                                 >
                                     Cancel
+                                </button>
+                                <button
+                                    class="commit-submit"
+                                    disabled={busy || !draft.title.trim() || !files().length || (!preview?.branch && !draft.branch.trim()) || Boolean(hook)}
+                                    mix={on("click", () => void act(commit))}
+                                >
+                                    {busy ? "Working…" : staged().length ? `Commit staged (${staged().length})` : `Commit all changes (${files().length})`}
                                 </button>
                             </div>
                         </>
@@ -358,6 +371,16 @@ export function CommitComposer(
                         <div class="commit-actions">
                             <button
                                 disabled={busy}
+                                mix={on("click", () => {
+                                    stashOpen = false
+                                    update()
+                                })}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                class="commit-submit"
+                                disabled={busy}
                                 mix={on("click", () =>
                                     void act(async () => {
                                         await run({ action: "stash-create", path: props.path, label: stashLabel })
@@ -366,27 +389,19 @@ export function CommitComposer(
                             >
                                 Stash all changes
                             </button>
-                            <button
-                                disabled={busy}
-                                mix={on("click", () => {
-                                    stashOpen = false
-                                    update()
-                                })}
-                            >
-                                Cancel
-                            </button>
                         </div>
                     </div>
                 )}
+                {/* Staged files sit above the divider; the rest of Working Changes sits below it. */}
                 {(staged().length > 0 || open) && (
                     <>
+                        {props.renderFiles("staged", open ? stage : undefined)}
                         <div class="staged-divider" role="separator" aria-label="Staged changes">
                             <span>Staged · {staged().length}</span>
                         </div>
-                        {props.renderFiles("staged", open ? paths => stage(paths, true) : undefined, busy)}
                     </>
                 )}
-                {props.renderFiles("unstaged", open ? paths => stage(paths, false) : undefined, busy)}
+                {props.renderFiles("unstaged", open ? stage : undefined)}
                 {notice && <p role="status" class="commit-notice">{notice}</p>}
             </div>
         </section>
@@ -516,17 +531,26 @@ const composerStyle = css({
     },
     "& .commit-menu button": { width: "100%", border: 0, background: "transparent", textAlign: "left", padding: "6px 8px" },
     "& .commit-menu button:hover, & .commit-menu button:focus-visible": { background: "var(--hover)" },
-    "& > input, & > textarea, & label input, & select, & .commit-stash-form input": {
+    // The title and message share one field style; the fields sit inside the card, under its header.
+    "& .commit-card > :is(input, textarea), & label input, & select, & .commit-stash-form input": {
+        display: "block",
         width: "100%",
+        height: "auto",
+        minHeight: "30px",
         marginTop: "6px",
-        padding: "7px 8px",
+        padding: "6px 8px",
         border: "1px solid var(--line-strong)",
         borderRadius: "var(--radius)",
         background: "var(--field)",
         color: "var(--text)",
         font: "inherit",
+        fontSize: "13px",
+        lineHeight: "1.4",
     },
-    "& > textarea": { resize: "vertical" },
+    // The title and message sit directly under the header, inset like the rows beneath them.
+    "& .commit-card > :is(input, textarea)": { width: "calc(100% - 16px)", margin: "8px 8px 0" },
+    "& .commit-card > :is(input, textarea):hover:not(:disabled)": { borderColor: "var(--faint)" },
+    "& .commit-card > textarea": { minHeight: "72px", resize: "vertical" },
     // Low specificity so specific buttons, like the stash rows, can restyle it.
     "& button:where(:not(.composition-handle))": {
         border: "1px solid var(--line-strong)",
@@ -541,12 +565,16 @@ const composerStyle = css({
         outline: "2px solid var(--ring)",
         outlineOffset: "2px",
     },
-    "& .commit-actions": { display: "flex", gap: "6px", marginTop: "8px", flexWrap: "wrap" },
-    "& .commit-submit": { background: "var(--accent)", color: "var(--accent-ink)", borderColor: "var(--accent)" },
+    "& .commit-actions": { display: "flex", justifyContent: "flex-end", gap: "6px", margin: "8px 8px 0", flexWrap: "wrap" },
+    "& .commit-submit": { background: "var(--accent)", color: "var(--accent-ink)", borderColor: "var(--accent)", fontWeight: 600 },
+    "& .commit-submit:hover:not(:disabled)": { background: "var(--accent-hover)", borderColor: "var(--accent-hover)" },
+    // Filled buttons turn neutral when disabled, like the header's Commit… button, instead of fading.
+    "& .commit-submit:disabled": { opacity: 1, color: "var(--muted)", borderColor: "var(--line)", background: "var(--control)", fontWeight: 500 },
     "& .staged-divider": { display: "flex", alignItems: "center", gap: "8px", margin: "10px 0 6px", fontSize: "11px", color: "var(--muted)" },
     "& .staged-divider::before, & .staged-divider::after": { content: "''", flex: 1, height: "1px", background: "var(--line)" },
-    "& .commit-bulk-actions": { display: "flex", justifyContent: "flex-end", gap: "8px" },
+    "& .commit-bulk-actions": { display: "flex", justifyContent: "flex-end", gap: "8px", margin: "4px 8px 0" },
     "& .commit-bulk-actions button": { padding: "3px 0", border: 0, color: "var(--muted)", background: "transparent" },
+    "& .commit-bulk-actions button:hover:not(:disabled)": { color: "var(--text)", textDecoration: "underline" },
     "& .commit-hook-review, & .commit-stash-form": { marginTop: "8px", padding: "8px", border: "1px solid var(--line-strong)" },
     "& .commit-notice": { padding: "6px 0", fontSize: "12px", overflowWrap: "anywhere" },
 })

@@ -25,7 +25,8 @@ Behavior decisions for [SOX-135](https://linear.app/soxtoby/issue/SOX-135/implem
 - In the split staging variant, commit uses the real index when it contains changes; otherwise it includes all non-ignored Working Changes. Opening the composer does not stage files. Edits made after staging remain uncommitted when committing the staged snapshot, with a file appearing in both lists where applicable.
 - Keep modified files and their expanded diffs inline. The Working Changes header holds `Commit…` and icon-only stash actions. `Commit…` reveals title and message fields directly below the header with Commit and Cancel buttons. Staged changes appear above unstaged changes, separated by a labeled divider rather than individual headings.
 - Show the staged section only when it contains staged changes or the commit form is open. Closing the form hides an empty staged section.
-- Show per-file Stage/Unstage and Stage all/Unstage all controls only while the commit form is open; existing staged files remain visible when it is closed.
+- Opening the form and staging never wait for a fresh preview; the form uses the last preview's token, refreshes it in the background, and the engine rejects a stale token at execution so the files can be reviewed again.
+- Show Stage all/Unstage all only while the commit form is open. Individual files stage and unstage by dragging them between the staged and unstaged lists (or by keyboard move: M on a file, then the list and Enter); an empty list shows a drop hint. Existing staged files remain visible when the form is closed.
 
 ## Prototype verdict
 
