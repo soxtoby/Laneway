@@ -1250,17 +1250,14 @@ describe("Working Changes inspection", () => {
         const local = "4".repeat(40)
         branch.upstreamRef = "refs/remotes/origin/feature/laneway"
         branch.remoteRefs = [branch.upstreamRef]
-        branch.remoteTips = [branch.tip]
         branch.upstreamTip = branch.tip
         branch.tip = local
         branch.ahead = 1
         branch.checkedOut[0].head = local
-        // main matches its upstream, so its card is remote even though it is a local branch.
+        // A remote branch reaches main's tip, so its card is remote even though it is a local branch.
         const main = scenario.graph.branches[0]
-        main.upstreamRef = "refs/remotes/origin/main"
-        main.remoteRefs = [main.upstreamRef]
-        main.remoteTips = [main.tip]
-        main.upstreamTip = main.tip
+        main.published = true
+        scenario.graph.remoteTips = [branch.upstreamTip, "5".repeat(40)]
         const requests: Parameters<Window["laneway"]["readBranchHistory"]>[1][] = []
         scenario.api.readBranchHistory = async (_repositoryId, request) => {
             requests.push(request)
@@ -1286,7 +1283,7 @@ describe("Working Changes inspection", () => {
         const { container, root, dispose } = render(scenario.api)
         try {
             await flush(root)
-            expect(requests[0]).toMatchObject({ tip: local, remoteTips: [branch.upstreamTip] })
+            expect(requests[0]).toMatchObject({ tip: local, remoteTips: scenario.graph.remoteTips })
             const commits = [...container.querySelectorAll<HTMLElement>(".inspect-commit")]
             expect(commits.map(commit => [commit.textContent, commit.dataset.remote])).toEqual([["Unpublished", "false"], ["Published", "true"]])
             expect([...container.querySelectorAll(".stack-branch")].map(card => card.classList.contains("remote"))).toEqual([false, true])

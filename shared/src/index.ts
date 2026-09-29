@@ -344,8 +344,6 @@ export interface BranchGraphBranchNode {
     aliases: string[]
     localRefs: string[]
     remoteRefs: string[]
-    /** Distinct tips of remoteRefs, which may differ from the local tip. */
-    remoteTips: string[]
     tip: string
     upstreamRef?: string
     upstreamTip?: string
@@ -359,6 +357,8 @@ export interface BranchGraphBranchNode {
     tags: string[]
     primary: boolean
     remoteOnly: boolean
+    /** One of this branch's own remote refs reaches its tip; commits published through other branches don't count. */
+    published: boolean
     merged: boolean
 }
 
@@ -408,6 +408,8 @@ export interface BranchGraph {
     tags: BranchGraphTagNode[]
     virtualBranches: BranchGraphVirtualBranch[]
     unassignedStashes: BranchGraphMarker[]
+    /** Distinct tips of every remote-tracking branch, visible or not. */
+    remoteTips: string[]
     limited: Array<"shallow" | "partial" | "sparse">
 }
 

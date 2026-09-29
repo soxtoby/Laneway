@@ -226,7 +226,8 @@ describe("system Git", () => {
         const feature = graph.branches.find(branch => branch.preferredRef == "refs/heads/feature/ambiguous")!
         expect(feature.tip).toBe(localTip)
         expect(feature.upstreamTip).toBe(remoteTip)
-        expect(feature.remoteTips).toEqual([remoteTip])
+        expect(feature.published).toBe(false)
+        expect(graph.remoteTips).toContain(remoteTip)
         expect(feature).toMatchObject({ ahead: 1, behind: 1 })
         expect(feature.base.status).toBe("ambiguous")
         if (feature.base.status == "ambiguous") {
@@ -323,15 +324,34 @@ describe("system Git", () => {
         const publishedTwo = gitText(repository, "rev-parse", "HEAD")
         await commitFile(repository, "feature.txt", "three\n", "Local")
         const local = gitText(repository, "rev-parse", "HEAD")
+        // A backup with no upstream whose commits another remote branch already carries.
+        expect(runGit(repository, "checkout", "-q", "-b", "backup", baseTip).exitCode).toBe(0)
+        await commitFile(repository, "backup.txt", "backup\n", "Backed up")
+        const backedUp = gitText(repository, "rev-parse", "HEAD")
+        const copy = gitText(repository, "commit-tree", `${backedUp}^{tree}`, "-p", backedUp, "-m", "Copy")
+        expect(runGit(repository, "remote", "add", "origin", ".").exitCode).toBe(0)
+        expect(runGit(repository, "update-ref", "refs/remotes/origin/feature", publishedTwo).exitCode).toBe(0)
+        expect(runGit(repository, "update-ref", "refs/remotes/origin/copy", copy).exitCode).toBe(0)
+        expect(runGit(repository, "update-ref", "refs/remotes/origin/main", baseTip).exitCode).toBe(0)
+        expect(runGit(repository, "config", "branch.main.remote", "origin").exitCode).toBe(0)
+        expect(runGit(repository, "config", "branch.main.merge", "refs/heads/main").exitCode).toBe(0)
+        expect(runGit(repository, "config", "branch.feature.remote", "origin").exitCode).toBe(0)
+        expect(runGit(repository, "config", "branch.feature.merge", "refs/heads/feature").exitCode).toBe(0)
 
         const opened = await openRepository(repository)
-        const read = (remoteTips?: string[]) =>
-            opened.startReadBranchHistory({ branchRef: "refs/heads/feature", tip: local, baseTips: [baseTip], remoteTips, limit: 50 }).result
-        const remoteFlags = (page: Awaited<ReturnType<typeof read>>) => page.commits.map(commit => [commit.objectId, commit.remote])
+        const graph = await opened.startReadBranchGraph({ authorIdentities: { primary: "laneway@example.invalid", secondary: [] }, remotePatterns: [] }).result
+        expect(graph.remoteTips.toSorted()).toEqual([publishedTwo, copy, baseTip].toSorted())
+        const node = (name: string) => graph.branches.find(branch => branch.name == name)!
+        // Only a branch's own remote refs publish it; backup stays local although origin/copy carries its commits.
+        expect([node("feature").published, node("backup").published, node("main").published]).toEqual([false, false, true])
 
-        expect(remoteFlags(await read([publishedTwo]))).toEqual([[local, false], [publishedTwo, true], [publishedOne, true]])
-        expect(remoteFlags(await read([local]))).toEqual([[local, true], [publishedTwo, true], [publishedOne, true]])
-        expect(remoteFlags(await read())).toEqual([[local, undefined], [publishedTwo, undefined], [publishedOne, undefined]])
+        const read = (branch: string, tip: string, remoteTips?: string[]) =>
+            opened.startReadBranchHistory({ branchRef: `refs/heads/${branch}`, tip, baseTips: [baseTip], remoteTips, limit: 50 }).result
+        const remoteFlags = (page: Awaited<ReturnType<typeof read>>) => page.commits.map(commit => [commit.objectId, commit.remote])
+        expect(remoteFlags(await read("feature", local, graph.remoteTips))).toEqual([[local, false], [publishedTwo, true], [publishedOne, true]])
+        expect(remoteFlags(await read("backup", backedUp, graph.remoteTips))).toEqual([[backedUp, true]])
+        expect(remoteFlags(await read("feature", local, [local]))).toEqual([[local, true], [publishedTwo, true], [publishedOne, true]])
+        expect(remoteFlags(await read("feature", local))).toEqual([[local, undefined], [publishedTwo, undefined], [publishedOne, undefined]])
     })
 
     test("reads branch history along the first parent of merge commits", async () => {

@@ -122,7 +122,6 @@ export function branchGraph(repositoryId: string) {
         aliases: ["main"],
         localRefs: ["refs/heads/main"],
         remoteRefs: [],
-        remoteTips: [],
         tip: "1".repeat(40),
         ahead: 0,
         behind: 0,
@@ -133,6 +132,7 @@ export function branchGraph(repositoryId: string) {
         tags: [],
         primary: true,
         remoteOnly: false,
+        published: false,
         merged: false,
     }
     const branch = (name: string, involvement: "involved" | "uninvolved") => ({
@@ -165,6 +165,7 @@ export function branchGraph(repositoryId: string) {
         tags: [],
         virtualBranches: [],
         unassignedStashes: [],
+        remoteTips: [] as string[],
         limited: [],
     }
 }

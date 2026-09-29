@@ -442,17 +442,17 @@ export function createInspection(options: Options) {
         state.unavailable = false
         for (const [id, current] of state.history) {
             const branch = graph.branches.find(branch => branch.id == id)
-            if (!branch || current.key == branchHistoryKey(branch))
+            if (!branch || current.key == branchHistoryKey(state, branch))
                 continue
             current.generation++
-            current.key = branchHistoryKey(branch)
+            current.key = branchHistoryKey(state, branch)
             current.page = undefined
             current.error = undefined
             current.loading = false
             const owner = state
             if (current.open) {
                 queueMicrotask(() => {
-                    if (owner.alive && owner.history.get(id) == current && current.key == branchHistoryKey(branch))
+                    if (owner.alive && owner.history.get(id) == current && current.key == branchHistoryKey(owner, branch))
                         void history(owner, branch)
                 })
             }
@@ -708,13 +708,14 @@ export function createInspection(options: Options) {
             }
         }
     }
-    function branchHistoryKey(branch: BranchGraphBranchNode) {
+    // Any remote branch can publish this branch's commits, so moving any of them refreshes its history.
+    function branchHistoryKey(state: ColumnState, branch: BranchGraphBranchNode) {
         const baseTips = branch.base.status == "known" ? [branch.base.tip] : branch.base.candidates.map(candidate => candidate.tip)
-        return JSON.stringify([branch.tip, baseTips, branch.remoteTips, branch.unresolved])
+        return JSON.stringify([branch.tip, baseTips, state.graph.remoteTips, branch.unresolved])
     }
     async function history(state: ColumnState, branch: BranchGraphBranchNode, more = false) {
         const baseTips = branch.base.status == "known" ? [branch.base.tip] : branch.base.candidates.map(candidate => candidate.tip)
-        const historyKey = branchHistoryKey(branch)
+        const historyKey = branchHistoryKey(state, branch)
         let current = state.history.get(branch.id)
         if (!current || current.key != historyKey) {
             current = { key: historyKey, loading: false, open: true, generation: 0 }
@@ -732,7 +733,7 @@ export function createInspection(options: Options) {
                 branchRef: branch.preferredRef,
                 tip: branch.tip,
                 baseTips,
-                remoteTips: branch.remoteTips,
+                remoteTips: state.graph.remoteTips,
                 limit: 50,
                 ...(more ? { offset: current.page?.nextOffset } : {}),
             })
@@ -755,7 +756,7 @@ export function createInspection(options: Options) {
     }
     function toggleHistory(state: ColumnState, branch: BranchGraphBranchNode) {
         const current = state.history.get(branch.id)
-        if (!current || current.key != branchHistoryKey(branch))
+        if (!current || current.key != branchHistoryKey(state, branch))
             void history(state, branch)
         else {
             current.open = !current.open
@@ -1439,7 +1440,7 @@ export function createInspection(options: Options) {
                                 const columnBranch = branch.id == column.id
                                 return (
                                     <accordion.ItemContext key={branch.id} value={branch.id}>
-                                        <section class={published(branch) ? "stack-branch remote" : "stack-branch"} mix={[stackBranch, accordion.item()]}>
+                                        <section class={branch.published ? "stack-branch remote" : "stack-branch"} mix={[stackBranch, accordion.item()]}>
                                             {branchIndex > 0 && !stack[branchIndex - 1].remoteOnly
                                                 && composition.seam(repositoryId, {
                                                     kind: "seam",
@@ -2057,11 +2058,6 @@ function commitDiffIcon() {
 
 function message(error: unknown) {
     return error instanceof Error ? error.message : String(error)
-}
-
-// A branch is published once a remote has its tip, so its card matches its tip commit.
-function published(branch: BranchGraphBranchNode) {
-    return branch.remoteOnly || branch.remoteTips.includes(branch.tip) || branch.upstreamTip != undefined && branch.ahead == 0
 }
 
 const changeFileList = css({

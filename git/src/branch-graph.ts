@@ -57,6 +57,8 @@ interface Evidence {
 
 interface MutableBranch extends BranchGraphBranchNode {
     sourceUpstreams: Map<string, string>
+    /** Tips of this branch's own remote refs, including an upstream that has diverged. */
+    ownRemoteTips: string[]
 }
 
 interface TopologyCommit {
@@ -283,8 +285,14 @@ async function buildGraph(
     }
 
     const primary = visibleBranches.find(branch => branch.primary)
-    for (const branch of visibleBranches)
+    const remoteTips = unique(
+        evidence.refs.filter(ref => ref.ref.startsWith("refs/remotes/") && !ref.symbolicTarget).map(ref => ref.objectId),
+        objectId => objectId,
+    )
+    for (const branch of visibleBranches) {
         branch.merged = Boolean(primary && branch.id != primary.id && topology.isAncestor(branch.tip, primary.tip))
+        branch.published = branch.ownRemoteTips.some(remoteTip => topology.isAncestor(branch.tip, remoteTip))
+    }
     const virtualBranches = createVirtualBranches(evidence.worktrees)
     const history = graphHistory(topology.commits, [
         ...[...visibleBranches].sort((left, right) => Number(right.primary) - Number(left.primary))
@@ -308,6 +316,7 @@ async function buildGraph(
             tags: tagNodes.filter(tag => !tag.parentBranchId || visibleBranches.some(branch => branch.id == tag.parentBranchId)),
             virtualBranches,
             unassignedStashes: unassignedStashes(visibleBranches, evidence.stashes),
+            remoteTips,
             limited: [
                 ...(descriptor.shallow ? ["shallow" as const] : []),
                 ...(descriptor.partial ? ["partial" as const] : []),
@@ -372,7 +381,6 @@ function createBranches(refs: RefRecord[], worktrees: BranchGraphWorktree[], pri
             aliases: allRefs.map(shortRef),
             localRefs: local.map(ref => ref.ref).sort(naturalCompare),
             remoteRefs: remote.map(ref => ref.ref).sort(naturalCompare),
-            remoteTips: [...new Set(remote.map(ref => ref.objectId))],
             tip,
             upstreamRef,
             upstreamTip,
@@ -385,8 +393,10 @@ function createBranches(refs: RefRecord[], worktrees: BranchGraphWorktree[], pri
             tags: [],
             primary: primaryRef ? allRefs.includes(primaryRef) : false,
             remoteOnly: local.length == 0,
+            published: false,
             merged: false,
             sourceUpstreams,
+            ownRemoteTips: unique(remote.map(ref => ref.objectId), objectId => objectId),
         }
     })
 }
@@ -881,10 +891,10 @@ async function readHistoryPage(descriptor: RepositoryDescriptor, runner: GraphRu
         for (const commit of commits)
             commit.remote = true
     } else if (remoteTips.length > 0) {
-        // Only unpublished commits are listed, so the walk stays as short as the branch's lead over its remote.
-        const local = new Set(
-            text(await runner.run(["rev-list", request.tip, "--not", ...remoteTips, ...request.baseTips])).split("\n").filter(Boolean),
-        )
+        // Only unpublished commits are listed, so the walk stays as short as the branch's lead over its remotes.
+        // Repositories can have many remote branches, so their tips go through stdin rather than the command line.
+        const exclusions = [...remoteTips, ...request.baseTips].map(objectId => `^${objectId}\n`).join("")
+        const local = new Set(text(await runner.run(["rev-list", "--stdin", request.tip], [0], exclusions)).split("\n").filter(Boolean))
         for (const commit of commits)
             commit.remote = !local.has(commit.objectId)
     }
@@ -1035,8 +1045,9 @@ function unique<T>(values: T[], key: (value: T) => string) {
 }
 
 function withoutInternals(branch: MutableBranch): BranchGraphBranchNode {
-    const { sourceUpstreams, ...result } = branch
+    const { sourceUpstreams, ownRemoteTips, ...result } = branch
     void sourceUpstreams
+    void ownRemoteTips
     return result
 }
 
