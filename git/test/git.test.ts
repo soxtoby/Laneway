@@ -206,6 +206,8 @@ describe("system Git", () => {
         await commitFile(repository, "left.txt", "left\n", "Left")
         expect(runGit(repository, "checkout", "-q", "-b", "candidate/right", initial).exitCode).toBe(0)
         await commitFile(repository, "right.txt", "right\n", "Right")
+        expect(runGit(repository, "checkout", "-q", "main").exitCode).toBe(0)
+        await commitFile(repository, "main.txt", "main\n", "Main")
         expect(runGit(repository, "checkout", "-q", "-b", "feature/ambiguous", initial).exitCode).toBe(0)
         await commitFile(repository, "feature.txt", "feature\n", "Feature")
 
@@ -267,6 +269,43 @@ describe("system Git", () => {
             const history = await opened.startReadBranchHistory({ branchRef: branch.preferredRef, tip: branch.tip, baseTips: [baseTip], limit: 50 }).result
             expect(history.commits.at(-1)?.objectId).toBe(shared)
         }
+    })
+
+    test("falls back below a fork when a sibling has branches stacked on it", async () => {
+        const repository = await temporaryDirectory("laneway-graph-stacked-siblings-")
+        expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
+        await commitFile(repository, "README.md", "initial\n", "Initial")
+        const mainTip = gitText(repository, "rev-parse", "HEAD")
+        expect(runGit(repository, "checkout", "-q", "-b", "stack/right").exitCode).toBe(0)
+        await commitFile(repository, "early.txt", "early\n", "Early")
+        const early = gitText(repository, "rev-parse", "HEAD")
+        await commitFile(repository, "shared.txt", "shared\n", "Shared")
+        const shared = gitText(repository, "rev-parse", "HEAD")
+        await commitFile(repository, "right.txt", "right\n", "Right")
+        const rightTip = gitText(repository, "rev-parse", "HEAD")
+        expect(runGit(repository, "checkout", "-q", "-b", "stack/middle").exitCode).toBe(0)
+        await commitFile(repository, "middle.txt", "middle\n", "Middle")
+        const middleTip = gitText(repository, "rev-parse", "HEAD")
+        expect(runGit(repository, "checkout", "-q", "-b", "stack/top").exitCode).toBe(0)
+        await commitFile(repository, "top.txt", "top\n", "Top")
+        expect(runGit(repository, "checkout", "-q", "-b", "stack/left", shared).exitCode).toBe(0)
+        await commitFile(repository, "left.txt", "left\n", "Left")
+        expect(runGit(repository, "checkout", "-q", "-b", "stack/lower", early).exitCode).toBe(0)
+        await commitFile(repository, "lower.txt", "lower\n", "Lower")
+
+        const opened = await openRepository(repository)
+        const graph = await opened.startReadBranchGraph({
+            authorIdentities: { primary: "laneway@example.invalid", secondary: [] },
+            remotePatterns: [],
+        }).result
+        const base = (name: string) => graph.branches.find(candidate => candidate.name == name)!.base
+        expect(base("stack/lower")).toMatchObject({ status: "known", ref: "refs/heads/main", tip: mainTip })
+        expect(base("stack/left")).toMatchObject({ status: "known", ref: "refs/heads/main", tip: mainTip })
+        expect(base("stack/right")).toMatchObject({ status: "known", ref: "refs/heads/main", tip: mainTip })
+        expect(base("stack/middle")).toMatchObject({ status: "known", ref: "refs/heads/stack/right", tip: rightTip })
+        expect(base("stack/top")).toMatchObject({ status: "known", ref: "refs/heads/stack/middle", tip: middleTip })
     })
 
     test("reads branch history along the first parent of merge commits", async () => {

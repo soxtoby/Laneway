@@ -403,30 +403,40 @@ function inferBases(branches: MutableBranch[], candidates: MutableBranch[], topo
     const isAncestor = topology.ancestry(baseObjectIds)
     const candidatesById = new Map(candidates.map(candidate => [candidate.id, candidate]))
     const excluded = new Map<MutableBranch, Set<string>>()
+    const closestBase = (mergeBases: Array<{ candidate: MutableBranch; objectId: string }>) =>
+        chooseBase(lowestCandidates(closestMergeBases(mergeBases, isAncestor), topology.isAncestor))
     const infer = (branch: MutableBranch) => {
-        const skipped = excluded.get(branch)
-        const mergeBases = mergeBasesByBranch.get(branch)!.filter(entry => !skipped?.has(entry.candidate.id))
-        branch.base = chooseBase(closestMergeBases(mergeBases, isAncestor))
+        const mergeBases = mergeBasesByBranch.get(branch)!
+        const skippedTips = [...excluded.get(branch) ?? []].map(id => candidatesById.get(id)!.tip)
+        const base = closestBase(mergeBases.filter(entry => !skippedTips.some(tip => topology.isAncestor(tip, entry.candidate.tip))))
+        branch.base = base.status == "unknown" && skippedTips.length > 0 ? closestBase(mergeBases) : base
     }
     for (const branch of mergeBasesByBranch.keys())
         infer(branch)
 
-    // Siblings diverging from a commit that no other branch holds each see the other as closest.
-    // Neither owns the shared commits, so both fall back to the next Base below the fork.
+    // Siblings diverging from a commit that no other branch holds each see the other as a closest candidate.
+    // Neither owns the shared commits, so both fall back to the next Base below the fork,
+    // skipping the other and any branches stacked on it. Without a Base below the fork, they stay candidates.
     for (let pending = [...mergeBasesByBranch.keys()]; pending.length > 0;) {
-        const affected: MutableBranch[] = []
+        const affected = new Set<MutableBranch>()
         for (const branch of pending) {
-            const base = branch.base.status == "known" ? candidatesById.get(branch.base.branchId) : undefined
-            if (!base || !mergeBasesByBranch.has(base) || base.base.status != "known" || base.base.branchId != branch.id)
-                continue
-            excluded.set(branch, (excluded.get(branch) ?? new Set()).add(base.id))
-            excluded.set(base, (excluded.get(base) ?? new Set()).add(branch.id))
-            infer(branch)
-            infer(base)
-            affected.push(branch, base)
+            for (const baseId of baseCandidateIds(branch.base)) {
+                const base = candidatesById.get(baseId)
+                if (!base || !mergeBasesByBranch.has(base) || excluded.get(branch)?.has(base.id) || !baseCandidateIds(base.base).includes(branch.id))
+                    continue
+                excluded.set(branch, (excluded.get(branch) ?? new Set()).add(base.id))
+                excluded.set(base, (excluded.get(base) ?? new Set()).add(branch.id))
+                affected.add(branch).add(base)
+            }
         }
-        pending = affected
+        for (const branch of affected)
+            infer(branch)
+        pending = [...affected]
     }
+}
+
+function baseCandidateIds(base: BranchGraphBase) {
+    return base.status == "known" ? [base.branchId] : base.candidates.map(candidate => candidate.branchId)
 }
 
 function closestMergeBases(
@@ -443,6 +453,16 @@ function closestMergeBases(
             frontier.push(entry.objectId)
     }
     return closest
+}
+
+// Candidates stacked on another candidate only reach the shared commits through it.
+function lowestCandidates(
+    mergeBases: Array<{ candidate: MutableBranch; objectId: string }>,
+    isAncestor: (ancestor: string, descendant: string) => boolean,
+) {
+    return mergeBases.filter(entry =>
+        !mergeBases.some(other => other.candidate.tip != entry.candidate.tip && isAncestor(other.candidate.tip, entry.candidate.tip))
+    )
 }
 
 function chooseBase(entries: Array<{ candidate: MutableBranch; objectId: string }>): BranchGraphBase {
@@ -502,7 +522,7 @@ function includeBaseRelationships(branches: MutableBranch[], included: Set<strin
     while (changed) {
         changed = false
         for (const branch of branches.filter(candidate => included.has(candidate.id))) {
-            const baseIds = branch.base.status == "known" ? [branch.base.branchId] : branch.base.candidates.map(candidate => candidate.branchId)
+            const baseIds = baseCandidateIds(branch.base)
             for (const id of baseIds) {
                 if (!included.has(id)) {
                     included.add(id)
