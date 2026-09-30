@@ -677,11 +677,15 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                 const columns = workspaceGraph(result.graph)
                 const validColumnIds = new Set([...columns.branches, ...columns.virtualBranches].map(branch => branch.id))
                 const removedColumns = state.openedBranchIds.filter(id => !validColumnIds.has(id))
+                const previousPatterns = state.graph?.remotePatterns.join(", ")
                 state.graph = result.graph
                 state.openedBranchIds.push(...inspection.refreshComparisons(repositoryId, columns))
                 if (refreshRemote)
                     state.remoteRefreshed = true
-                state.patterns = result.graph.remotePatterns.join(", ")
+                // Quiet refreshes must not wipe a draft the user is still typing into the settings panel.
+                const savedPatterns = result.graph.remotePatterns.join(", ")
+                if (!state.showSettings || savedPatterns != previousPatterns)
+                    state.patterns = savedPatterns
                 state.openedBranchIds = state.openedBranchIds.filter(id => validColumnIds.has(id))
                 if (!state.focusedColumnId || !state.openedBranchIds.includes(state.focusedColumnId))
                     state.focusedColumnId = state.openedBranchIds[0]
@@ -1725,6 +1729,7 @@ function GraphSettings(handle: Handle<{ graph: BranchGraph; state: RepositoryGra
                             graphSettingsInput,
                             on("input", event => {
                                 handle.props.state.patterns = event.currentTarget.value
+                                handle.update()
                             }),
                             on("keydown", event => {
                                 if (event.key == "Enter") {

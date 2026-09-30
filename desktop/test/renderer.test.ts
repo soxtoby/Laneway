@@ -1,4 +1,4 @@
-import type { ChangesResult, EntryProgress, EntryResult, FileDiffResult, WorktreeRequest } from "@laneway/shared"
+import type { BranchGraph, ChangesResult, EntryProgress, EntryResult, FileDiffResult, WorktreeRequest } from "@laneway/shared"
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { Window as HappyWindow } from "happy-dom"
 import type { createElement as createRemixElement, createRoot as createRemixRoot, VirtualRoot } from "remix/ui"
@@ -2185,3 +2185,33 @@ function button(container: HTMLElement, label: string) {
 function diffRoot(container: Element): ShadowRoot | Element {
     return container.querySelector(".pierre-diff")?.shadowRoot ?? container
 }
+
+test("Branch Graph settings keep a typed pattern draft across quiet refreshes", async () => {
+    const repository = repositoryInfo("D:\Source\graph-settings-draft")
+    let graph: BranchGraph = branchGraph(repository.id)
+    const api = fakeLaneway({
+        getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
+        readBranchGraph: async () => ({ ok: true, graph }),
+        setRepositoryGraphSettings: async (_id, settings) => {
+            graph = { ...graph, remotePatterns: settings.remotePatterns }
+            return settings
+        },
+    })
+    const { container, root, dispose } = render(api)
+    await flush(root)
+    click(container.querySelector<HTMLButtonElement>("[aria-label='Branch Graph settings']")!)
+    await flush(root)
+    const patterns = container.querySelector<HTMLInputElement>("#remote-patterns")!
+    input(patterns, "origin/releases/**")
+    await flush(root)
+    expect(patterns.value).toBe("origin/releases/**")
+    refreshGraph()
+    await flush(root)
+    expect(container.querySelector<HTMLInputElement>("#remote-patterns")!.value).toBe("origin/releases/**")
+    patterns.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+    await flush(root)
+    click(container.querySelector<HTMLButtonElement>("[aria-label='Branch Graph settings']")!)
+    await flush(root)
+    expect(container.querySelector<HTMLInputElement>("#remote-patterns")!.value).toBe("origin/releases/**")
+    dispose()
+})
