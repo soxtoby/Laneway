@@ -6,7 +6,8 @@
     "scripts": {
         "dev": "electron-vite dev --watch",
         "dev:inspect": "electron-vite dev --watch --remoteDebuggingPort 9222",
-        "build": "electron-vite build"
+        "build": "electron-vite build",
+        "icons": "electron scripts/render-icon.ts"
     },
     "dependencies": {
         "@atlaskit/pragmatic-drag-and-drop": "^3.1.0",

@@ -11,6 +11,8 @@ import { mkdtemp, rm, rmdir, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import windowsIcon from "../../resources/icon.ico?asset"
+import icon from "../../resources/icon.png?asset"
 import { CommitDrafts } from "./commit-drafts"
 import { inspectEngine, resolveEnginePath, runEngineCommand } from "./engine"
 import { EntryQueue } from "./entry-queue"
@@ -535,6 +537,7 @@ function createWindow(appearance: string) {
         backgroundColor: appearance == "dark" ? "#1a1e1b" : "#f4f5f4",
         show: true,
         title: "Laneway",
+        icon: process.platform == "win32" ? windowsIcon : icon,
         titleBarStyle: "hidden",
         titleBarOverlay: process.platform == "darwin" ? undefined : titleBarOverlay(appearance),
         webPreferences: {
@@ -564,6 +567,7 @@ void app.whenReady().then(async () => {
     await workspace.load()
     registerHandlers()
     Menu.setApplicationMenu(null)
+    app.dock?.setIcon(icon)
     createWindow(await repositories.appearance())
 })
 
