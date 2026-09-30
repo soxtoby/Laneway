@@ -400,14 +400,17 @@ describe("Remix repository entry renderer", () => {
         root.flush()
         expect(container.textContent).toContain("other/team")
 
+        // Graph rows drag onto columns, so pressing one must leave the native drag free to start; the click selects.
         const feature = container.querySelector<HTMLElement>("[data-node-id='branch:refs/heads/feature/laneway']")!
-        feature.dispatchEvent(new MouseEvent("mousedown", { button: 0, detail: 1, bubbles: true, cancelable: true }))
+        const press = new MouseEvent("mousedown", { button: 0, detail: 1, bubbles: true, cancelable: true })
+        feature.dispatchEvent(press)
         root.flush()
-        expect(feature.classList.contains("selected")).toBe(true)
-        expect(container.querySelector(".branch-column")).toBeNull()
+        expect(press.defaultPrevented).toBe(false)
+        expect(feature.classList.contains("selected")).toBe(false)
         feature.dispatchEvent(new MouseEvent("click", { detail: 1, bubbles: true, cancelable: true }))
         root.flush()
         expect(feature.classList.contains("selected")).toBe(true)
+        expect(container.querySelector(".branch-column")).toBeNull()
 
         click(feature.querySelector<HTMLButtonElement>(".open-branch")!)
         await flush(root)
@@ -1385,20 +1388,25 @@ describe("Working Changes inspection", () => {
         expect(document.activeElement).toBe(column.querySelector('[aria-label="Filter changed files"]'))
         dispose()
     })
-    test("expands and selects on mousedown without toggling again on mouseup", async () => {
+    test("activates on mousedown, except on draggable rows which wait for the click", async () => {
         const scenario = inspectionScenario()
         const { container, root, dispose } = render(scenario.api)
         await flush(root)
-        const down = (element: HTMLElement, button = 0) =>
-            element.dispatchEvent(new MouseEvent("mousedown", { button, detail: 1, bubbles: true, cancelable: true, composed: true }))
+        const down = (element: HTMLElement, button = 0) => {
+            const event = new MouseEvent("mousedown", { button, detail: 1, bubbles: true, cancelable: true, composed: true })
+            element.dispatchEvent(event)
+            return event
+        }
         const release = (element: HTMLElement) => {
             element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, composed: true }))
             element.dispatchEvent(new MouseEvent("click", { detail: 1, bubbles: true, cancelable: true, composed: true }))
         }
+        // The whole file row drags, and a prevented mousedown would stop the native drag before it starts.
         const file = container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!
-        down(file)
+        expect(file.closest(".change-file")?.getAttribute("draggable")).toBe("true")
+        expect(down(file).defaultPrevented).toBe(false)
         await flush(root)
-        expect(file.getAttribute("aria-expanded")).toBe("true")
+        expect(file.getAttribute("aria-expanded")).toBe("false")
         release(file)
         await flush(root)
         expect(file.getAttribute("aria-expanded")).toBe("true")
@@ -1416,20 +1424,23 @@ describe("Working Changes inspection", () => {
         click(file)
         await flush(root)
         expect(file.getAttribute("aria-expanded")).toBe("false")
+        // Commit rows drag too, so the heading toggles on click alone.
         const commit = container.querySelector<HTMLButtonElement>(".commit-heading")!
-        down(commit)
+        expect(commit.closest(".disclosure-heading")?.getAttribute("draggable")).toBe("true")
+        expect(down(commit).defaultPrevented).toBe(false)
+        await flush(root)
+        expect(commit.getAttribute("aria-expanded")).toBe("false")
+        release(commit)
         await flush(root)
         expect(commit.getAttribute("aria-expanded")).toBe("true")
         release(commit)
         await flush(root)
-        expect(commit.getAttribute("aria-expanded")).toBe("true")
-        down(commit)
-        await flush(root)
         expect(commit.getAttribute("aria-expanded")).toBe("false")
+        // The checkbox sits on the draggable file row, so it also waits for the click.
         const checkbox = container.querySelector<HTMLInputElement>("[aria-label='Select file src/file.txt']")!
         down(checkbox)
         await flush(root)
-        expect(checkbox.checked).toBe(true)
+        expect(checkbox.checked).toBe(false)
         release(checkbox)
         await flush(root)
         expect(checkbox.checked).toBe(true)

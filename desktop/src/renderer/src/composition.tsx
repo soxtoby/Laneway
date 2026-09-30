@@ -280,7 +280,7 @@ export function createComposition(options: {
     const sourceBinding = createMixin<HTMLElement, [Selection]>(handle => {
         let selection: Selection, cleanup = () => {}
         handle.addEventListener("insert", ({ node }) => {
-            // Anything on the row that a click would not otherwise consume is a drag surface; the handle stays
+            // The whole row is the drag surface (mouse activation waits for a click inside it); the handle stays
             // as the visible affordance and keyboard entry point.
             const row = node.closest<HTMLElement>(".change-file, .disclosure-heading, .composition-branch-target") ?? node
             cleanup = draggable({

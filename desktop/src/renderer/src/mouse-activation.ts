@@ -10,18 +10,22 @@ const selectionControls = [
 ].join(",")
 
 function controlFor(event: MouseEvent) {
-    for (const node of event.composedPath()) {
-        if (!(node instanceof HTMLElement))
-            continue
-        // Draggable controls opt back into click activation, so pressing to drag does not choose them.
-        if (node.matches("[data-click-activate]"))
-            return undefined
+    const path = event.composedPath().filter((node): node is HTMLElement => node instanceof HTMLElement)
+    for (const [index, node] of path.entries()) {
+        let control: HTMLElement | undefined
         if (node.matches(selectionControls))
-            return node
-        if (node.tagName == "LABEL") {
-            const control = (node as HTMLLabelElement).control
-            if (control?.matches("input[type=checkbox],input[type=radio]"))
+            control = node
+        else if (node.tagName == "LABEL") {
+            const candidate = (node as HTMLLabelElement).control
+            if (candidate?.matches("input[type=checkbox],input[type=radio]"))
+                control = candidate
+        }
+        if (control) {
+            // A prevented mousedown never starts a native drag, so anything on a draggable surface waits for the
+            // click instead; a control asking for mousedown by name keeps it even there.
+            if (control.matches("[data-mousedown-activate]"))
                 return control
+            return path.slice(index).some(ancestor => ancestor.matches("[data-click-activate],[draggable=true]")) ? undefined : control
         }
         // A nested action belongs to its own button, not the selectable row around it.
         if (node.matches("button,a,input,select,textarea,[contenteditable],[role=button]"))
