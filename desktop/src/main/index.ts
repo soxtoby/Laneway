@@ -27,6 +27,12 @@ const enginePath = resolveEnginePath({
     workspacePath,
 })
 const repositories = new OpenRepositories(process.env.LANEWAY_SETTINGS_PATH)
+repositories.changed = repositoryId => {
+    for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.webContents.isDestroyed())
+            window.webContents.send("repository:changed", { repositoryId })
+    }
+}
 const workspace = new WorkspaceManager(repositories, process.env.LANEWAY_WORKSPACE_PATH ?? defaultWorkspacePath())
 const commitDrafts = new CommitDrafts(resolve(app.getPath("userData"), "commit-drafts.json"))
 const draftWorktrees = new Map<string, string>()

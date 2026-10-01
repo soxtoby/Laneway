@@ -230,6 +230,7 @@ export function fakeLaneway(overrides: Partial<Window["laneway"]> = {}): Window[
         cancelBranchHistory: async () => false,
         setRepositoryGraphSettings: async (_repositoryId, settings) => settings,
         onEntryProgress: () => () => undefined,
+        onRepositoryChanged: () => () => undefined,
         ...overrides,
     }
 }

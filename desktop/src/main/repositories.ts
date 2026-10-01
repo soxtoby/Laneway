@@ -2,12 +2,16 @@ import { GitError, type GitInstallation, type GitTask, inferCloneDirectoryName, 
 import { defaultSettingsPath, readSettings, SettingsError, WorkspaceStateError, writeSettings } from "@laneway/settings"
 import type { Appearance, AuthorIdentitySettings, BranchGraph, BranchGraphReadOptions, BranchHistoryPage, BranchHistoryRequest, ChangesRequest, EntryError, FileDiffRequest, GitSettingsState, RepositoryGraphSettings, RepositoryInfo } from "@laneway/shared"
 import { resolve } from "node:path"
+import { watchRepository } from "./repository-watcher"
 
 export class OpenRepositories {
     worktreeRepository(repositoryId: string) {
         return this.requireRepository(repositoryId).git
     }
+    /** Called when an open repository's HEADs, refs, or worktree registrations change on disk. */
+    changed: ((repositoryId: string) => void) | undefined
     private readonly repositories = new Map<string, { info: RepositoryInfo; git: RepositoryGit }>()
+    private readonly watchers = new Map<string, { commonDirectory: string; stop(): void }>()
     private readonly graphReads = new Map<string, GitTask<BranchGraph>>()
     private readonly historyReads = new Map<string, GitTask<BranchHistoryPage>>()
     private readonly inspectionReads = new Map<string, Map<string, GitTask<unknown>>>()
@@ -210,6 +214,7 @@ export class OpenRepositories {
         this.historyReads.get(id)?.cancel()
         for (const read of this.inspectionReads.get(id)?.values() ?? [])
             read.cancel()
+        this.unwatch(id)
         return this.repositories.delete(id)
     }
 
@@ -233,10 +238,22 @@ export class OpenRepositories {
         const existing = [...this.repositories.values()].find(candidate => candidate.git.descriptor.commonDirectory == repository.descriptor.commonDirectory)
         const id = existing?.info.id ?? preferredId ?? crypto.randomUUID()
         const info: RepositoryInfo = { ...repository.descriptor, id }
-        if (existing && existing.info.id != id)
+        if (existing && existing.info.id != id) {
             this.repositories.delete(existing.info.id)
+            this.unwatch(existing.info.id)
+        }
         this.repositories.set(id, { info, git: repository })
+        const { commonDirectory } = repository.descriptor
+        if (this.watchers.get(id)?.commonDirectory != commonDirectory) {
+            this.unwatch(id)
+            this.watchers.set(id, { commonDirectory, stop: watchRepository(commonDirectory, () => this.changed?.(id)) })
+        }
         return info
+    }
+
+    private unwatch(id: string) {
+        this.watchers.get(id)?.stop()
+        this.watchers.delete(id)
     }
 
     private requireRepository(repositoryId: string) {

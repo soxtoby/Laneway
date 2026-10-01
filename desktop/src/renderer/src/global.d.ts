@@ -68,6 +68,8 @@ declare global {
             cancelBranchHistory(repositoryId: string): Promise<boolean>
             setRepositoryGraphSettings(repositoryId: string, settings: RepositoryGraphSettings): Promise<RepositoryGraphSettings>
             onEntryProgress(listener: (progress: EntryProgress) => void): () => void
+            /** Fires after HEAD, refs, or worktree registrations change on disk, from any tool. */
+            onRepositoryChanged(listener: (change: { repositoryId: string }) => void): () => void
         }
     }
 }

@@ -42,19 +42,26 @@ export function createLocalBranchActions(options: {
         error = ""
         update()
         try {
-            const fresh = await inspect(value)
+            // The delete dialog already holds a preview; the engine re-verifies its token at execution,
+            // so a second preview here would only add a round trip before the branch disappears.
+            const reviewed = value.action == "branch-delete" ? preview : undefined
+            const fresh = reviewed ?? await inspect(value)
             if (value.action == "branch-delete" && fresh.uniqueCommits && !confirmed) {
                 preview = fresh
                 return
             }
-            if (preview && mode == "branch-delete" && preview.token != fresh.token) {
-                confirmed = false
-                preview = fresh
-                throw new Error("The branch changed. Review deletion again.")
-            }
             const response = await options.api.localOperation(repositoryId, value, fresh.token)
-            if (!response.ok)
+            if (!response.ok) {
+                if (reviewed) {
+                    const current = await inspect(value).catch(() => undefined)
+                    if (current && current.token != reviewed.token) {
+                        confirmed = false
+                        preview = current
+                        throw new Error("The branch changed. Review deletion again.")
+                    }
+                }
                 throw new Error(response.error.message)
+            }
             if (response.result.status == "failed")
                 throw new Error(response.result.message)
             await options.completed(repositoryId, value)

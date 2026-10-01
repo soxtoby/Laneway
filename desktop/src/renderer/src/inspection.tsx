@@ -1137,6 +1137,10 @@ export function createInspection(options: Options) {
         state.filterButton?.focus({ preventScroll: true })
     }
     return {
+        /** Re-reads every open worktree's Working Changes, for repository changes noticed outside Laneway. */
+        refreshWorking() {
+            refresh()
+        },
         renameBranch(repositoryId: string, oldRef: string, newRef: string) {
             comparisons.renameBranch(repositoryId, oldRef, newRef)
             histories.renameBranch(repositoryId, oldRef, newRef)
@@ -1347,6 +1351,7 @@ export function createInspection(options: Options) {
                                 repositoryId={state.repositoryId}
                                 path={state.worktreePath}
                                 virtual={column.kind != "branch"}
+                                unborn={column.kind == "virtual" && /^0+$/.test(column.objectId)}
                                 busyChanged={options.localBusyChanged}
                                 inventory={state.files.get("working")?.inventory}
                                 stashes={column.kind == "branch" ? column.markers : []}

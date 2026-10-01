@@ -57,5 +57,10 @@ contextBridge.exposeInMainWorld("laneway", {
         ipcRenderer.on("entry:progress", handler)
         return () => ipcRenderer.off("entry:progress", handler)
     },
+    onRepositoryChanged: (listener: (change: { repositoryId: string }) => void) => {
+        const handler = (_event: Electron.IpcRendererEvent, change: { repositoryId: string }) => listener(change)
+        ipcRenderer.on("repository:changed", handler)
+        return () => ipcRenderer.off("repository:changed", handler)
+    },
 })
 import type { FileHistoryRequest } from "@laneway/shared"

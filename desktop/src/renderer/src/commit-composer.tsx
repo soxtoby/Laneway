@@ -8,7 +8,9 @@ export function CommitComposer(
         api: Window["laneway"]
         repositoryId: string
         path: string
+        /** The Branch Graph already knows a detached worktree; the engine preview only refines its details. */
         virtual: boolean
+        unborn?: boolean
         inventory?: ChangesInventory
         /** `stage` is given only while the commit form is open; dropping files on a list calls it for that list's direction. */
         renderFiles(view: "unstaged" | "staged", stage?: (files: string[], unstage: boolean) => void): RemixNode
@@ -35,6 +37,8 @@ export function CommitComposer(
     let refreshing: Promise<void> | undefined
     const update = () => void handle.update()
     const previewRequest = (): LocalRequest => ({ action: "stage", path: props.path, unstage: false })
+    // Mirrors the engine's default until its preview reports a de-duplicated suggestion.
+    const defaultBranchName = () => `worktree/${(props.path.split(/[\\/]/).filter(Boolean).at(-1) ?? "changes").replace(/[^\w.-]+/g, "-")}`
     let previewGeneration = 0
     async function refreshPreview() {
         // Overlapping refreshes may finish out of order; only the newest result may become the preview.
@@ -112,6 +116,7 @@ export function CommitComposer(
         }
     }
     async function commit() {
+        await refreshing
         await save()
         if (!preview?.branch || preview.unborn && draft.branch != preview.branch)
             await run({ action: "branch-create", name: draft.branch, path: props.path })
@@ -135,6 +140,8 @@ export function CommitComposer(
             await run({ action: "stage", path: props.path, files: paths, unstage })
         })
     const clean = () => Boolean(props.inventory) && !files().length && !open && !stashOpen
+    const detached = () => props.virtual || loaded && (!preview?.branch || preview.unborn)
+    const unborn = () => Boolean(props.unborn || preview?.unborn)
     return () => (
         <section class="commit-composer" mix={composerStyle}>
             {props.stashes?.map(stash => {
@@ -392,15 +399,15 @@ export function CommitComposer(
                 {notice && <p role="status" class="commit-notice">{notice}</p>}
             </div>
             {/* A detached worktree has no branch card below, so the branch its next commit creates stands in for one. */}
-            {loaded && (!preview?.branch || preview.unborn) && (
+            {detached() && (
                 <div
                     class="virtual-branch"
-                    title={preview?.unborn ? "No commits yet; the first commit creates this branch" : "Committing creates this branch at the detached head"}
+                    title={unborn() ? "No commits yet; the first commit creates this branch" : "Committing creates this branch at the detached head"}
                 >
                     <div class="virtual-branch-heading">
                         <Icon name="detached" size={14} />
                         <EditableName
-                            name={draft.branch}
+                            name={draft.branch || preview?.suggestedBranch || defaultBranchName()}
                             label="new branch"
                             saveOnBlur
                             disabled={busy}
@@ -410,7 +417,7 @@ export function CommitComposer(
                                 update()
                             }}
                         />
-                        <small>{preview?.unborn ? "Unborn" : "Created on commit"}</small>
+                        <small>{unborn() ? "Unborn" : "Created on commit"}</small>
                     </div>
                 </div>
             )}

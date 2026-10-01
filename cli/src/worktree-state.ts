@@ -1,4 +1,5 @@
 import { normalize, pathExists, populatedSubmodules, readRegisteredWorktrees, type RepositoryGit } from "@laneway/git"
+import type { RegisteredWorktree } from "@laneway/shared"
 import { chmod, lstat, mkdir, readdir, readlink, rename, rm, rmdir, symlink, unlink, writeFile } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { z } from "zod"
@@ -30,9 +31,20 @@ export async function relocateRemovedState(repository: RepositoryGit, state: Wor
     return result
 }
 
-export async function captureWorktreeState(repository: RepositoryGit, paths: string[], template?: WorktreeState): Promise<WorktreeState> {
-    const worktrees = await readRegisteredWorktrees(repository)
+/**
+ * Snapshots the given worktrees plus their Git administrative state. Every Git process costs tens of
+ * milliseconds on Windows, so callers that already listed the registered worktrees pass them in, and
+ * each working root's populated submodules are scanned once and shared with its file listing.
+ */
+export async function captureWorktreeState(
+    repository: RepositoryGit,
+    paths: string[],
+    template?: WorktreeState,
+    registered?: RegisteredWorktree[],
+): Promise<WorktreeState> {
+    const worktrees = registered ?? await readRegisteredWorktrees(repository)
     const roots = new Map<string, Root>()
+    const submodules = new Map<string, string[]>()
     const ordinaryFiles: Array<{ path: string; file: z.infer<typeof FileSchema> }> = []
     const add = (path: string, kind: Root["kind"]) => roots.set(normalize(path), { path, kind, present: false, files: [] })
     for (const root of template?.roots ?? [])
@@ -43,7 +55,9 @@ export async function captureWorktreeState(repository: RepositoryGit, paths: str
         if (worktree)
             add(worktree.gitDirectory, worktree.main ? "main" : "admin")
         if (worktree && !worktree.missing) {
-            for (const child of await populatedSubmodules(repository, path)) {
+            const children = await populatedSubmodules(repository, path)
+            submodules.set(normalize(path), children)
+            for (const child of children) {
                 const admin = (await repository.command(child, ["rev-parse", "--absolute-git-dir"])).toString().trim()
                 if (worktree.main || !normalize(admin).startsWith(normalize(worktree.gitDirectory) + sep))
                     add(admin, "admin")
@@ -64,7 +78,7 @@ export async function captureWorktreeState(repository: RepositoryGit, paths: str
                     throw new Error(`The destination is occupied: ${root.path}`)
                 names = []
             } else {
-                names = await workingFiles(repository, root.path)
+                names = await workingFiles(repository, root.path, submodules.get(normalize(root.path)))
                 if ((await lstat(join(root.path, ".git"))).isFile())
                     names.push(".git")
             }
@@ -125,10 +139,10 @@ export async function captureWorktreeState(repository: RepositoryGit, paths: str
     return { roots: [...roots.values()].sort((a, b) => a.path.localeCompare(b.path)), refs }
 }
 
-async function workingFiles(repository: RepositoryGit, path: string, prefix = ""): Promise<string[]> {
+async function workingFiles(repository: RepositoryGit, path: string, submodules?: string[], prefix = ""): Promise<string[]> {
     const names = (await repository.command(path, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"])).toString().split("\0").filter(Boolean)
     const result = names.map(name => prefix + name)
-    for (const child of await populatedSubmodules(repository, path)) {
+    for (const child of submodules ?? await populatedSubmodules(repository, path)) {
         // The recursive submodule listing already includes descendants.
         const childPrefix = prefix + relative(path, child).replaceAll("\\", "/") + "/"
         const files = (await repository.command(child, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"])).toString().split("\0").filter(Boolean)

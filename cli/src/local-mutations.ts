@@ -94,7 +94,7 @@ export async function prepareLocal(
         }
     }
     const affected = worktrees.filter(item => !item.missing).map(item => item.path)
-    const before = await captureWorktreeState(repository, affected)
+    const before = await captureWorktreeState(repository, affected, undefined, worktrees)
     const files = (await repository.command(path, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])).toString().split("\0").filter(Boolean)
     const stagedResult = await repository.run(path, ["diff", "--cached", "--quiet", "--exit-code"])
     const refs = await repository.command(path, ["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes"])

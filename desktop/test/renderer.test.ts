@@ -2253,6 +2253,128 @@ test("a detached worktree lists its proposed branch below Working Changes with a
     }
 })
 
+test("a detached worktree proposes its branch before the engine preview answers, and disk changes refresh the graph", async () => {
+    const scenario = inspectionScenario()
+    const repository = repositoryInfo("D:\\Source\\inspection")
+    const head = "2".repeat(40)
+    scenario.graph.branches[1].checkedOut = []
+    scenario.graph.virtualBranches = [{
+        kind: "virtual",
+        id: `virtual:${repository.root}`,
+        name: "inspection",
+        objectId: head,
+        worktree: { path: repository.root, name: "inspection", head, main: true },
+        tooltip: "detached at 22222222",
+    }]
+    let releasePreview: (() => void) | undefined
+    const released = new Promise<void>(resolve => releasePreview = resolve)
+    let graphReads = 0
+    let notifyChange: ((change: { repositoryId: string }) => void) | undefined
+    const opened = openedWorkspace(repository)
+    const api: Window["laneway"] = {
+        ...scenario.api,
+        getState: async () => ({ ...appState(), workspace: { ...opened, repositories: [{ ...opened.repositories[0], layoutInitialized: true }] } }),
+        readBranchGraph: async () => {
+            graphReads++
+            return { ok: true, graph: scenario.graph }
+        },
+        onRepositoryChanged: listener => {
+            notifyChange = listener
+            return () => notifyChange = undefined
+        },
+        localOperation: async () => {
+            await released
+            return {
+                ok: true,
+                result: {
+                    type: "result",
+                    command: "local-preview",
+                    status: "preview",
+                    preview: {
+                        token: "detached",
+                        affected: [],
+                        uniqueCommits: false,
+                        unborn: false,
+                        suggestedBranch: "inspection-2",
+                        staged: false,
+                        files: [],
+                        stashes: [],
+                        worktrees: [],
+                    },
+                },
+            }
+        },
+    }
+    const view = render(api)
+    try {
+        await flush(view.root)
+        // The Branch Graph already says the worktree is detached; the engine's slower preview only refines the name.
+        const card = () => view.container.querySelector<HTMLElement>(".working-changes .virtual-branch")!
+        expect(card()).not.toBeNull()
+        expect(button(card(), "Rename new branch").textContent).toBe("worktree/inspection")
+        releasePreview!()
+        await flush(view.root)
+        expect(button(card(), "Rename new branch").textContent).toBe("inspection-2")
+        // A change noticed on disk refreshes the active repository without waiting for the next poll.
+        const before = graphReads
+        notifyChange!({ repositoryId: repository.id })
+        await flush(view.root)
+        expect(graphReads).toBe(before + 1)
+        notifyChange!({ repositoryId: "another repository" })
+        await flush(view.root)
+        expect(graphReads).toBe(before + 1)
+    } finally {
+        view.dispose()
+    }
+})
+
+test("deleting a branch from its column reuses the reviewed preview instead of previewing again", async () => {
+    const scenario = inspectionScenario()
+    const calls: Array<{ action: string; token?: string }> = []
+    const api: Window["laneway"] = {
+        ...scenario.api,
+        localOperation: async (_id, request, token) => {
+            calls.push({ action: request.action, token })
+            if (token)
+                return { ok: true, result: { type: "result", command: "local", status: "performed" } }
+            return {
+                ok: true,
+                result: {
+                    type: "result",
+                    command: "local-preview",
+                    status: "preview",
+                    preview: {
+                        token: "reviewed",
+                        affected: [],
+                        uniqueCommits: false,
+                        unborn: false,
+                        suggestedBranch: "",
+                        staged: false,
+                        files: [],
+                        stashes: [],
+                        worktrees: [],
+                    },
+                },
+            }
+        },
+    }
+    const view = render(api)
+    try {
+        await flush(view.root)
+        const column = view.container.querySelector<HTMLElement>('[data-column-id="branch:refs/heads/feature/laneway"]')!
+        column.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true }))
+        await flush(view.root)
+        click(button(view.container, "Delete"))
+        await flush(view.root)
+        expect(calls.filter(call => call.action == "branch-delete")).toEqual([{ action: "branch-delete", token: undefined }, {
+            action: "branch-delete",
+            token: "reviewed",
+        }])
+    } finally {
+        view.dispose()
+    }
+})
+
 test("the column branch renames in place from its heading", async () => {
     const scenario = inspectionScenario()
     const branch = scenario.graph.branches[1]

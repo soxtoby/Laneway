@@ -178,6 +178,20 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         if (activeRepositoryId)
             void read(activeRepositoryId, false, true)
     }
+    // Disk changes noticed by main arrive at any time; one that lands mid-read is replayed once that read settles.
+    const changedWhileReading = new Set<string>()
+    const unsubscribeChanges = options.api.onRepositoryChanged(({ repositoryId }) => {
+        // Laneway's own operations change the same files; their completion refreshes everything once.
+        if (repositoryId != activeRepositoryId || worktreeActions.busy() || localBranches.busy() || localMutations > 0 || pullLatest.busy(repositoryId))
+            return
+        const state = stateFor(repositoryId)
+        if (state.loading || state.refreshing) {
+            changedWhileReading.add(repositoryId)
+            return
+        }
+        void read(repositoryId, false, true)
+        inspection.refreshWorking()
+    })
     const onShortcut = (event: KeyboardEvent) => {
         if (event.defaultPrevented)
             return
@@ -207,6 +221,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
     window.addEventListener("keydown", onShortcut)
     options.signal.addEventListener("abort", () => {
         window.clearInterval(interval)
+        unsubscribeChanges()
         window.removeEventListener("focus", onFocus)
         window.removeEventListener("keydown", onShortcut)
         for (const id of states.keys()) {
@@ -756,6 +771,8 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         } finally {
             state.loading = false
             state.refreshing = false
+            if (changedWhileReading.delete(repositoryId) && repositoryId == activeRepositoryId)
+                void read(repositoryId, false, true)
             await options.update()
             if (!state.focusRestored && state.focusedColumnId) {
                 state.focusRestored = true

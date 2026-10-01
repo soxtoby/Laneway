@@ -293,22 +293,27 @@ class OperationRuntime {
             throw new OperationRuntimeError("operation.precondition-failed", "Repository content changed. Refresh and review the operation again.")
         let result: LocalResult = { type: "result", command: "local", status: "performed" }
         const expectedRefs = new Map<string, string | null>()
-        await this.applySnapshot(preview.affected, `local.${request.action}`, request.action.replaceAll("-", " "), async journalBefore => {
-            // The journal's own snapshot, taken after preparation, doubles as the recheck of the reviewed
-            // snapshot before hooks or Git mutations run; capturing a third time would only add cost.
-            if (stateIdentity(journalBefore) != stateIdentity(before))
-                throw new OperationRuntimeError("operation.precondition-failed", "Repository content changed while preparing this operation.")
-            try {
-                result = await mutateLocal(this.repository, request, before, preview, expectedRefs, () => this.cancellation.isCancelled())
-            } catch (error) {
-                if (error instanceof LocalPreconditionError)
-                    throw error
-                // Hook/filter failures may leave intentional edits. Retain the resulting state as an
-                // undoable operation instead of overwriting edits or leaving an unexplained journal.
-                result = { type: "result", command: "local", status: "failed", message: error instanceof Error ? error.message : String(error) }
-            }
-            return expectedRefs
-        }, crashAfter)
+        // The snapshot behind the verified token is moments old and nothing has run since, so it
+        // becomes the journal's own "before" state rather than being captured again.
+        await this.applySnapshot(
+            preview.affected,
+            `local.${request.action}`,
+            request.action.replaceAll("-", " "),
+            async () => {
+                try {
+                    result = await mutateLocal(this.repository, request, before, preview, expectedRefs, () => this.cancellation.isCancelled())
+                } catch (error) {
+                    if (error instanceof LocalPreconditionError)
+                        throw error
+                    // Hook/filter failures may leave intentional edits. Retain the resulting state as an
+                    // undoable operation instead of overwriting edits or leaving an unexplained journal.
+                    result = { type: "result", command: "local", status: "failed", message: error instanceof Error ? error.message : String(error) }
+                }
+                return expectedRefs
+            },
+            crashAfter,
+            before,
+        )
         return result
     }
 
@@ -351,11 +356,12 @@ class OperationRuntime {
         summary: string,
         mutate: (before: WorktreeState) => Promise<Set<string> | Map<string, string | null>>,
         crashAfter?: JournalPhase,
+        prepared?: WorktreeState,
     ): Promise<OperationSummary> {
         const locks = await findGitLockfiles(this.repository.descriptor.commonDirectory)
         if (locks.length)
             throw gitLockfileError(locks)
-        const before = await captureWorktreeState(this.repository, affected)
+        const before = prepared ?? await captureWorktreeState(this.repository, affected)
         const projection = await this.store.readHistory()
         const abandoned = projection.operations.slice(projection.position)
         let operation = sealOperation({
@@ -388,7 +394,9 @@ class OperationRuntime {
         crashIfRequested("recovery-retained", crashAfter)
         await this.cancelIfRequested(executionId, operation, "apply")
         try {
-            await validatePreconditions(this.repository, operation, "apply")
+            // This process captured "before" moments ago and has only written journal and recovery
+            // refs since, so the snapshot is not re-captured for comparison here or after mutation.
+            await validatePreconditions(this.repository, operation, "apply", false)
         } catch (error) {
             await this.abortBeforeCommit(executionId, operation, "apply")
             throw error
@@ -439,7 +447,7 @@ class OperationRuntime {
             timestamp: new Date().toISOString(),
             operation,
         })
-        await validateOperationState(this.repository, operation, "apply", "target")
+        await validateOperationState(this.repository, operation, "apply", "target", false)
         crashIfRequested("worktrees-committed", crashAfter)
         await this.store.appendJournalPhase(executionId, operation.id, "apply", "refs-committed")
         crashIfRequested("refs-committed", crashAfter)
@@ -1020,12 +1028,12 @@ async function applyRefChanges(repository: RepositoryGit, changes: RefChange[]) 
     }
 }
 
-async function validatePreconditions(repository: RepositoryGit, operation: StoredOperation, action: "apply" | "undo" | "redo") {
+async function validatePreconditions(repository: RepositoryGit, operation: StoredOperation, action: "apply" | "undo" | "redo", recaptureWorktrees = true) {
     const gitLockfiles = await findGitLockfiles(operation.gitCommonDirectory)
     if (!sameStrings(gitLockfiles, operation.expectedGitLockfiles))
         throw gitLockfileError(gitLockfiles)
 
-    if (operation.lifecycle) {
+    if (operation.lifecycle && recaptureWorktrees) {
         const expected = action == "undo" ? operation.lifecycle.after : operation.lifecycle.before
         let matches = false
         try {
@@ -1075,9 +1083,15 @@ async function validatePreconditions(repository: RepositoryGit, operation: Store
     }
 }
 
-function validateOperationState(repository: RepositoryGit, operation: StoredOperation, action: "apply" | "undo" | "redo", side: "source" | "target") {
+function validateOperationState(
+    repository: RepositoryGit,
+    operation: StoredOperation,
+    action: "apply" | "undo" | "redo",
+    side: "source" | "target",
+    recaptureWorktrees = true,
+) {
     const stateAction = side == "source" ? action : action == "undo" ? "redo" : "undo"
-    return validatePreconditions(repository, operation, stateAction)
+    return validatePreconditions(repository, operation, stateAction, recaptureWorktrees)
 }
 
 async function findGitLockfiles(commonDirectory: string) {
