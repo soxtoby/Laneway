@@ -1,4 +1,4 @@
-import type { Appearance, AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryProgress, EntryResult, GitSettingsState, RepositoryGraphSettings, Workspace } from "@laneway/shared"
+import type { Appearance, AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryDefaults, EntryProgress, EntryResult, GitSettingsState, RepositoryGraphSettings, Workspace } from "@laneway/shared"
 import type { ChangesRequest, ChangesResult, FileDiffRequest, FileDiffResult } from "@laneway/shared"
 import type { WorktreeActionResult, WorktreePreviewResult, WorktreeRequest } from "@laneway/shared"
 import type { CommitDraft, LocalActionResult, LocalRequest } from "@laneway/shared"
@@ -23,7 +23,6 @@ interface AppState {
     settings: GitSettingsState
     engine: EngineStatusReady | EngineStatusError
     appearance: Appearance
-    defaultCloneParent: string
 }
 
 declare global {
@@ -47,9 +46,10 @@ declare global {
             getState(): Promise<AppState>
             openRepository(): Promise<EntryResult>
             chooseDirectory(defaultPath?: string): Promise<string | undefined>
-            suggestCloneDestination(source: string, parent: string): Promise<string>
-            cloneRepository(source: string, destination: string): Promise<EntryResult>
-            initializeRepository(path: string, initialBranch?: string): Promise<EntryResult>
+            entryDefaults(form: "clone" | "init"): Promise<EntryDefaults>
+            suggestCloneDirectoryName(source: string): Promise<string>
+            cloneRepository(source: string, parent: string, name: string): Promise<EntryResult>
+            initializeRepository(parent: string, name: string, initialBranch?: string): Promise<EntryResult>
             cancelEntry(): Promise<boolean>
             selectRepository(id: string): Promise<Workspace>
             closeRepository(id: string): Promise<Workspace>

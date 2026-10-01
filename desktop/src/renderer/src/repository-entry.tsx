@@ -1,4 +1,4 @@
-import type { EntryError, EntryProgress, EntryResult, Workspace } from "@laneway/shared"
+import type { EntryDefaults, EntryError, EntryProgress, EntryResult, Workspace } from "@laneway/shared"
 import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 import { errorMessage, type NoticeState } from "./feedback"
 import { type EntryActions, EntryOptions } from "./workspace"
@@ -7,21 +7,22 @@ type Operation = "idle" | "cloning" | "initializing" | "cancelling"
 
 interface CloneState {
     source: string
-    destination: string
-    destinationEdited: boolean
+    parent: string
+    name: string
+    nameEdited: boolean
     error?: EntryError
     progress?: string
 }
 
 interface InitState {
-    path: string
+    parent: string
+    name: string
     branch: string
     error?: EntryError
 }
 
 interface RepositoryEntryOptions {
     api: Window["laneway"]
-    defaultCloneParent: string
     update(): Promise<AbortSignal>
     workspaceOpened(workspace: Workspace): void
     notify(notice: NoticeState): void
@@ -40,13 +41,13 @@ export interface RepositoryEntry {
 export function createRepositoryEntry(options: RepositoryEntryOptions): RepositoryEntry {
     let operation: Operation = "idle"
     let clone: CloneState = emptyClone()
-    let initialize: InitState = { path: "", branch: "" }
+    let initialize: InitState = emptyInit()
     let addDialog: HTMLDialogElement
     let cloneDialog: HTMLDialogElement
     let cloneSource: HTMLInputElement
     let cloneError: HTMLElement
     let initDialog: HTMLDialogElement
-    let initPath: HTMLInputElement
+    let initName: HTMLInputElement
     let initError: HTMLElement
 
     async function setOperation(value: Operation) {
@@ -64,26 +65,42 @@ export function createRepositoryEntry(options: RepositoryEntryOptions): Reposito
         action()
     }
 
+    async function loadDefaults(form: "clone" | "init"): Promise<EntryDefaults | undefined> {
+        try {
+            return await options.api.entryDefaults(form)
+        } catch (error) {
+            showFailure("entry.defaults", error)
+            return undefined
+        }
+    }
+
     async function openClone() {
+        const defaults = await loadDefaults("clone")
         clone = emptyClone()
+        clone.parent = defaults?.parent ?? ""
+        if (defaults?.source) {
+            clone.source = defaults.source
+            void suggestCloneName()
+        }
         await options.update()
         cloneDialog.showModal()
         cloneSource.focus()
     }
 
     async function openInitialize() {
-        initialize = { path: "", branch: "" }
+        const defaults = await loadDefaults("init")
+        initialize = emptyInit()
+        initialize.parent = defaults?.parent ?? ""
         await options.update()
         initDialog.showModal()
-        initPath.focus()
+        initName.focus()
     }
 
-    async function browseCloneDestination() {
+    async function browseCloneParent() {
         try {
-            const selected = await options.api.chooseDirectory(clone.destination || options.defaultCloneParent)
+            const selected = await options.api.chooseDirectory(clone.parent || undefined)
             if (selected) {
-                clone.destination = selected
-                clone.destinationEdited = true
+                clone.parent = selected
                 await options.update()
             }
         } catch (error) {
@@ -92,27 +109,27 @@ export function createRepositoryEntry(options: RepositoryEntryOptions): Reposito
         }
     }
 
-    async function suggestCloneDestination() {
-        if (clone.destinationEdited)
+    async function suggestCloneName() {
+        if (clone.nameEdited)
             return
         const source = clone.source
         try {
-            const destination = await options.api.suggestCloneDestination(source, options.defaultCloneParent)
-            if (!clone.destinationEdited && clone.source == source) {
-                clone.destination = destination
+            const name = await options.api.suggestCloneDirectoryName(source)
+            if (!clone.nameEdited && clone.source == source) {
+                clone.name = name
                 await options.update()
             }
         } catch (error) {
-            showFailure("clone.suggest-destination", error)
+            showFailure("clone.suggest-name", error)
             await options.update()
         }
     }
 
-    async function browseInitPath() {
+    async function browseInitParent() {
         try {
-            const selected = await options.api.chooseDirectory(initialize.path || options.defaultCloneParent)
+            const selected = await options.api.chooseDirectory(initialize.parent || undefined)
             if (selected) {
-                initialize.path = selected
+                initialize.parent = selected
                 await options.update()
             }
         } catch (error) {
@@ -126,7 +143,7 @@ export function createRepositoryEntry(options: RepositoryEntryOptions): Reposito
         clone.progress = "Starting Git"
         await setOperation("cloning")
         try {
-            await finishEntry(await options.api.cloneRepository(clone.source, clone.destination), "clone")
+            await finishEntry(await options.api.cloneRepository(clone.source, clone.parent, clone.name), "clone")
         } catch (error) {
             clone.progress = undefined
             showFailure("repository.clone", error)
@@ -139,7 +156,7 @@ export function createRepositoryEntry(options: RepositoryEntryOptions): Reposito
         initialize.error = undefined
         await setOperation("initializing")
         try {
-            await finishEntry(await options.api.initializeRepository(initialize.path, initialize.branch || undefined), "init")
+            await finishEntry(await options.api.initializeRepository(initialize.parent, initialize.name, initialize.branch || undefined), "init")
         } catch (error) {
             showFailure("repository.initialize", error)
         } finally {
@@ -155,7 +172,7 @@ export function createRepositoryEntry(options: RepositoryEntryOptions): Reposito
                 clone = emptyClone()
             } else {
                 initDialog.close()
-                initialize = { path: "", branch: "" }
+                initialize = emptyInit()
             }
             options.notify({
                 code: `repository.${form == "clone" ? "cloned" : "initialized"}`,
@@ -233,14 +250,18 @@ export function createRepositoryEntry(options: RepositoryEntryOptions): Reposito
                         setSource={value => {
                             clone.source = value
                             options.update()
-                            void suggestCloneDestination()
+                            void suggestCloneName()
                         }}
-                        setDestination={value => {
-                            clone.destination = value
-                            clone.destinationEdited = true
+                        setParent={value => {
+                            clone.parent = value
                             options.update()
                         }}
-                        browse={browseCloneDestination}
+                        setName={value => {
+                            clone.name = value
+                            clone.nameEdited = true
+                            options.update()
+                        }}
+                        browse={browseCloneParent}
                         submit={submitClone}
                         cancel={cancelClone}
                     />
@@ -248,17 +269,21 @@ export function createRepositoryEntry(options: RepositoryEntryOptions): Reposito
                         state={initialize}
                         operation={operation}
                         dialogRef={node => initDialog = node}
-                        pathRef={node => initPath = node}
+                        nameRef={node => initName = node}
                         errorRef={node => initError = node}
-                        setPath={value => {
-                            initialize.path = value
+                        setParent={value => {
+                            initialize.parent = value
+                            options.update()
+                        }}
+                        setName={value => {
+                            initialize.name = value
                             options.update()
                         }}
                         setBranch={value => {
                             initialize.branch = value
                             options.update()
                         }}
-                        browse={browseInitPath}
+                        browse={browseInitParent}
                         submit={submitInitialize}
                         close={() => initDialog.close()}
                     />
@@ -297,7 +322,8 @@ function CloneDialog(
         sourceRef(node: HTMLInputElement): void
         errorRef(node: HTMLElement): void
         setSource(value: string): void
-        setDestination(value: string): void
+        setParent(value: string): void
+        setName(value: string): void
         browse(): void
         submit(): void
         cancel(): void
@@ -347,24 +373,38 @@ function CloneDialog(
                         disabled={busy}
                         mix={[ref(handle.props.sourceRef), on("input", event => handle.props.setSource(event.currentTarget.value))]}
                     />
-                    <label for="clone-destination" mix={entryFormLabel}>
-                        Destination
+                    <label for="clone-parent" mix={entryFormLabel}>
+                        Parent directory
                     </label>
                     <div class="field-with-action" mix={fieldWithAction}>
                         <input
-                            id="clone-destination"
-                            name="destination"
+                            id="clone-parent"
+                            name="parent"
                             autocomplete="off"
                             spellcheck={false}
                             required
-                            value={handle.props.state.destination}
+                            value={handle.props.state.parent}
                             disabled={busy}
-                            mix={[cloneDestination, on("input", event => handle.props.setDestination(event.currentTarget.value))]}
+                            mix={[cloneParent, on("input", event => handle.props.setParent(event.currentTarget.value))]}
                         />
                         <button type="button" disabled={busy} mix={[fieldWithActionButton, on("click", handle.props.browse)]}>
                             Browse
                         </button>
                     </div>
+                    <label for="clone-name" mix={entryFormLabel}>
+                        Directory name
+                    </label>
+                    <input
+                        id="clone-name"
+                        name="name"
+                        autocomplete="off"
+                        spellcheck={false}
+                        placeholder="repository"
+                        required
+                        value={handle.props.state.name}
+                        disabled={busy}
+                        mix={[on("input", event => handle.props.setName(event.currentTarget.value))]}
+                    />
                     {handle.props.state.progress && (
                         <div class="progress-block" mix={progressBlock}>
                             <span mix={progressBlockSpan}>
@@ -394,9 +434,10 @@ function InitDialog(
         state: InitState
         operation: Operation
         dialogRef(node: HTMLDialogElement): void
-        pathRef(node: HTMLInputElement): void
+        nameRef(node: HTMLInputElement): void
         errorRef(node: HTMLElement): void
-        setPath(value: string): void
+        setParent(value: string): void
+        setName(value: string): void
         setBranch(value: string): void
         browse(): void
         submit(): void
@@ -431,24 +472,37 @@ function InitDialog(
                             Initialize repository
                         </h2>
                     </header>
-                    <label for="init-path" mix={entryFormLabel}>
-                        Directory
+                    <label for="init-parent" mix={entryFormLabel}>
+                        Parent directory
                     </label>
                     <div class="field-with-action" mix={fieldWithAction}>
                         <input
-                            id="init-path"
-                            name="path"
+                            id="init-parent"
+                            name="parent"
                             autocomplete="off"
                             spellcheck={false}
                             required
-                            value={handle.props.state.path}
+                            value={handle.props.state.parent}
                             disabled={busy}
-                            mix={[initPath, ref(handle.props.pathRef), on("input", event => handle.props.setPath(event.currentTarget.value))]}
+                            mix={[initParent, on("input", event => handle.props.setParent(event.currentTarget.value))]}
                         />
                         <button type="button" disabled={busy} mix={[fieldWithActionButton, on("click", handle.props.browse)]}>
                             Browse
                         </button>
                     </div>
+                    <label for="init-name" mix={entryFormLabel}>
+                        Directory name
+                    </label>
+                    <input
+                        id="init-name"
+                        name="name"
+                        autocomplete="off"
+                        spellcheck={false}
+                        required
+                        value={handle.props.state.name}
+                        disabled={busy}
+                        mix={[ref(handle.props.nameRef), on("input", event => handle.props.setName(event.currentTarget.value))]}
+                    />
                     <label for="init-branch" mix={entryFormLabel}>
                         Initial branch{" "}
                         <span mix={entryFormSpan}>
@@ -480,7 +534,11 @@ function InitDialog(
 }
 
 function emptyClone(): CloneState {
-    return { source: "", destination: "", destinationEdited: false }
+    return { source: "", parent: "", name: "", nameEdited: false }
+}
+
+function emptyInit(): InitState {
+    return { parent: "", name: "", branch: "" }
 }
 
 function entryErrorMessage(error: EntryError) {
@@ -535,7 +593,7 @@ const fieldWithAction = css({
     gridTemplateColumns: "minmax(0, 1fr) auto",
 })
 
-const cloneDestination = css({
+const cloneParent = css({
     borderRadius: "4px 0 0 4px",
 })
 
@@ -620,7 +678,7 @@ const initHeading = css({
     fontWeight: "600",
 })
 
-const initPath = css({
+const initParent = css({
     borderRadius: "4px 0 0 4px",
 })
 

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, resolve } from "node:path"
-import { connectRepository, GitError, inferCloneDirectoryName, initializeRepository, openRepository, parseGitVersion, redactGitText, selectGit, startCloneRepository } from "../src/index"
+import { connectRepository, GitError, inferCloneDirectoryName, initializeRepository, isLikelyCloneSource, openRepository, parseGitVersion, redactGitText, selectGit, startCloneRepository } from "../src/index"
 
 const temporaryDirectories: string[] = []
 
@@ -527,5 +527,16 @@ describe("system Git", () => {
     test("infers ordinary clone directory names", () => {
         expect(inferCloneDirectoryName("https://example.test/org/repo.git")).toBe("repo")
         expect(inferCloneDirectoryName("git@example.test:org/repo.git")).toBe("repo")
+    })
+
+    test("recognizes text that could be a clone source", () => {
+        expect(isLikelyCloneSource("https://example.test/org/repo.git")).toBe(true)
+        expect(isLikelyCloneSource("  ssh://git@example.test/org/repo.git\n")).toBe(true)
+        expect(isLikelyCloneSource("git@example.test:org/repo.git")).toBe(true)
+        expect(isLikelyCloneSource("example.test:org/repo.git")).toBe(true)
+        expect(isLikelyCloneSource("")).toBe(false)
+        expect(isLikelyCloneSource("D:\\Source\\repo")).toBe(false)
+        expect(isLikelyCloneSource("Clone https://example.test/org/repo.git today")).toBe(false)
+        expect(isLikelyCloneSource("fix: tidy the clone dialog")).toBe(false)
     })
 })

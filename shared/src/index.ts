@@ -275,6 +275,11 @@ export interface EntryProgress {
     message: string
 }
 
+export interface EntryDefaults {
+    parent: string
+    source?: string
+}
+
 export type Appearance = "light" | "dark"
 
 export interface GitSettingsState {

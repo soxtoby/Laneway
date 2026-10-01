@@ -212,8 +212,9 @@ describe("Remix repository entry renderer", () => {
     test("initializes a repository and opens the resulting workspace", async () => {
         const repository = repositoryInfo("D:\\Source\\new-project")
         const api = fakeLaneway({
-            initializeRepository: async (path, branch) => {
-                expect(path).toBe("D:\\Source\\new-project")
+            initializeRepository: async (parent, name, branch) => {
+                expect(parent).toBe("D:\\Source")
+                expect(name).toBe("new-project")
                 expect(branch).toBe("trunk")
                 return { ok: true, workspace: openedWorkspace(repository) }
             },
@@ -222,11 +223,14 @@ describe("Remix repository entry renderer", () => {
 
         await flush(root)
         click(container.querySelectorAll<HTMLElement>(".welcome .entry-card")[2]!)
-        root.flush()
+        await flush(root)
         const dialog = container.querySelector<HTMLDialogElement>("dialog[aria-labelledby='init-heading']")!
-        input(container.querySelector<HTMLInputElement>("#init-path")!, "D:\\Source\\new-project")
+        const parent = container.querySelector<HTMLInputElement>("#init-parent")!
+        expect(parent.value).toBe("C:\\Users\\developer\\Documents")
+        input(parent, "D:\\Source")
+        input(container.querySelector<HTMLInputElement>("#init-name")!, "new-project")
         input(container.querySelector<HTMLInputElement>("#init-branch")!, "trunk")
-        submit(container.querySelector<HTMLInputElement>("#init-path")!.form!)
+        submit(parent.form!)
         await flush(root)
 
         expect(dialog.open).toBe(false)
@@ -267,9 +271,13 @@ describe("Remix repository entry renderer", () => {
         let progressListener: ((progress: EntryProgress) => void) | undefined
         let finishClone: (result: EntryResult) => void = () => undefined
         let cancelCalls = 0
+        let cloneRequest: string[] = []
         const cloneResult = new Promise<EntryResult>(resolve => finishClone = resolve)
         const api = fakeLaneway({
-            cloneRepository: () => cloneResult,
+            cloneRepository: (...request) => {
+                cloneRequest = request
+                return cloneResult
+            },
             cancelEntry: async () => {
                 cancelCalls++
                 return true
@@ -283,16 +291,20 @@ describe("Remix repository entry renderer", () => {
 
         await flush(root)
         click(container.querySelectorAll<HTMLElement>(".welcome .entry-card")[1]!)
-        root.flush()
+        await flush(root)
 
         const dialog = container.querySelector<HTMLDialogElement>("dialog[aria-labelledby='clone-heading']")!
         const source = container.querySelector<HTMLInputElement>("#clone-source")!
-        const destination = container.querySelector<HTMLInputElement>("#clone-destination")!
+        const parent = container.querySelector<HTMLInputElement>("#clone-parent")!
+        const name = container.querySelector<HTMLInputElement>("#clone-name")!
+        expect(parent.value).toBe("C:\\Users\\developer\\Documents")
         input(source, "https://host/team/project.git")
         await flush(root)
-        input(destination, "D:\\Source\\project")
+        expect(name.value).toBe("project")
+        input(parent, "D:\\Source")
         submit(source.form!)
         await flush(root)
+        expect(cloneRequest).toEqual(["https://host/team/project.git", "D:\\Source", "project"])
 
         progressListener?.({ message: "Receiving objects: 61%" })
         root.flush()
@@ -308,9 +320,26 @@ describe("Remix repository entry renderer", () => {
         await flush(root)
         expect(dialog.open).toBe(true)
         expect(source.value).toBe("https://host/team/project.git")
-        expect(destination.value).toBe("D:\\Source\\project")
+        expect(parent.value).toBe("D:\\Source")
+        expect(name.value).toBe("project")
         expect(container.textContent).not.toContain("Starting Git")
         expect(container.textContent).not.toContain("Clone cancelled.")
+        dispose()
+    })
+
+    test("pre-fills the clone source from a clipboard repository address", async () => {
+        const api = fakeLaneway({
+            entryDefaults: async form => ({ parent: "D:\\Source", ...(form == "clone" ? { source: "https://host/team/project.git" } : {}) }),
+        })
+        const { container, root, dispose } = render(api)
+
+        await flush(root)
+        click(container.querySelectorAll<HTMLElement>(".welcome .entry-card")[1]!)
+        await flush(root)
+
+        expect(container.querySelector<HTMLInputElement>("#clone-source")!.value).toBe("https://host/team/project.git")
+        expect(container.querySelector<HTMLInputElement>("#clone-parent")!.value).toBe("D:\\Source")
+        expect(container.querySelector<HTMLInputElement>("#clone-name")!.value).toBe("project")
         dispose()
     })
 

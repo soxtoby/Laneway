@@ -491,6 +491,15 @@ export async function initializeRepository(options: { path: string; gitPath?: st
     return openRepository(path, installation)
 }
 
+export function isLikelyCloneSource(text: string) {
+    const candidate = text.trim()
+    if (!candidate || /\s/.test(candidate))
+        return false
+    return /^(?:https?|ssh|git|git\+ssh|ssh\+git|file):\/\/\S+$/i.test(candidate)
+        || /^[\w.-]+@[\w.-]+:\S+$/.test(candidate)
+        || /^[\w-]+(?:\.[\w-]+)+:\S+$/.test(candidate)
+}
+
 export function inferCloneDirectoryName(source: string) {
     const withoutQuery = source.trim().replace(/[?#].*$/, "").replace(/[\\/]+$/, "")
     const tail = withoutQuery.slice(Math.max(withoutQuery.lastIndexOf("/"), withoutQuery.lastIndexOf(":")) + 1)

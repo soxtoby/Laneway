@@ -143,7 +143,6 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
             })
             repositoryEntry = createRepositoryEntry({
                 api: handle.props.api,
-                defaultCloneParent: initial.defaultCloneParent,
                 update: handle.update,
                 notify,
                 openRepository,

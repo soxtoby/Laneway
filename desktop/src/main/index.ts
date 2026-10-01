@@ -1,12 +1,12 @@
-import { isText, normalize, previewWorktree, readRegisteredWorktrees } from "@laneway/git"
+import { isLikelyCloneSource, isText, normalize, previewWorktree, readRegisteredWorktrees } from "@laneway/git"
 import { defaultWorkspacePath } from "@laneway/settings"
 import { ChangesRequestSchema, type ChangesResult, FileDiffRequestSchema, type FileDiffResult } from "@laneway/shared"
-import type { AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryResult, RepositoryGraphSettings, Workspace } from "@laneway/shared"
+import type { AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryDefaults, EntryResult, RepositoryGraphSettings, Workspace } from "@laneway/shared"
 import { type WorktreeActionResult, type WorktreePreviewResult, WorktreeRequestSchema } from "@laneway/shared"
 import { CommitDraftSchema, type LocalActionResult, LocalRequestSchema } from "@laneway/shared"
 import { type ConflictActionResult, ConflictRequestSchema } from "@laneway/shared"
 import { type PullActionResult, type PullProgress, PullRequestSchema } from "@laneway/shared"
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron"
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from "electron"
 import { mkdtemp, rm, rmdir, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
@@ -315,8 +315,15 @@ function registerHandlers() {
         settings: await repositories.gitSettings(),
         appearance: await repositories.appearance(),
         engine: engineStatus,
-        defaultCloneParent: app.getPath("documents"),
     }))
+
+    ipcMain.handle("entry:defaults", (_event, request: { form?: unknown }) => {
+        const parent = workspace.repositoryOpenDefaultPath() ?? app.getPath("documents")
+        if (request?.form != "clone")
+            return { parent } satisfies EntryDefaults
+        const text = clipboard.readText().trim()
+        return { parent, ...(isLikelyCloneSource(text) ? { source: text } : {}) } satisfies EntryDefaults
+    })
 
     ipcMain.handle("entry:open", async event => {
         const selection = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
@@ -340,34 +347,42 @@ function registerHandlers() {
         return selection.canceled ? undefined : selection.filePaths[0]
     })
 
-    ipcMain.handle("entry:suggest-clone", (_event, request: { source?: unknown; parent?: unknown }) => {
-        if (typeof request?.source != "string" || typeof request?.parent != "string")
+    ipcMain.handle("entry:suggest-clone", (_event, request: { source?: unknown }) => {
+        if (typeof request?.source != "string")
             return ""
-        return repositories.suggestedCloneDestination(request.source, request.parent)
+        return repositories.suggestedCloneDirectoryName(request.source)
     })
 
-    ipcMain.handle("entry:initialize", (_event, request: { path?: unknown; initialBranch?: unknown }) => {
-        if (typeof request?.path != "string" || request.path.trim() == "")
-            return { ok: false, error: { code: "git.command-failed", message: "Choose a directory to initialize." } } satisfies EntryResult
+    ipcMain.handle("entry:initialize", (_event, request: { parent?: unknown; name?: unknown; initialBranch?: unknown }) => {
+        if (typeof request?.parent != "string" || request.parent.trim() == "")
+            return { ok: false, error: { code: "git.command-failed", message: "Choose a parent directory for the repository." } } satisfies EntryResult
+        if (typeof request.name != "string" || request.name.trim() == "")
+            return { ok: false, error: { code: "git.command-failed", message: "Enter a directory name for the repository." } } satisfies EntryResult
         if (request.initialBranch != undefined && typeof request.initialBranch != "string")
             return { ok: false, error: { code: "git.command-failed", message: "The initial branch must be text." } } satisfies EntryResult
+        const parent = request.parent.trim()
+        const name = request.name.trim()
         const initialBranch = typeof request.initialBranch == "string" && request.initialBranch.trim() ? request.initialBranch.trim() : undefined
-        return performEntry(async () => workspace.add(await repositories.initialize(request.path as string, initialBranch)))
+        return performEntry(async () => workspace.add(await repositories.initialize(parent, name, initialBranch)))
     })
 
-    ipcMain.handle("entry:clone", async (event, request: { source?: unknown; destination?: unknown }) => {
+    ipcMain.handle("entry:clone", async (event, request: { source?: unknown; parent?: unknown; name?: unknown }) => {
         if (typeof request?.source != "string" || request.source.trim() == "")
             return { ok: false, error: { code: "git.command-failed", message: "Enter a repository source to clone." } } satisfies EntryResult
-        if (typeof request.destination != "string" || request.destination.trim() == "")
-            return { ok: false, error: { code: "git.command-failed", message: "Choose a clone destination." } } satisfies EntryResult
+        if (typeof request.parent != "string" || request.parent.trim() == "")
+            return { ok: false, error: { code: "git.command-failed", message: "Choose a parent directory for the clone." } } satisfies EntryResult
+        if (typeof request.name != "string" || request.name.trim() == "")
+            return { ok: false, error: { code: "git.command-failed", message: "Enter a directory name for the clone." } } satisfies EntryResult
         const source = request.source
-        const destination = request.destination
+        const parent = request.parent.trim()
+        const name = request.name.trim()
         return entryQueue.enqueue(async setCancel => {
             try {
                 const sender = event.sender
                 const clone = await repositories.startClone({
                     source,
-                    destination,
+                    parent,
+                    name,
                     onProgress: message => {
                         if (!sender.isDestroyed())
                             sender.send("entry:progress", { message })

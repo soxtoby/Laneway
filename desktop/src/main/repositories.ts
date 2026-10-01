@@ -184,22 +184,25 @@ export class OpenRepositories {
         return this.add(await openRepository(path, await this.git(settings.gitPath)), id)
     }
 
-    async initialize(path: string, initialBranch?: string, id?: string) {
+    async initialize(parent: string, name: string, initialBranch?: string, id?: string) {
         const settings = await readSettings(this.settingsPath)
-        return this.add(await initializeRepository({ path, initialBranch, git: await this.git(settings.gitPath) }), id)
+        return this.add(await initializeRepository({ path: resolve(parent, name), initialBranch, git: await this.git(settings.gitPath) }), id)
     }
 
-    async startClone(options: { source: string; destination: string; onProgress?: (message: string) => void; id?: string }): Promise<GitTask<RepositoryInfo>> {
+    async startClone(
+        options: { source: string; parent: string; name: string; onProgress?: (message: string) => void; id?: string },
+    ): Promise<GitTask<RepositoryInfo>> {
         const settings = await readSettings(this.settingsPath)
-        const task = await startCloneRepository({ ...options, git: await this.git(settings.gitPath) })
+        const { parent, name, ...clone } = options
+        const task = await startCloneRepository({ ...clone, destination: resolve(parent, name), git: await this.git(settings.gitPath) })
         return {
             cancel: task.cancel,
             result: task.result.then(repository => this.add(repository, options.id)),
         }
     }
 
-    suggestedCloneDestination(source: string, parent: string) {
-        return resolve(parent, inferCloneDirectoryName(source))
+    suggestedCloneDirectoryName(source: string) {
+        return inferCloneDirectoryName(source)
     }
 
     close(id: string) {

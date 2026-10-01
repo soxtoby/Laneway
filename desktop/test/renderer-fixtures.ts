@@ -85,7 +85,6 @@ export function appState() {
         },
         engine: { state: "ready" as const, path: "D:\\Laneway\\cli\\bin\\lane.exe", name: "lane" as const, version: "0.1.0" },
         appearance: "light" as const,
-        defaultCloneParent: "C:\\Users\\developer\\Documents",
     }
 }
 
@@ -209,7 +208,8 @@ export function fakeLaneway(overrides: Partial<Window["laneway"]> = {}): Window[
         readFileHistory: async () => ({ ok: true, page: { entries: [] } }),
         openRepository: async () => ({ ok: false, error: { code: "git.cancelled", message: "Cancelled" } }),
         chooseDirectory: async defaultPath => defaultPath,
-        suggestCloneDestination: async (_source, parent) => `${parent}\\project`,
+        entryDefaults: async () => ({ parent: "C:\\Users\\developer\\Documents" }),
+        suggestCloneDirectoryName: async () => "project",
         cloneRepository: async () => ({ ok: false, error: { code: "git.cancelled", message: "Cancelled" } }),
         initializeRepository: async () => ({ ok: false, error: { code: "git.cancelled", message: "Cancelled" } }),
         cancelEntry: async () => true,
