@@ -1,5 +1,6 @@
 import type { BranchGraphMarker, ChangesInventory, CommitDraft, LocalPreview, LocalRequest, LocalResult } from "@laneway/shared"
 import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
+import { EditableName } from "./editable-name"
 import { Icon } from "./icons"
 
 export function CommitComposer(
@@ -251,20 +252,6 @@ export function CommitComposer(
                         )}
                     </div>
                 </header>
-                {loaded && !clean() && (!preview?.branch || preview.unborn) && (
-                    <label>
-                        Branch name<input
-                            aria-label="New branch name"
-                            value={draft.branch}
-                            disabled={busy}
-                            mix={on("input", event => {
-                                draft.branch = event.currentTarget.value
-                                void save()
-                                update()
-                            })}
-                        />
-                    </label>
-                )}
                 {open
                     ? (
                         <>
@@ -404,6 +391,29 @@ export function CommitComposer(
                 {props.renderFiles("unstaged", open ? stage : undefined)}
                 {notice && <p role="status" class="commit-notice">{notice}</p>}
             </div>
+            {/* A detached worktree has no branch card below, so the branch its next commit creates stands in for one. */}
+            {loaded && (!preview?.branch || preview.unborn) && (
+                <div
+                    class="virtual-branch"
+                    title={preview?.unborn ? "No commits yet; the first commit creates this branch" : "Committing creates this branch at the detached head"}
+                >
+                    <div class="virtual-branch-heading">
+                        <Icon name="detached" size={14} />
+                        <EditableName
+                            name={draft.branch}
+                            label="new branch"
+                            saveOnBlur
+                            disabled={busy}
+                            commit={name => {
+                                draft.branch = name
+                                void save()
+                                update()
+                            }}
+                        />
+                        <small>{preview?.unborn ? "Unborn" : "Created on commit"}</small>
+                    </div>
+                </div>
+            )}
         </section>
     )
 }
@@ -551,8 +561,9 @@ const composerStyle = css({
     "& .commit-card > :is(input, textarea)": { width: "calc(100% - 16px)", margin: "8px 8px 0" },
     "& .commit-card > :is(input, textarea):hover:not(:disabled)": { borderColor: "var(--faint)" },
     "& .commit-card > textarea": { minHeight: "72px", resize: "vertical" },
-    // Low specificity so specific buttons, like the stash rows, can restyle it.
-    "& button:where(:not(.composition-handle))": {
+    // Low specificity so specific buttons, like the stash rows, can restyle it. The in-place name editor
+    // styles its own button in an earlier layer, so it is left out here rather than overridden.
+    "& button:where(:not(.composition-handle, .editable-name-button))": {
         border: "1px solid var(--line-strong)",
         borderRadius: "var(--radius)",
         background: "var(--control)",
@@ -577,6 +588,27 @@ const composerStyle = css({
     "& .commit-bulk-actions button:hover:not(:disabled)": { color: "var(--text)", textDecoration: "underline" },
     "& .commit-hook-review, & .commit-stash-form": { marginTop: "8px", padding: "8px", border: "1px solid var(--line-strong)" },
     "& .commit-notice": { padding: "6px 0", fontSize: "12px", overflowWrap: "anywhere" },
+    // The branch a detached worktree's commit will create sits below Working Changes as a card of its own,
+    // in the virtual tone so it reads apart from real branches.
+    "& .virtual-branch": {
+        margin: "8px 8px",
+        overflow: "clip",
+        border: "1px solid var(--virtual-edge)",
+        borderRadius: "var(--radius)",
+        background: "var(--panel)",
+    },
+    "& .virtual-branch-heading": {
+        display: "flex",
+        gap: "6px",
+        alignItems: "center",
+        minHeight: "34px",
+        padding: "0 12px",
+        background: "var(--virtual-wash)",
+        fontSize: "13px",
+        fontWeight: "600",
+    },
+    "& .virtual-branch-heading > svg": { flex: "0 0 auto", color: "var(--virtual)" },
+    "& .virtual-branch-heading small": { flex: "0 0 auto", color: "var(--muted)", fontSize: "11px", fontWeight: "500" },
 })
 
 /** The stash's own message, without Git's "On <branch>:" prefix that the column already implies. */

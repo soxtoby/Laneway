@@ -49,6 +49,9 @@
         --danger: #e03a4e;
         --danger-wash: rgb(224 58 78 / 8%);
         --danger-edge: rgb(224 58 78 / 40%);
+        --virtual: #b8386e;
+        --virtual-wash: rgb(184 56 110 / 10%);
+        --virtual-edge: rgb(184 56 110 / 45%);
         --hover: rgb(20 30 50 / 6%);
         --scrim: rgb(20 26 36 / 32%);
         --shadow-popover: 0 8px 24px rgb(20 30 50 / 16%);
@@ -117,6 +120,9 @@
         --danger: #f08a80;
         --danger-wash: rgb(240 138 128 / 10%);
         --danger-edge: rgb(240 138 128 / 38%);
+        --virtual: #e4679c;
+        --virtual-wash: rgb(228 103 156 / 14%);
+        --virtual-edge: rgb(228 103 156 / 50%);
         --hover: rgb(255 255 255 / 6%);
         --scrim: rgb(0 0 0 / 55%);
         --shadow-popover: 0 10px 30px rgb(0 0 0 / 46%);

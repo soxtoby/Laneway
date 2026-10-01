@@ -8,6 +8,7 @@ import { compositionStyles, createComposition } from "./composition"
 import { ConflictResolution } from "./conflict-resolution"
 import { DiffLines } from "./diff"
 import { DiffControls } from "./diff-controls"
+import { EditableName } from "./editable-name"
 import type { NoticeState } from "./feedback"
 import { fileLabel, FileTree } from "./file-list"
 import { FileMenu } from "./file-menu"
@@ -26,6 +27,8 @@ interface Options {
     localChanged?(repositoryId: string): Promise<void>
     localBusyChanged?(busy: boolean): void
     createBranchAt?(repositoryId: string, objectId: string): void
+    /** Renames a local branch in place; rejects with the reason when Git declines. */
+    renameBranch?(repositoryId: string, name: string, newName: string): Promise<void>
     resolveWorkingConflict?(repositoryId: string, subject: string): void
     maximized(repositoryId: string): string | undefined
     maximize(repositoryId: string, id: string): void
@@ -1463,7 +1466,15 @@ export function createInspection(options: Options) {
                                                         label: branch.name,
                                                     })}
                                                     <Icon name="branch" size={14} />
-                                                    {branch.name}
+                                                    {options.renameBranch && branch.localRefs.length > 0
+                                                        ? (
+                                                            <EditableName
+                                                                name={branch.name}
+                                                                label={`branch ${branch.name}`}
+                                                                commit={name => options.renameBranch!(repositoryId, branch.name, name)}
+                                                            />
+                                                        )
+                                                        : branch.name}
                                                 </div>
                                             )}
                                             {/* Remote-only branches can't receive transfers, but still get a heading. */}

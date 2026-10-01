@@ -111,6 +111,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             localMutations += busy ? 1 : -1
         },
         createBranchAt: (repositoryId, commit) => localBranches.atCommit(repositoryId, commit),
+        renameBranch: (repositoryId, name, newName) => localBranches.perform(repositoryId, { action: "branch-rename", name, newName }),
         compareWith,
         layout: (repositoryId, columnId) => stateFor(repositoryId).diffLayouts[columnId] ?? "unified",
         saveLayout: (repositoryId, columnId, layout) => {

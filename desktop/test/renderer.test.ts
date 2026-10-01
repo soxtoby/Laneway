@@ -2142,6 +2142,154 @@ test("commit composer reveals staging controls, retains cancelled drafts, and co
     }
 })
 
+test("a detached worktree lists its proposed branch below Working Changes with an editable name", async () => {
+    const scenario = inspectionScenario()
+    const repository = repositoryInfo("D:\Source\inspection")
+    const head = "2".repeat(40)
+    scenario.graph.branches[1].checkedOut = []
+    scenario.graph.virtualBranches = [{
+        kind: "virtual",
+        id: `virtual:${repository.root}`,
+        name: "inspection",
+        objectId: head,
+        worktree: { path: repository.root, name: "inspection", head, main: true },
+        tooltip: "detached at 22222222",
+    }]
+    let draft = { title: "", message: "", branch: "" }
+    const requests: Parameters<Window["laneway"]["localOperation"]>[1][] = []
+    const opened = openedWorkspace(repository)
+    const api: Window["laneway"] = {
+        ...scenario.api,
+        getState: async () => ({ ...appState(), workspace: { ...opened, repositories: [{ ...opened.repositories[0], layoutInitialized: true }] } }),
+        readCommitDraft: async () => ({ ...draft }),
+        saveCommitDraft: async (_id, _path, value) => {
+            draft = { ...value }
+        },
+        localOperation: async (_id, request, token) => {
+            if (token) {
+                requests.push(request)
+                return { ok: true, result: { type: "result", command: "local", status: "performed" } }
+            }
+            return {
+                ok: true,
+                result: {
+                    type: "result",
+                    command: "local-preview",
+                    status: "preview",
+                    preview: {
+                        token: "detached",
+                        affected: [],
+                        uniqueCommits: false,
+                        unborn: false,
+                        suggestedBranch: "inspection",
+                        staged: false,
+                        files: [],
+                        stashes: [],
+                        worktrees: [],
+                    },
+                },
+            }
+        },
+    }
+    const view = render(api)
+    try {
+        await flush(view.root)
+        expect(view.container.querySelector('[aria-label="New branch name"]')).toBeNull()
+        const card = view.container.querySelector<HTMLElement>(".working-changes .virtual-branch")!
+        expect(card).not.toBeNull()
+        // The proposed branch reads like the branch cards below a real branch's Working Changes.
+        expect(view.container.querySelector(".commit-card")!.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+        expect(card.querySelector(".virtual-branch-heading svg")).not.toBeNull()
+        expect(button(card, "Rename new branch").textContent).toBe("inspection")
+        click(button(card, "Rename new branch"))
+        await flush(view.root)
+        const field = card.querySelector<HTMLInputElement>('[aria-label="New name for new branch"]')!
+        input(field, "feature/detached")
+        field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+        await flush(view.root)
+        expect(draft.branch).toBe("feature/detached")
+        expect(card.querySelector('[aria-label="New name for new branch"]')).toBeNull()
+        expect(button(card, "Rename new branch").textContent).toBe("feature/detached")
+        // The commit creates that branch first.
+        click(button(view.container, "Commit…"))
+        await flush(view.root)
+        input(view.container.querySelector<HTMLInputElement>('[aria-label="Commit title"]')!, "First on branch")
+        await flush(view.root)
+        click(button(view.container, "Commit staged (2)"))
+        await flush(view.root)
+        expect(requests.map(request => request.action)).toEqual(["branch-create", "commit"])
+        expect(requests[0]).toMatchObject({ action: "branch-create", name: "feature/detached", path: repository.root })
+    } finally {
+        view.dispose()
+    }
+})
+
+test("the column branch renames in place from its heading", async () => {
+    const scenario = inspectionScenario()
+    const branch = scenario.graph.branches[1]
+    const requests: Parameters<Window["laneway"]["localOperation"]>[1][] = []
+    const api: Window["laneway"] = {
+        ...scenario.api,
+        localOperation: async (id, request, token) => {
+            if (!token)
+                return scenario.api.localOperation(id, request)
+            requests.push(request)
+            if (request.action != "branch-rename")
+                throw new Error(`Unexpected ${request.action}`)
+            if (request.newName == "main")
+                return { ok: false, error: { message: "Choose an unused local branch name." } }
+            Object.assign(branch, {
+                id: `branch:refs/heads/${request.newName}`,
+                name: request.newName,
+                preferredRef: `refs/heads/${request.newName}`,
+                refs: [`refs/heads/${request.newName}`],
+                aliases: [request.newName],
+                localRefs: [`refs/heads/${request.newName}`],
+            })
+            return { ok: true, result: { type: "result", command: "local", status: "performed" } }
+        },
+    }
+    const view = render(api)
+    try {
+        await flush(view.root)
+        const heading = view.container.querySelector<HTMLElement>(".composition-branch-target")!
+        const name = button(heading, "Rename branch feature/laneway")
+        expect(name.textContent).toBe("feature/laneway")
+        // F2 on the name edits in place instead of opening the rename dialog.
+        name.dispatchEvent(new KeyboardEvent("keydown", { key: "F2", bubbles: true }))
+        await flush(view.root)
+        expect(view.container.querySelector('dialog[aria-label="Local Git operation"]')).toBeNull()
+        let field = heading.querySelector<HTMLInputElement>('[aria-label="New name for branch feature/laneway"]')!
+        input(field, "feature/abandoned")
+        field.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+        await flush(view.root)
+        expect(heading.querySelector("input")).toBeNull()
+        expect(requests).toHaveLength(0)
+        click(button(heading, "Rename branch feature/laneway"))
+        await flush(view.root)
+        field = heading.querySelector<HTMLInputElement>('[aria-label="New name for branch feature/laneway"]')!
+        input(field, "main")
+        field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+        await flush(view.root)
+        // A refused rename keeps the editor open with the reason beside it.
+        expect(heading.querySelector('[role="alert"]')!.textContent).toBe("Choose an unused local branch name.")
+        field = heading.querySelector<HTMLInputElement>('[aria-label="New name for branch feature/laneway"]')!
+        input(field, "feature/renamed")
+        field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+        await flush(view.root)
+        expect(requests).toEqual([{ action: "branch-rename", name: "feature/laneway", newName: "main" }, {
+            action: "branch-rename",
+            name: "feature/laneway",
+            newName: "feature/renamed",
+        }])
+        const renamed = view.container.querySelector<HTMLElement>(".composition-branch-target")!
+        expect(button(renamed, "Rename branch feature/renamed").textContent).toBe("feature/renamed")
+        expect(renamed.querySelector("input")).toBeNull()
+    } finally {
+        view.dispose()
+    }
+})
+
 function render(api: Window["laneway"]) {
     const container = document.createElement("div")
     document.body.append(container)

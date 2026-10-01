@@ -19,11 +19,21 @@ export function createLocalBranchActions(options: {
             return { action: mode, name: original, newName: name }
         return { action: "branch-delete", name: original, confirmed }
     }
-    async function inspect(value: LocalRequest) {
-        const response = await options.api.localOperation(repositoryId, value)
+    async function inspect(value: LocalRequest, id = repositoryId) {
+        const response = await options.api.localOperation(id, value)
         if (!response.ok)
             throw new Error(response.error.message)
         return response.result.preview!
+    }
+    /** Runs one operation straight away, for controls that edit in place rather than through the dialog. */
+    async function perform(id: string, value: LocalRequest) {
+        const fresh = await inspect(value, id)
+        const response = await options.api.localOperation(id, value, fresh.token)
+        if (!response.ok)
+            throw new Error(response.error.message)
+        if (response.result.status == "failed")
+            throw new Error(response.result.message)
+        await options.completed(id, value)
     }
     async function execute(value = request()) {
         if (busy)
@@ -69,6 +79,7 @@ export function createLocalBranchActions(options: {
     }
     return {
         busy: () => busy,
+        perform,
         open(id: string, branch: BranchGraphBranchNode, action: "branch-create" | "branch-rename" | "branch-delete") {
             repositoryId = id
             mode = action
