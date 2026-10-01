@@ -49,7 +49,16 @@ const ancestor = async (repo: RepositoryGit, a: string, b: string) =>
     !(await repo.run(repo.descriptor.mainWorktree, ["merge-base", "--is-ancestor", a, b])).exitCode
 const stableIdentity = { GIT_COMMITTER_DATE: "2000-01-01T00:00:00Z", GIT_AUTHOR_DATE: "2000-01-01T00:00:00Z" }
 
-async function draftCommit(repo: RepositoryGit, parent: string, value: string, source?: string, message = "Composed changes") {
+const commitMessage = async (repo: RepositoryGit, commit: string) => {
+    const raw = (await repo.command(repo.descriptor.mainWorktree, ["cat-file", "commit", commit])).toString()
+    return raw.slice(raw.indexOf("\n\n") + 2)
+}
+/** Two commits squashed into one read as Git's own squash message: the retained commit's message, then the incoming one. */
+const combinedMessage = async (repo: RepositoryGit, retained: string, incoming: string) =>
+    `${(await commitMessage(repo, retained)).trimEnd()}\n\n${(await commitMessage(repo, incoming)).trimEnd()}\n`
+
+// A source commit supplies the author and, unless a message is given, the message.
+async function draftCommit(repo: RepositoryGit, parent: string, value: string, source?: string, message?: string) {
     const env: Record<string, string> = { ...stableIdentity }
     if (source) {
         const raw = (await repo.command(repo.descriptor.mainWorktree, ["cat-file", "commit", source])).toString()
@@ -58,9 +67,9 @@ async function draftCommit(repo: RepositoryGit, parent: string, value: string, s
         env.GIT_AUTHOR_NAME = author[1]
         env.GIT_AUTHOR_EMAIL = author[2]
         env.GIT_AUTHOR_DATE = author[3]
-        message = raw.slice(split + 2)
+        message ||= raw.slice(split + 2)
     }
-    return gitText(repo, ["commit-tree", value, "-p", parent], message, env)
+    return gitText(repo, ["commit-tree", value, "-p", parent], message || "Composed changes", env)
 }
 
 export async function prepareComposition(repo: RepositoryGit, request: CompositionRequest): Promise<{ before: WorktreeState; preview: LocalPreview }> {
@@ -109,8 +118,8 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
     const primaryLocal = graph.primaryBranch.ref && graph.primaryBranch.remote
         ? `refs/heads/${graph.primaryBranch.ref.slice(`refs/remotes/${graph.primaryBranch.remote}/`.length)}`
         : undefined
-    // Only published Primary history is protected; unpushed local Primary commits stay editable.
-    const publishedTip = graph.primaryBranch.ref ? await repo.resolveRef(graph.primaryBranch.ref) : null
+    // Published Primary history may be rewritten, but the preview reports it so the user confirms before remote history changes.
+    const publishedTip = primaryLocal && graph.primaryBranch.ref ? await repo.resolveRef(graph.primaryBranch.ref) : null
     const primaryReachable = publishedTip ? new Set((await gitText(repo, ["rev-list", publishedTip])).split("\n")) : new Set<string>()
     function tip(name: string) {
         const ref = refName(name), value = tips.get(ref)
@@ -119,8 +128,6 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
         return value
     }
     async function editable(commit: string) {
-        if (primaryReachable.has(commit))
-            throw new Error("Published Primary Branch history is protected. Copy these changes instead.")
         if ((await parents(repo, commit)).length != 1)
             throw new Error("Direct editing of root or merge commits is unavailable.")
         if (!parentMap.has(commit))
@@ -130,6 +137,7 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
     const commits: CommitPlan[] = [], candidates: Plan["candidates"] = []
     const oldSubjects = new Map(originalState.stacks.flatMap(s => s.steps.filter(s => s.conflict).map(s => [s.current, s.conflict!] as const)))
     const mutations = new Map<string, TreeChange>(), inserted = new Map<string, string>(), overrides = new Map<string, string>()
+    const messages = new Map<string, string>()
     const deleted = new Set<string>(), onlyBranches = new Set<string>()
     const selection = request.source.kind == "branch" ? undefined : await selectionTrees(repo, request)
     let sourceWorking: TreeChange | undefined, destinationWorking: TreeChange | undefined
@@ -253,14 +261,22 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
                 throw new Error("The target is not in the selected branch.")
             if (target.kind == "commit")
                 await editable(at)
+            const wholeCommit = request.source.kind == "commit" && !request.files ? request.source.objectId : undefined
             if (request.source.kind == "commit" && request.source.objectId == at && target.kind == "commit")
                 throw new Error("Choose a different destination commit.")
-            if (target.kind == "seam" && !request.message.trim())
+            // A whole commit travels with its own message; only composed file selections need a new one.
+            if (target.kind == "seam" && !wholeCommit && !request.message.trim())
                 throw new Error("Enter a commit message before transferring changes.")
-            if (primaryReachable.has(at) && at != destination && target.kind != "commit") {
+            if (
+                target.kind == "seam" && wholeCommit && request.mode == "move" && request.source.kind == "commit" && request.source.branch
+                && refName(request.source.branch) == refName(target.branch) && (at == wholeCommit || (await parents(repo, wholeCommit))[0] == at)
+            ) {
+                throw new Error("The commit is already in that position.")
+            }
+            // Another branch may only build atop Primary history; the Primary Branch itself accepts seams anywhere in its own history.
+            if (primaryReachable.has(at) && at != destination && target.kind != "commit" && refName(target.branch) != primaryLocal) {
                 const node = graph.branches.find(b => b.localRefs.includes(refName(target.branch)))
-                const atop = refName(target.branch) == primaryLocal ? at == publishedTip : node?.base.status == "known" && node.base.tip == at
-                if (!atop)
+                if (!(node?.base.status == "known" && node.base.tip == at))
                     throw new Error("Choose an insertion seam inside the editable branch, or atop Primary Branch.")
             }
             const result = await merge(selection!.base, at, selection!.selected, "transferred changes")
@@ -271,10 +287,13 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
             } else if (target.kind == "commit") {
                 await protect(oldSubjects.get(at), await tree(repo, at), result.tree)
                 mutations.set(at, result)
+                // Moving a whole commit into another squashes them, so the destination keeps both messages.
+                if (wholeCommit && request.mode == "move")
+                    messages.set(at, await combinedMessage(repo, at, wholeCommit))
             } else {
-                const source = request.source.kind == "commit" && !request.files ? request.source.objectId : undefined
-                const oid = await draftCommit(repo, at, result.tree, source, request.message)
-                commits.push({ oid, parent: at, tree: result.tree, source, message: request.message, conflict: result.conflict })
+                const message = wholeCommit ? undefined : request.message
+                const oid = await draftCommit(repo, at, result.tree, wholeCommit, message)
+                commits.push({ oid, parent: at, tree: result.tree, source: wholeCommit, message, conflict: result.conflict })
                 inserted.set(at, oid)
             }
         } else {
@@ -348,8 +367,8 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
             if (!parent)
                 throw new Error("A rewritten commit requires a parent.")
             if (deleted.has(old)) {
+                // A whole commit leaving its position was moved on purpose; only commits emptied by replay are reported.
                 current = parent
-                preview.removed.push(old)
             } else {
                 const sourceTree = changed?.tree ?? await tree(repo, old)
                 let result = parent == ps[0]
@@ -371,9 +390,10 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
                     })
                     const conflict = retained.conflict
                     result.tree = retained.tree
-                    const source = changed || existing ? await draftCommit(repo, ps[0], sourceTree, old) : old
-                    current = await draftCommit(repo, parent, result.tree, old)
-                    commits.push({ oid: current, parent, tree: result.tree, source: old, conflict })
+                    const message = messages.get(old)
+                    const source = changed || existing ? await draftCommit(repo, ps[0], sourceTree, old, message) : old
+                    current = await draftCommit(repo, parent, result.tree, old, message)
+                    commits.push({ oid: current, parent, tree: result.tree, source: old, message, conflict })
                     stepByCommit.set(current, { id: conflict?.id ?? id(old), source, current, conflict })
                 }
             }
@@ -476,7 +496,9 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
     preview.branches = changedBranches.map(ref => ref.slice(11))
     for (const ref of changedBranches) {
         const upstream = (await repo.run(repo.descriptor.mainWorktree, ["rev-parse", "--symbolic-full-name", `${ref}@{upstream}`])).stdout.toString().trim()
-        if (upstream && !(await ancestor(repo, await repo.resolveRef(upstream) ?? tips.get(ref)!, newTips.get(ref)!)))
+        // The Primary Branch's remote counterpart counts as published history even without tracking configuration.
+        const remoteTip = upstream ? await repo.resolveRef(upstream) ?? tips.get(ref)! : ref == primaryLocal ? publishedTip : null
+        if (remoteTip && !(await ancestor(repo, remoteTip, newTips.get(ref)!)))
             preview.published.push(ref.slice(11))
     }
     const refs: Plan["refs"] = [], affectedStacks = state.stacks.filter(s => s.branches.some(b => changedBranches.includes(b.ref)))

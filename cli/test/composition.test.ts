@@ -186,8 +186,8 @@ test("moving a commit forward removes its old position even when the destination
     }
 }, 120_000)
 
-test("copy reports partly duplicated files and protects published Primary Branch from moves", async () => {
-    const { path } = await fixture()
+test("copy reports partly duplicated files and moving published Primary history is reported for confirmation", async () => {
+    const { path, base } = await fixture()
     await writeFile(join(path, "first.txt"), "first\n")
     git(path, "add", ".")
     git(path, "commit", "-qm", "first")
@@ -202,8 +202,43 @@ test("copy reports partly duplicated files and protects published Primary Branch
     await perform(path, r)
     git(path, "branch", "-f", "main", source)
     git(path, "update-ref", "refs/remotes/origin/main", source)
-    await expect(preview(path, { ...r, mode: "move", target: { kind: "branch", branch: "destination", tip: git(path, "rev-parse", "destination") } })).rejects
-        .toThrow("Primary Branch")
+    const move = { ...r, mode: "move" as const, target: { kind: "branch" as const, branch: "destination", tip: git(path, "rev-parse", "destination") } }
+    expect((await preview(path, move)).composition?.published).toEqual(["main"])
+    await perform(path, move)
+    expect(git(path, "log", "--format=%s", "origin/main..main")).toBe("")
+    expect(git(path, "rev-parse", "main")).toBe(base)
+    expect(git(path, "rev-parse", "origin/main")).toBe(source)
+}, 120_000)
+
+test("published Primary history can be combined and reordered once the rewrite is confirmed", async () => {
+    const { path, base } = await fixture()
+    git(path, "checkout", "-q", "main")
+    await writeFile(join(path, "first.txt"), "first\n")
+    git(path, "add", ".")
+    git(path, "commit", "-qm", "first")
+    const first = git(path, "rev-parse", "HEAD")
+    await writeFile(join(path, "second.txt"), "second\n")
+    git(path, "add", ".")
+    git(path, "commit", "-qm", "second")
+    const second = git(path, "rev-parse", "HEAD")
+    git(path, "update-ref", "refs/remotes/origin/main", second)
+    const squash = request({ source: { kind: "commit", objectId: second, branch: "main" }, target: { kind: "commit", branch: "main", objectId: first } })
+    expect((await preview(path, squash)).composition).toMatchObject({ published: ["main"], removed: [], conflicts: [] })
+    await perform(path, squash)
+    expect(git(path, "log", "--format=%s", `${base}..main`)).toBe("first")
+    expect(git(path, "log", "--format=%B", "-1", "main").trim()).toBe("first\n\nsecond")
+    expect(git(path, "ls-tree", "--name-only", "main")).toBe("a.txt\nfirst.txt\nsecond.txt")
+    expect(git(path, "rev-parse", "origin/main")).toBe(second)
+    await writeFile(join(path, "seam.txt"), "seam\n")
+    const insert = request({
+        source: { kind: "working", worktreePath: path },
+        target: { kind: "seam", branch: "main", parentId: base },
+        files: [{ path: "seam.txt" }],
+    })
+    expect((await preview(path, insert)).composition?.published).toEqual(["main"])
+    await perform(path, insert)
+    expect(git(path, "log", "--format=%s", `${base}..main`)).toBe("first\nComposed")
+    expect(git(path, "rev-parse", "origin/main")).toBe(second)
 }, 120_000)
 
 test("unpublished commits on the local Primary Branch remain editable", async () => {
@@ -537,4 +572,58 @@ test("preflight conflicts leave files unchanged until explicitly continued", asy
     expect(git(path, "ls-files", "--unmerged")).toBe("")
     const result = await executeOperationCommand({ command: "conflict", request: { action: "list" }, noWait: false }, path)
     expect("conflicts" in result && result.conflicts.length).toBe(1)
+}, 120_000)
+
+test("moving a commit onto another commit combines their messages and keeps the destination author", async () => {
+    for (const mode of ["move", "copy"] as const) {
+        const { path } = await fixture()
+        await writeFile(join(path, "first.txt"), "first\n")
+        git(path, "add", ".")
+        git(path, "commit", "-qm", "first")
+        const first = git(path, "rev-parse", "HEAD")
+        git(path, "config", "user.name", "Other")
+        await writeFile(join(path, "last.txt"), "last\n")
+        git(path, "add", ".")
+        git(path, "commit", "-qm", "last\n\nlast body")
+        const last = git(path, "rev-parse", "HEAD")
+        git(path, "config", "user.name", "Test")
+        await perform(
+            path,
+            request({ mode, source: { kind: "commit", objectId: last, branch: "feature" }, target: { kind: "commit", branch: "feature", objectId: first } }),
+        )
+        // The emptied source disappears whether moved or copied; only a move brings its message along.
+        expect(git(path, "log", "--format=%s", "main..HEAD")).toBe("first")
+        expect(git(path, "show", "-s", "--format=%B", "HEAD")).toBe(mode == "move" ? "first\n\nlast\n\nlast body" : "first")
+        expect(git(path, "show", "-s", "--format=%an|%cn", "HEAD")).toBe("Test|Test")
+        expect(git(path, "ls-tree", "--name-only", "HEAD")).toBe("a.txt\nfirst.txt\nlast.txt")
+    }
+}, 120_000)
+
+test("a whole commit moves onto a seam without a message and is not offered its own seams", async () => {
+    const { path, base } = await fixture()
+    const commits: string[] = []
+    for (const name of ["first", "second", "third"]) {
+        if (name == "third")
+            git(path, "config", "user.name", "Other")
+        await writeFile(join(path, `${name}.txt`), `${name}\n`)
+        git(path, "add", ".")
+        git(path, "commit", "-qm", name)
+        commits.push(git(path, "rev-parse", "HEAD"))
+    }
+    git(path, "config", "user.name", "Test")
+    const third = commits[2]
+    const seam = (parentId: string) => ({ kind: "seam" as const, branch: "feature", parentId })
+    const whole = (objectId: string) => ({ kind: "commit" as const, objectId, branch: "feature" })
+    const moving = request({ message: "", source: whole(third), target: seam(base) })
+    expect((await preview(path, moving)).composition).toMatchObject({ removed: [], conflicts: [], published: [] })
+    await perform(path, moving)
+    expect(git(path, "log", "--format=%s", "main..HEAD")).toBe("second\nfirst\nthird")
+    expect(git(path, "show", "-s", "--format=%an|%cn", "HEAD~2")).toBe("Other|Test")
+    expect(git(path, "ls-tree", "--name-only", "HEAD")).toBe("a.txt\nfirst.txt\nsecond.txt\nthird.txt")
+    const moved = git(path, "rev-parse", "HEAD~2")
+    await expect(preview(path, request({ message: "", source: whole(moved), target: seam(base) }))).rejects.toThrow("already in that position")
+    await expect(preview(path, request({ message: "", source: whole(moved), target: seam(moved) }))).rejects.toThrow("already in that position")
+    // Selected files still compose a new commit that needs its own message.
+    await expect(preview(path, request({ message: "", source: whole(moved), files: [{ path: "third.txt" }], target: seam(git(path, "rev-parse", "HEAD")) })))
+        .rejects.toThrow("commit message")
 }, 120_000)

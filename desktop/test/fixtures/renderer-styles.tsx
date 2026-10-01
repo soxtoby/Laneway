@@ -293,6 +293,41 @@ async function checkRenderer() {
         && commitLine.left == fileLine.left
         && commitLine.left == `${commitNodes[0].offsetLeft + commitNodes[0].offsetWidth / 2 - 1}px`
         && ![...document.querySelectorAll(".commit-heading")].some(heading => /[▸▾]/u.test(heading.textContent ?? ""))
+    // A drag over a commit heading lands by position: its top edge inserts above the commit, the middle lands on it.
+    // Seams stay collapsed throughout, so starting a drag never moves the rows.
+    // The row, not its grip, is the registered draggable and the target of a native dragstart.
+    const grip = element(".change-file .composition-handle").closest<HTMLElement>(".change-file")!
+    const heading = commitTrigger.parentElement!
+    const headingRect = heading.getBoundingClientRect()
+    const seams = [...document.querySelectorAll<HTMLElement>(".composition-seam")]
+    const seamHeights = () => seams.map(seam => seam.getBoundingClientRect().height)
+    const seamsCollapsedBefore = seamHeights().every(height => height == 0)
+    const dragTransfer = new DataTransfer()
+    const dragAt = (clientY: number) => ({
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: dragTransfer,
+        clientX: headingRect.left + headingRect.width / 2,
+        clientY,
+    })
+    const frames = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    grip.dispatchEvent(new DragEvent("dragstart", dragAt(headingRect.top + 1)))
+    await frames()
+    heading.dispatchEvent(new DragEvent("dragenter", dragAt(headingRect.top + 1)))
+    heading.dispatchEvent(new DragEvent("dragover", dragAt(headingRect.top + 1)))
+    await frames()
+    await settle()
+    const edgeDropAbove = heading.classList.contains("composition-over-above") && !heading.classList.contains("composition-over")
+    const dragKeepsLayout = seamsCollapsedBefore && seamHeights().every(height => height == 0)
+        && Math.abs(heading.getBoundingClientRect().top - headingRect.top) < 1
+    heading.dispatchEvent(new DragEvent("dragover", dragAt(headingRect.top + headingRect.height / 2)))
+    await frames()
+    await settle()
+    const edgeDropCentre = heading.classList.contains("composition-over") && !heading.classList.contains("composition-over-above")
+    grip.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer: dragTransfer }))
+    await frames()
+    await settle()
+    const dragCleared = !document.querySelector(".composition-over, .composition-over-above, .composition-over-below")
     scenario.page.lines = [
         { id: 0, kind: "hunk", text: "@@ -1000,1 +1000,1 @@", hunk: 0 },
         { id: 1, kind: "deletion", text: "old\r", oldLine: 1000, hunk: 0 },
@@ -802,6 +837,10 @@ async function checkRenderer() {
         breakoutSwitchedTo,
         newlineNotice,
         stickyFileRow,
+        edgeDropAbove,
+        edgeDropCentre,
+        dragKeepsLayout,
+        dragCleared,
         stickyCommitRow,
         stickyCommitOpaque,
         compactFileControls,

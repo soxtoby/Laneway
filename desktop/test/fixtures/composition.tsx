@@ -4,7 +4,7 @@ import { compositionStyles, createComposition } from "../../src/renderer/src/com
 import type { NoticeState } from "../../src/renderer/src/feedback"
 
 const requests: Array<{ request: LocalRequest; token?: string }> = []
-let conflict = false
+let conflict = false, published = false
 const api = {
     async localOperation(_repository: string, request: LocalRequest, token?: string) {
         requests.push({ request: structuredClone(request), token })
@@ -28,7 +28,7 @@ const api = {
                     composition: {
                         branches: ["feature"],
                         removed: [],
-                        published: [],
+                        published: published ? ["feature"] : [],
                         skipped: [],
                         noop: false,
                         conflicts: conflict ? [{ subject: "Commit", files: ["a.txt"] }] : [],
@@ -109,7 +109,15 @@ function Fixture(handle: Handle) {
             {controller.seam("fixture", { kind: "seam", branch: "feature", parentId: tip })}
             <div class="row" id="branch" mix={controller.target("fixture", { kind: "branch", branch: "feature", tip })}>feature</div>
             {controller.panel("fixture", { kind: "branch", branch: "feature", tip })}
-            <div class="row" id="commit" mix={controller.target("fixture", { kind: "commit", branch: "feature", objectId: tip })}>Existing commit</div>
+            <div
+                class="row"
+                id="commit"
+                mix={controller.target("fixture", { kind: "commit", branch: "feature", objectId: tip }, {
+                    above: { kind: "seam", branch: "feature", parentId: tip },
+                })}
+            >
+                Existing commit
+            </div>
             {controller.panel("fixture", { kind: "commit", branch: "feature", objectId: tip })}
             <button
                 id="refresh-tip"
@@ -135,19 +143,26 @@ const click = async (selector: string) => {
     await flush()
 }
 const button = (text: string) => [...document.querySelectorAll("button")].find(b => b.textContent == text)!
-async function drag(target: string, copy = false, cancel = false) {
+const seamHeight = () => document.querySelector(".composition-seam")!.getBoundingClientRect().height
+// Pointer position within the destination decides between landing on it and inserting at its top edge.
+async function drag(target: string, copy = false, cancel = false, during?: () => void, position: "top" | "middle" = "middle") {
     const source = document.querySelector("#source button")!, destination = document.querySelector(target)!
+    const rect = destination.getBoundingClientRect()
+    const clientX = rect.left + rect.width / 2, clientY = position == "top" ? rect.top + 1 : rect.top + rect.height / 2
     const dataTransfer = new DataTransfer()
-    source.dispatchEvent(new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer, ctrlKey: copy }))
+    source.dispatchEvent(new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer, ctrlKey: copy, clientX, clientY }))
     await new Promise(resolve => requestAnimationFrame(resolve))
-    destination.dispatchEvent(new DragEvent("dragenter", { bubbles: true, cancelable: true, dataTransfer, ctrlKey: copy }))
-    destination.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer, ctrlKey: copy }))
+    destination.dispatchEvent(new DragEvent("dragenter", { bubbles: true, cancelable: true, dataTransfer, ctrlKey: copy, clientX, clientY }))
+    destination.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer, ctrlKey: copy, clientX, clientY }))
     if (cancel) {
         await flush()
-        if (!document.querySelector(".composition-seam.available") || !destination.classList.contains("composition-over"))
+        if (seamHeight() != 0)
+            throw new Error("Starting a drag expanded a seam")
+        if (!destination.classList.contains(position == "top" ? "composition-over-above" : "composition-over"))
             throw new Error("Cancellation test did not start a drag over a valid target")
+        during?.()
     } else {
-        destination.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer, ctrlKey: copy }))
+        destination.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer, ctrlKey: copy, clientX, clientY }))
     }
     source.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer }))
     await flush()
@@ -155,14 +170,14 @@ async function drag(target: string, copy = false, cancel = false) {
 async function checks() {
     await flush()
     await drag("#commit", false, true)
-    if (document.querySelector(".composition-seam.available, .composition-over, .composition-review") || shownToast() || requests.length)
+    if (document.querySelector(".composition-over, .composition-over-above, .composition-review") || shownToast() || requests.length)
         throw new Error("Cancelled drag left transfer placeholders or state behind")
     await click("#select-more")
     await click("#refresh-tip")
     await drag("#branch")
     if (requests.length)
         throw new Error("Files accepted by branch")
-    if (document.querySelector(".composition-seam.available") || shownToast())
+    if (document.querySelector(".composition-over, .composition-over-above") || shownToast())
         throw new Error("Rejected drop left transfer placeholders behind")
     await drag("#commit", true)
     if (shownToast()?.code != "composition.transferred")
@@ -175,8 +190,9 @@ async function checks() {
         throw new Error("Stale Pragmatic drag source or target: " + JSON.stringify(requests))
     }
     requests.length = 0
-    await drag(".composition-seam")
-    if (requests.length || !document.querySelector("[aria-label='New commit message']"))
+    await drag("#commit", false, false, undefined, "top")
+    const seamDrop = requests.at(-1)
+    if (seamDrop || !document.querySelector("[aria-label='New commit message']"))
         throw new Error("Successful seam drop lost its message prompt")
     button("Cancel").click()
     await flush()
@@ -186,6 +202,34 @@ async function checks() {
         throw new Error("Seam mutated before message")
     button("Cancel").click()
     await flush()
+    // A whole commit brings its own message: the seam offers to move it and transfers on drop.
+    await click("#whole-commit")
+    let seamLabel = ""
+    await drag("#commit", false, true, () => seamLabel = document.querySelector(".composition-seam")?.textContent ?? "", "top")
+    if (seamLabel != "Move commit here")
+        throw new Error(`Seam offered "${seamLabel}" to a whole commit`)
+    await drag("#commit", false, false, undefined, "top")
+    const moved = requests.at(-1)?.request as CompositionRequest | undefined
+    if (
+        requests.length != 2 || moved?.target.kind != "seam" || moved.files || moved.message || !requests.at(-1)!.token
+        || document.querySelector("[aria-label='New commit message']") || shownToast()?.code != "composition.transferred"
+    ) {
+        throw new Error("Whole-commit seam drop did not transfer immediately: " + JSON.stringify(requests))
+    }
+    await click("#whole-commit")
+    requests.length = 0
+    // Rewriting published history waits for confirmation behind a warning instead of transferring at once.
+    published = true
+    await drag("#commit")
+    const warning = document.querySelector(".composition-review [role=alert]")?.textContent ?? ""
+    if (requests.some(r => r.token) || !warning.includes("published on feature") || !warning.includes("force-with-lease"))
+        throw new Error("Published history rewrite did not wait behind a warning: " + warning)
+    button("Transfer").click()
+    await flush()
+    if (!requests.at(-1)?.token || shownToast()?.code != "composition.transferred")
+        throw new Error("Confirmed published rewrite did not transfer")
+    published = false
+    requests.length = 0
     conflict = true
     await drag("#commit")
     if (requests.some(r => r.token))
@@ -203,6 +247,16 @@ async function checks() {
     await flush()
     if ((requests.at(-1)?.request as CompositionRequest).mode != "copy")
         throw new Error("Keyboard copy failed")
-    return { cancellation: true, dragBindingsRefresh: true, branchRejectsFiles: true, inlineMessage: true, conflictPrompt: true, keyboardCopy: true }
+    return {
+        cancellation: true,
+        dragBindingsRefresh: true,
+        branchRejectsFiles: true,
+        inlineMessage: true,
+        positionalDrop: true,
+        wholeCommitSeam: true,
+        publishedWarning: true,
+        conflictPrompt: true,
+        keyboardCopy: true,
+    }
 }
 Object.assign(window, { compositionChecks: checks, compositionRequests: requests })

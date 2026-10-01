@@ -5,6 +5,7 @@ import { join, resolve, sep } from "node:path"
 
 // Hooks see the actual proposed commit in an isolated checkout and index. Their
 // configured commands and filters still come from the destination repository.
+// A source commit supplies the author and, unless a message is given, the message.
 export async function compositionCommit(repo: RepositoryGit, parent: string, tree: string, source?: string, message = "", cancelled = () => false) {
     const root = resolve(tmpdir()), scratch = await mkdtemp(join(root, "laneway-composition-hook-"))
     let retain = false
@@ -36,7 +37,7 @@ export async function compositionCommit(repo: RepositoryGit, parent: string, tre
             env.GIT_AUTHOR_NAME = author[1]
             env.GIT_AUTHOR_EMAIL = author[2]
             env.GIT_AUTHOR_DATE = author[3]
-            message = raw.slice(split + 2)
+            message ||= raw.slice(split + 2)
         }
         const run = (args: string[], input?: string) => repo.command(scratch, args, input, env)
         await run(["update-ref", "HEAD", parent])

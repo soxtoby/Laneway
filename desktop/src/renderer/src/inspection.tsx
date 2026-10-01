@@ -1565,22 +1565,42 @@ export function createInspection(options: Options) {
                                                                                 mix={[
                                                                                     disclosureHeading,
                                                                                     commitStickyHeading,
+                                                                                    // Dropping near the row's top or bottom inserts beside the commit.
                                                                                     composition.target(repositoryId, {
                                                                                         kind: "commit",
                                                                                         objectId: commit.objectId,
                                                                                         branch: branch.preferredRef,
+                                                                                    }, {
+                                                                                        // Published history stays insertable; the engine reports the rewrite for confirmation.
+                                                                                        above: !branch.remoteOnly
+                                                                                            ? {
+                                                                                                kind: "seam",
+                                                                                                parentId: commit.objectId,
+                                                                                                branch: branch.preferredRef,
+                                                                                            }
+                                                                                            : undefined,
+                                                                                        below: !branch.remoteOnly && commit.parentIds[0]
+                                                                                            ? {
+                                                                                                kind: "seam",
+                                                                                                parentId: commit.parentIds[0],
+                                                                                                branch: branch.preferredRef,
+                                                                                            }
+                                                                                            : undefined,
                                                                                     }),
                                                                                 ]}
                                                                             >
                                                                                 {composition.source({
                                                                                     repositoryId,
                                                                                     selectedRemote: graph.selectedRemote,
+                                                                                    // A single parent also tells composition which seams sit beside this commit.
                                                                                     source: {
                                                                                         kind: "commit",
                                                                                         objectId: commit.objectId,
                                                                                         branch: branch.preferredRef,
                                                                                         ...(files?.source.kind == "commit" && files.source.parentId
                                                                                             ? { parentId: files.source.parentId }
+                                                                                            : commit.parentIds.length == 1
+                                                                                            ? { parentId: commit.parentIds[0] }
                                                                                             : {}),
                                                                                     },
                                                                                     label: commit.subject,
@@ -1706,7 +1726,7 @@ export function createInspection(options: Options) {
                                                                                 )}
                                                                             </div>
                                                                         </div>
-                                                                        {!branch.remoteOnly && !branch.primary && commit.parentIds[0]
+                                                                        {!branch.remoteOnly && commit.parentIds[0]
                                                                             && !(branch.base.status == "known" && branch.base.tip == commit.parentIds[0]
                                                                                 && branchIndex + 1 < stack.length)
                                                                             && composition.seam(repositoryId, {

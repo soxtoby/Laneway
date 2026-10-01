@@ -35,6 +35,9 @@ test("Pragmatic drag bindings, conflict approval and keyboard transfers under pr
             dragBindingsRefresh: true,
             branchRejectsFiles: true,
             inlineMessage: true,
+            positionalDrop: true,
+            wholeCommitSeam: true,
+            publishedWarning: true,
             conflictPrompt: true,
             keyboardCopy: true,
         })
