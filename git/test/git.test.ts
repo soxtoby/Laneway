@@ -310,6 +310,36 @@ describe("system Git", () => {
         expect(base("stack/top")).toMatchObject({ status: "known", ref: "refs/heads/stack/middle", tip: middleTip })
     })
 
+    test("keeps a sibling whose upstream sits at the fork as the other's Base", async () => {
+        const repository = await temporaryDirectory("laneway-graph-published-fork-")
+        expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
+        await commitFile(repository, "README.md", "initial\n", "Initial")
+        const mainTip = gitText(repository, "rev-parse", "HEAD")
+        // stack/lower was published at the fork, then gained an unpublished commit while stack/upper still sits on the published tip.
+        expect(runGit(repository, "checkout", "-q", "-b", "stack/lower").exitCode).toBe(0)
+        await commitFile(repository, "lower.txt", "lower\n", "Lower")
+        const fork = gitText(repository, "rev-parse", "HEAD")
+        expect(runGit(repository, "checkout", "-q", "-b", "stack/upper").exitCode).toBe(0)
+        await commitFile(repository, "upper.txt", "upper\n", "Upper")
+        expect(runGit(repository, "checkout", "-q", "stack/lower").exitCode).toBe(0)
+        await commitFile(repository, "lower.txt", "lower again\n", "Lower again")
+        const lowerTip = gitText(repository, "rev-parse", "HEAD")
+        expect(runGit(repository, "remote", "add", "origin", ".").exitCode).toBe(0)
+        expect(runGit(repository, "update-ref", "refs/remotes/origin/stack/lower", fork).exitCode).toBe(0)
+        expect(runGit(repository, "config", "branch.stack/lower.remote", "origin").exitCode).toBe(0)
+        expect(runGit(repository, "config", "branch.stack/lower.merge", "refs/heads/stack/lower").exitCode).toBe(0)
+
+        const graph = await (await openRepository(repository)).startReadBranchGraph({
+            authorIdentities: { primary: "laneway@example.invalid", secondary: [] },
+            remotePatterns: [],
+        }).result
+        const base = (name: string) => graph.branches.find(candidate => candidate.name == name)!.base
+        expect(base("stack/lower")).toMatchObject({ status: "known", ref: "refs/heads/main", tip: mainTip })
+        expect(base("stack/upper")).toMatchObject({ status: "known", ref: "refs/heads/stack/lower", tip: lowerTip })
+    })
+
     test("keeps the Primary Branch as Base beneath merged siblings sharing its fork point", async () => {
         const repository = await temporaryDirectory("laneway-graph-merged-siblings-")
         expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)

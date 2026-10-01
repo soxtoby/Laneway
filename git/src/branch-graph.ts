@@ -424,6 +424,8 @@ function inferBases(branches: MutableBranch[], candidates: MutableBranch[], topo
     }
     for (const branch of mergeBasesByBranch.keys())
         infer(branch)
+    const holdsFork = (branch: MutableBranch, other: MutableBranch) =>
+        mergeBasesByBranch.get(other)!.some(entry => entry.candidate == branch && branch.ownRemoteTips.includes(entry.objectId))
 
     // Siblings diverging from a commit that no other branch holds each see the other as a closest candidate.
     // Neither owns the shared commits, so both fall back to the next Base below the fork,
@@ -435,6 +437,16 @@ function inferBases(branches: MutableBranch[], candidates: MutableBranch[], topo
                 const base = candidatesById.get(baseId)
                 if (!base || !mergeBasesByBranch.has(base) || excluded.get(branch)?.has(base.id) || !baseCandidateIds(base.base).includes(branch.id))
                     continue
+                // A sibling whose own remote ref sits at the fork holds the shared commits, so it stays the
+                // other's Base and only stops seeing the branch stacked on it.
+                const holders = [branch, base].filter(sibling => holdsFork(sibling, sibling == branch ? base : branch))
+                if (holders.length == 1) {
+                    const [holder] = holders
+                    const stacked = holder == branch ? base : branch
+                    excluded.set(holder, (excluded.get(holder) ?? new Set()).add(stacked.id))
+                    affected.add(holder)
+                    continue
+                }
                 excluded.set(branch, (excluded.get(branch) ?? new Set()).add(base.id))
                 excluded.set(base, (excluded.get(base) ?? new Set()).add(branch.id))
                 affected.add(branch).add(base)

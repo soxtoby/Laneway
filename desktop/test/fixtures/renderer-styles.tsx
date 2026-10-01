@@ -184,22 +184,25 @@ async function checkRenderer() {
     // Branch lines and the Primary rail keep distinct colours; the rail itself starts only where a branch joins it.
     const branchGraphColors = lightGraphColors[0] == lightGraphColors[1] && lightGraphColors[0] != lightGraphColors[2]
         && new Set(graphRows.flatMap(row => [...row.querySelectorAll(".graph-rail-lines path")].map(path => getComputedStyle(path).stroke))).size == 2
+    // File rows drag, so pressing one must leave the native drag free to start; the click expands and selects.
     const fileButton = element(".change-file button[aria-expanded]")
-    fileButton.dispatchEvent(new MouseEvent("mousedown", { button: 0, detail: 1, bubbles: true, cancelable: true, composed: true }))
+    const filePress = new MouseEvent("mousedown", { button: 0, detail: 1, bubbles: true, cancelable: true, composed: true })
+    fileButton.dispatchEvent(filePress)
     await settle()
-    const expandedOnMouseDown = fileButton.getAttribute("aria-expanded") == "true"
+    const pressLeavesFileCollapsed = !filePress.defaultPrevented && fileButton.getAttribute("aria-expanded") == "false"
     fileButton.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, composed: true }))
     fileButton.dispatchEvent(new MouseEvent("click", { detail: 1, bubbles: true, cancelable: true, composed: true }))
     await settle()
-    const noSecondToggle = fileButton.getAttribute("aria-expanded") == "true"
+    const expandedOnClick = fileButton.getAttribute("aria-expanded") == "true"
     const selectedFile = element<HTMLInputElement>(".change-file input[type=checkbox]")
-    selectedFile.dispatchEvent(new MouseEvent("mousedown", { button: 0, detail: 1, bubbles: true, cancelable: true, composed: true }))
+    const selectPress = new MouseEvent("mousedown", { button: 0, detail: 1, bubbles: true, cancelable: true, composed: true })
+    selectedFile.dispatchEvent(selectPress)
     await settle()
-    const selectedOnMouseDown = selectedFile.checked
+    const pressLeavesFileUnselected = !selectPress.defaultPrevented && !selectedFile.checked
     selectedFile.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, composed: true }))
     selectedFile.dispatchEvent(new MouseEvent("click", { detail: 1, bubbles: true, cancelable: true, composed: true }))
     await settle()
-    const noSecondSelection = selectedFile.checked
+    const selectedOnClick = selectedFile.checked
     selectedFile.click()
     await settle()
     const diffShadow = element(".pierre-diff").shadowRoot!
@@ -815,10 +818,10 @@ async function checkRenderer() {
         compactUnified,
         inlineDiff,
         flatFiles,
-        expandedOnMouseDown,
-        noSecondToggle,
-        selectedOnMouseDown,
-        noSecondSelection,
+        pressLeavesFileCollapsed,
+        expandedOnClick,
+        pressLeavesFileUnselected,
+        selectedOnClick,
         hunkSelected,
         distinctLineEndings,
         endingsStayOnRow,

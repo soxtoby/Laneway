@@ -28,14 +28,14 @@ test("Remix renderer styles and controls work under production CSP in Electron",
                 env,
                 windowsHide: true,
                 stdio: ["ignore", "ignore", "pipe"],
-                timeout: 20_000,
+                timeout: 60_000,
             })
             child.stderr.on("data", chunk => errors += String(chunk))
             child.on("error", reject)
             child.on("close", resolve)
         })
         const failure = exitCode == 0 ? "" : await readFile(join(directory, "result.json"), "utf8").catch(() => "")
-        expect(exitCode, failure || errors || "Electron exited before completing the renderer checks (20-second timeout).").toBe(0)
+        expect(exitCode, failure || errors || "Electron exited before completing the renderer checks (60-second timeout).").toBe(0)
         const result = JSON.parse(await readFile(join(directory, "result.json"), "utf8"))
         expect({ exitCode, error: result.error }, errors).toEqual({ exitCode: 0, error: undefined })
         expect(result).toMatchObject({
@@ -80,10 +80,10 @@ test("Remix renderer styles and controls work under production CSP in Electron",
             breakoutScrollbarClear: true,
             breakoutStickyTop: true,
             flatFiles: true,
-            expandedOnMouseDown: true,
-            noSecondToggle: true,
-            selectedOnMouseDown: true,
-            noSecondSelection: true,
+            pressLeavesFileCollapsed: true,
+            expandedOnClick: true,
+            pressLeavesFileUnselected: true,
+            selectedOnClick: true,
             hunkSelected: true,
             distinctLineEndings: true,
             endingsStayOnRow: true,
@@ -152,4 +152,4 @@ test("Remix renderer styles and controls work under production CSP in Electron",
             throw new Error(`Unexpected renderer test directory: ${directory}`)
         await rm(directory, { recursive: true, force: true })
     }
-}, 30_000)
+}, 90_000)

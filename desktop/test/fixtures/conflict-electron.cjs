@@ -58,8 +58,10 @@ app.on("browser-window-created", (_event, window) => {
                     toggle.click();
                     await wait(() => toggle.getAttribute('aria-pressed') == 'false' && document.querySelectorAll('.inspect-commit').length == 2);
                     const indicator = await wait(() => document.querySelector('[aria-label="Resolve conflicts in topic change"]'));
-                    const rowBounds = indicator.closest('h4').getBoundingClientRect(), indicatorBounds = indicator.getBoundingClientRect();
-                    if (Math.abs(rowBounds.top - indicatorBounds.top) > 0.5 || Math.abs(rowBounds.bottom - indicatorBounds.bottom) > 0.5) throw new Error('Conflict indicator does not fill commit row');
+                    const commitRow = indicator.closest('h4'), rowBounds = commitRow.getBoundingClientRect(), indicatorBounds = indicator.getBoundingClientRect();
+                    // The row's bottom border is its separator line, so the indicator fills the row above it.
+                    const rowBottom = rowBounds.bottom - parseFloat(getComputedStyle(commitRow).borderBottomWidth);
+                    if (Math.abs(rowBounds.top - indicatorBounds.top) > 0.5 || Math.abs(rowBottom - indicatorBounds.bottom) > 0.5) throw new Error('Conflict indicator does not fill commit row');
                     if (${JSON.stringify(phase)} == 'candidate') indicator.closest('.inspect-commit').querySelector('.commit-heading').click();
                     else indicator.click();
                     const column = await wait(() => document.querySelector('[aria-label="Conflict resolution"]'));
