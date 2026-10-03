@@ -88,26 +88,37 @@ export async function captureWorktreeState(
             names = ["stash"]
         else
             names = await filesUnder(root.path)
-        for (const name of [...new Set(names)].sort()) {
-            const path = safeChild(root.path, name)
-            if (!await pathExists(path))
-                continue
-            const stat = await lstat(path)
-            if (stat.isDirectory())
-                continue
-            const link = stat.isSymbolicLink()
-            const object = link
-                ? (await repository.command(repository.descriptor.mainWorktree, ["hash-object", "-w", "--stdin"], await readlink(path))).toString().trim()
-                : ""
-            let identity: string | undefined
-            if ((root.kind == "main" || root.kind == "admin") && (name == "index" || name.endsWith("/index"))) {
-                identity = (await repository.command(repository.descriptor.mainWorktree, ["--git-dir", dirname(path), "ls-files", "--stage", "-v", "-z"]))
-                    .toString()
+        const sorted = [...new Set(names)].sort()
+        for (let offset = 0; offset < sorted.length; offset += 64) {
+            const files = await Promise.all(
+                sorted.slice(offset, offset + 64).map(async name => {
+                    const path = safeChild(root.path, name)
+                    const stat = await lstat(path).catch(error => {
+                        if ((error as NodeJS.ErrnoException).code != "ENOENT")
+                            throw error
+                        return undefined
+                    })
+                    if (!stat || stat.isDirectory())
+                        return undefined
+                    const link = stat.isSymbolicLink()
+                    const object = link
+                        ? (await repository.command(repository.descriptor.mainWorktree, ["hash-object", "-w", "--stdin"], await readlink(path))).toString()
+                            .trim()
+                        : ""
+                    let identity: string | undefined
+                    if ((root.kind == "main" || root.kind == "admin") && (name == "index" || name.endsWith("/index"))) {
+                        identity =
+                            (await repository.command(repository.descriptor.mainWorktree, ["--git-dir", dirname(path), "ls-files", "--stage", "-v", "-z"]))
+                                .toString()
+                    }
+                    return { path, file: { name, object, mode: stat.mode & 0o777, link, identity } }
+                }),
+            )
+            for (const item of files.filter(item => item != undefined)) {
+                root.files.push(item.file)
+                if (!item.file.link)
+                    ordinaryFiles.push(item)
             }
-            const file = { name, object, mode: stat.mode & 0o777, link, identity }
-            root.files.push(file)
-            if (!link)
-                ordinaryFiles.push({ path, file })
         }
     }
     if (ordinaryFiles.length) {
@@ -184,17 +195,11 @@ export async function worktreeStateMatches(repository: RepositoryGit, expected: 
     return stateIdentity(actual) == stateIdentity(expected)
 }
 
-export async function retainWorktreeState(repository: RepositoryGit, id: string, side: string, state: WorktreeState) {
+export async function worktreeStateObjects(repository: RepositoryGit, state: WorktreeState) {
     const objects = new Set(Object.values(state.refs))
     const files = [...new Set(state.roots.flatMap(root => root.files.map(file => file.object)))]
-    if (files.length) {
-        const tree = (await repository.command(
-            repository.descriptor.mainWorktree,
-            ["mktree", "-z"],
-            files.map((object, index) => `100644 blob ${object}\t${index}\0`).join(""),
-        )).toString().trim()
-        objects.add(tree)
-    }
+    for (const file of files)
+        objects.add(file)
     // Retain HEAD commits as well as raw snapshots; a raw HEAD file alone does not keep its commit reachable.
     for (
         const root of state.roots.filter(root =>
@@ -209,13 +214,7 @@ export async function retainWorktreeState(repository: RepositoryGit, id: string,
                 objects.add(value)
         }
     }
-    if (objects.size) {
-        await repository.command(
-            repository.descriptor.mainWorktree,
-            ["update-ref", "--stdin"],
-            [...objects].map((object, index) => `update refs/laneway/recovery/${id}/${side}/state-${index} ${object}\n`).join(""),
-        )
-    }
+    return [...objects]
 }
 
 export async function restoreWorktreeState(repository: RepositoryGit, source: WorktreeState, target: WorktreeState) {

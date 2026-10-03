@@ -11,8 +11,9 @@ import { z } from "zod"
 import { conflictMutation, conflictPaths, executeConflict, suspendWorkingConflicts } from "./conflict-operations"
 import { LocalPreconditionError, mutateLocal, prepareLocal } from "./local-mutations"
 import { executePull, preparePull, type PullPreparation, type PullProgressReporter } from "./pull-latest"
+import { migrateRecoveryRefs, releaseRecoveryObjects, retainRecoveryObjects } from "./recovery-objects"
 import { mutateWorktree } from "./worktree-mutations"
-import { captureWorktreeState, relocateRemovedState, restoreWorktreeState, retainWorktreeState, stateIdentity, type WorktreeState, worktreeStateMatches, WorktreeStateSchema } from "./worktree-state"
+import { captureWorktreeState, relocateRemovedState, restoreWorktreeState, stateIdentity, type WorktreeState, worktreeStateMatches, worktreeStateObjects, WorktreeStateSchema } from "./worktree-state"
 
 const fixtureRef = "refs/laneway/test/fixture"
 const journalFileName = "journal.jsonl"
@@ -288,7 +289,7 @@ class OperationRuntime {
     }
 
     async applyLocal(request: LocalRequest, token?: string, crashAfter?: JournalPhase, prefix = "worktree/"): Promise<LocalResult> {
-        const { preview, before } = await prepareLocal(this.repository, request, prefix)
+        const { preview, before } = await prepareLocal(this.repository, request, prefix, token)
         if (!token || token != preview.token)
             throw new OperationRuntimeError("operation.precondition-failed", "Repository content changed. Refresh and review the operation again.")
         let result: LocalResult = { type: "result", command: "local", status: "performed" }
@@ -395,7 +396,7 @@ class OperationRuntime {
         await this.cancelIfRequested(executionId, operation, "apply")
         try {
             // This process captured "before" moments ago and has only written journal and recovery
-            // refs since, so the snapshot is not re-captured for comparison here or after mutation.
+            // storage since, so the snapshot is not re-captured for comparison here or after mutation.
             await validatePreconditions(this.repository, operation, "apply", false)
         } catch (error) {
             await this.abortBeforeCommit(executionId, operation, "apply")
@@ -571,6 +572,7 @@ class OperationRuntime {
     }
 
     async recover(): Promise<RecoveryResult> {
+        await migrateRecoveryRefs(this.repository)
         const pending = await this.store.readPendingExecutions()
         const recovered: RecoveredExecution[] = []
 
@@ -996,24 +998,17 @@ const neverCancelled: CancellationSignal = {
 }
 
 async function retainOperation(repository: RepositoryGit, operation: StoredOperation) {
+    const objects = operation.refChanges.flatMap(change => [change.before, change.after]).filter((object): object is string => object != null)
     if (operation.lifecycle) {
-        await retainWorktreeState(repository, operation.id, "before", operation.lifecycle.before)
+        objects.push(...await worktreeStateObjects(repository, operation.lifecycle.before))
         if (operation.lifecycle.after)
-            await retainWorktreeState(repository, operation.id, "after", operation.lifecycle.after)
+            objects.push(...await worktreeStateObjects(repository, operation.lifecycle.after))
     }
-    for (const [index, change] of operation.refChanges.entries()) {
-        if (change.before)
-            await repository.updateRef(`refs/laneway/recovery/${operation.id}/before/${index}`, change.before)
-        if (change.after)
-            await repository.updateRef(`refs/laneway/recovery/${operation.id}/after/${index}`, change.after)
-    }
+    await retainRecoveryObjects(repository, operation.id, objects)
 }
 
 async function releaseOperation(repository: RepositoryGit, operationId: string) {
-    const prefix = `refs/laneway/recovery/${operationId}/`
-    const refs = await repository.listRefs(prefix)
-    if (refs.length)
-        await repository.command(repository.descriptor.mainWorktree, ["update-ref", "--stdin"], refs.map(ref => `delete ${ref}\n`).join(""))
+    await releaseRecoveryObjects(repository, operationId)
 }
 
 async function applyRefChanges(repository: RepositoryGit, changes: RefChange[]) {

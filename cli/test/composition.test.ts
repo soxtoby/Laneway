@@ -1,13 +1,49 @@
 import { connectRepository, readConflictState } from "@laneway/git"
 import type { CompositionRequest, ConflictRequest, ConflictResult, LocalResult } from "@laneway/shared"
 import { afterEach, expect, test } from "bun:test"
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
 import { mutateComposition, prepareComposition } from "../src/composition"
+import { hasPathCollision } from "../src/composition-source"
 import { executeOperationCommand } from "../src/operation-runtime"
 
 const temporary: string[] = []
+
+test("ignored path collision checks distinguish files, ancestors, and similarly named siblings", () => {
+    const paths = ["src/file.ts", "package", "a-b/file", "α/β"]
+    for (const ignored of ["src/file.ts", "src", "package/ignored", "α"])
+        expect(hasPathCollision(paths, [ignored])).toBe(true)
+    expect(hasPathCollision(paths, ["src/other.ts", "packages/file", "a/file", "α/γ"])).toBe(false)
+    // Same scale as BI, without touching a worktree or asserting machine timings.
+    expect(hasPathCollision(
+        Array.from({ length: 32_415 }, (_, i) => `src/${i}/file.ts`),
+        Array.from({ length: 111_112 }, (_, i) => `node_modules/${i}/file.js`),
+    )).toBe(false)
+})
+
+test("transfers preserve ignored siblings but reject ignored file collisions", async () => {
+    const { path } = await fixture()
+    await mkdir(join(path, "cache"))
+    await writeFile(join(path, "cache", "new.txt"), "incoming\n")
+    git(path, "add", ".")
+    git(path, "commit", "-qm", "incoming")
+    const head = git(path, "rev-parse", "HEAD")
+    git(path, "checkout", "-q", "main")
+    await writeFile(join(path, ".git", "info", "exclude"), "cache/\n")
+    await mkdir(join(path, "cache"), { recursive: true })
+    await writeFile(join(path, "cache", "existing.txt"), "ignored sibling\n")
+    const r = request({
+        mode: "copy",
+        source: { kind: "commit", objectId: head, branch: "feature" },
+        target: { kind: "working", worktreePath: path },
+        files: [{ path: "cache/new.txt" }],
+    })
+    await preview(path, r)
+    await writeFile(join(path, "cache", "new.txt"), "ignored collision\n")
+    await expect(preview(path, r)).rejects.toThrow("ignored")
+    expect(await readFile(join(path, "cache", "existing.txt"), "utf8")).toBe("ignored sibling\n")
+}, 30_000)
 afterEach(async () => {
     for (const path of temporary.splice(0)) {
         if (!resolve(path).startsWith(resolve(tmpdir()) + sep))
@@ -60,6 +96,32 @@ async function perform(path: string, request: CompositionRequest) {
 const conflict = async (path: string, request: ConflictRequest) =>
     await executeOperationCommand({ command: "conflict", request, noWait: false }, path) as ConflictResult
 
+test("moving a committed file into its own Working Changes preserves the file and undo after GC without recovery refs", async () => {
+    const { path } = await fixture()
+    await writeFile(join(path, "selected.txt"), "keep these bytes\n")
+    await writeFile(join(path, "retained.txt"), "still committed\n")
+    git(path, "add", ".")
+    git(path, "commit", "-qm", "source")
+    const original = git(path, "rev-parse", "HEAD")
+    await perform(
+        path,
+        request({
+            source: { kind: "commit", objectId: original, branch: "feature" },
+            target: { kind: "working", worktreePath: path },
+            files: [{ path: "selected.txt" }],
+        }),
+    )
+    expect(await readFile(join(path, "selected.txt"), "utf8")).toBe("keep these bytes\n")
+    expect(git(path, "status", "--porcelain")).toBe("?? selected.txt")
+    expect(git(path, "for-each-ref", "--format=%(refname)", "refs/laneway/recovery")).toBe("")
+    git(path, "-c", "gc.reflogExpire=never", "-c", "gc.reflogExpireUnreachable=never", "gc", "--prune=now")
+    await executeOperationCommand({ command: "undo", noWait: false }, path)
+    expect(git(path, "rev-parse", "HEAD")).toBe(original)
+    expect(git(path, "status", "--porcelain")).toBe("")
+    await executeOperationCommand({ command: "redo", noWait: false }, path)
+    expect(git(path, "status", "--porcelain")).toBe("?? selected.txt")
+}, 60_000)
+
 test("cancellation and stale preflight leave refs, files and staging unchanged", async () => {
     const { path, base } = await fixture()
     await writeFile(join(path, "a.txt"), "selected\n")
@@ -77,6 +139,52 @@ test("cancellation and stale preflight leave refs, files and staging unchanged",
     await writeFile(join(path, "a.txt"), "external\n")
     await expect(executeOperationCommand({ command: "local", request: r, token: p.token, noWait: false }, path)).rejects.toThrow("changed")
     expect(await readFile(join(path, "a.txt"), "utf8")).toBe("external\n")
+}, 60_000)
+
+test("a verified preview reuses its plan; corrupt or pruned plans rebuild safely", async () => {
+    const { path, base } = await fixture()
+    await writeFile(join(path, "a.txt"), "changed\n")
+    const repo = await connectRepository(path)
+    const r = request({
+        source: { kind: "working", worktreePath: path },
+        target: { kind: "seam", branch: "feature", parentId: base },
+        files: [{ path: "a.txt" }],
+    })
+    const p = await prepareComposition(repo, r)
+    const original = repo.startReadBranchGraph.bind(repo)
+    let reads = 0
+    repo.startReadBranchGraph = options => {
+        reads++
+        return original(options)
+    }
+    expect((await prepareComposition(repo, r, p.preview.token)).preview).toEqual(p.preview)
+    expect(reads).toBe(0)
+    await writeFile(join(path, ".git", "laneway", "composition-preview.json"), "damaged")
+    await prepareComposition(repo, r, p.preview.token)
+    expect(reads).toBe(1)
+    git(path, "gc", "--prune=now")
+    await prepareComposition(repo, r, p.preview.token)
+    expect(reads).toBe(2)
+}, 60_000)
+
+test("a cached transfer rejects ignored files created after preview", async () => {
+    const { path, base } = await fixture()
+    await writeFile(join(path, "incoming.txt"), "source\n")
+    git(path, "add", ".")
+    git(path, "commit", "-qm", "source")
+    const source = git(path, "rev-parse", "HEAD")
+    git(path, "checkout", "-qb", "destination", base)
+    await writeFile(join(path, ".git", "info", "exclude"), "incoming.txt\n")
+    const r = request({
+        mode: "copy",
+        source: { kind: "commit", objectId: source },
+        target: { kind: "working", worktreePath: path },
+        files: [{ path: "incoming.txt" }],
+    })
+    const p = await preview(path, r)
+    await writeFile(join(path, "incoming.txt"), "external ignored file\n")
+    await expect(executeOperationCommand({ command: "local", request: r, token: p.token, noWait: false }, path)).rejects.toThrow("ignored")
+    expect(await readFile(join(path, "incoming.txt"), "utf8")).toBe("external ignored file\n")
 }, 60_000)
 
 test("seams on either side of a branch boundary retain their explicit owner", async () => {

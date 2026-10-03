@@ -40,9 +40,10 @@ export async function prepareLocal(
     repository: RepositoryGit,
     request: LocalRequest,
     prefix: string,
+    expectedToken?: string,
 ): Promise<{ preview: LocalPreview; before: WorktreeState }> {
     if (request.action == "compose")
-        return prepareComposition(repository, request)
+        return prepareComposition(repository, request, expectedToken)
     if (repository.descriptor.shallow || repository.descriptor.partial || repository.descriptor.sparse)
         throw new Error("Local mutations require a complete, non-sparse repository.")
     const worktrees = await readRegisteredWorktrees(repository)

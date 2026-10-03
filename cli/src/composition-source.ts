@@ -2,11 +2,42 @@ import { blob, gitText, isText, replaceTreeFiles, type RepositoryGit, treeEntrie
 import type { CompositionRequest, DiffLine, FileDiffPage } from "@laneway/shared"
 import { join } from "node:path"
 
+/** Check exact paths and file/directory collisions without comparing every pair. */
+export function hasPathCollision(files: Iterable<string>, protectedPaths: Iterable<string>) {
+    const names = new Set(files), directories = new Set<string>()
+    for (const name of names) {
+        for (let slash = name.indexOf("/"); slash >= 0; slash = name.indexOf("/", slash + 1))
+            directories.add(name.slice(0, slash))
+    }
+    for (const path of protectedPaths) {
+        if (names.has(path) || directories.has(path))
+            return true
+        for (let slash = path.indexOf("/"); slash >= 0; slash = path.indexOf("/", slash + 1)) {
+            if (names.has(path.slice(0, slash)))
+                return true
+        }
+    }
+    return false
+}
+
 export async function workingTree(repo: RepositoryGit, path: string) {
+    const [index, status] = await Promise.all([
+        repo.command(path, ["write-tree"]),
+        repo.command(path, ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"]),
+    ])
+    const records = status.toString().split("\0").filter(Boolean)
+    let dirty = false
+    for (let i = 0; i < records.length; i++) {
+        const code = records[i].slice(0, 2)
+        dirty ||= code[1] != " "
+        if (code.includes("R") || code.includes("C"))
+            i++
+    }
+    if (!dirty)
+        return index.toString().trim()
     return withConflictScratch(async scratch => {
         const env = { GIT_INDEX_FILE: join(scratch, "index") }
-        const index = (await repo.command(path, ["write-tree"])).toString().trim()
-        await repo.command(path, ["read-tree", index], undefined, env)
+        await repo.command(path, ["read-tree", index.toString().trim()], undefined, env)
         await repo.command(path, ["add", "-A"], undefined, env)
         return (await repo.command(path, ["write-tree"], undefined, env)).toString().trim()
     })
@@ -19,20 +50,19 @@ export async function selectionTrees(repo: RepositoryGit, request: CompositionRe
     const inventory = await repo.startReadChanges({ source }).result
     if (request.inventoryVersion && inventory.version != request.inventoryVersion)
         throw new Error("Source files changed. Select the changes again.")
-    const empty = await gitText(repo, ["mktree"], "")
     let base: string, after: string
     if (source.kind == "working") {
         const head = await repo.run(source.worktreePath, ["rev-parse", "HEAD^{tree}"])
         const index = (await repo.command(source.worktreePath, ["write-tree"])).toString().trim()
-        base = request.view == "unstaged" ? index : head.exitCode ? empty : head.stdout.toString().trim()
+        base = request.view == "unstaged" ? index : head.exitCode ? await gitText(repo, ["mktree"], "") : head.stdout.toString().trim()
         after = request.view == "staged" ? index : await workingTree(repo, source.worktreePath)
     } else {
         if (inventory.parents.length > 1 && !source.parentId)
             throw new Error("Choose an explicit parent before copying changes from a merge commit.")
-        base = source.parentId ?? inventory.parents[0] ?? empty
+        base = source.parentId ?? inventory.parents[0] ?? await gitText(repo, ["mktree"], "")
         after = source.objectId
     }
-    const beforeFiles = await treeEntries(repo, base), afterFiles = await treeEntries(repo, after)
+    const [beforeFiles, afterFiles] = await Promise.all([treeEntries(repo, base), treeEntries(repo, after)])
     const chosen: NonNullable<CompositionRequest["files"]> = request.files ?? inventory.files.filter(f => !f.ignored).map(f => ({ path: f.path }))
     if (!chosen.length || new Set(chosen.map(f => f.path)).size != chosen.length)
         throw new Error("Choose one or more distinct changed files.")

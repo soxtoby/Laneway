@@ -1,11 +1,13 @@
 import { blob, conflictHunks, conflictStateRef, gitText, normalize, pathExists, readConflictState, readRegisteredWorktrees, replaceTreeFiles, replayTree, type RepositoryGit, retainedDocument, storeConflictState, temporaryBranchPrefix, treeEntries } from "@laneway/git"
 import type { CompositionPreview, CompositionRequest, ConflictState, ConflictSubject, LocalPreview, LocalResult, ReplayStep, ResolutionCandidate, UnresolvedStack } from "@laneway/shared"
-import { CompositionRequestSchema } from "@laneway/shared"
+import { CompositionPreviewSchema, CompositionRequestSchema, ConflictStateSchema, ConflictSubjectSchema, LocalPreviewSchema, ResolutionCandidateSchema } from "@laneway/shared"
 import { createHash } from "node:crypto"
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { join } from "node:path"
+import { z } from "zod"
 import { compositionCommit } from "./composition-commits"
-import { selectionTrees, workingTree } from "./composition-source"
-import { captureWorktreeState, stateIdentity, type WorktreeState, worktreeStateMatches } from "./worktree-state"
+import { hasPathCollision, selectionTrees, workingTree } from "./composition-source"
+import { captureWorktreeState, stateIdentity, type WorktreeState, worktreeStateMatches, WorktreeStateSchema } from "./worktree-state"
 
 type TreeChange = Awaited<ReturnType<typeof replayTree>>
 interface CommitPlan {
@@ -72,7 +74,11 @@ async function draftCommit(repo: RepositoryGit, parent: string, value: string, s
     return gitText(repo, ["commit-tree", value, "-p", parent], message || "Composed changes", env)
 }
 
-export async function prepareComposition(repo: RepositoryGit, request: CompositionRequest): Promise<{ before: WorktreeState; preview: LocalPreview }> {
+export async function prepareComposition(
+    repo: RepositoryGit,
+    request: CompositionRequest,
+    expectedToken?: string,
+): Promise<{ before: WorktreeState; preview: LocalPreview }> {
     if (repo.descriptor.shallow || repo.descriptor.partial || repo.descriptor.sparse)
         throw new Error("Composition requires a complete, non-sparse repository.")
     const worktrees = await readRegisteredWorktrees(repo)
@@ -83,7 +89,7 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
         throw new Error("Choose an available Registered Worktree as the source.")
     }
     const affected = worktrees.filter(w => !w.missing).map(w => w.path)
-    const before = await captureWorktreeState(repo, affected)
+    const before = await captureWorktreeState(repo, affected, undefined, worktrees)
     for (const w of worktrees.filter(w => !w.missing)) {
         for (const marker of ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply"]) {
             if (await pathExists(join(w.gitDirectory, marker)))
@@ -92,7 +98,35 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
         if ((await repo.command(w.path, ["ls-files", "--unmerged", "-z"])).length)
             throw new Error("Resolve the Git index conflicts before composition.")
     }
-    const state = await readConflictState(repo)
+    const [remoteRefs, configuration, attributes] = await Promise.all([
+        gitText(repo, ["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes", "refs/laneway/conflict-candidates"]),
+        gitText(repo, ["config", "--null", "--list", "--includes"]),
+        readFile(join(repo.descriptor.commonDirectory, "info", "attributes"), "utf8").catch(error => {
+            if ((error as NodeJS.ErrnoException).code != "ENOENT")
+                throw error
+            return ""
+        }),
+    ])
+    const token = id(
+        stateIdentity(before),
+        remoteRefs,
+        configuration,
+        attributes,
+        JSON.stringify(CompositionRequestSchema.parse({ ...request, allowConflicts: false })),
+    )
+    const cached = expectedToken == token ? await readPlan(repo, token) : undefined
+    if (cached) {
+        for (const working of cached.plan.working)
+            await verifyIgnoredFiles(repo, working.path, working.tree)
+        cached.plan.before = before
+        plans.set(cached.preview, cached.plan)
+        return { before, preview: cached.preview }
+    }
+    const [state, graph, selection] = await Promise.all([
+        readConflictState(repo, before.refs[conflictStateRef] ?? null),
+        repo.startReadBranchGraph({ authorIdentities: { secondary: [] }, remotePatterns: [], selectedRemote: request.selectedRemote }).result,
+        request.source.kind == "branch" ? undefined : selectionTrees(repo, request),
+    ])
     const originalState = structuredClone(state)
     const tips = new Map(Object.entries(before.refs).filter(([ref]) => ref.startsWith("refs/heads/") && !ref.startsWith(temporaryBranchPrefix)))
     for (const stack of state.stacks) {
@@ -101,20 +135,16 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
         for (const b of stack.branches)
             tips.set(b.ref, b.current)
     }
-    const parentMap = new Map(
-        (tips.size ? await gitText(repo, ["rev-list", "--parents", ...new Set(tips.values())]) : "").split("\n").filter(Boolean).map(line => {
-            const [oid, ...ps] = line.split(" ")
-            return [oid, ps] as const
-        }),
-    )
+    const history = (tips.size ? await gitText(repo, ["rev-list", "--format=%H %T %P", "--no-commit-header", ...new Set(tips.values())]) : "")
+        .split("\n").filter(Boolean).map(line => line.split(" "))
+    const parentMap = new Map(history.map(([oid, , ...parents]) => [oid, parents.filter(Boolean)]))
     const parents = async (_repo: RepositoryGit, value: string) => parentMap.get(value) ?? readParents(repo, value)
-    const trees = new Map<string, Promise<string>>()
+    const trees = new Map<string, Promise<string>>(history.map(([oid, tree]) => [oid, Promise.resolve(tree)]))
     const tree = (_repo: RepositoryGit, value: string) => {
         if (!trees.has(value))
             trees.set(value, readTree(repo, value))
         return trees.get(value)!
     }
-    const graph = await repo.startReadBranchGraph({ authorIdentities: { secondary: [] }, remotePatterns: [], selectedRemote: request.selectedRemote }).result
     const primaryLocal = graph.primaryBranch.ref && graph.primaryBranch.remote
         ? `refs/heads/${graph.primaryBranch.ref.slice(`refs/remotes/${graph.primaryBranch.remote}/`.length)}`
         : undefined
@@ -134,12 +164,18 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
             throw new Error("Only commits in a local branch can be rewritten.")
     }
     const preview: CompositionPreview = { branches: [], removed: [], conflicts: [], published: [], skipped: [], noop: false }
+    const workingTrees = new Map<string, Promise<string>>()
+    const currentTree = (path: string) => {
+        const key = normalize(path)
+        if (!workingTrees.has(key))
+            workingTrees.set(key, workingTree(repo, path))
+        return workingTrees.get(key)!
+    }
     const commits: CommitPlan[] = [], candidates: Plan["candidates"] = []
     const oldSubjects = new Map(originalState.stacks.flatMap(s => s.steps.filter(s => s.conflict).map(s => [s.current, s.conflict!] as const)))
     const mutations = new Map<string, TreeChange>(), inserted = new Map<string, string>(), overrides = new Map<string, string>()
     const messages = new Map<string, string>()
     const deleted = new Set<string>(), onlyBranches = new Set<string>()
-    const selection = request.source.kind == "branch" ? undefined : await selectionTrees(repo, request)
     let sourceWorking: TreeChange | undefined, destinationWorking: TreeChange | undefined
     const merge = async (base: string, left: string, right: string, label: string): Promise<TreeChange> => {
         const result = await replayTree(repo, base, left, right, id(base, left, right, label), { left: `Before ${label}`, right: `Incoming ${label}` })
@@ -302,7 +338,7 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
                 throw new Error("Choose an available Registered Worktree.")
             if (request.source.kind == "working" && normalize(request.source.worktreePath) == normalize(holder.path))
                 throw new Error("Choose another destination.")
-            const current = await workingTree(repo, holder.path)
+            const current = await currentTree(holder.path)
             destinationWorking = await merge(selection!.base, current, selection!.selected, "Working Changes transfer")
             await skippedAt(current, destinationWorking)
             await protect(state.working.find(w => normalize(w.path) == normalize(holder.path))?.conflict, current, destinationWorking.tree)
@@ -560,7 +596,7 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
         if (holder.missing)
             throw new Error("An affected worktree is unavailable. Locate it before composition.")
         const head = (await repo.command(holder.path, ["rev-parse", "HEAD"])).toString().trim()
-        const current = await workingTree(repo, holder.path), index = (await repo.command(holder.path, ["write-tree"])).toString().trim()
+        const current = await currentTree(holder.path), index = (await repo.command(holder.path, ["write-tree"])).toString().trim()
         let files: TreeChange = { tree: current }, staged: TreeChange = { tree: index }
         const stagedSource = source && sourceWorking && request.view == "staged"
         if (source && sourceWorking) {
@@ -580,8 +616,6 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
                 }
             }
         }
-        if (target && destinationWorking)
-            files = destinationWorking
         const stashBase = target ? selection!.base : head
         const stashTree = target ? selection!.selected : files.tree
         const stashIndex = target ? selection!.base : staged.tree
@@ -593,6 +627,10 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
         }
         if (stagedSource)
             files = await merge(index, staged.tree, current, "remaining unstaged changes")
+        // Transfer onto the restored destination. Applying it before restacking can
+        // erase the selected change when it was already in the destination's HEAD.
+        if (target && destinationWorking)
+            files = newHead == head ? destinationWorking : await merge(selection!.base, files.tree, selection!.selected, "Working Changes transfer")
         const existing = state.working.find(w => normalize(w.path) == normalize(holder.path) && !w.suspended)
         await protect(existing?.conflict, current, files.tree)
         if (existing) {
@@ -624,17 +662,12 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
             conflictBaseline: target ? current : await tree(repo, newHead),
             conflictIndex: target ? index : await tree(repo, newHead),
         })
-        const ignored = (await repo.command(holder.path, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"])).toString().split("\0").filter(
-            Boolean,
-        )
-        const names = [...(await treeEntries(repo, files.tree)).keys()]
-        if (ignored.some(p => names.some(n => n == p || n.startsWith(p + "/") || p.startsWith(n + "/"))))
-            throw new Error("A transfer would replace an ignored file. Move that file before retrying.")
+        await verifyIgnoredFiles(repo, holder.path, files.tree)
     }
     if (!await worktreeStateMatches(repo, before))
         throw new Error("Repository content changed while preparing the transfer. Select and review it again.")
-    const remoteRefs = await gitText(repo, ["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes", "refs/laneway/conflict-candidates"])
-    const token = id(stateIdentity(before), remoteRefs, JSON.stringify(CompositionRequestSchema.parse({ ...request, allowConflicts: false })))
+    if (remoteRefs != await gitText(repo, ["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes", "refs/laneway/conflict-candidates"]))
+        throw new Error("Remote refs changed while preparing the transfer. Review it again.")
     const local: LocalPreview = {
         token,
         affected,
@@ -647,8 +680,89 @@ export async function prepareComposition(repo: RepositoryGit, request: Compositi
         stashes: [],
         worktrees: [],
     }
-    plans.set(local, { before, commits, refs, working, state, candidates, preview })
+    const plan = { before, commits, refs, working, state, candidates, preview }
+    plans.set(local, plan)
+    await writePlan(repo, local, plan)
     return { before, preview: local }
+}
+
+const PlanSchema = z.object({
+    before: WorktreeStateSchema,
+    commits: z.array(
+        z.object({
+            oid: z.string(),
+            parent: z.string(),
+            tree: z.string(),
+            source: z.string().optional(),
+            message: z.string().optional(),
+            conflict: ConflictSubjectSchema.optional(),
+        }),
+    ),
+    refs: z.array(z.object({ ref: z.string(), before: z.string().nullable(), after: z.string().nullable() })),
+    working: z.array(z.object({
+        path: z.string(),
+        head: z.string(),
+        ref: z.string().nullable(),
+        tree: z.string(),
+        index: z.string(),
+        beforeTree: z.string(),
+        beforeIndex: z.string(),
+        conflict: ConflictSubjectSchema.optional(),
+        stashBase: z.string(),
+        stashTree: z.string(),
+        stashIndex: z.string(),
+        conflictBaseline: z.string(),
+        conflictIndex: z.string(),
+    })),
+    state: ConflictStateSchema,
+    candidates: z.array(z.object({ ref: z.string(), before: z.string(), candidate: ResolutionCandidateSchema })),
+    preview: CompositionPreviewSchema,
+})
+
+async function writePlan(repo: RepositoryGit, preview: LocalPreview, plan: Plan) {
+    const directory = join(repo.descriptor.commonDirectory, "laneway")
+    const data = JSON.stringify({ version: 1, preview, plan })
+    await mkdir(directory, { recursive: true })
+    const path = join(directory, "composition-preview.json")
+    await writeFile(`${path}.tmp`, JSON.stringify({ data, hash: id(data) }))
+    await rename(`${path}.tmp`, path)
+}
+
+async function readPlan(repo: RepositoryGit, token: string) {
+    try {
+        const stored = JSON.parse(await readFile(join(repo.descriptor.commonDirectory, "laneway", "composition-preview.json"), "utf8"))
+        if (typeof stored.data != "string" || stored.hash != id(stored.data))
+            return undefined
+        const cached = z.object({ version: z.literal(1), preview: LocalPreviewSchema, plan: PlanSchema }).parse(JSON.parse(stored.data))
+        if (cached.preview.token != token)
+            return undefined
+        const objects = [
+            ...new Set([
+                ...cached.plan.commits.flatMap(commit => [commit.oid, commit.tree]),
+                ...cached.plan.working.flatMap(working => [working.tree, working.index, working.beforeTree, working.beforeIndex]),
+            ]),
+        ]
+        const checked = await gitText(repo, ["cat-file", "--batch-check"], objects.join("\n") + "\n")
+        return checked.includes(" missing") ? undefined : cached
+    } catch {
+        // A preview is disposable. Missing, expired or incompatible plans are rebuilt.
+        return undefined
+    }
+}
+
+async function verifyIgnoredFiles(repo: RepositoryGit, path: string, tree: string) {
+    // Skip unrelated ignored directories (often entire dependency/build trees).
+    // A directory match is only a candidate: adding a sibling file is harmless.
+    const summarized = (await repo.command(path, ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"])).toString()
+        .split("\0").filter(Boolean).map(name => name.replace(/\/$/, ""))
+    if (!summarized.length)
+        return
+    const names = [...(await treeEntries(repo, tree)).keys()]
+    if (!hasPathCollision(names, summarized))
+        return
+    const ignored = (await repo.command(path, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"])).toString().split("\0").filter(Boolean)
+    if (hasPathCollision(names, ignored))
+        throw new Error("A transfer would replace an ignored file. Move that file before retrying.")
 }
 
 export async function mutateComposition(

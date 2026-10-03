@@ -1,5 +1,6 @@
 import { gitText, type RepositoryGit } from "@laneway/git"
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { constants } from "node:fs"
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
 
@@ -7,17 +8,31 @@ import { join, resolve, sep } from "node:path"
 // configured commands and filters still come from the destination repository.
 // A source commit supplies the author and, unless a message is given, the message.
 export async function compositionCommit(repo: RepositoryGit, parent: string, tree: string, source?: string, message = "", cancelled = () => false) {
+    const [configuration, hooks] = await Promise.all([
+        repo.command(repo.descriptor.mainWorktree, ["config", "--null", "--list", "--includes"]),
+        gitText(repo, ["rev-parse", "--path-format=absolute", "--git-path", "hooks"]),
+    ])
+    const config = configuration.toString().split("\0").filter(Boolean).map(record => {
+        const index = record.indexOf("\n")
+        return [record.slice(0, index), record.slice(index + 1)]
+    }).filter(([key]) => !["core.worktree", "core.bare"].includes(key))
+    const hasHooks = config.some(([key]) => key.startsWith("hook."))
+        || (await Promise.all(["pre-commit", "prepare-commit-msg", "commit-msg"].map(async name => {
+            try {
+                await access(join(hooks, name), process.platform == "win32" ? constants.F_OK : constants.X_OK)
+                return true
+            } catch (error) {
+                if (["ENOENT", "EACCES"].includes((error as NodeJS.ErrnoException).code ?? ""))
+                    return false
+                throw error
+            }
+        }))).some(Boolean)
+    if (!hasHooks)
+        return commitWithoutHooks(repo, parent, tree, source, message, new Map(config.map(([key, value]) => [key, value])), cancelled)
     const root = resolve(tmpdir()), scratch = await mkdtemp(join(root, "laneway-composition-hook-"))
     let retain = false
     try {
         await repo.command(scratch, ["init", "-q", `--object-format=${repo.descriptor.objectFormat}`])
-        const config = (await repo.command(repo.descriptor.mainWorktree, ["config", "--null", "--list", "--includes"])).toString().split("\0").filter(Boolean)
-            .map(record => {
-                const index = record.indexOf("\n")
-                return [record.slice(0, index), record.slice(index + 1)]
-            })
-            .filter(([key]) => !["core.worktree", "core.bare"].includes(key))
-        const hooks = await gitText(repo, ["rev-parse", "--path-format=absolute", "--git-path", "hooks"])
         config.push(["core.hooksPath", hooks], ["core.bare", "false"])
         const env: Record<string, string> = {
             GIT_DIR: join(scratch, ".git"),
@@ -75,4 +90,38 @@ export async function compositionCommit(repo: RepositoryGit, parent: string, tre
         if (!retain)
             await rm(scratch, { recursive: true, force: true })
     }
+}
+
+async function commitWithoutHooks(
+    repo: RepositoryGit,
+    parent: string,
+    tree: string,
+    source: string | undefined,
+    message: string,
+    config: Map<string, string>,
+    cancelled: () => boolean,
+) {
+    const env: Record<string, string> = {}
+    if (source) {
+        const raw = (await repo.command(repo.descriptor.mainWorktree, ["cat-file", "commit", source])).toString()
+        const split = raw.indexOf("\n\n"), author = /^author (.*) <([^>]*)> (.+)$/m.exec(raw.slice(0, split))!
+        env.GIT_AUTHOR_NAME = author[1]
+        env.GIT_AUTHOR_EMAIL = author[2]
+        env.GIT_AUTHOR_DATE = author[3]
+        message ||= raw.slice(split + 2)
+    } else if (config.get("commit.cleanup") != "verbatim") {
+        message = (await repo.command(
+            repo.descriptor.mainWorktree,
+            ["stripspace", ...(config.get("commit.cleanup") == "strip" ? ["--strip-comments"] : [])],
+            message + "\n",
+        )).toString()
+    } else {
+        message += "\n"
+    }
+    if (!source && !message.trim())
+        throw new Error("A commit message is required.")
+    if (cancelled())
+        throw new Error("Transfer cancelled while preparing commits.")
+    const signing = (await repo.run(repo.descriptor.mainWorktree, ["config", "--bool", "--get", "commit.gpgsign"])).stdout.toString().trim() == "true"
+    return gitText(repo, ["commit-tree", tree, "-p", parent, ...(signing ? ["-S"] : [])], message, env)
 }
