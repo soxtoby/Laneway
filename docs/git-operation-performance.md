@@ -41,3 +41,21 @@ The updated recording also verifies undo/redo, unchanged working bytes, and zero
 The full subsecond target remains unmet. The graph alone measured 1.37 seconds in the updated recording; large historical operation snapshots, durable storage, and remaining Git process launches also contribute. The complete journal remains intact: checksum checkpoints skip repeated parsing of verified finalized records. Redo abandonment releases membership without immediate pack consolidation; unused objects remain protected until the existing consolidation threshold or the pool becomes empty.
 
 The standalone explanation and embedded videos are in `.tmp/performance/exact-report.html`; raw measurements are `.tmp/performance/exact-transfer/video-before.json` and `video-after.json`. These are local ignored evidence artifacts.
+
+## Incremental graph refresh
+
+[ADR 0016](adr/0016-update-branch-graphs-incrementally.md) adds session-local caches for commit ancestry, author matching, unchanged branch relationships, and eight recent display results. New roots read only previously unseen history. Simple unshared branch-end rewrites reuse Base Branch inference; structural changes recalculate it using the cached ancestry. Undo/redo can reuse the prior display result after checking current refs, worktrees, configuration, and mailmap inputs.
+
+The same BI transfer benchmark, measured without trace logging:
+
+| Graph read | Before incremental caching | After |
+| --- | ---: | ---: |
+| First read | 1,183 ms | 1,162 ms |
+| Unchanged | 138 ms | 140 ms |
+| After transfer | 1,215 ms | 524 ms |
+| After undo | 1,243 ms | 144 ms |
+| After redo | 1,269 ms | 140 ms |
+
+Independent cold reads matched incremental graph facts through the exact transfer, undo, and redo. A separate fresh-fixture recording measured 492 ms for graph refresh and 4.55 seconds for the complete transfer including Working Changes and verification. That recording's engine phase was 3.74 seconds; the full subsecond target remains unmet. Original BI stays read-only.
+
+The new explanation and recording are `.tmp/performance/incremental-report.html` and `exact-incremental.mp4`; benchmark data is in `graph-cache-before.json` and `graph-cache-final.json`. Earlier reports retain their original measurements.

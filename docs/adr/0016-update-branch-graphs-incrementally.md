@@ -1,0 +1,13 @@
+# Update Branch Graphs incrementally
+
+Keep graph caches in the existing in-process Git reader, for the lifetime of an open repository. A cold read still discovers reachable history; later reads reuse immutable commit parents and author matches. The Engine protocol and renderer API remain unchanged. These caches are presentation evidence, never authority for a mutation.
+
+When branch tips move, ask Git for commits reachable from new tips but not from the previously read roots. Combine those records with cached ancestry, preserve topological ordering, and discard records no longer reachable from current roots. Ref renames, tags, worktree changes, and other presentation changes reuse known topology. A collected exclusion root causes a cold retry against current roots. The range behavior comes from [Git's revision traversal](https://git-scm.com/docs/git-rev-list).
+
+Cache Base Branch inference and the set of topology-exclusive commits separately. Reuse that analysis when ref grouping and upstream/Primary Branch relationships are unchanged and each moved root only adds or replaces an unshared linear suffix attached at the same known boundary. Check sharing against all old and new branch roots. Shared changes, merges, branch additions/removals, or changed attachment points recompute relationships from the incrementally loaded topology. They do not require rereading unchanged history from Git.
+
+Author matching reads only previously unseen exclusive commits for the current identities and mailmap/configuration. Effective Git configuration, the default and configured mailmap files, and the resolved configured mailmap blob participate in cache validity. Replacement refs, grafts, and shallow boundaries invalidate ancestry and author evidence. This includes external changes, rather than relying on operation-specific hints. [Git supports file- and blob-based mailmaps](https://git-scm.com/docs/gitmailmap).
+
+Pin refs, worktree heads, and cache context before and after graph construction. Publish cache changes only after verification; failed and cancelled reads leave the prior cache intact. Return independent graph objects so conflict projection or caller changes cannot contaminate future reads. Small display results for up to eight verified states support undo/redo without retaining eight full ancestry indexes. Topology storage covers the latest calculated reachable history; author matches cover its exclusive commits.
+
+The compressed display history remains topologically ordered. Independent lines may have a different valid order than a fresh Git walk; branch relationships, involvement, tags, markers, and parent connections must match a cold read. Tests compare those facts and validate parent ordering.
