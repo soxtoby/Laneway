@@ -1684,11 +1684,28 @@ describe("Working Changes inspection", () => {
         click(secondRow.querySelector<HTMLButtonElement>("[aria-label='Break out diff']")!)
         await flush(root)
         expect(container.querySelectorAll(".branch-column .diff-inspector")).toHaveLength(0)
-        expect(container.querySelector(".inspection-breakout [aria-label='Diff for other.txt']")).not.toBeNull()
+        // The diff column shows the whole commit, marking the broken-out file in the source list.
+        const breakout = container.querySelector<HTMLElement>(".inspection-breakout")!
+        const breakoutPaths = () => [...breakout.querySelectorAll<HTMLElement>("[data-diff-path]")].map(element => element.dataset.diffPath)
+        const marked = () => [firstRow, secondRow].map(row => row.querySelector(".change-file")!.classList.contains("active"))
+        expect(breakoutPaths()).toEqual(["src/file.txt", "other.txt"])
+        expect(breakout.querySelector("header")?.textContent).toContain("Commit · Inspect changes")
+        expect(marked()).toEqual([false, true])
+        // Choosing another file keeps the column and scrolls it so that file's toolbar sits under the header.
+        breakout.querySelector("header")!.getBoundingClientRect = () => ({ top: 0, bottom: 46 } as DOMRect)
+        for (const [index, section] of breakout.querySelectorAll<HTMLElement>("[data-diff-path]").entries())
+            section.getBoundingClientRect = () => ({ top: 46 + index * 300 - breakout.scrollTop } as DOMRect)
         click(first)
         await flush(root)
         expect(container.querySelectorAll(".branch-column .diff-inspector")).toHaveLength(0)
-        expect(container.querySelector(".inspection-breakout [aria-label='Diff for src/file.txt']")).not.toBeNull()
+        expect(container.querySelector(".inspection-breakout")).toBe(breakout)
+        expect(breakoutPaths()).toEqual(["src/file.txt", "other.txt"])
+        expect(marked()).toEqual([true, false])
+        expect(breakout.scrollTop).toBe(0)
+        click(secondRow.querySelector<HTMLButtonElement>("[title='other.txt']")!)
+        await flush(root)
+        expect(marked()).toEqual([false, true])
+        expect(breakout.scrollTop).toBe(300)
         click(container.querySelector<HTMLButtonElement>("[aria-label='Close diff column']")!)
         await flush(root)
         expect(firstRow.querySelector(".diff-inspector")).not.toBeNull()
@@ -1754,6 +1771,7 @@ describe("Working Changes inspection", () => {
         expect(container.querySelector(".branch-column + .column-divider")?.nextElementSibling?.classList.contains("inspection-breakout")).toBe(true)
         const breakout = container.querySelector<HTMLElement>(".inspection-breakout")!
         expect(document.activeElement).toBe(breakout)
+        expect(breakout.querySelector("header")?.textContent).toContain("Staged · ")
         expect(breakout.dataset.sourceColumnId).toBe(container.querySelector<HTMLElement>(".branch-column")!.dataset.columnId)
         expect(breakout.querySelector(".auxiliary-source")?.textContent).toContain("From ")
         const auxiliaryId = breakout.dataset.auxiliaryId

@@ -455,23 +455,31 @@ async function checkRenderer() {
     const breakoutScrollbarClear = [element("[aria-label='Close diff column']"), element(".inspection-breakout .diff-toolbar button:last-of-type")]
         .every(control => breakout.getBoundingClientRect().right - control.getBoundingClientRect().right >= 12)
     const inlineDiffsHiddenAfterBreakout = !document.querySelector(".branch-column .diff-inspector")
+    // The diff column holds the whole commit and opens scrolled to the broken-out file, its toolbar right under the header.
+    const breakoutFile = (path: string) => breakout.querySelector<HTMLElement>(`[data-diff-path='${path}']`)!
+    const breakoutHeaderBottom = () => breakout.querySelector("header")!.getBoundingClientRect().bottom
+    const breakoutWholeCommit =
+        [...breakout.querySelectorAll<HTMLElement>("[data-diff-path]")].map(node => node.dataset.diffPath).join(",") == "src/example.ts,other.txt"
+    const breakoutOpenedAtFile = breakout.scrollTop > 0
+        && Math.abs(breakoutFile("other.txt").querySelector(".diff-toolbar")!.getBoundingClientRect().top - breakoutHeaderBottom()) <= 1
     breakout.scrollTop = breakout.scrollHeight
     breakout.scrollLeft = breakout.scrollWidth
     breakout.dispatchEvent(new Event("scroll"))
     await settle()
-    const breakoutCode = breakout.querySelector(".pierre-diff")!.shadowRoot!.querySelector<HTMLElement>("[data-code]")!
+    const breakoutCode = breakoutFile("other.txt").querySelector(".pierre-diff")!.shadowRoot!.querySelector<HTMLElement>("[data-code]")!
     breakoutCode.scrollLeft = breakoutCode.scrollWidth
     const breakoutDiffScroll = breakout.scrollTop > 0 && breakout.scrollLeft == 0 && breakoutCode.scrollLeft > 0
-        && !!breakout.querySelector(".pierre-diff")!.shadowRoot!.querySelector("[data-line='500']")
+        && !!breakoutFile("other.txt").querySelector(".pierre-diff")!.shadowRoot!.querySelector("[data-line='500']")
     // Scrolled down, the header stays at the top with the diff's toolbar right under it.
     const breakoutHeader = breakout.querySelector("header")!.getBoundingClientRect()
     const breakoutStickyTop = breakout.scrollTop > 0 && breakoutHeader.top == breakout.getBoundingClientRect().top
-        && breakout.querySelector(".diff-toolbar")!.getBoundingClientRect().top == breakoutHeader.bottom
+        && breakoutFile("other.txt").querySelector(".diff-toolbar")!.getBoundingClientRect().top == breakoutHeader.bottom
+    // Choosing another file in the source column scrolls the diff column to it rather than replacing the column.
     commitFiles[0].click()
     await settle()
-    const breakoutSwitchedTo = element(".inspection-breakout .diff-inspector").getAttribute("aria-label")
-    const breakoutSwitched = breakoutSwitchedTo == "Diff for src/example.ts" && !document.querySelector(".branch-column .diff-inspector")
-        && element(".inspection-breakout").querySelector(".pierre-diff")!.shadowRoot!.querySelectorAll("[data-line]").length == 2
+    const breakoutScrolledToFile = breakoutWholeCommit && !document.querySelector(".branch-column .diff-inspector")
+        && Math.abs(breakoutFile("src/example.ts").querySelector(".diff-toolbar")!.getBoundingClientRect().top - breakoutHeaderBottom()) <= 1
+        && breakoutFile("src/example.ts").querySelector(".pierre-diff")!.shadowRoot!.querySelectorAll("[data-line]").length == 2
     // A maximized column keeps its own width beside its diff column, which takes the rest; resizing moves the split.
     const sourceWidth = breakoutSource.getBoundingClientRect().width
     breakoutSource.querySelector<HTMLButtonElement>("[aria-label='Maximize column']")!.click()
@@ -836,8 +844,9 @@ async function checkRenderer() {
         breakoutScrollbarClear,
         breakoutStickyTop,
         inlineDiffsHiddenAfterBreakout,
-        breakoutSwitched,
-        breakoutSwitchedTo,
+        breakoutWholeCommit,
+        breakoutOpenedAtFile,
+        breakoutScrolledToFile,
         newlineNotice,
         stickyFileRow,
         edgeDropAbove,

@@ -62,9 +62,16 @@ interface FileDiffState {
     generation: number
     notice?: string
 }
-type BreakoutState =
-    | { kind: "file"; diff: FileDiffState }
-    | { kind: "commit"; group: string; subject: string; created: Set<string> }
+/** One group's whole diff beside its source column; `focus` is the file the column last scrolled to. */
+interface BreakoutState {
+    kind: "diff"
+    group: string
+    subject?: string
+    created: Set<string>
+    focus?: string
+    /** Keeps aiming at `focus` while diffs above it are still loading and pushing it down. */
+    scrolling?: boolean
+}
 interface ColumnState {
     repositoryId: string
     id: string
@@ -396,29 +403,23 @@ export function createInspection(options: Options) {
                 wholeFiles: new Map(),
                 alive: true,
                 get breakout() {
-                    const value = auxiliary.descendants(id).find(column =>
-                        column.sourceId == id && (column.value.kind == "file" || column.value.kind == "commit")
-                    )?.value
-                    return value?.kind == "file" || value?.kind == "commit" ? value : undefined
+                    const value = auxiliary.descendants(id).find(column => column.sourceId == id && column.value.kind == "diff")?.value
+                    return value?.kind == "diff" ? value : undefined
                 },
                 set breakout(value: BreakoutState | undefined) {
-                    const previous = auxiliary.descendants(id).find(column =>
-                        column.sourceId == id && (column.value.kind == "file" || column.value.kind == "commit")
-                    )
+                    const previous = auxiliary.descendants(id).find(column => column.sourceId == id && column.value.kind == "diff")
                     if (previous?.value == value)
                         return
                     if (previous)
                         auxiliary.close(previous.id)
                     if (value) {
-                        auxiliary.open(id, value.kind == "file" ? diffKey(value.diff.group, value.diff.path) : value.group, () => ({
+                        auxiliary.open(id, value.group, () => ({
                             value,
                             dispose() {
-                                if (value.kind == "commit") {
-                                    for (const diffId of value.created) {
-                                        const diff = created.diffs.get(diffId)
-                                        if (diff)
-                                            clearDiff(created, diff)
-                                    }
+                                for (const diffId of value.created) {
+                                    const diff = created.diffs.get(diffId)
+                                    if (diff)
+                                        clearDiff(created, diff)
                                 }
                             },
                         }), previous?.width)
@@ -496,8 +497,8 @@ export function createInspection(options: Options) {
                     })
                 }
             }
-            if (state.breakout?.kind == "commit" && state.breakout.group == group)
-                populateCommitBreakout(state, state.breakout)
+            if (state.breakout && (state.breakout.group == group || group == "working" && state.breakout.group.startsWith("working-")))
+                populateBreakout(state, state.breakout)
             if (previous && previous != result.inventory.version) {
                 for (const id of state.wholeFiles.keys()) {
                     if (id.startsWith(`${group}:`))
@@ -540,9 +541,7 @@ export function createInspection(options: Options) {
         cancel(state, diffRequestId(state, diff))
         const id = diffKey(diff.group, diff.path)
         state.diffs.delete(id)
-        if (state.breakout?.kind == "file" && state.breakout.diff == diff)
-            state.breakout = undefined
-        else if (state.breakout?.kind == "commit")
+        if (state.breakout?.group == diff.group)
             state.breakout.created.delete(id)
     }
     function clearGroup(state: ColumnState, group: string, prefix = "") {
@@ -550,7 +549,7 @@ export function createInspection(options: Options) {
             if (diff.group == group && diff.path.startsWith(prefix))
                 clearDiff(state, diff)
         }
-        if (state.breakout?.kind == "commit" && state.breakout.group == group)
+        if (state.breakout?.group == group)
             state.breakout = undefined
     }
     function createDiff(state: ColumnState, group: string, path: string) {
@@ -568,16 +567,14 @@ export function createInspection(options: Options) {
         state.diffs.set(diffKey(group, path), diff)
         return diff
     }
-    function closeCommitBreakout(state: ColumnState, keep?: FileDiffState) {
-        const breakout = state.breakout
-        if (breakout?.kind != "commit")
-            return
-        if (keep)
-            breakout.created.delete(diffKey(keep.group, keep.path))
+    function closeBreakout(state: ColumnState) {
         state.breakout = undefined
     }
+    function breakoutColumn(state: ColumnState, breakout: BreakoutState) {
+        return auxiliary.descendants(key(state.repositoryId, state.id)).find(column => column.value == breakout)
+    }
     function focusBreakout(state: ColumnState) {
-        const column = auxiliary.descendants(key(state.repositoryId, state.id)).find(column => column.value.kind == "file" || column.value.kind == "commit")
+        const column = state.breakout && breakoutColumn(state, state.breakout)
         if (!column)
             return
         auxiliary.focusedId = column.id
@@ -586,61 +583,59 @@ export function createInspection(options: Options) {
                 document.querySelector<HTMLElement>(`[data-auxiliary-id="${column.id}"]`)?.focus()
         })
     }
-    function showFileBreakout(state: ColumnState, diff: FileDiffState) {
-        closeCommitBreakout(state, diff)
-        state.breakout = { kind: "file", diff }
-        focusBreakout(state)
-    }
-    function choose(state: ColumnState, group: string, file: ChangedFile) {
-        const id = diffKey(group, file.path)
-        const selected = state.diffs.get(id)
-        if (state.breakout) {
-            if (state.breakout.kind == "file" && state.breakout.diff == selected) {
-                focusBreakout(state)
+    /** Scrolls the diff column so its focused file's toolbar sits under the column header. */
+    function scrollBreakout(state: ColumnState, breakout: BreakoutState) {
+        if (!breakout.focus)
+            return
+        breakout.scrolling = true
+        void options.update().then(signal => {
+            if (signal.aborted || state.breakout != breakout || !breakout.scrolling || !breakout.focus)
                 return
-            }
-            const diff = selected ?? createDiff(state, group, file.path)
-            showFileBreakout(state, diff)
-            if (!selected && !diff.page)
-                void readDiff(state, diff)
-            return
-        }
-        if (selected) {
-            clearDiff(state, selected)
-            update()
-            return
-        }
-        const diff = createDiff(state, group, file.path)
-        if (diff.page)
-            update()
-        else
-            void readDiff(state, diff)
+            const column = breakoutColumn(state, breakout)
+            const aside = column && document.querySelector<HTMLElement>(`[data-auxiliary-id="${column.id}"]`)
+            const header = aside?.querySelector("header")
+            const target = aside
+                && Array.from(aside.querySelectorAll<HTMLElement>("[data-diff-path]")).find(element => element.dataset.diffPath == breakout.focus)
+            if (!aside || !header || !target)
+                return
+            aside.scrollTop += target.getBoundingClientRect().top - header.getBoundingClientRect().bottom
+            // Diffs above the target push it down as they arrive, so keep aiming until they have all loaded.
+            const files = state.files.get(breakout.group)?.inventory?.files ?? []
+            const above = files.slice(0, files.findIndex(file => file.path == breakout.focus) + 1)
+            if (above.every(file => !state.diffs.get(diffKey(breakout.group, file.path))?.loading))
+                breakout.scrolling = false
+        })
     }
-    async function showCommitBreakout(state: ColumnState, commit: BranchHistoryPage["commits"][number]) {
-        if (state.breakout?.kind == "commit" && state.breakout.group == commit.objectId) {
+    function commitSubject(state: ColumnState, objectId: string) {
+        for (const history of state.history.values()) {
+            const commit = history.page?.commits.find(commit => commit.objectId == objectId)
+            if (commit)
+                return commit.subject
+        }
+        return undefined
+    }
+    /** Shows one group's whole diff in the column's diff column, scrolled to `path` when given. */
+    async function showBreakout(state: ColumnState, group: string, path?: string, subject?: string) {
+        const current = state.breakout
+        if (current?.group == group) {
+            current.focus = path
             focusBreakout(state)
+            scrollBreakout(state, current)
             return
         }
-        closeCommitBreakout(state)
-        const breakout: Extract<BreakoutState, { kind: "commit" }> = {
-            kind: "commit",
-            group: commit.objectId,
-            subject: commit.subject,
-            created: new Set(),
-        }
+        closeBreakout(state)
+        const breakout: BreakoutState = { kind: "diff", group, subject: subject ?? commitSubject(state, group), created: new Set(), focus: path }
         state.breakout = breakout
         focusBreakout(state)
-        let files = state.files.get(commit.objectId)
-        if (!files?.inventory) {
-            await readFiles(state, commit.objectId, { kind: "commit", objectId: commit.objectId }, false, false)
-            files = state.files.get(commit.objectId)
-        }
+        if (!state.files.get(group)?.inventory && !group.startsWith("working"))
+            await readFiles(state, group, { kind: "commit", objectId: group }, false, false)
         if (!state.alive || state.breakout != breakout)
             return
-        populateCommitBreakout(state, breakout)
+        populateBreakout(state, breakout)
         update()
+        scrollBreakout(state, breakout)
     }
-    function populateCommitBreakout(state: ColumnState, breakout: Extract<BreakoutState, { kind: "commit" }>) {
+    function populateBreakout(state: ColumnState, breakout: BreakoutState) {
         if (!state.alive || state.breakout != breakout)
             return
         const files = state.files.get(breakout.group)
@@ -656,6 +651,24 @@ export function createInspection(options: Options) {
             if (!diff.page && !diff.loading)
                 void readDiff(state, diff)
         }
+    }
+    function choose(state: ColumnState, group: string, file: ChangedFile) {
+        // With a diff column open, choosing a file shows its group there and scrolls to it.
+        if (state.breakout) {
+            void showBreakout(state, group, file.path)
+            return
+        }
+        const selected = state.diffs.get(diffKey(group, file.path))
+        if (selected) {
+            clearDiff(state, selected)
+            update()
+            return
+        }
+        const diff = createDiff(state, group, file.path)
+        if (diff.page)
+            update()
+        else
+            void readDiff(state, diff)
     }
     async function readDiff(state: ColumnState, diff: FileDiffState, more = false, refresh = false) {
         const files = state.files.get(diff.group)
@@ -708,6 +721,8 @@ export function createInspection(options: Options) {
             if (generation == diff.generation) {
                 diff.loading = false
                 update()
+                if (state.breakout?.scrolling && state.breakout.group == diff.group)
+                    scrollBreakout(state, state.breakout)
             }
         }
     }
@@ -821,10 +836,8 @@ export function createInspection(options: Options) {
             ...(resolution?.files.filter(file => !inventory.some(existing => existing.path == file.path)) ?? []),
         ]
         const visible = all.filter(file => !file.ignored && matchesFilter(state, file))
-        const expanded = state.breakout?.kind == "file" && state.breakout.diff.group == group
-            ? new Set([state.breakout.diff.path])
-            : state.breakout
-            ? new Set<string>()
+        const expanded = state.breakout
+            ? new Set(state.breakout.group == group && state.breakout.focus ? [state.breakout.focus] : [])
             : new Set([...state.diffs.values()].filter(diff => diff.group == group).map(diff => diff.path))
         // Renamed files stage as their old and new paths together.
         const withOldPaths = (paths: string[]) =>
@@ -976,7 +989,7 @@ export function createInspection(options: Options) {
                     update()
                 }}
                 breakout={!state.breakout && !state.auxiliaryId
-                    ? () => showFileBreakout(state, diff)
+                    ? () => void showBreakout(state, diff.group, diff.path)
                     : undefined}
             />
         )
@@ -985,8 +998,7 @@ export function createInspection(options: Options) {
         const eligible = selectable(state, diff.group)
         const page = diff.page && !eligible ? { ...diff.page, selectable: false } : diff.page
         const layout = state.transientLayout ?? options.layout(state.repositoryId, state.id)
-        const brokenOut = state.breakout?.kind == "file" && state.breakout.diff == diff
-            || state.breakout?.kind == "commit" && state.breakout.group == diff.group
+        const brokenOut = state.breakout?.group == diff.group
         return (
             <section class="diff-inspector" aria-label={`Diff for ${diff.path}`} mix={diffInspector}>
                 {brokenOut && (
@@ -1661,7 +1673,13 @@ export function createInspection(options: Options) {
                                                                                         title="Show full commit diff"
                                                                                         mix={[
                                                                                             commitToolButton,
-                                                                                            on("click", () => void showCommitBreakout(state, commit)),
+                                                                                            on("click", () =>
+                                                                                                void showBreakout(
+                                                                                                    state,
+                                                                                                    commit.objectId,
+                                                                                                    undefined,
+                                                                                                    commit.subject,
+                                                                                                )),
                                                                                         ]}
                                                                                     >
                                                                                         <Icon name="diff" size={14} />
@@ -1984,7 +2002,7 @@ export function createInspection(options: Options) {
                     )
                 }
                 const breakout = auxiliaryColumn.value
-                const files = breakout.kind == "commit" ? state.files.get(breakout.group) : undefined
+                const files = state.files.get(breakout.group)
                 // Maximizing a diff column maximizes its source column, which keeps the diff column beside it.
                 const maximized = options.maximized(repositoryId) == columnId
                 return (
@@ -2008,7 +2026,7 @@ export function createInspection(options: Options) {
                             ]}
                         >
                             <span>
-                                {breakout.kind == "commit" ? `Commit · ${breakout.subject}` : `Diff · ${state.column.name}`}
+                                {breakoutTitle(state, breakout)}
                                 <small class="auxiliary-source">From {state.column.name}</small>
                             </span>
                             <button
@@ -2025,10 +2043,7 @@ export function createInspection(options: Options) {
                                 mix={[
                                     closeDiffColumnButton,
                                     on("click", () => {
-                                        if (state.breakout?.kind == "commit")
-                                            closeCommitBreakout(state)
-                                        else
-                                            state.breakout = undefined
+                                        closeBreakout(state)
                                         void options.update().then(signal => {
                                             if (!signal.aborted) {
                                                 Array.from(document.querySelectorAll<HTMLElement>(".branch-column"))
@@ -2041,18 +2056,20 @@ export function createInspection(options: Options) {
                                 <Icon name="close" size={15} />
                             </button>
                         </header>
-                        {breakout.kind == "file"
-                            ? renderDiff(state, breakout.diff)
-                            : (
-                                <div class="commit-diff">
-                                    {files?.error && <p role="alert" mix={changeFileListP}>{files.error}</p>}
-                                    {files?.loading && <p role="status" mix={changeFileListP}>Reading commit…</p>}
-                                    {files?.inventory?.files.filter(file => !file.ignored).map(file => {
-                                        const diff = state.diffs.get(diffKey(breakout.group, file.path))
-                                        return diff ? <div class="commit-diff-file">{renderDiff(state, diff)}</div> : null
-                                    })}
-                                </div>
-                            )}
+                        <div class="commit-diff">
+                            {files?.error && <p role="alert" mix={changeFileListP}>{files.error}</p>}
+                            {files?.loading && !files.inventory && <p role="status" mix={changeFileListP}>Reading changes…</p>}
+                            {files?.inventory?.files.filter(file => !file.ignored).map(file => {
+                                const diff = state.diffs.get(diffKey(breakout.group, file.path))
+                                return diff
+                                    ? (
+                                        <div class="commit-diff-file" data-diff-path={file.path}>
+                                            {renderDiff(state, diff)}
+                                        </div>
+                                    )
+                                    : null
+                            })}
+                        </div>
                     </aside>
                 )
             })
@@ -2072,6 +2089,19 @@ function diffViewChoices(diff: FileDiffState, file: ChangedFile): DiffView[] {
 
 function message(error: unknown) {
     return error instanceof Error ? error.message : String(error)
+}
+
+function breakoutTitle(state: ColumnState, breakout: BreakoutState) {
+    switch (breakout.group) {
+        case "working":
+            return `Working Changes · ${state.column.name}`
+        case "working-staged":
+            return `Staged · ${state.column.name}`
+        case "working-unstaged":
+            return `Unstaged · ${state.column.name}`
+        default:
+            return breakout.subject ? `Commit · ${breakout.subject}` : `Diff · ${state.column.name}`
+    }
 }
 
 const changeFileList = css({
