@@ -1,7 +1,48 @@
-import type { DiffLayout, FileDiffPage } from "@laneway/shared"
+import type { DiffLayout, DiffLine, FileDiffPage } from "@laneway/shared"
 import { DiffHunksRenderer, wrapCoreCSS, wrapThemeCSS } from "@pierre/diffs"
 import { css, type Handle, ref } from "remix/ui"
 import { pierrePatch } from "./diff-patch"
+
+/** Lookups built once per page so decorating rendered lines never scans the whole page. */
+interface LineIndex {
+    /** Keyed by `addition:<new>`, `deletion:<old>`, `context:old:<old>` and `context:new:<new>`. */
+    lines: Map<string, DiffLine>
+    /** Hunks in order of first appearance. */
+    hunks: number[]
+    /** Selectable line ids per hunk. */
+    hunkIds: Map<number, number[]>
+}
+
+function indexLines(page: FileDiffPage): LineIndex {
+    const lines = new Map<string, DiffLine>()
+    const hunks: number[] = []
+    const hunkIds = new Map<number, number[]>()
+    const record = (key: string, line: DiffLine) => {
+        if (!lines.has(key))
+            lines.set(key, line)
+    }
+    for (const line of page.lines) {
+        if (line.kind == "addition")
+            record(`addition:${line.newLine}`, line)
+        else if (line.kind == "deletion")
+            record(`deletion:${line.oldLine}`, line)
+        else if (line.kind == "context") {
+            record(`context:old:${line.oldLine}`, line)
+            record(`context:new:${line.newLine ?? line.oldLine}`, line)
+        } else {
+            continue
+        }
+        let ids = hunkIds.get(line.hunk)
+        if (!ids) {
+            ids = []
+            hunks.push(line.hunk)
+            hunkIds.set(line.hunk, ids)
+        }
+        if (line.kind != "context")
+            ids.push(line.id)
+    }
+    return { lines, hunks, hunkIds }
+}
 
 export function DiffLines(
     handle: Handle<{ page: FileDiffPage; layout: DiffLayout; showWhitespace: boolean; selected: number[]; select(ids: number[]): void }>,
@@ -15,7 +56,10 @@ export function DiffLines(
     let lifetime: AbortSignal
     let previous: FileDiffPage | undefined
     let diff: ReturnType<typeof pierrePatch>
+    let index: LineIndex | undefined
     let rendered = ""
+    // What the rendered lines were last decorated for; decoration is skipped while this holds.
+    let decorated = ""
     let horizontalOffset = 0
     // Pierre's own pane scrollbars sit under the rendered window of lines, often out of view. One scrollbar pinned to
     // the bottom of the visible diff drives every pane instead.
@@ -38,19 +82,32 @@ export function DiffLines(
         if (scrollbar && source != scrollbar)
             scrollbar.scrollLeft = horizontalOffset
     }
+    // Runs only when the rendered lines or the host's size change: every write here invalidates layout for the
+    // other diff viewers in the same column, which then pay for a reflow on their next measurement.
     function measureScrollbar() {
-        if (!scrollbar || !scrollbarTrack)
+        if (!scrollbar || !scrollbarTrack || !shadow)
             return
         const range = Math.max(0, ...[...shadow.querySelectorAll<HTMLElement>("[data-code]")].map(pane => pane.scrollWidth - pane.clientWidth))
-        scrollbar.hidden = range == 0
+        const hidden = range == 0
+        if (scrollbar.hidden != hidden)
+            scrollbar.hidden = hidden
         // The scrollbar's own range matches the widest pane's.
-        scrollbarTrack.style.width = `${scrollbar.clientWidth + range}px`
-        scrollbar.scrollLeft = horizontalOffset
+        const width = `${scrollbar.clientWidth + range}px`
+        if (scrollbarTrack.style.width != width)
+            scrollbarTrack.style.width = width
+        if (scrollbar.scrollLeft != horizontalOffset)
+            scrollbar.scrollLeft = horizontalOffset
     }
     function decorate() {
-        const { page, selected, select } = handle.props
-        if (!shadow)
+        const { page, selected } = handle.props
+        if (!shadow || !index)
             return
+        // Rendered lines only need decorating again when the selection they show changes.
+        const stamp = `${page.selectable}:${selected.join(",")}`
+        if (decorated == stamp)
+            return
+        decorated = stamp
+        const { lines, hunks, hunkIds } = index
         if (handle.props.showWhitespace) {
             for (const line of shadow.querySelectorAll("[data-line]")) {
                 const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT)
@@ -74,13 +131,12 @@ export function DiffLines(
                 }
                 const number = Number(line.getAttribute("data-line"))
                 const kind = line.getAttribute("data-line-type") ?? ""
-                const source = page.lines.find(candidate =>
+                const source = lines.get(
                     kind.includes("deletion")
-                        ? candidate.kind == "deletion" && candidate.oldLine == number
+                        ? `deletion:${number}`
                         : kind.includes("addition")
-                        ? candidate.kind == "addition" && candidate.newLine == number
-                        : candidate.kind == "context"
-                            && (line.closest("[data-deletions]") ? candidate.oldLine : candidate.newLine ?? candidate.oldLine) == number
+                        ? `addition:${number}`
+                        : `context:${line.closest("[data-deletions]") ? "old" : "new"}:${number}`,
                 )
                 const ending = `${source?.text.endsWith("\r") ? "CR" : ""}${line.nextElementSibling?.hasAttribute("data-no-newline") ? "" : "LF"}`
                 if (ending && !line.querySelector("[data-whitespace=line-ending]")) {
@@ -105,18 +161,17 @@ export function DiffLines(
                 }
             }
         }
-        const hunks = [...new Set(page.lines.filter(line => ["addition", "deletion", "context"].includes(line.kind)).map(line => line.hunk))]
         for (const header of shadow.querySelectorAll<HTMLElement>("[data-separator='metadata'] [data-separator-wrapper]")) {
             if (header.closest("[data-gutter]") || !page.selectable)
                 continue
-            const index = header.dataset.hunkIndex == undefined
+            const position = header.dataset.hunkIndex == undefined
                 ? diff?.hunks.findIndex(hunk => hunk.hunkSpecs == header.textContent) ?? -1
                 : Number(header.dataset.hunkIndex)
-            if (index < 0)
+            if (position < 0)
                 continue
-            header.dataset.hunkIndex = String(index)
-            const hunk = hunks[index]
-            const ids = page.lines.filter(line => line.hunk == hunk && ["addition", "deletion"].includes(line.kind)).map(line => line.id)
+            header.dataset.hunkIndex = String(position)
+            const hunk = hunks[position]
+            const ids = hunkIds.get(hunk) ?? []
             let button = header.querySelector("button")
             if (!button) {
                 button = document.createElement("button")
@@ -131,7 +186,7 @@ export function DiffLines(
             button.setAttribute("aria-pressed", String(ids.length > 0 && ids.every(id => selected.includes(id))))
             button.onclick = event => {
                 event.stopPropagation()
-                select(ids)
+                handle.props.select(ids)
             }
         }
         for (const element of shadow.querySelectorAll<HTMLElement>("[data-line], [data-column-number]")) {
@@ -139,7 +194,7 @@ export function DiffLines(
             if (!kind)
                 continue
             const number = Number(element.dataset.line ?? element.dataset.columnNumber)
-            const line = page.lines.find(line => line.kind == kind && (kind == "addition" ? line.newLine : line.oldLine) == number)
+            const line = lines.get(`${kind}:${number}`)
             if (!line)
                 continue
             element.classList.toggle("selected", selected.includes(line.id))
@@ -155,7 +210,7 @@ export function DiffLines(
                     button.setAttribute("aria-label", `Select ${kind} line ${number}`)
                     button.onclick = event => {
                         event.stopPropagation()
-                        select([line.id])
+                        handle.props.select([line.id])
                     }
                     element.replaceChildren(button)
                 }
@@ -168,13 +223,16 @@ export function DiffLines(
             return
         // Follow the actual vertical viewport, including source-linked columns.
         // A list of column classes leaves new hosts stuck on the first 80 lines.
-        let container = host.parentElement
-        while (container && !["auto", "scroll", "overlay"].includes(getComputedStyle(container).overflowY))
-            container = container.parentElement
-        if (container != scrollContainer) {
-            scrollContainer?.removeEventListener("scroll", scroll)
-            scrollContainer = container
-            scrollContainer?.addEventListener("scroll", scroll, { signal: lifetime, passive: true })
+        // The ancestor walk reads computed styles, so it only repeats once the host has moved elsewhere.
+        if (!scrollContainer?.isConnected || !scrollContainer.contains(host)) {
+            let container = host.parentElement
+            while (container && !["auto", "scroll", "overlay"].includes(getComputedStyle(container).overflowY))
+                container = container.parentElement
+            if (container != scrollContainer) {
+                scrollContainer?.removeEventListener("scroll", scroll)
+                scrollContainer = container
+                scrollContainer?.addEventListener("scroll", scroll, { signal: lifetime, passive: true })
+            }
         }
         if (scrollContainer) {
             start = Math.max(
@@ -185,14 +243,15 @@ export function DiffLines(
         const { page, layout } = handle.props
         if (previous != page) {
             diff = pierrePatch(page)
+            index = indexLines(page)
             previous = page
             rendered = ""
         }
         const appearance = document.documentElement.dataset.appearance == "dark" ? "dark" : "light"
         const key = `${layout}:${appearance}:${start}:${handle.props.showWhitespace}`
         if (!force && rendered == key) {
+            // Nothing rendered changed: at most the selection needs redrawing, and that writes nothing when it is the same.
             decorate()
-            measureScrollbar()
             return
         }
         viewer.setOptions({
@@ -248,6 +307,7 @@ export function DiffLines(
             }
         }
         rendered = key
+        decorated = ""
         decorate()
         measureScrollbar()
         syncHorizontal()
@@ -280,10 +340,12 @@ export function DiffLines(
                             viewer = new DiffHunksRenderer(undefined, undefined, () => render(true))
                             const observer = new MutationObserver(() => render())
                             observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-appearance"] })
-                            const resize = new ResizeObserver(() => render())
+                            // A narrower host changes how far the panes overflow, which only this measurement notices.
+                            const resize = new ResizeObserver(() => {
+                                render()
+                                measureScrollbar()
+                            })
                             resize.observe(element)
-                            if (scrollContainer)
-                                resize.observe(scrollContainer)
                             signal.addEventListener("abort", () => {
                                 observer.disconnect()
                                 resize.disconnect()

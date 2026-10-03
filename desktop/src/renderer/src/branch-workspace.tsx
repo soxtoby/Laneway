@@ -170,9 +170,12 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         openBranch: (repositoryId, branchName) => openBranch(repositoryId, `branch:refs/heads/${branchName}`),
     })
 
+    // One timer polls the Branch Graph and Working Changes together so a poll costs one burst of updates.
     const interval = window.setInterval(() => {
-        if (activeRepositoryId && document.visibilityState == "visible" && document.hasFocus())
+        if (activeRepositoryId && document.visibilityState == "visible" && document.hasFocus()) {
             void read(activeRepositoryId, false, true)
+            inspection.refreshWorking()
+        }
     }, 5_000)
     const onFocus = () => {
         if (activeRepositoryId)
@@ -678,6 +681,8 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         ) {
             return
         }
+        // A quiet read shows nothing until it finds a difference; `refreshing` only guards against overlapping reads.
+        let changed = !quiet || state.error != undefined
         state.error = undefined
         if (state.graph)
             state.refreshing = true
@@ -685,11 +690,11 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             state.loading = true
         if (!quiet)
             await options.update()
-        else
-            void options.update()
         try {
             const result = await options.api.readBranchGraph(repositoryId, refreshRemote)
             if (result.ok) {
+                if (!changed && (refreshRemote || JSON.stringify(state.graph) != JSON.stringify(result.graph)))
+                    changed = true
                 const columns = workspaceGraph(result.graph)
                 const validColumnIds = new Set([...columns.branches, ...columns.virtualBranches].map(branch => branch.id))
                 const removedColumns = state.openedBranchIds.filter(id => !validColumnIds.has(id))
@@ -759,6 +764,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                 }
                 await persist(repositoryId)
             } else if (result.error.code != "git.cancelled") {
+                changed = true
                 const refreshedWorkspace = (await options.api.getState()).workspace
                 if (refreshedWorkspace.repositories.some(repository => repository.id == repositoryId && repository.status == "missing"))
                     options.workspaceChanged(refreshedWorkspace)
@@ -767,13 +773,15 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                     options.notify({ code: result.error.code, message: `Branch Graph refresh failed: ${result.error.message}` })
             }
         } catch (error) {
+            changed = true
             state.error = errorMessage(error)
         } finally {
             state.loading = false
             state.refreshing = false
             if (changedWhileReading.delete(repositoryId) && repositoryId == activeRepositoryId)
                 void read(repositoryId, false, true)
-            await options.update()
+            if (changed || !state.focusRestored)
+                await options.update()
             if (!state.focusRestored && state.focusedColumnId) {
                 state.focusRestored = true
                 const column = [...document.querySelectorAll<HTMLElement>("[data-column-id]")].find(candidate =>

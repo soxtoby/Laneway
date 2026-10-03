@@ -1803,6 +1803,11 @@ describe("Working Changes inspection", () => {
         let version = "one"
         const api = {
             ...scenario.api,
+            // A changed file changes the inventory version too; open diffs are only re-read once it does.
+            readChanges: async (...args: Parameters<Window["laneway"]["readChanges"]>): Promise<ChangesResult> => {
+                const result = await scenario.api.readChanges(...args)
+                return result.ok ? { ...result, inventory: { ...result.inventory, version: `${result.inventory.version}:${version}` } } : result
+            },
             readFileDiff: async (...args: Parameters<Window["laneway"]["readFileDiff"]>) => {
                 if (first) {
                     first = false

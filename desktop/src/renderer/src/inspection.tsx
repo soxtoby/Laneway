@@ -37,6 +37,8 @@ interface FileState {
     inventory?: ChangesInventory
     source: DiffSource
     loading: boolean
+    /** A quiet re-read is in flight; the current inventory stays on screen until a different one arrives. */
+    refreshing?: boolean
     error?: string
     open: boolean
     generation: number
@@ -57,6 +59,8 @@ interface FileDiffState {
     view: DiffView
     page?: FileDiffPage
     loading: boolean
+    /** A quiet re-read is in flight; the current page stays on screen until a different version arrives. */
+    refreshing?: boolean
     error?: string
     selection?: ChangeSelection
     generation: number
@@ -207,10 +211,7 @@ export function createInspection(options: Options) {
                 void readFiles(state, "working", { kind: "working", worktreePath: state.worktreePath }, true)
         }
     }
-    const timer = window.setInterval(() => {
-        if (document.visibilityState == "visible" && document.hasFocus())
-            refresh()
-    }, 5000)
+    // The Branch Graph owner polls on one timer and calls `refreshWorking` alongside its own read, so a poll costs one burst of updates.
     window.addEventListener("focus", refresh)
     const visibility = () => {
         if (document.visibilityState != "visible") {
@@ -232,7 +233,6 @@ export function createInspection(options: Options) {
     }
     document.addEventListener("visibilitychange", visibility)
     options.signal.addEventListener("abort", () => {
-        window.clearInterval(timer)
         window.removeEventListener("focus", refresh)
         document.removeEventListener("visibilitychange", visibility)
         for (const state of columns.values())
@@ -338,10 +338,12 @@ export function createInspection(options: Options) {
             diff.selection = undefined
             diff.generation++
             diff.loading = false
+            diff.refreshing = false
         }
         for (const file of state.files.values()) {
             file.generation++
             file.loading = false
+            file.refreshing = false
         }
         for (const item of state.history.values()) {
             item.generation++
@@ -463,20 +465,31 @@ export function createInspection(options: Options) {
         }
         return state
     }
+    /**
+     * Reads a group's changed files. With `refreshDiff`, an inventory already on screen is re-read quietly: nothing
+     * renders unless the result differs, and only then are the group's open diffs re-read, quietly too.
+     */
     async function readFiles(state: ColumnState, group: string, source: DiffSource, refreshDiff = false, open = true) {
         let files = state.files.get(group)
         if (!files) {
             files = { source, loading: false, open, generation: 0 }
             state.files.set(group, files)
         }
-        if (!state.alive || files.loading && JSON.stringify(files.source) == JSON.stringify(source) && files.includeIgnored == state.showIgnored)
+        const sameRequest = JSON.stringify(files.source) == JSON.stringify(source) && files.includeIgnored == state.showIgnored
+        if (!state.alive || (files.loading || files.refreshing) && sameRequest)
             return
+        const quiet = refreshDiff && sameRequest && !!files.inventory
+        let changed = !quiet
         files.source = source
         files.includeIgnored = state.showIgnored
-        files.loading = true
-        files.error = undefined
+        if (quiet)
+            files.refreshing = true
+        else {
+            files.loading = true
+            files.error = undefined
+            update()
+        }
         const generation = ++files.generation
-        update()
         try {
             const result = await options.api.readChanges(state.repositoryId, requestId(state, `files:${group}`), { source, includeIgnored: state.showIgnored })
             if (!state.alive || generation != files.generation)
@@ -484,6 +497,10 @@ export function createInspection(options: Options) {
             if (!result.ok)
                 throw new Error(result.error.message)
             const previous = files.inventory?.version
+            if (quiet && previous == result.inventory.version && !files.error)
+                return
+            changed = true
+            files.error = undefined
             files.inventory = result.inventory
             files.source = result.inventory.source
             if (group == "working") {
@@ -515,6 +532,7 @@ export function createInspection(options: Options) {
             }
         } catch (error) {
             if (state.alive && generation == files.generation) {
+                changed = true
                 files.error = message(error)
                 for (const diff of state.diffs.values()) {
                     if (diff.group == group) {
@@ -526,7 +544,9 @@ export function createInspection(options: Options) {
         } finally {
             if (generation == files.generation) {
                 files.loading = false
-                update()
+                files.refreshing = false
+                if (changed)
+                    update()
             }
         }
     }
@@ -670,17 +690,23 @@ export function createInspection(options: Options) {
         else
             void readDiff(state, diff)
     }
+    /** Reads a file's diff. With `refresh`, a page already on screen stays put until a different version arrives. */
     async function readDiff(state: ColumnState, diff: FileDiffState, more = false, refresh = false) {
         const files = state.files.get(diff.group)
         const source = files?.source
         const inventoryVersion = files?.inventory?.version
-        if (!source || !state.alive || refresh && diff.loading)
+        if (!source || !state.alive || refresh && (diff.loading || diff.refreshing))
             return
         const previous = diff.page
         const generation = ++diff.generation
-        diff.loading = true
-        diff.error = undefined
-        update()
+        const quiet = refresh && !!previous
+        if (quiet)
+            diff.refreshing = true
+        else {
+            diff.loading = true
+            diff.error = undefined
+            update()
+        }
         try {
             const result = await options.api.readFileDiff(state.repositoryId, diffRequestId(state, diff), {
                 source,
@@ -710,6 +736,8 @@ export function createInspection(options: Options) {
                 : refresh && previous?.version == page.version
                 ? previous
                 : page
+            if (quiet && diff.page == previous)
+                return
         } catch (error) {
             if (state.alive && generation == diff.generation) {
                 diff.error = message(error)
@@ -720,7 +748,10 @@ export function createInspection(options: Options) {
         } finally {
             if (generation == diff.generation) {
                 diff.loading = false
-                update()
+                diff.refreshing = false
+                // A quiet re-read that found the same version leaves the screen alone.
+                if (!quiet || diff.page != previous || diff.error)
+                    update()
                 if (state.breakout?.scrolling && state.breakout.group == diff.group)
                     scrollBreakout(state, state.breakout)
             }
