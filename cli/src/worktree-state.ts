@@ -5,7 +5,13 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { z } from "zod"
 
 const FileSchema = z.object({ name: z.string(), object: z.string(), mode: z.number(), link: z.boolean(), identity: z.string().optional() })
-const RootSchema = z.object({ path: z.string(), kind: z.enum(["working", "admin", "main", "stash"]), present: z.boolean(), files: z.array(FileSchema) })
+const RootSchema = z.object({
+    path: z.string(),
+    kind: z.enum(["working", "admin", "main", "stash"]),
+    present: z.boolean(),
+    files: z.array(FileSchema),
+    scope: z.array(z.string()).optional(),
+})
 export const WorktreeStateSchema = z.object({ roots: z.array(RootSchema), refs: z.record(z.string(), z.string()) })
 export type WorktreeState = z.infer<typeof WorktreeStateSchema>
 type Root = z.infer<typeof RootSchema>
@@ -41,20 +47,22 @@ export async function captureWorktreeState(
     paths: string[],
     template?: WorktreeState,
     registered?: RegisteredWorktree[],
+    scopes?: Map<string, string[]>,
 ): Promise<WorktreeState> {
     const worktrees = registered ?? await readRegisteredWorktrees(repository)
     const roots = new Map<string, Root>()
     const submodules = new Map<string, string[]>()
     const ordinaryFiles: Array<{ path: string; file: z.infer<typeof FileSchema> }> = []
-    const add = (path: string, kind: Root["kind"]) => roots.set(normalize(path), { path, kind, present: false, files: [] })
+    const add = (path: string, kind: Root["kind"], scope = scopes?.get(normalize(path)) ?? roots.get(normalize(path))?.scope) =>
+        roots.set(normalize(path), { path, kind, present: false, files: [], ...(scope ? { scope } : {}) })
     for (const root of template?.roots ?? [])
-        add(root.path, root.kind)
+        add(root.path, root.kind, root.scope)
     for (const path of paths) {
         add(path, "working")
         const worktree = worktrees.find(item => normalize(item.path) == normalize(path))
         if (worktree)
             add(worktree.gitDirectory, worktree.main ? "main" : "admin")
-        if (worktree && !worktree.missing) {
+        if (worktree && !worktree.missing && !roots.get(normalize(path))?.scope) {
             const children = await populatedSubmodules(repository, path)
             submodules.set(normalize(path), children)
             for (const child of children) {
@@ -78,7 +86,7 @@ export async function captureWorktreeState(
                     throw new Error(`The destination is occupied: ${root.path}`)
                 names = []
             } else {
-                names = await workingFiles(repository, root.path, submodules.get(normalize(root.path)))
+                names = root.scope ? [...root.scope] : await workingFiles(repository, root.path, submodules.get(normalize(root.path)))
                 if ((await lstat(join(root.path, ".git"))).isFile())
                     names.push(".git")
             }
@@ -180,6 +188,7 @@ export function stateIdentity(state: WorktreeState) {
         roots: state.roots.filter(root => root.present && (root.kind != "stash" || root.files.length)).map(root => ({
             path: normalize(root.path),
             kind: root.kind,
+            ...(root.scope ? { scope: root.scope } : {}),
             files: root.files.map(file => ({
                 name: file.name,
                 object: file.identity ?? file.object,
@@ -195,7 +204,7 @@ export async function worktreeStateMatches(repository: RepositoryGit, expected: 
     return stateIdentity(actual) == stateIdentity(expected)
 }
 
-export async function worktreeStateObjects(repository: RepositoryGit, state: WorktreeState) {
+export async function worktreeStateObjects(repository: RepositoryGit, state: WorktreeState, heads = new Map<string, string>()) {
     const objects = new Set(Object.values(state.refs))
     const files = [...new Set(state.roots.flatMap(root => root.files.map(file => file.object)))]
     for (const file of files)
@@ -209,7 +218,11 @@ export async function worktreeStateObjects(repository: RepositoryGit, state: Wor
     ) {
         const head = root.files.find(file => file.name == "HEAD")
         if (head) {
-            const value = (await repository.command(repository.descriptor.mainWorktree, ["cat-file", "blob", head.object])).toString().trim()
+            let value = heads.get(head.object)
+            if (value == undefined) {
+                value = (await repository.command(repository.descriptor.mainWorktree, ["cat-file", "blob", head.object])).toString().trim()
+                heads.set(head.object, value)
+            }
             if (/^[a-f0-9]{40,64}$/.test(value) && !/^0+$/.test(value))
                 objects.add(value)
         }

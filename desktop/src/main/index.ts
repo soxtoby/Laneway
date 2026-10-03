@@ -197,7 +197,7 @@ function registerHandlers() {
                 enginePath,
                 cwd: repository.descriptor.mainWorktree,
                 args: [
-                    token ? "local" : "local-preview",
+                    token ? "local" : request.action == "compose" ? "local-transfer" : "local-preview",
                     ...requestArgs,
                     ...(token ? ["--expected", token] : []),
                     "--git-path",

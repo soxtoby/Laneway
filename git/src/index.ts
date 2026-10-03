@@ -2,7 +2,7 @@ import type { BranchGraphReadOptions, BranchHistoryRequest, ChangesRequest, Diff
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
 import { constants } from "node:fs"
 import { access, lstat, mkdir, readdir, readFile, realpath } from "node:fs/promises"
-import { delimiter, isAbsolute, resolve } from "node:path"
+import { basename, delimiter, dirname, isAbsolute, resolve } from "node:path"
 import { type BranchGraphReadCache, startBranchGraphRead, startBranchHistoryRead } from "./branch-graph"
 import { type ChangesReadCache, startChangesRead, startFileDiffRead } from "./changes"
 import { conflictComparisonSource, conflictHistoryRequest, projectConflictGraph } from "./conflict-graph"
@@ -147,7 +147,23 @@ export async function selectGit(override?: string): Promise<GitInstallation> {
     if (result.exitCode != 0)
         throw new GitError("git.unavailable", redactGitText(result.stderr.toString()) || `Git at ${path} could not run.`, { path })
 
-    return { path, version: parseGitVersion(result.stdout.toString()) }
+    const version = parseGitVersion(result.stdout.toString())
+    // Git for Windows supports direct invocation of its native executable. Avoid the extra
+    // launcher process for automatic discovery; explicit executable overrides stay exact.
+    if (!override && process.platform == "win32" && basename(dirname(path)).toLowerCase() == "cmd" && /\.windows\./.test(result.stdout.toString())) {
+        for (const runtime of ["ucrt64", "mingw64", "mingw32", "clangarm64"]) {
+            const native = resolve(dirname(path), "..", runtime, "bin", "git.exe")
+            try {
+                await access(native, constants.X_OK)
+                const check = await runGitProcess({ installation: { path: native, version }, args: ["--version"] })
+                if (!check.exitCode && check.stdout.equals(result.stdout))
+                    return { path: await realpath(native), version }
+            } catch {
+                // Nonstandard installations keep using their discovered launcher.
+            }
+        }
+    }
+    return { path, version }
 }
 
 async function findGitOnPath() {

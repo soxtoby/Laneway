@@ -44,7 +44,7 @@ At the prototype stage, typechecking and an isolated Electron interaction/render
 
 ## Implementation
 
-The production renderer uses typed IPC to invoke `local-preview` and `local` Engine commands. Every mutation requires its reviewed snapshot token and participates in the persistent operation journal, including staging, branch configuration, symbolic HEAD, and stash associations. No-op failures do not add undo entries. External changes invalidate the preview or block recovery rather than being silently overwritten.
+The production renderer uses typed IPC to invoke `local-preview` and `local` Engine commands. Mutations require their reviewed snapshot token and participate in the persistent operation journal, including staging, branch configuration, symbolic HEAD, and stash associations. Composition uses `local-transfer`: eligible independent file extraction prepares and applies within one locked invocation; other transfers return a preview for the existing token flow. See [ADR 0015](adr/0015-scope-independent-file-extraction.md). No-op failures do not add undo entries. External changes invalidate the preview or block recovery rather than being silently overwritten.
 
 Commits use system Git for staging, filters, identities, hooks, message cleanup, and signing. The new-commit seam builds a commit from an explicit tree and parent, then updates its branch with an expected-old ref transaction. Hook changes pause before creating that commit; failed hooks preserve their edits for review and undo.
 

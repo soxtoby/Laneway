@@ -7,6 +7,7 @@ import { join } from "node:path"
 import { z } from "zod"
 import { compositionCommit } from "./composition-commits"
 import { hasPathCollision, selectionTrees, workingTree } from "./composition-source"
+import { extractFiles, isFileExtraction, prepareFileExtraction } from "./file-extraction"
 import { captureWorktreeState, stateIdentity, type WorktreeState, worktreeStateMatches, WorktreeStateSchema } from "./worktree-state"
 
 type TreeChange = Awaited<ReturnType<typeof replayTree>>
@@ -81,6 +82,9 @@ export async function prepareComposition(
 ): Promise<{ before: WorktreeState; preview: LocalPreview }> {
     if (repo.descriptor.shallow || repo.descriptor.partial || repo.descriptor.sparse)
         throw new Error("Composition requires a complete, non-sparse repository.")
+    const extraction = await prepareFileExtraction(repo, request)
+    if (extraction)
+        return extraction
     const worktrees = await readRegisteredWorktrees(repo)
     if (
         request.source.kind == "working"
@@ -772,6 +776,8 @@ export async function mutateComposition(
     changes: Map<string, string | null>,
     cancelled = () => false,
 ): Promise<LocalResult> {
+    if (isFileExtraction(preview))
+        return extractFiles(repo, preview, changes, cancelled)
     const plan = plans.get(preview)
     if (!plan)
         throw new Error("Prepare the transfer before executing it.")

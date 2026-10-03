@@ -4,10 +4,16 @@ import { compositionStyles, createComposition } from "../../src/renderer/src/com
 import type { NoticeState } from "../../src/renderer/src/feedback"
 
 const requests: Array<{ request: LocalRequest; token?: string }> = []
-let conflict = false, published = false
+let conflict = false, published = false, immediate = false
 const api = {
     async localOperation(_repository: string, request: LocalRequest, token?: string) {
         requests.push({ request: structuredClone(request), token })
+        if (immediate) {
+            return {
+                ok: true as const,
+                result: { type: "result" as const, command: "local" as const, status: "performed" as const, message: "Changes transferred." },
+            }
+        }
         return {
             ok: true as const,
             result: {
@@ -247,6 +253,11 @@ async function checks() {
     await flush()
     if ((requests.at(-1)?.request as CompositionRequest).mode != "copy")
         throw new Error("Keyboard copy failed")
+    requests.length = 0
+    immediate = true
+    await drag("#commit")
+    if (requests.length != 1 || requests[0]?.token || shownToast()?.code != "composition.transferred" || document.querySelector(".composition-review"))
+        throw new Error("Immediate transfer did not finish with one request")
     return {
         cancellation: true,
         dragBindingsRefresh: true,
@@ -257,6 +268,7 @@ async function checks() {
         publishedWarning: true,
         conflictPrompt: true,
         keyboardCopy: true,
+        immediateTransfer: true,
     }
 }
 Object.assign(window, { compositionChecks: checks, compositionRequests: requests })

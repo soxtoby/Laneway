@@ -50,6 +50,8 @@ describe("system Git", () => {
         const git = await selectGit()
         expect(git.version).toMatch(/^\d+\.\d+\.\d+$/)
         expect(git.path.toLowerCase()).toContain("git")
+        const explicit = Bun.which("git")!
+        expect((await selectGit(explicit)).path).toBe(resolve(explicit))
     })
 
     test("requires an exact repository root and accepts a linked worktree", async () => {

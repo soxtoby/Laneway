@@ -40,6 +40,7 @@ test("Pragmatic drag bindings, conflict approval and keyboard transfers under pr
             publishedWarning: true,
             conflictPrompt: true,
             keyboardCopy: true,
+            immediateTransfer: true,
         })
     } finally {
         if (!resolve(directory).startsWith(resolve(tmpdir()) + sep))

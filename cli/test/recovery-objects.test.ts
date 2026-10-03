@@ -104,11 +104,12 @@ for (const format of ["sha1", "sha256"]) {
         await releaseRecoveryObjects(await connectRepository(path), "same")
         git("gc", "--prune=now")
         expect(git("cat-file", "blob", second)).toBe("second private snapshot")
-        expect(() => git("cat-file", "blob", first)).toThrow()
-        expect(await keeps()).toHaveLength(1)
+        // Shared packs are collected at consolidation or when the pool empties.
+        expect(await keeps()).toHaveLength(2)
         await releaseRecoveryObjects(await connectRepository(path), "second")
         expect(await keeps()).toHaveLength(0)
         git("gc", "--prune=now")
+        expect(() => git("cat-file", "blob", first)).toThrow()
         expect(() => git("cat-file", "blob", second)).toThrow()
     }, 30_000)
 

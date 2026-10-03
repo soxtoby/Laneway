@@ -41,7 +41,10 @@ export async function releaseRecoveryObjects(repository: RepositoryGit, operatio
         return
     const operations = { ...store.operations }
     delete operations[operation]
-    await compactStore(repository, store, operations)
+    if (Object.keys(operations).length)
+        await writeStore(repository, { ...store, operations })
+    else
+        await compactStore(repository, store, operations)
 }
 
 export async function migrateRecoveryRefs(repository: RepositoryGit) {

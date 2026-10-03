@@ -275,7 +275,7 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
                 return invalidOperationArgument(command, json, "Provide a new basename for the restored worktree.", "--worktree-basename")
             continue
         }
-        if ((command == "local" || command == "local-preview") && (argument == "--request" || argument == "--request-file")) {
+        if ((command == "local" || command == "local-preview" || command == "local-transfer") && (argument == "--request" || argument == "--request-file")) {
             try {
                 const value = commandArguments[++index]!
                 if (argument == "--request-file" && statSync(value).size > 8_000_000)
@@ -324,7 +324,8 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
             continue
         }
         if (
-            (command == "test-mutation" || command == "worktree" || command == "local" || command == "conflict" || command == "pull" || command == "undo"
+            (command == "test-mutation" || command == "worktree" || command == "local" || command == "local-transfer" || command == "conflict"
+                || command == "pull" || command == "undo"
                 || command == "redo")
             && argument == "--crash-after"
             && process.env.LANEWAY_ENABLE_TEST_COMMANDS == "1"
@@ -357,8 +358,10 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
         return invalidOperationArgument(command, json, "A pull request is required.", "--request")
     if (command == "worktree" && !request)
         return invalidOperationArgument(command, json, "A worktree request is required.", "--request")
-    if ((command == "local" || command == "local-preview") && !localRequest)
+    if ((command == "local" || command == "local-preview" || command == "local-transfer") && !localRequest)
         return invalidOperationArgument(command, json, "A local operation request is required.", "--request")
+    if (command == "local-transfer" && localRequest?.action != "compose")
+        return invalidOperationArgument(command, json, "Choose a change transfer.", "--request")
 
     return {
         ok: true,
@@ -368,7 +371,7 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
             ? { command, request: conflictRequest!, noWait, crashAfter }
             : command == "pull"
             ? { command, request: pullRequest!, noWait, crashAfter, graphOptions: () => ({ authorIdentities: { secondary: [] }, remotePatterns: [] }) }
-            : command == "local" || command == "local-preview"
+            : command == "local" || command == "local-preview" || command == "local-transfer"
             ? { command, request: localRequest!, token, noWait, crashAfter }
             : command == "worktree"
             ? { command, request: request!, token, noWait, crashAfter }
@@ -455,7 +458,8 @@ else if (args[0] == "echo") {
         process.exitCode = await echo(parsed.message, parsed.delayMs, parsed.json)
     }
 } else if (
-    args[0] == "local" || args[0] == "local-preview" || args[0] == "worktree" || args[0] == "undo" || args[0] == "redo" || args[0] == "history"
+    args[0] == "local" || args[0] == "local-preview" || args[0] == "local-transfer" || args[0] == "worktree" || args[0] == "undo" || args[0] == "redo"
+    || args[0] == "history"
     || args[0] == "recover" || args[0] == "conflict" || args[0] == "pull"
 ) {
     process.exitCode = await runOperationCommand(args[0], args.slice(1))

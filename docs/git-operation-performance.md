@@ -19,3 +19,25 @@ Regression coverage:
 - Reusing a verified plan; rebuilding a damaged or pruned plan; rejecting a newly created ignored destination file.
 - Reusing existing packs, sharing retention across operations, migrating duplicate refs, and releasing abandoned state, in SHA-1 and SHA-256 repositories.
 - Existing hook/filter/signing, stale-state, conflict, linked-worktree, crash-recovery, and production Electron IPC tests.
+
+## Exact BI file extraction
+
+The follow-up reproduction moves `build/BITypeScriptGenerator.cs` from `ca02a6367c7d56d446f15be3c317916056143f06` into Working Changes. Its source changes 27 files; three later commits do not touch the selected path. The chain belongs only to `sox/type-faster`. The focused path in [ADR 0015](adr/0015-scope-independent-file-extraction.md) rewrites its four commits in one `fast-import`, updates the branch with an expected-old-value transaction, and changes the selected index entry. Working file bytes stay unchanged.
+
+The original general planner reads whole worktree snapshots, prepares trees with temporary indexes and `merge-tree`, constructs commits with repeated `commit-tree` invocations, restores checkout state, and rebuilds the graph. The focused path still performs repository/configuration/ref checks, source inventory validation, three scoped snapshots (prepare, pre-mutation validation, and after), recovery packing, and graph/Working Changes refresh. Each snapshot retains the complete index and administrative state. It does not need whole-tree file hashing, merging, checkout, or per-commit process launches.
+
+A trace after introducing focused extraction but before consolidating preview/apply contained 80 Git process starts: 22 preview, 40 apply, and 18 refresh. The consolidated path has 38 transfer starts plus 18 refresh starts (56 total), including one internal `unpack-objects`. Automatic CLI discovery includes two version probes; the desktop's explicit cached native Git executable needs one. Trace logging is excluded from timing measurements.
+
+Recorded matching BI clones with 32,415 tracked files, 152 graph branches, a 130 MB completed journal, and 74 MB Operation History:
+
+| Phase | `d6b41d2` | Focused, consolidated transfer |
+| --- | ---: | ---: |
+| Preparation and application | 35.66 s (two calls) | 3.53 s (one call) |
+| Graph, Working Changes, and independent verification | 4.65 s | 1.68 s |
+| Click through refreshed result | 40.32 s | 5.22 s |
+
+The updated recording also verifies undo/redo, unchanged working bytes, and zero recovery refs. It uses the production transfer controller, compiled engine, and Git readers in an Electron evidence harness with HTTP replacing IPC; this is not a full-desktop latency measurement. Both clones have LFS smudging disabled, matching line endings, and fixture-only invalid remotes. Ignored outputs and missing linked worktrees were not copied. Existing protected recovery packs were copied, so initial pool creation is outside these measurements. The first updated transfer builds its journal checkpoint.
+
+The full subsecond target remains unmet. The graph alone measured 1.37 seconds in the updated recording; large historical operation snapshots, durable storage, and remaining Git process launches also contribute. The complete journal remains intact: checksum checkpoints skip repeated parsing of verified finalized records. Redo abandonment releases membership without immediate pack consolidation; unused objects remain protected until the existing consolidation threshold or the pool becomes empty.
+
+The standalone explanation and embedded videos are in `.tmp/performance/exact-report.html`; raw measurements are `.tmp/performance/exact-transfer/video-before.json` and `video-after.json`. These are local ignored evidence artifacts.

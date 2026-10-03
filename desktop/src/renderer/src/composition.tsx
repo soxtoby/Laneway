@@ -205,7 +205,7 @@ export function createComposition(options: {
         const version = ++generation
         busy = true
         options.busyChanged?.(true)
-        notice = "Checking transfer…"
+        notice = "Transferring…"
         update()
         try {
             const response = await options.api.localOperation(current.selection.repositoryId, current.request)
@@ -213,8 +213,14 @@ export function createComposition(options: {
                 return
             if (!response.ok)
                 throw new Error(response.error.message)
-            current.preview = response.result.preview
-            notice = ""
+            if (response.result.status == "failed")
+                throw new Error(response.result.message)
+            if (response.result.command == "local" && response.result.status == "performed")
+                await completed(current.selection.repositoryId, response.result.message)
+            else {
+                current.preview = response.result.preview
+                notice = ""
+            }
         } catch (error) {
             notice = error instanceof Error ? error.message : String(error)
         } finally {
@@ -243,11 +249,7 @@ export function createComposition(options: {
                 throw new Error(result.error.message)
             if (result.result.status == "failed")
                 throw new Error(result.result.message)
-            notice = ""
-            options.notify({ code: "composition.transferred", message: result.result.message ?? "Changes transferred.", transient: true })
-            active = undefined
-            pending = undefined
-            await options.changed?.(current.selection.repositoryId)
+            await completed(current.selection.repositoryId, result.result.message)
             if (resolveNow)
                 options.resolve?.(current.selection.repositoryId)
         } catch (error) {
@@ -258,6 +260,13 @@ export function createComposition(options: {
             options.busyChanged?.(false)
             update()
         }
+    }
+    async function completed(repositoryId: string, message?: string) {
+        notice = ""
+        options.notify({ code: "composition.transferred", message: message ?? "Changes transferred.", transient: true })
+        active = undefined
+        pending = undefined
+        await options.changed?.(repositoryId)
     }
     const keyboard = (event: KeyboardEvent) => {
         if (!active || busy || (event.target instanceof HTMLElement && event.target.closest("input,textarea,select,[contenteditable=true]")))

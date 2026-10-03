@@ -9,6 +9,7 @@ import { link, lstat, mkdir, open, readdir, readFile, readlink, rename, unlink }
 import { dirname, join, resolve } from "node:path"
 import { z } from "zod"
 import { conflictMutation, conflictPaths, executeConflict, suspendWorkingConflicts } from "./conflict-operations"
+import { isFileExtraction } from "./file-extraction"
 import { LocalPreconditionError, mutateLocal, prepareLocal } from "./local-mutations"
 import { executePull, preparePull, type PullPreparation, type PullProgressReporter } from "./pull-latest"
 import { migrateRecoveryRefs, releaseRecoveryObjects, retainRecoveryObjects } from "./recovery-objects"
@@ -114,7 +115,14 @@ export type OperationCommand =
         graphOptions: (repositoryId: string) => BranchGraphReadOptions
         progress?: PullProgressReporter
     }
-    | { command: "local" | "local-preview"; request: LocalRequest; token?: string; noWait: boolean; crashAfter?: JournalPhase; branchPrefix?: string }
+    | {
+        command: "local" | "local-preview" | "local-transfer"
+        request: LocalRequest
+        token?: string
+        noWait: boolean
+        crashAfter?: JournalPhase
+        branchPrefix?: string
+    }
     | { command: "worktree"; request: WorktreeRequest; token?: string; noWait: boolean; crashAfter?: JournalPhase; branchPrefix?: string }
     | { command: "test-mutation"; value: string; noWait: boolean; crashAfter?: JournalPhase; holdAfterIntentMs?: number }
     | { command: "undo"; noWait: boolean; crashAfter?: JournalPhase; worktreeBasename?: string }
@@ -216,6 +224,8 @@ export async function executeOperationCommand(
                 }
             case "local":
                 return runtime.applyLocal(command.request, command.token, command.crashAfter, command.branchPrefix ?? "worktree/")
+            case "local-transfer":
+                return runtime.transfer(command.request, command.crashAfter, command.branchPrefix ?? "worktree/")
             case "worktree":
                 return runtime.applyWorktree(command.request, command.token, command.crashAfter, command.branchPrefix)
             case "test-mutation":
@@ -292,10 +302,27 @@ class OperationRuntime {
         const { preview, before } = await prepareLocal(this.repository, request, prefix, token)
         if (!token || token != preview.token)
             throw new OperationRuntimeError("operation.precondition-failed", "Repository content changed. Refresh and review the operation again.")
+        return this.applyPreparedLocal(request, { preview, before }, crashAfter)
+    }
+
+    async transfer(request: LocalRequest, crashAfter?: JournalPhase, prefix = "worktree/"): Promise<LocalResult> {
+        if (request.action != "compose")
+            throw new OperationRuntimeError("operation.precondition-failed", "Choose a change transfer.")
+        const prepared = await prepareLocal(this.repository, request, prefix)
+        if (isFileExtraction(prepared.preview))
+            return this.applyPreparedLocal(request, prepared, crashAfter)
+        return { type: "result", command: "local-preview", status: "preview", preview: prepared.preview }
+    }
+
+    private async applyPreparedLocal(
+        request: LocalRequest,
+        { preview, before }: Awaited<ReturnType<typeof prepareLocal>>,
+        crashAfter?: JournalPhase,
+    ): Promise<LocalResult> {
         let result: LocalResult = { type: "result", command: "local", status: "performed" }
         const expectedRefs = new Map<string, string | null>()
-        // The snapshot behind the verified token is moments old and nothing has run since, so it
-        // becomes the journal's own "before" state rather than being captured again.
+        // Preparation happened under this mutation lock, so its snapshot becomes the journal's
+        // "before" state. The mutation still validates it immediately before changing Git state.
         await this.applySnapshot(
             preview.affected,
             `local.${request.action}`,
@@ -379,6 +406,7 @@ class OperationRuntime {
             lifecycle: { before },
         })
         const executionId = crypto.randomUUID()
+        const retainedHeads = new Map<string, string>()
         await this.store.appendJournal({
             schemaVersion: 1,
             executionId,
@@ -390,7 +418,7 @@ class OperationRuntime {
             abandonedOperationIds: abandoned.map(item => item.id),
         })
         crashIfRequested("intent", crashAfter)
-        await retainOperation(this.repository, operation)
+        await retainOperation(this.repository, operation, retainedHeads)
         await this.store.appendJournalPhase(executionId, operation.id, "apply", "recovery-retained")
         crashIfRequested("recovery-retained", crashAfter)
         await this.cancelIfRequested(executionId, operation, "apply")
@@ -438,7 +466,7 @@ class OperationRuntime {
             )
         }
         operation = sealOperation({ ...operation, affectedRefs: refChanges.map(change => change.ref), refChanges, lifecycle: { before, after } })
-        await retainOperation(this.repository, operation)
+        await retainOperation(this.repository, operation, retainedHeads)
         await this.store.appendJournal({
             schemaVersion: 1,
             executionId,
@@ -761,6 +789,7 @@ class OperationStore {
     private readonly journalPath: string
     private readonly historyPath: string
     private readonly lockPath: string
+    private historyEvents?: Promise<HistoryEvent[]>
 
     constructor(commonDirectory: string) {
         this.directory = resolve(commonDirectory, "laneway")
@@ -845,8 +874,9 @@ class OperationStore {
         return projection
     }
 
-    appendHistory(event: HistoryEvent) {
-        return appendJsonLine(this.historyPath, event)
+    async appendHistory(event: HistoryEvent) {
+        await appendJsonLine(this.historyPath, event)
+        this.historyEvents = undefined
     }
 
     appendJournal(event: JournalEvent) {
@@ -869,8 +899,21 @@ class OperationStore {
     }
 
     async readPendingExecutions(): Promise<JournalExecution[]> {
-        const events = await readJsonLines(this.journalPath, "recovery journal", "operation.journal-corrupt", JournalEventSchema)
+        const content = await readFile(this.journalPath).catch(error => {
+            if (isNotFound(error))
+                return Buffer.alloc(0)
+            throw error
+        })
+        const checkpointPath = resolve(this.directory, "journal-checkpoint.json")
+        const checkpoint = await readJournalCheckpoint(checkpointPath, content)
+        let events: JournalEvent[]
+        try {
+            events = content.subarray(checkpoint?.length ?? 0).toString().split("\n").filter(Boolean).map(line => JournalEventSchema.parse(JSON.parse(line)))
+        } catch {
+            throw new OperationRuntimeError("operation.journal-corrupt", "recovery journal is corrupt.")
+        }
         const executions = new Map<string, JournalExecution>()
+        const finalized = new Set(checkpoint?.executions ?? [])
 
         for (const event of events) {
             if (event.schemaVersion !== 1 || !event.executionId || !event.operationId || !event.action || !event.phase)
@@ -879,7 +922,7 @@ class OperationStore {
                 if (!event.operation)
                     throw new OperationRuntimeError("operation.journal-corrupt", "A recovery intent does not contain its Laneway Operation.")
                 validateOperationIntegrity(event.operation, "operation.journal-corrupt")
-                if (executions.has(event.executionId))
+                if (executions.has(event.executionId) || finalized.has(event.executionId))
                     throw new OperationRuntimeError("operation.journal-corrupt", "The recovery journal contains a duplicate intent.")
                 executions.set(event.executionId, {
                     intent: event as JournalEvent & { operation: StoredOperation },
@@ -902,11 +945,53 @@ class OperationStore {
             }
         }
 
-        return [...executions.values()].filter(execution => !execution.phases.has("finalized"))
+        const pending = [...executions.values()].filter(execution => !execution.phases.has("finalized"))
+        if (!pending.length && content.length && content.at(-1) == 10 && content.length != checkpoint?.length) {
+            // A disposable verification checkpoint, never a replacement for the journal. Hash every
+            // historical byte on each read; any edit forces full validation. Pending work is never cached.
+            const data = JSON.stringify({ version: 1, length: content.length, hash: journalDigest(content), executions: [...finalized, ...executions.keys()] })
+            const temporary = `${checkpointPath}.${crypto.randomUUID()}.tmp`
+            const file = await open(temporary, "wx")
+            try {
+                await file.writeFile(JSON.stringify({ data, hash: journalDigest(data) }))
+            } finally {
+                await file.close()
+            }
+            try {
+                await rename(temporary, checkpointPath)
+            } finally {
+                await unlinkIfPresent(temporary)
+            }
+        }
+        return pending
     }
 
     private readHistoryEvents() {
-        return readJsonLines(this.historyPath, "Operation History", "operation.history-corrupt", HistoryEventSchema)
+        return this.historyEvents ??= readJsonLines(this.historyPath, "Operation History", "operation.history-corrupt", HistoryEventSchema)
+    }
+}
+
+function journalDigest(content: string | Buffer) {
+    return new Bun.CryptoHasher("sha256").update(content).digest("hex")
+}
+
+async function readJournalCheckpoint(path: string, content: Buffer): Promise<{ length: number; executions: string[] } | undefined> {
+    try {
+        const envelope = JSON.parse(await readFile(path, "utf8"))
+        if (typeof envelope.data != "string" || journalDigest(envelope.data) != envelope.hash)
+            return
+        const value = JSON.parse(envelope.data)
+        if (
+            value.version != 1 || !Number.isSafeInteger(value.length) || value.length <= 0 || value.length > content.length
+            || content[value.length - 1] != 10 || !Array.isArray(value.executions) || value.executions.some((id: unknown) => typeof id != "string")
+            || journalDigest(content.subarray(0, value.length)) != value.hash
+        ) {
+            return
+        }
+        return value
+    } catch {
+        // Missing, obsolete, truncated or damaged checkpoints are rebuilt from the durable journal.
+        return undefined
     }
 }
 
@@ -997,12 +1082,12 @@ const neverCancelled: CancellationSignal = {
     },
 }
 
-async function retainOperation(repository: RepositoryGit, operation: StoredOperation) {
+async function retainOperation(repository: RepositoryGit, operation: StoredOperation, heads = new Map<string, string>()) {
     const objects = operation.refChanges.flatMap(change => [change.before, change.after]).filter((object): object is string => object != null)
     if (operation.lifecycle) {
-        objects.push(...await worktreeStateObjects(repository, operation.lifecycle.before))
+        objects.push(...await worktreeStateObjects(repository, operation.lifecycle.before, heads))
         if (operation.lifecycle.after)
-            objects.push(...await worktreeStateObjects(repository, operation.lifecycle.after))
+            objects.push(...await worktreeStateObjects(repository, operation.lifecycle.after, heads))
     }
     await retainRecoveryObjects(repository, operation.id, objects)
 }
