@@ -1481,6 +1481,8 @@ function BranchColumns(
                             mix={[
                                 branchColumn,
                                 on("focusin", () => props.focus(column.id)),
+                                // Captured so arrow keys reach the column before the commit accordion's own triggers.
+                                on("keydown", event => props.inspection.navigationKeydown(props.repositoryId, column.id, event), true),
                                 on("keydown", event => {
                                     if (
                                         column.kind == "branch" && (event.key == "F2" || event.key == "Delete")

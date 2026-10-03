@@ -3,6 +3,7 @@ import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 import * as accordion from "remix/ui/accordion/primitives"
 import { auxiliaryCloseButton, auxiliaryColumnFrame, auxiliaryColumnHeader, AuxiliaryColumns } from "./auxiliary-columns"
 import { type BranchComparisonState, createBranchComparisons } from "./branch-comparison"
+import { columnItem, focusItem, isFileItem, parentItem, scrollBehavior, stepItem } from "./column-navigation"
 import { CommitComposer } from "./commit-composer"
 import { compositionStyles, createComposition } from "./composition"
 import { ConflictResolution } from "./conflict-resolution"
@@ -618,7 +619,7 @@ export function createInspection(options: Options) {
                 && Array.from(aside.querySelectorAll<HTMLElement>("[data-diff-path]")).find(element => element.dataset.diffPath == breakout.focus)
             if (!aside || !header || !target)
                 return
-            aside.scrollTop += target.getBoundingClientRect().top - header.getBoundingClientRect().bottom
+            aside.scrollTo({ top: aside.scrollTop + target.getBoundingClientRect().top - header.getBoundingClientRect().bottom, behavior: scrollBehavior() })
             // Diffs above the target push it down as they arrive, so keep aiming until they have all loaded.
             const files = state.files.get(breakout.group)?.inventory?.files ?? []
             const above = files.slice(0, files.findIndex(file => file.path == breakout.focus) + 1)
@@ -634,19 +635,24 @@ export function createInspection(options: Options) {
         }
         return undefined
     }
-    /** Shows one group's whole diff in the column's diff column, scrolled to `path` when given. */
-    async function showBreakout(state: ColumnState, group: string, path?: string, subject?: string) {
+    /**
+     * Shows one group's whole diff in the column's diff column, scrolled to `path` when given.
+     * Opening it moves focus there; choosing files from the source column leaves focus where it is.
+     */
+    async function showBreakout(state: ColumnState, group: string, path?: string, subject?: string, focus = true) {
         const current = state.breakout
         if (current?.group == group) {
             current.focus = path
-            focusBreakout(state)
+            if (focus)
+                focusBreakout(state)
             scrollBreakout(state, current)
             return
         }
         closeBreakout(state)
         const breakout: BreakoutState = { kind: "diff", group, subject: subject ?? commitSubject(state, group), created: new Set(), focus: path }
         state.breakout = breakout
-        focusBreakout(state)
+        if (focus)
+            focusBreakout(state)
         if (!state.files.get(group)?.inventory && !group.startsWith("working"))
             await readFiles(state, group, { kind: "commit", objectId: group }, false, false)
         if (!state.alive || state.breakout != breakout)
@@ -673,9 +679,9 @@ export function createInspection(options: Options) {
         }
     }
     function choose(state: ColumnState, group: string, file: ChangedFile) {
-        // With a diff column open, choosing a file shows its group there and scrolls to it.
+        // With a diff column open, choosing a file shows its group there and scrolls to it, keeping focus in this column.
         if (state.breakout) {
-            void showBreakout(state, group, file.path)
+            void showBreakout(state, group, file.path, undefined, false)
             return
         }
         const selected = state.diffs.get(diffKey(group, file.path))
@@ -1211,6 +1217,54 @@ export function createInspection(options: Options) {
                 event.preventDefault()
                 event.stopPropagation()
                 closeFilter(state)
+            }
+        },
+        /**
+         * Up and Down move between the column's branches, commits, and files; Right expands and Left collapses.
+         * With the diff column open, moving onto a file shows it there. Captured on the column, so it wins over
+         * the commit accordion's own arrow keys.
+         */
+        navigationKeydown(repositoryId: string, columnId: string, event: KeyboardEvent) {
+            const state = columns.get(key(repositoryId, columnId))
+            const column = event.currentTarget
+            const target = event.target
+            if (
+                !state || !(column instanceof HTMLElement) || !(target instanceof HTMLElement) || event.defaultPrevented
+                || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey
+                || !["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)
+                || target.closest("input, textarea, select, [contenteditable=true], [role='menu'], [role='listbox'], dialog, .diff-inspector")
+            ) {
+                return
+            }
+            if (event.key == "ArrowUp" || event.key == "ArrowDown") {
+                event.preventDefault()
+                event.stopPropagation()
+                const next = stepItem(column, target, event.key == "ArrowDown" ? 1 : -1)
+                if (!next)
+                    return
+                focusItem(next)
+                if (state.breakout && isFileItem(next))
+                    next.click()
+                return
+            }
+            const item = columnItem(target)
+            if (!item)
+                return
+            event.preventDefault()
+            event.stopPropagation()
+            const expanded = item.getAttribute("aria-expanded") == "true"
+            if (event.key == "ArrowRight") {
+                if (!expanded)
+                    item.click()
+                return
+            }
+            // A file shown in the diff column has nothing of its own to collapse, so Left moves up to its commit.
+            if (expanded && !(state.breakout && isFileItem(item)))
+                item.click()
+            else {
+                const parent = parentItem(item)
+                if (parent)
+                    focusItem(parent)
             }
         },
         conflictFilter(repositoryId: string, column: Column, graph: BranchGraph, worktreePath?: string): RemixNode {
@@ -2549,6 +2603,7 @@ const stackHeading = css({
     fontSize: "13px",
     fontWeight: "600",
     cursor: "pointer",
+    scrollMarginTop: "var(--filter-height, 0px)",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
@@ -2654,6 +2709,8 @@ const commitHeading = css({
     gap: "8px",
     width: "100%",
     textAlign: "left",
+    // Keyboard focus scrolls the heading clear of the sticky filter bar.
+    scrollMarginTop: "var(--filter-height, 0px)",
     '&[aria-expanded="true"] > span:first-child': {
         background: "var(--graph)",
     },

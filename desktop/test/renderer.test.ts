@@ -1417,6 +1417,86 @@ describe("Working Changes inspection", () => {
         expect(document.activeElement).toBe(column.querySelector('[aria-label="Filter changed files"]'))
         dispose()
     })
+    test("arrow keys move between commits and files, expand and collapse them, and drive the diff column", async () => {
+        const scenario = inspectionScenario()
+        const { container, root, dispose } = render(scenario.api)
+        await flush(root)
+        const column = container.querySelector<HTMLElement>(".branch-column")!
+        const press = (element: HTMLElement, key: string) => element.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }))
+        // Compared by identity: printing a mismatched Happy DOM element on failure is prohibitively slow.
+        const focused = (element: Element | null | undefined) => expect(document.activeElement == element).toBe(true)
+        const heading = column.querySelector<HTMLElement>(".commit-heading")!
+        heading.focus()
+        // Right expands a collapsed commit, and Down then reaches its first file.
+        press(heading, "ArrowRight")
+        await flush(root)
+        expect(heading.getAttribute("aria-expanded")).toBe("true")
+        press(heading, "ArrowDown")
+        const first = column.querySelector<HTMLButtonElement>(".inspect-commit [title='src/file.txt']")!
+        focused(first)
+        // Right opens a file's diff beneath it, Left closes it, and Left again returns to the commit.
+        press(first, "ArrowRight")
+        await flush(root)
+        expect(first.closest(".file-inspection")!.querySelector(".diff-inspector")).not.toBeNull()
+        press(first, "ArrowLeft")
+        await flush(root)
+        expect(first.closest(".file-inspection")!.querySelector(".diff-inspector")).toBeNull()
+        focused(first)
+        press(first, "ArrowLeft")
+        focused(heading)
+        // Up from the commit reaches the last Working Changes row.
+        press(heading, "ArrowUp")
+        const working = [...column.querySelectorAll<HTMLElement>(".working-changes .change-file > button")]
+        expect(working.length).toBeGreaterThan(0)
+        focused(working.at(-1))
+        // Down past the last file reaches the base branch's heading, where the sequence ends.
+        const last = column.querySelector<HTMLButtonElement>(".inspect-commit [title='other.txt']")!
+        last.focus()
+        press(last, "ArrowDown")
+        const base = column.querySelector<HTMLElement>(".stack-heading")!
+        focused(base)
+        press(base, "ArrowDown")
+        focused(base)
+        // Left collapses the commit, which takes its files out of the sequence.
+        heading.focus()
+        press(heading, "ArrowLeft")
+        await flush(root)
+        expect(heading.getAttribute("aria-expanded")).toBe("false")
+        press(heading, "ArrowDown")
+        focused(base)
+        press(heading, "ArrowRight")
+        await flush(root)
+        // With the diff column open, choosing a file keeps focus in the column, and Up and Down select and scroll to files.
+        click(container.querySelector<HTMLButtonElement>("[aria-label='Show full diff for commit Inspect changes']")!)
+        await flush(root)
+        const breakout = container.querySelector<HTMLElement>(".inspection-breakout")!
+        focused(breakout)
+        breakout.querySelector("header")!.getBoundingClientRect = () => ({ top: 0, bottom: 46 } as DOMRect)
+        for (const [index, section] of breakout.querySelectorAll<HTMLElement>("[data-diff-path]").entries())
+            section.getBoundingClientRect = () => ({ top: 46 + index * 300 - breakout.scrollTop } as DOMRect)
+        const reopened = column.querySelector<HTMLButtonElement>(".inspect-commit [title='src/file.txt']")!
+        reopened.focus()
+        click(reopened)
+        await flush(root)
+        focused(reopened)
+        expect(breakout.scrollTop).toBe(0)
+        press(reopened, "ArrowDown")
+        await flush(root)
+        const second = column.querySelector<HTMLButtonElement>(".inspect-commit [title='other.txt']")!
+        focused(second)
+        expect(second.parentElement!.classList.contains("active")).toBe(true)
+        expect(breakout.scrollTop).toBe(300)
+        press(second, "ArrowUp")
+        await flush(root)
+        focused(reopened)
+        expect(reopened.parentElement!.classList.contains("active")).toBe(true)
+        expect(breakout.scrollTop).toBe(0)
+        // Left on a file shown in the diff column returns to its commit rather than collapsing anything.
+        press(reopened, "ArrowLeft")
+        focused(heading)
+        expect(container.querySelector(".inspection-breakout")).toBe(breakout)
+        dispose()
+    })
     test("activates on mousedown, except on draggable rows which wait for the click", async () => {
         const scenario = inspectionScenario()
         const { container, root, dispose } = render(scenario.api)

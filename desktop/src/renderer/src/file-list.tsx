@@ -273,6 +273,9 @@ const changeFileButton = css({
     width: "100%",
     minWidth: "0",
     textAlign: "left",
+    // Keyboard focus scrolls the row clear of the sticky headings above it.
+    scrollMarginTop: "var(--filter-height, 0px)",
+    ".inspect-commit &": { scrollMarginTop: "calc(var(--filter-height, 0px) + 34px)" },
     "&:hover": {
         background: "transparent",
     },
