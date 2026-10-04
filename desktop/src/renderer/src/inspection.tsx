@@ -111,6 +111,7 @@ interface ColumnState {
 }
 
 export function createInspection(options: Options) {
+    let navigationHighlight: Animation | undefined
     const columns = new Map<string, ColumnState>()
     const auxiliary = new AuxiliaryColumns<BreakoutState | BranchComparisonState | FileHistoryState | TrailCommitState>()
     const trailCommits = createTrailCommits(options)
@@ -236,6 +237,7 @@ export function createInspection(options: Options) {
     }
     document.addEventListener("visibilitychange", visibility)
     options.signal.addEventListener("abort", () => {
+        navigationHighlight?.cancel()
         window.removeEventListener("focus", refresh)
         document.removeEventListener("visibilitychange", visibility)
         for (const state of columns.values())
@@ -604,8 +606,11 @@ export function createInspection(options: Options) {
             return
         auxiliary.focusedId = column.id
         void options.update().then(signal => {
-            if (!signal.aborted && auxiliary.focusedId == column.id)
-                document.querySelector<HTMLElement>(`[data-auxiliary-id="${column.id}"]`)?.focus()
+            if (signal.aborted || auxiliary.focusedId != column.id)
+                return
+            let element = document.querySelector<HTMLElement>(`[data-auxiliary-id="${column.id}"]`)
+            element?.focus({ preventScroll: true })
+            element?.scrollIntoView({ behavior: "instant", block: "nearest", inline: "nearest" })
         })
     }
     /** Scrolls the diff column so its focused file's toolbar sits under the column header. */
@@ -618,12 +623,22 @@ export function createInspection(options: Options) {
                 return
             const column = breakoutColumn(state, breakout)
             const aside = column && document.querySelector<HTMLElement>(`[data-auxiliary-id="${column.id}"]`)
-            const header = aside?.querySelector("header")
+            const columnHeader = aside?.querySelector("header")
             const target = aside
                 && Array.from(aside.querySelectorAll<HTMLElement>("[data-diff-path]")).find(element => element.dataset.diffPath == breakout.focus)
-            if (!aside || !header || !target)
+            if (!aside || !columnHeader || !target)
                 return
-            aside.scrollTo({ top: aside.scrollTop + target.getBoundingClientRect().top - header.getBoundingClientRect().bottom, behavior: scrollBehavior() })
+            aside.scrollTo({
+                top: aside.scrollTop + target.getBoundingClientRect().top - columnHeader.getBoundingClientRect().bottom,
+                behavior: scrollBehavior(),
+            })
+            let header = target.querySelector<HTMLElement>(".diff-toolbar")
+            navigationHighlight?.cancel()
+            navigationHighlight = header?.animate?.([
+                { backgroundColor: "color-mix(in srgb, var(--accent) 28%, var(--panel-deep))", boxShadow: "inset 3px 0 var(--accent)", offset: 0 },
+                { backgroundColor: "color-mix(in srgb, var(--accent) 28%, var(--panel-deep))", boxShadow: "inset 3px 0 var(--accent)", offset: 0.6 },
+                { backgroundColor: "var(--panel-deep)", boxShadow: "inset 3px 0 transparent", offset: 1 },
+            ], { duration: 1500, easing: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "steps(1, end)" : "ease-out" })
             // Diffs above the target push it down as they arrive, so keep aiming until they have all loaded.
             const files = state.files.get(breakout.group)?.inventory?.files ?? []
             const above = files.slice(0, files.findIndex(file => file.path == breakout.focus) + 1)
