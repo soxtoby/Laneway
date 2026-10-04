@@ -256,6 +256,89 @@ test("branch rebase restacks descendants by default and can leave them on old hi
     }
 }, 120_000)
 
+test("branch rebase takes only commits since its Base, and repeating it changes nothing", async () => {
+    const { path, base } = await fixture()
+    const commit = async (name: string) => {
+        await writeFile(join(path, `${name}.txt`), `${name}\n`)
+        git(path, "add", ".")
+        git(path, "commit", "-qm", name)
+        return git(path, "rev-parse", "HEAD")
+    }
+    git(path, "checkout", "-qb", "lower", base)
+    const lower = await commit("lower")
+    git(path, "checkout", "-q", "feature")
+    git(path, "reset", "-q", "--hard", lower)
+    await commit("first")
+    const feature = await commit("second")
+    git(path, "checkout", "-qb", "child")
+    await commit("child")
+    git(path, "checkout", "-qb", "destination", base)
+    const destination = await commit("destination")
+    git(path, "checkout", "-q", "feature")
+    const r = request({
+        source: { kind: "branch", branch: "feature", tip: feature },
+        target: { kind: "branch", branch: "destination", tip: destination },
+    })
+    const reviewed = (await preview(path, r)).composition!
+    expect(reviewed.commits?.map(c => c.subject)).toEqual(["first", "second"])
+    expect(reviewed.branches.sort()).toEqual(["child", "feature"])
+    await perform(path, r)
+    expect(git(path, "log", "--format=%s", "destination..feature")).toBe("second\nfirst")
+    expect(git(path, "log", "--format=%s", "destination..child")).toBe("child\nsecond\nfirst")
+    expect(git(path, "rev-parse", "lower")).toBe(lower)
+    expect(git(path, "rev-parse", "HEAD")).toBe(git(path, "rev-parse", "feature"))
+    const again = request({ ...r, source: { kind: "branch", branch: "feature", tip: git(path, "rev-parse", "feature") } })
+    const history = await executeOperationCommand({ command: "history", noWait: false }, path)
+    expect((await preview(path, again)).composition?.noop).toBe(true)
+    expect((await perform(path, again)).message).toBe("feature is already on top of destination.")
+    expect(await executeOperationCommand({ command: "history", noWait: false }, path)).toEqual(history)
+    await expect(preview(
+        path,
+        request({
+            source: { kind: "branch", branch: "feature", tip: git(path, "rev-parse", "feature") },
+            target: { kind: "branch", branch: "child", tip: git(path, "rev-parse", "child") },
+        }),
+    )).rejects.toThrow("child already contains feature.")
+}, 120_000)
+
+test("branch rebase accepts an ambiguous Base whose candidates agree, and a remote-only destination", async () => {
+    const { path, base } = await fixture()
+    const commit = async (name: string) => {
+        await writeFile(join(path, `${name}.txt`), `${name}\n`)
+        git(path, "add", ".")
+        git(path, "commit", "-qm", name)
+        return git(path, "rev-parse", "HEAD")
+    }
+    const shared = await commit("shared")
+    // Siblings whose upstreams hold the shared fork both stay candidates for the branch beside them.
+    for (const name of ["left", "right"]) {
+        git(path, "checkout", "-qb", name, shared)
+        await commit(name)
+        git(path, "update-ref", `refs/remotes/origin/${name}`, shared)
+        git(path, "config", `branch.${name}.remote`, "origin")
+        git(path, "config", `branch.${name}.merge`, `refs/heads/${name}`)
+    }
+    git(path, "checkout", "-qb", "teammate", base)
+    const teammate = await commit("teammate")
+    git(path, "update-ref", "refs/remotes/origin/teammate", teammate)
+    git(path, "checkout", "-q", "left")
+    git(path, "branch", "-D", "teammate")
+    git(path, "checkout", "-q", "feature")
+    const feature = await commit("feature")
+    const repo = await connectRepository(path)
+    const graph = await repo.startReadBranchGraph({ authorIdentities: { secondary: [] }, remotePatterns: [], selectedRemote: "origin" }).result
+    expect(graph.branches.find(b => b.name == "feature")?.base.status).toBe("ambiguous")
+    await perform(
+        path,
+        request({
+            source: { kind: "branch", branch: "feature", tip: feature },
+            target: { kind: "branch", branch: "refs/remotes/origin/teammate", tip: teammate },
+        }),
+    )
+    expect(git(path, "log", "--format=%s", `${base}..feature`)).toBe("feature\nteammate")
+    expect(git(path, "rev-parse", "refs/remotes/origin/teammate")).toBe(teammate)
+}, 120_000)
+
 test("copying an already-present commit is a no-op, including operation history", async () => {
     const { path, base } = await fixture()
     await writeFile(join(path, "new.txt"), "new\n")

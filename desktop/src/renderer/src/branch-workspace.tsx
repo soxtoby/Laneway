@@ -3,6 +3,7 @@ import type { DiffLayout } from "@laneway/shared"
 import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 import radio from "remix/ui/radio"
 import { graphLineColor, graphRowHeight, type GraphRowLayout, layoutBranchGraph } from "./branch-graph-layout"
+import { canRebaseOnto, createBranchRebase, rebaseable } from "./branch-rebase"
 import { CommandLens } from "./command-lens"
 import { createConflictResolution } from "./conflict-resolution"
 import { errorMessage, type NoticeState } from "./feedback"
@@ -39,6 +40,8 @@ interface RepositoryGraphState {
     focusedColumnId?: string
     draggingColumnId?: string
     dragOriginalIds?: string[]
+    /** The Branch Node being dragged in the graph, which may rebase onto the row it is dropped on. */
+    draggingBranchId?: string
     focusRestored: boolean
     diffLayouts: Record<string, DiffLayout>
     contextMenu?: { branchId: string; x: number; y: number }
@@ -169,6 +172,22 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         notify: options.notify,
         openBranch: (repositoryId, branchName) => openBranch(repositoryId, `branch:refs/heads/${branchName}`),
     })
+    const rebase = createBranchRebase({
+        api: options.api,
+        update: options.update,
+        notify: options.notify,
+        completed: repositoryId => read(repositoryId, false, false),
+        busyChanged: busy => {
+            localMutations += busy ? 1 : -1
+        },
+        resolve: (repositoryId, names) => {
+            // Lower branches show inside a dependent's column, so the lowest unresolved branch shows every conflict above it.
+            const graph = stateFor(repositoryId).graph
+            const branches = graph ? workspaceGraph(graph).branches : []
+            const name = names.find(name => branches.some(branch => branch.name == name && branch.unresolved)) ?? names[0]
+            openBranch(repositoryId, `branch:refs/heads/${name}`)
+        },
+    })
 
     // One timer polls the Branch Graph and Working Changes together so a poll costs one burst of updates.
     const interval = window.setInterval(() => {
@@ -211,7 +230,9 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             openLens()
         } else if (event.key == "Escape" && activeRepositoryId) {
             const state = stateFor(activeRepositoryId)
-            if (state.showSettings) {
+            if (rebase.choosing(activeRepositoryId))
+                rebase.stopChoosing()
+            else if (state.showSettings) {
                 state.showSettings = false
                 void options.update()
             } else if (state.maximizedBranchId) {
@@ -265,6 +286,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                     {worktreeActions.dialog()}
                     {localBranches.render()}
                     {pullLatest.render(active.id)}
+                    {rebase.render()}
                     {state.contextMenu && graph && (
                         <dialog
                             aria-label="Branch actions"
@@ -304,6 +326,24 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                 >
                                     Compare with…
                                 </button>
+                                {(() => {
+                                    const branch = graph.branches.find(branch => branch.id == state.contextMenu?.branchId)
+                                    return branch && rebaseable(branch) && (
+                                        <button
+                                            type="button"
+                                            role="menuitem"
+                                            mix={on("click", () => {
+                                                state.contextMenu = undefined
+                                                state.graphCollapsed = false
+                                                state.selectedId = branch.id
+                                                rebase.choose(active.id, branch)
+                                                void options.update().then(() => document.querySelector<HTMLElement>(".graph-rows")?.focus())
+                                            })}
+                                        >
+                                            Rebase onto…
+                                        </button>
+                                    )
+                                })()}
                                 {(["branch-create", "branch-rename", "branch-delete"] as const).map(action => {
                                     const branch = workspaceGraph(graph).branches.find(branch => branch.id == state.contextMenu?.branchId)
                                     return branch && (action == "branch-create" || branch.localRefs.length > 0) && (
@@ -436,35 +476,60 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                                 <div class="graph-spacer" aria-hidden="true" style={{ height: `${nodeWindow.before}px` }} mix={graphSpacer}>
                                                 </div>
                                             )}
-                                            {nodeWindow.nodes.map(row =>
-                                                row.node.kind == "branch"
-                                                    ? (
+                                            {nodeWindow.nodes.map(row => {
+                                                if (row.node.kind == "branch") {
+                                                    const branch = row.node.branch
+                                                    const choosing = graph.branches.find(candidate => candidate.id == rebase.choosing(active.id))
+                                                    const dragged = () => graph.branches.find(candidate => candidate.id == state.draggingBranchId)
+                                                    return (
                                                         <BranchRow
-                                                            branch={row.node.branch}
+                                                            branch={branch}
                                                             rail={<GraphRail row={row} />}
-                                                            selected={state.selectedId == row.node.id}
-                                                            select={() => selectNode(active.id, row.node.id)}
-                                                            open={() => openBranch(active.id, row.node.id)}
-                                                            selectMarker={marker => selectMarker(active.id, row.node.id, marker)}
+                                                            selected={state.selectedId == branch.id}
+                                                            rebase={choosing?.id == branch.id
+                                                                ? "source"
+                                                                : choosing && state.selectedId == branch.id && canRebaseOnto(graph, choosing, branch)
+                                                                ? "target"
+                                                                : undefined}
+                                                            // While a rebase chooses its destination, clicking a branch chooses it.
+                                                            select={() =>
+                                                                choosing && choosing.id != branch.id
+                                                                    ? chooseRebaseDestination(active.id, branch.id)
+                                                                    : selectNode(active.id, branch.id)}
+                                                            open={() => openBranch(active.id, branch.id)}
+                                                            selectMarker={marker => selectMarker(active.id, branch.id, marker)}
                                                             contextMenu={event => {
                                                                 event.preventDefault()
-                                                                state.contextMenu = { branchId: row.node.id, x: event.clientX, y: event.clientY }
+                                                                state.contextMenu = { branchId: branch.id, x: event.clientX, y: event.clientY }
                                                                 void options.update()
+                                                            }}
+                                                            dragStart={() => state.draggingBranchId = branch.id}
+                                                            dragEnd={() => state.draggingBranchId = undefined}
+                                                            accepts={() => {
+                                                                const source = dragged()
+                                                                return !!source && canRebaseOnto(graph, source, branch)
+                                                            }}
+                                                            drop={() => {
+                                                                const source = dragged()
+                                                                state.draggingBranchId = undefined
+                                                                if (source)
+                                                                    void rebase.start(active.id, graph, source.id, branch.id)
                                                             }}
                                                         />
                                                     )
-                                                    : (
-                                                        <SimpleNodeRow
-                                                            id={row.node.id}
-                                                            kind={row.node.kind}
-                                                            name={row.node.name}
-                                                            title={row.node.title}
-                                                            rail={<GraphRail row={row} />}
-                                                            selected={state.selectedId == row.node.id}
-                                                            select={() => selectNode(active.id, row.node.id)}
-                                                        />
-                                                    )
-                                            )}
+                                                }
+                                                return (
+                                                    <SimpleNodeRow
+                                                        id={row.node.id}
+                                                        kind={row.node.kind}
+                                                        name={row.node.name}
+                                                        title={row.node.title}
+                                                        rail={<GraphRail row={row} />}
+                                                        selected={state.selectedId == row.node.id}
+                                                        select={() => selectNode(active.id, row.node.id)}
+                                                    />
+                                                )
+                                            })}
                                             {nodeWindow.after > 0 && (
                                                 <div class="graph-spacer" aria-hidden="true" style={{ height: `${nodeWindow.after}px` }} mix={graphSpacer}>
                                                 </div>
@@ -1003,6 +1068,19 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         const nodeIds = rows.map(row => row.node.id)
         const state = stateFor(repositoryId)
         const index = nodeIds.findIndex(id => id == state.selectedId)
+        if (event.key == "Enter" && rebase.choosing(repositoryId) && state.selectedId) {
+            event.preventDefault()
+            chooseRebaseDestination(repositoryId, state.selectedId)
+            return
+        }
+        if (event.key.toLowerCase() == "m" && !event.ctrlKey && !event.altKey && !event.metaKey) {
+            const branch = state.graph?.branches.find(branch => branch.id == state.selectedId)
+            if (branch && rebaseable(branch)) {
+                event.preventDefault()
+                rebase.choose(repositoryId, branch)
+            }
+            return
+        }
         if (event.key == "F2" || event.key == "Delete") {
             const branch = state.graph?.branches.find(branch => branch.id == state.selectedId && branch.localRefs.length > 0)
             if (branch) {
@@ -1050,6 +1128,19 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             void options.update()
         } else if (event.key == "Escape" && state.maximizedBranchId) {
             state.maximizedBranchId = undefined
+            void options.update()
+        }
+    }
+
+    function chooseRebaseDestination(repositoryId: string, targetId: string) {
+        const graph = stateFor(repositoryId).graph, sourceId = rebase.choosing(repositoryId)
+        const source = graph?.branches.find(branch => branch.id == sourceId), target = graph?.branches.find(branch => branch.id == targetId)
+        if (!graph || !source)
+            return
+        if (target && canRebaseOnto(graph, source, target))
+            void rebase.start(repositoryId, graph, source.id, target.id)
+        else {
+            options.notify({ code: "rebase.choose", message: `Choose a branch other than ${source.name} and the branches stacked on it.` })
             void options.update()
         }
     }
@@ -1266,10 +1357,17 @@ function BranchRow(
             branch: BranchGraphBranchNode
             rail: RemixNode
             selected: boolean
+            /** Its part in a rebase whose destination is being chosen by keyboard. */
+            rebase?: "source" | "target"
             select(): void
             open(): void
             selectMarker(marker: BranchGraphMarker): void
             contextMenu(event: MouseEvent): void
+            dragStart(): void
+            dragEnd(): void
+            /** Whether the branch being dragged can rebase onto this one. */
+            accepts(): boolean
+            drop(): void
         }
     >,
 ) {
@@ -1278,14 +1376,38 @@ function BranchRow(
         const branch = props.branch
         return (
             <div
-                class={`graph-row ${props.selected ? "selected" : ""}`}
+                class={`graph-row ${props.selected ? "selected" : ""} ${props.rebase ? `rebase-${props.rebase}` : ""}`}
                 role="option"
                 aria-selected={props.selected}
                 data-node-id={branch.id}
                 draggable={!branch.remoteOnly}
                 mix={[
                     graphRow,
-                    on("dragstart", event => event.dataTransfer?.setData("application/x-laneway-branch", branch.preferredRef)),
+                    // Dropped on a column header the branch switches that worktree; dropped on another row it rebases.
+                    on("dragstart", event => {
+                        event.dataTransfer?.setData(branchDragType, branch.preferredRef)
+                        props.dragStart()
+                    }),
+                    on("dragend", props.dragEnd),
+                    on("dragover", event => {
+                        if (!event.dataTransfer?.types.includes(branchDragType) || !props.accepts())
+                            return
+                        event.preventDefault()
+                        event.dataTransfer.dropEffect = "move"
+                        event.currentTarget.classList.add("rebase-target")
+                    }),
+                    on("dragleave", event => {
+                        if (!event.currentTarget.contains(event.relatedTarget as Node | null) && props.rebase != "target")
+                            event.currentTarget.classList.remove("rebase-target")
+                    }),
+                    on("drop", event => {
+                        if (props.rebase != "target")
+                            event.currentTarget.classList.remove("rebase-target")
+                        if (!event.dataTransfer?.types.includes(branchDragType) || !props.accepts())
+                            return
+                        event.preventDefault()
+                        props.drop()
+                    }),
                     on("click", props.select),
                     ref((element, signal) => {
                         element.addEventListener("contextmenu", event => handle.props.contextMenu(event), { signal })
@@ -1368,6 +1490,8 @@ function BranchRow(
         )
     }
 }
+
+const branchDragType = "application/x-laneway-branch"
 
 function SimpleNodeRow(
     handle: Handle<{ id: string; kind: "tag" | "worktree"; name: string; title: string; rail: RemixNode; selected: boolean; select(): void }>,
@@ -1554,7 +1678,7 @@ function BranchColumns(
                                                     if (source)
                                                         props.commitMove(source)
                                                     else {
-                                                        const branch = event.dataTransfer?.getData("application/x-laneway-branch")
+                                                        const branch = event.dataTransfer?.getData(branchDragType)
                                                         if (branch)
                                                             props.dropBranch(column.id, branch)
                                                     }
@@ -2296,6 +2420,14 @@ const graphRow = css({
     },
     "&:hover": {
         background: "var(--hover)",
+    },
+    "&.rebase-target": {
+        outline: "2px solid var(--focus)",
+        outlineOffset: "-2px",
+        background: "var(--focus-wash)",
+    },
+    "&.rebase-source": {
+        opacity: "0.6",
     },
 })
 

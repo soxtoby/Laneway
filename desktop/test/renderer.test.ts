@@ -1,4 +1,4 @@
-import type { BranchGraph, ChangesResult, EntryProgress, EntryResult, FileDiffResult, WorktreeRequest } from "@laneway/shared"
+import type { BranchGraph, ChangesResult, CompositionPreview, CompositionRequest, EntryProgress, EntryResult, FileDiffResult, WorktreeRequest } from "@laneway/shared"
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { Window as HappyWindow } from "happy-dom"
 import type { createElement as createRemixElement, createRoot as createRemixRoot, VirtualRoot } from "remix/ui"
@@ -2659,4 +2659,217 @@ test("Branch Graph settings keep a typed pattern draft across quiet refreshes", 
     await flush(root)
     expect(container.querySelector<HTMLInputElement>("#remote-patterns")!.value).toBe("origin/releases/**")
     dispose()
+})
+
+describe("Branch Graph rebase", () => {
+    const upstreamTip = "4".repeat(40)
+    function scenario(configure: (graph: BranchGraph) => void = () => {}) {
+        const repository = repositoryInfo("D:\\Source\\rebase-graph")
+        const graph = branchGraph(repository.id)
+        const feature = graph.branches[1]
+        graph.branches[2].involvement = "involved"
+        graph.branches.push({
+            ...feature,
+            id: "branch:refs/heads/child",
+            name: "child",
+            preferredRef: "refs/heads/child",
+            refs: ["refs/heads/child"],
+            aliases: ["child"],
+            localRefs: ["refs/heads/child"],
+            tip: "5".repeat(40),
+            base: { status: "known", branchId: feature.id, name: feature.name, ref: feature.preferredRef, tip: feature.tip },
+        })
+        graph.history.unshift({ objectId: "5".repeat(40), lineId: "branch:refs/heads/child", parentIds: [feature.tip] })
+        configure(graph)
+        const calls: Array<{ request: CompositionRequest; token?: string }> = []
+        let review: Partial<CompositionPreview> = {}
+        const api = fakeLaneway({
+            getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
+            readBranchGraph: async () => ({ ok: true, graph }),
+            localOperation: async (_id, request, token) => {
+                calls.push({ request: request as CompositionRequest, token })
+                if (token)
+                    return { ok: true, result: { type: "result", command: "local", status: "performed" } }
+                const composition: CompositionPreview = {
+                    branches: ["feature/laneway", "child"],
+                    removed: [],
+                    conflicts: [],
+                    published: [],
+                    skipped: [],
+                    noop: false,
+                    commits: [{ objectId: feature.tip, subject: "Laneway work" }],
+                    ...review,
+                }
+                return {
+                    ok: true,
+                    result: {
+                        type: "result",
+                        command: "local-preview",
+                        status: "preview",
+                        preview: {
+                            token: `reviewed-${calls.length}`,
+                            affected: [],
+                            uniqueCommits: false,
+                            unborn: false,
+                            suggestedBranch: "",
+                            staged: false,
+                            files: [],
+                            stashes: [],
+                            worktrees: [],
+                            composition,
+                        },
+                    },
+                }
+            },
+        })
+        return { api, calls, review: (value: Partial<CompositionPreview>) => review = value }
+    }
+    function drag(container: HTMLElement, from: string, to: string) {
+        const transfer = new (window as unknown as { DataTransfer: new() => DataTransfer }).DataTransfer()
+        const event = (type: string) => {
+            const value = new MouseEvent(type, { bubbles: true, cancelable: true })
+            Object.defineProperty(value, "dataTransfer", { value: transfer })
+            return value
+        }
+        const source = container.querySelector<HTMLElement>(`[data-node-id="branch:refs/heads/${from}"]`)!
+        const target = container.querySelector<HTMLElement>(`[data-node-id="branch:refs/heads/${to}"]`)!
+        source.dispatchEvent(event("dragstart"))
+        const over = event("dragover")
+        target.dispatchEvent(over)
+        const highlighted = target.classList.contains("rebase-target")
+        if (over.defaultPrevented)
+            target.dispatchEvent(event("drop"))
+        source.dispatchEvent(event("dragend"))
+        return { accepted: over.defaultPrevented, highlighted }
+    }
+    const notice = (container: HTMLElement) => container.querySelector(".notice:not([hidden])")?.textContent ?? ""
+    const dialog = (container: HTMLElement) => container.querySelector<HTMLElement>("dialog.branch-rebase")
+    const row = (container: HTMLElement, name: string) => container.querySelector<HTMLElement>(`[data-node-id="branch:refs/heads/${name}"]`)!
+    const feature = { kind: "branch" as const, branch: "refs/heads/feature/laneway", tip: "2".repeat(40) }
+    const team = { kind: "branch" as const, branch: "refs/heads/other/team", tip: "3".repeat(40) }
+
+    test("rebases a dropped branch with its dependents straight away when nothing needs deciding", async () => {
+        const { api, calls } = scenario()
+        const view = render(api)
+        try {
+            await flush(view.root)
+            // The Primary Branch has no Base to bound its commits, and a branch can't land on one stacked on it.
+            expect(drag(view.container, "main", "feature/laneway").accepted).toBe(false)
+            expect(drag(view.container, "feature/laneway", "child").accepted).toBe(false)
+            expect(calls).toEqual([])
+            expect(drag(view.container, "feature/laneway", "other/team")).toEqual({ accepted: true, highlighted: true })
+            await flush(view.root)
+            expect(row(view.container, "other/team").classList.contains("rebase-target")).toBe(false)
+            expect(dialog(view.container)).toBeNull()
+            expect(calls.map(call => [call.request.source, call.request.target, call.request.descendants, call.token])).toEqual([[
+                feature,
+                team,
+                true,
+                undefined,
+            ], [feature, team, true, "reviewed-1"]])
+            expect(notice(view.container)).toContain("Rebased feature/laneway and child onto other/team.")
+        } finally {
+            view.dispose()
+        }
+    })
+
+    test("asks which tip to rebase onto when the destination's local tip lags its upstream", async () => {
+        const { api, calls } = scenario(graph => {
+            Object.assign(graph.branches[0], { upstreamRef: "refs/remotes/origin/main", upstreamTip, behind: 2, remoteRefs: ["refs/remotes/origin/main"] })
+        })
+        const view = render(api)
+        try {
+            await flush(view.root)
+            drag(view.container, "feature/laneway", "main")
+            await flush(view.root)
+            const shown = dialog(view.container)!
+            expect(shown.textContent).toContain("Local tip, 2 commits behind origin/main")
+            expect(shown.textContent).toContain("1 commit since main")
+            expect(shown.textContent).toContain("Laneway work")
+            expect(calls.map(call => call.request.target)).toEqual([{ kind: "branch", branch: "refs/heads/main", tip: "1".repeat(40) }])
+            const upstream = [...shown.querySelectorAll<HTMLInputElement>("input[type=radio]")][1]
+            upstream.checked = true
+            upstream.dispatchEvent(new Event("change", { bubbles: true }))
+            await flush(view.root)
+            expect(calls.at(-1)?.request.target).toEqual({ kind: "branch", branch: "refs/remotes/origin/main", tip: upstreamTip })
+            click(button(dialog(view.container)!, "Rebase"))
+            await flush(view.root)
+            expect(calls.at(-1)).toMatchObject({ token: "reviewed-2", request: { target: { branch: "refs/remotes/origin/main" } } })
+            expect(dialog(view.container)).toBeNull()
+            expect(notice(view.container)).toContain("onto origin/main.")
+        } finally {
+            view.dispose()
+        }
+    })
+
+    test("confirms published rewrites, can leave dependents behind, and opens conflicts to resolve now", async () => {
+        const { api, calls, review } = scenario()
+        const view = render(api)
+        try {
+            await flush(view.root)
+            review({ published: ["feature/laneway"] })
+            drag(view.container, "feature/laneway", "other/team")
+            await flush(view.root)
+            expect(dialog(view.container)!.textContent).toContain("Rewrites history already published on feature/laneway")
+            const dependents = dialog(view.container)!.querySelector<HTMLInputElement>("input[type=checkbox]")!
+            expect(dependents.parentElement?.textContent).toContain("Move dependent branches too: child")
+            review({ published: ["feature/laneway"], branches: ["feature/laneway"] })
+            dependents.checked = false
+            dependents.dispatchEvent(new Event("change", { bubbles: true }))
+            await flush(view.root)
+            expect(calls.at(-1)?.request.descendants).toBe(false)
+            // The dependents stay on offer after a review that leaves them out.
+            expect(dialog(view.container)!.textContent).toContain("Move dependent branches too: child")
+            click(button(dialog(view.container)!, "Rebase"))
+            await flush(view.root)
+            expect(calls.at(-1)).toMatchObject({ token: "reviewed-2", request: { descendants: false, allowConflicts: false } })
+            expect(notice(view.container)).toContain("Rebased feature/laneway onto other/team.")
+
+            review({ conflicts: [{ subject: "commit 22222222", files: ["src/file.txt"] }] })
+            drag(view.container, "feature/laneway", "other/team")
+            await flush(view.root)
+            expect(dialog(view.container)!.textContent).toContain("Conflicts in commit 22222222: src/file.txt")
+            click(button(dialog(view.container)!, "Continue and resolve now"))
+            await flush(view.root)
+            expect(calls.at(-1)).toMatchObject({ token: "reviewed-4", request: { allowConflicts: true } })
+            expect(view.container.querySelector("[data-column-id='branch:refs/heads/feature/laneway']")).not.toBeNull()
+        } finally {
+            view.dispose()
+        }
+    })
+
+    test("chooses a destination by keyboard or from the context menu", async () => {
+        const { api, calls } = scenario()
+        const view = render(api)
+        try {
+            await flush(view.root)
+            const rows = view.container.querySelector<HTMLElement>(".graph-rows")!
+            click(row(view.container, "feature/laneway"))
+            await flush(view.root)
+            rows.dispatchEvent(new KeyboardEvent("keydown", { key: "m", bubbles: true }))
+            await flush(view.root)
+            expect(row(view.container, "feature/laneway").classList.contains("rebase-source")).toBe(true)
+            expect(notice(view.container)).toContain("Rebase feature/laneway · Choose a destination branch")
+            // Enter on the source itself only explains what to choose.
+            rows.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+            await flush(view.root)
+            expect(calls).toEqual([])
+            expect(notice(view.container)).toContain("Choose a branch other than feature/laneway")
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+            await flush(view.root)
+            expect(row(view.container, "feature/laneway").classList.contains("rebase-source")).toBe(false)
+
+            row(view.container, "feature/laneway").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }))
+            await flush(view.root)
+            click(button(view.container, "Rebase onto…"))
+            await flush(view.root)
+            expect(row(view.container, "feature/laneway").classList.contains("rebase-source")).toBe(true)
+            click(row(view.container, "other/team"))
+            await flush(view.root)
+            expect(calls.map(call => call.request.target)).toEqual([team, team])
+            expect(row(view.container, "feature/laneway").classList.contains("rebase-source")).toBe(false)
+        } finally {
+            view.dispose()
+        }
+    })
 })

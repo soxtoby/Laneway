@@ -34,6 +34,8 @@ export const CompositionPreviewSchema = z.object({
     published: z.array(z.string()),
     skipped: z.array(z.string()),
     noop: z.boolean(),
+    /** Commits a branch rebase takes onto its destination, oldest first. */
+    commits: z.array(z.object({ objectId: oid, subject: z.string() })).optional(),
 })
 export type CompositionRequest = z.infer<typeof CompositionRequestSchema>
 export type CompositionSource = z.infer<typeof CompositionSourceSchema>

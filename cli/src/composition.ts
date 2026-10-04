@@ -46,6 +46,7 @@ interface Plan {
 const plans = new WeakMap<LocalPreview, Plan>()
 const id = (...values: string[]) => createHash("sha256").update(values.join("\0")).digest("hex")
 const refName = (name: string) => name.startsWith("refs/heads/") ? name : `refs/heads/${name}`
+const displayName = (ref: string) => ref.replace(/^refs\/(heads|remotes)\//, "")
 const readTree = (repo: RepositoryGit, value: string) => gitText(repo, ["rev-parse", `${value}^{tree}`])
 const readParents = async (repo: RepositoryGit, value: string) => (await gitText(repo, ["show", "-s", "--format=%P", value])).split(" ").filter(Boolean)
 const ancestor = async (repo: RepositoryGit, a: string, b: string) =>
@@ -263,24 +264,48 @@ export async function prepareComposition(
         return { tree: result.tree, conflict }
     }
     if (request.source.kind == "branch") {
+        const { branch } = request.source
         if (request.target.kind != "branch" || request.mode != "move")
-            throw new Error("Rebase a branch by moving it onto another local branch.")
-        const source = tip(request.source.branch), destination = tip(request.target.branch)
+            throw new Error("Rebase a branch by moving it onto another branch.")
+        // A remote-only destination is never rewritten, so its tip is as good a new base as a local branch.
+        const target = request.target.branch
+        const destination = target.startsWith("refs/remotes/")
+            ? remoteRefs.split("\n").find(line => line.startsWith(`${target} `))?.slice(target.length + 1)
+            : tip(target)
+        const source = tip(branch)
         if (source != request.source.tip || destination != request.target.tip)
             throw new Error("A branch moved. Review the drop target again.")
+        if (source == destination)
+            throw new Error("A branch cannot be rebased onto itself.")
         if (await ancestor(repo, source, destination))
-            throw new Error("A branch cannot be rebased onto itself or its descendant.")
-        const node = graph.branches.find(b => b.localRefs.includes(refName(request.source.kind == "branch" ? request.source.branch : "")))
-        if (!node || node.base.status != "known")
-            throw new Error("Choose an unambiguous Base Branch before rebasing.")
-        const range = (await gitText(repo, ["rev-list", "--reverse", "--first-parent", source, "--not", node.base.tip])).split("\n").filter(Boolean)
+            throw new Error(`${displayName(target)} already contains ${displayName(branch)}.`)
+        const node = graph.branches.find(b => b.localRefs.includes(refName(branch)))
+        const bases = !node ? [] : node.base.status == "known" ? [node.base.tip] : node.base.candidates.map(candidate => candidate.tip)
+        if (!bases.length)
+            throw new Error(`Laneway can't tell where ${displayName(branch)}'s own commits begin, because it has no Base Branch.`)
+        // Only the branch's own commits move: the range stops at its Base, whichever branch it is dropped onto.
+        // Candidates of an ambiguous Base share their closest fork in linear history, so each bounds the same commits.
+        const ranges = new Set(
+            await Promise.all(
+                bases.map(base => gitText(repo, ["rev-list", "--reverse", "--first-parent", "--no-commit-header", "--format=%H %s", source, "--not", base])),
+            ),
+        )
+        if (ranges.size > 1)
+            throw new Error(`${displayName(branch)}'s Base Branch candidates disagree about which commits are its own.`)
+        preview.commits = [...ranges][0].split("\n").filter(Boolean).map(line => {
+            const [objectId, ...subject] = line.split(" ")
+            return { objectId, subject: subject.join(" ") }
+        })
+        const range = preview.commits.map(commit => commit.objectId)
         if (!range.length)
             throw new Error("The branch has no unique commits to rebase.")
         for (const commit of range)
             await editable(commit)
+        if ((await parents(repo, range[0]))[0] == destination)
+            preview.noop = true
         overrides.set(range[0], destination)
         if (!request.descendants)
-            onlyBranches.add(refName(request.source.branch))
+            onlyBranches.add(refName(branch))
     } else {
         const sourceSubject = request.source.kind == "commit"
             ? oldSubjects.get(request.source.objectId)
@@ -783,8 +808,16 @@ export async function mutateComposition(
         throw new Error("Prepare the transfer before executing it.")
     if (plan.preview.conflicts.length && !request.allowConflicts)
         throw new Error("The transfer would conflict. Choose resolve now or resolve later before continuing.")
-    if (plan.preview.noop)
-        return { type: "result", command: "local", status: "performed", message: "Already present" }
+    if (plan.preview.noop) {
+        return {
+            type: "result",
+            command: "local",
+            status: "performed",
+            message: request.source.kind == "branch" && request.target.kind == "branch"
+                ? `${displayName(request.source.branch)} is already on top of ${displayName(request.target.branch)}.`
+                : "Already present",
+        }
+    }
     if (cancelled())
         throw new Error("Transfer cancelled before changing files or refs.")
     const drafts = new Map(plan.commits.map(c => [c.oid, c])), final = new Map<string, string>()
