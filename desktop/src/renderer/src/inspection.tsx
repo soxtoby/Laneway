@@ -104,6 +104,7 @@ interface ColumnState {
     unavailable?: boolean
     auxiliaryId?: string
     transientLayout?: DiffLayout
+    showEntireFiles?: boolean
     selectionRoot?: ColumnState
     composable?: Set<string>
     compositionKey?: string
@@ -581,7 +582,9 @@ export function createInspection(options: Options) {
             group,
             path,
             view,
-            page: files?.error ? undefined : state.cachedDiffs.get(JSON.stringify([files?.source, files?.inventory?.version, path, view])),
+            page: files?.error
+                ? undefined
+                : state.cachedDiffs.get(JSON.stringify([files?.source, files?.inventory?.version, path, view, !!state.showEntireFiles])),
             loading: false,
             generation: 0,
             showWhitespace: false,
@@ -728,6 +731,7 @@ export function createInspection(options: Options) {
                 source,
                 path: diff.path,
                 view: diff.view,
+                entireFile: state.showEntireFiles,
                 inventoryVersion,
                 ...(more && previous ? { offset: previous.nextOffset, expectedVersion: previous.version } : {}),
             })
@@ -737,7 +741,7 @@ export function createInspection(options: Options) {
                 throw new Error(result.error.message)
             const page = result.page
             if (!more && page.lines.reduce((length, line) => length + line.text.length, 0) <= 128_000) {
-                const id = JSON.stringify([source, inventoryVersion, diff.path, diff.view])
+                const id = JSON.stringify([source, inventoryVersion, diff.path, diff.view, !!state.showEntireFiles])
                 state.cachedDiffs.delete(id)
                 state.cachedDiffs.set(id, page)
                 if (state.cachedDiffs.size > 16)
@@ -1023,6 +1027,17 @@ export function createInspection(options: Options) {
             <DiffControls
                 layout={state.transientLayout ?? options.layout(state.repositoryId, state.id)}
                 showWhitespace={diff.showWhitespace}
+                showEntireFiles={state.showEntireFiles ?? false}
+                toggleEntireFiles={() => {
+                    state.showEntireFiles = !state.showEntireFiles
+                    for (let open of state.diffs.values()) {
+                        open.notice = open.selection ? "Diff view changed. Change Selection cleared." : undefined
+                        open.selection = undefined
+                        open.page = undefined
+                        void readDiff(state, open)
+                    }
+                    update()
+                }}
                 setLayout={layout => {
                     if (state.auxiliaryId) {
                         state.transientLayout = layout
@@ -1153,7 +1168,7 @@ export function createInspection(options: Options) {
                                     repositoryId: state.repositoryId,
                                     selectedRemote: state.graph.selectedRemote,
                                     source: transferSource(state, page.source)!,
-                                    files: [{ path: diff.path, version: page.version, lineIds: diff.selection.lineIds }],
+                                    files: [{ path: diff.path, version: page.version, entireFile: page.entireFile, lineIds: diff.selection.lineIds }],
                                     view: diff.view == "staged" || diff.view == "unstaged" ? diff.view : "combined",
                                     label: `${diff.selection.lineIds.length} lines in ${diff.path}`,
                                 })}

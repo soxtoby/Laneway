@@ -369,7 +369,7 @@ async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, reques
             "--no-color",
             "--no-relative",
             "--no-prefix",
-            "--unified=3",
+            request.entireFile ? "--unified=2147483647" : "--unified=3",
             "--submodule=short",
             "--ignore-submodules=none",
         ]
@@ -435,6 +435,7 @@ async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, reques
         source,
         file,
         view,
+        ...(request.entireFile ? { entireFile: true } : {}),
         version,
         lines: collected.lines,
         ...(collected.more ? { nextOffset: (request.offset ?? 0) + collected.lines.length } : {}),

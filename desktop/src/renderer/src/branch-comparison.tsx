@@ -22,6 +22,7 @@ export interface BranchComparisonState {
     loading: boolean
     error?: string
     layout: DiffLayout
+    showEntireFiles?: boolean
     alive: boolean
 }
 
@@ -114,19 +115,20 @@ export function createBranchComparisons(options: { api: Window["laneway"]; updat
                 source: state.inventory.source,
                 inventoryVersion: state.inventory.version,
                 path,
+                entireFile: state.showEntireFiles,
                 ...(more ? { offset: patch.page?.nextOffset, expectedVersion: patch.page?.version } : {}),
             })
-            if (!current(state, generation) || state.patches.get(path) != patch)
+            if (!current(state, generation) || state.patches.get(path) != patch || patch.requestId != requestId)
                 return
             if (!result.ok)
                 throw new Error(result.error.message)
             patch.page = { ...result.page, selectable: false, lines: more ? [...patch.page!.lines, ...result.page.lines] : result.page.lines }
         } catch (error) {
-            if (current(state, generation) && state.patches.get(path) == patch)
+            if (current(state, generation) && state.patches.get(path) == patch && patch.requestId == requestId)
                 patch.error = error instanceof Error ? error.message : String(error)
         } finally {
             state.requests.delete(requestId)
-            if (current(state, generation) && state.patches.get(path) == patch) {
+            if (current(state, generation) && state.patches.get(path) == patch && patch.requestId == requestId) {
                 patch.loading = false
                 update()
             }
@@ -262,6 +264,18 @@ export function createBranchComparisons(options: { api: Window["laneway"]; updat
                                     <DiffControls
                                         layout={state.layout}
                                         showWhitespace={patch.showWhitespace ?? false}
+                                        showEntireFiles={state.showEntireFiles ?? false}
+                                        toggleEntireFiles={() => {
+                                            state.showEntireFiles = !state.showEntireFiles
+                                            for (let [path, open] of state.patches) {
+                                                if (open.requestId)
+                                                    void options.api.cancelInspection(state.repositoryId, open.requestId)
+                                                open.loading = false
+                                                open.page = undefined
+                                                void readPatch(state, path)
+                                            }
+                                            update()
+                                        }}
                                         setLayout={layout => {
                                             state.layout = layout
                                             update()

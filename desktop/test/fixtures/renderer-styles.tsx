@@ -413,7 +413,7 @@ async function checkRenderer() {
     const stickyCommitOpaque = !getComputedStyle(stickyCommit.parentElement!).backgroundColor.startsWith("rgba")
     const stickyFileRow = Math.abs(stickyFile.getBoundingClientRect().top - stickyCommit.getBoundingClientRect().bottom) <= 1
     const compactFileControls = !secondFile.querySelector(".diff-toolbar")
-        && stickyFile.querySelectorAll(".diff-controls button").length == 4
+        && stickyFile.querySelectorAll(".diff-controls button").length == 5
         && [...stickyFile.querySelectorAll(".diff-controls button")].every(button => button.getBoundingClientRect().width <= 22)
     const code = longDiff.shadowRoot!.querySelector<HTMLElement>("[data-code]")!
     code.scrollLeft = code.scrollWidth

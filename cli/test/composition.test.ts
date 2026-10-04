@@ -742,6 +742,36 @@ test("staged line selection preserves later edits and rejects stale selections",
     await expect(preview(path, r)).rejects.toThrow()
 }, 120_000)
 
+test("transfers selected lines from an entire-file diff", async () => {
+    const { path } = await fixture()
+    const lines = Array.from({ length: 30 }, (_, index) => `line ${index + 1}\n`)
+    await writeFile(join(path, "a.txt"), lines.join(""))
+    git(path, "add", ".")
+    git(path, "commit", "-qm", "long file")
+    const base = git(path, "rev-parse", "HEAD")
+    lines[15] = "replacement\n"
+    await writeFile(join(path, "a.txt"), lines.join(""))
+    const repo = await connectRepository(path)
+    const source = { kind: "working" as const, worktreePath: path }
+    const page = await repo.startReadFileDiff({ source, path: "a.txt", entireFile: true }).result
+    await perform(
+        path,
+        request({
+            source,
+            target: { kind: "seam", branch: "feature", parentId: base },
+            files: [{
+                path: "a.txt",
+                version: page.version,
+                entireFile: page.entireFile,
+                lineIds: page.lines.filter(line => line.kind == "addition" || line.kind == "deletion").map(line => line.id),
+            }],
+        }),
+    )
+    expect(git(path, "show", "HEAD:a.txt")).toBe(lines.join("").trim())
+    expect(await readFile(join(path, "a.txt"), "utf8")).toBe(lines.join(""))
+    expect(git(path, "status", "--porcelain")).toBe("")
+}, 120_000)
+
 test("preflight conflicts leave files unchanged until explicitly continued", async () => {
     const { path, base } = await fixture()
     await writeFile(join(path, "a.txt"), "source\ntwo\nthree\n")

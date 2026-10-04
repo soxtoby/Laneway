@@ -1908,6 +1908,71 @@ describe("Working Changes inspection", () => {
         restarted.dispose()
     })
 
+    test("entire-file toolbar toggle reloads open diffs, separates cached views, and rejects superseded reads", async () => {
+        const scenario = inspectionScenario()
+        const requests: Parameters<Window["laneway"]["readFileDiff"]>[2][] = []
+        const pending: (() => void)[] = []
+        const api = {
+            ...scenario.api,
+            readFileDiff: async (...args: Parameters<Window["laneway"]["readFileDiff"]>) => {
+                const request = args[2]
+                requests.push(request)
+                const result = await scenario.api.readFileDiff(...args)
+                if (request.entireFile) {
+                    await new Promise<void>(resolve => pending.push(resolve))
+                    if (result.ok) {
+                        result.page = {
+                            ...result.page,
+                            entireFile: true,
+                            version: "entire",
+                            lines: [...result.page.lines, { id: 3, kind: "context", text: "outside changes", oldLine: 2, newLine: 2, hunk: 0 }],
+                        }
+                    }
+                }
+                return result
+            },
+        }
+        const { container, root, dispose } = render(api)
+        try {
+            await flush(root)
+            click(container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
+            await flush(root)
+            click(button(container, "Break out diff"))
+            await flush(root)
+            const column = container.querySelector<HTMLElement>(".inspection-breakout")!
+            const toggle = () => column.querySelector<HTMLButtonElement>("[aria-label='Show entire files']")!
+            expect(toggle().getAttribute("aria-pressed")).toBe("false")
+            click(toggle())
+            await flush(root)
+            expect(requests.at(-1)?.entireFile).toBe(true)
+            expect(toggle().getAttribute("aria-pressed")).toBe("true")
+            pending.splice(0).forEach(resolve => resolve())
+            await flush(root)
+            expect(diffRoot(column).textContent).toContain("outside changes")
+            click(toggle())
+            await flush(root)
+            expect(diffRoot(column).textContent).not.toContain("outside changes")
+            click(toggle())
+            await flush(root)
+            click(toggle())
+            await flush(root)
+            pending.splice(0).forEach(resolve => resolve())
+            await flush(root)
+            expect(toggle().getAttribute("aria-pressed")).toBe("false")
+            expect(diffRoot(column).textContent).not.toContain("outside changes")
+            click(button(column, "Close diff column"))
+            await flush(root)
+            const file = container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!
+            click(file)
+            await flush(root)
+            click(file)
+            await flush(root)
+            expect(diffRoot(container).textContent).not.toContain("outside changes")
+        } finally {
+            dispose()
+        }
+    })
+
     test("rejects superseded reads and clears stale or collapsed-file selections", async () => {
         const scenario = inspectionScenario()
         let finish: (page: FileDiffResult) => void = () => {}

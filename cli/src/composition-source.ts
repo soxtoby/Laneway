@@ -78,13 +78,20 @@ export async function selectionTrees(repo: RepositoryGit, request: CompositionRe
                 throw new Error("Transfer renamed files as a complete change.")
             if (!selected.version)
                 throw new Error("Line transfers require the displayed diff version.")
-            let page: FileDiffPage = await repo.startReadFileDiff({ source, path: selected.path, view: request.view, expectedVersion: selected.version }).result
+            let page: FileDiffPage = await repo.startReadFileDiff({
+                source,
+                path: selected.path,
+                view: request.view,
+                entireFile: selected.entireFile,
+                expectedVersion: selected.version,
+            }).result
             const lines: DiffLine[] = [...page.lines]
             while (page.nextOffset !== undefined) {
                 page = await repo.startReadFileDiff({
                     source,
                     path: selected.path,
                     view: request.view,
+                    entireFile: selected.entireFile,
                     expectedVersion: selected.version,
                     offset: page.nextOffset,
                 }).result

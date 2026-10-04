@@ -6,8 +6,10 @@ export function DiffControls(
     handle: Handle<{
         layout: DiffLayout
         showWhitespace: boolean
+        showEntireFiles: boolean
         setLayout(layout: DiffLayout): void
         toggleWhitespace(): void
+        toggleEntireFiles(): void
         breakout?(): void
     }>,
 ) {
@@ -26,6 +28,17 @@ export function DiffControls(
                         {diffIcon(layout)}
                     </button>
                 ))}
+                <button
+                    type="button"
+                    aria-label="Show entire files"
+                    title="Show entire files"
+                    aria-pressed={props.showEntireFiles}
+                    mix={[fileActionButton, on("click", props.toggleEntireFiles)]}
+                >
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" aria-hidden="true">
+                        <path d="M9 1.5H3v13h10v-9L9 1.5ZM9 1.5v4h4M5 8h6M5 11h6" />
+                    </svg>
+                </button>
                 <button
                     type="button"
                     aria-label="Show whitespace"

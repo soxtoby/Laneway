@@ -505,6 +505,7 @@ export interface FileDiffRequest {
     source: DiffSource
     path: string
     view?: DiffView
+    entireFile?: boolean
     offset?: number
     inventoryVersion?: string
     // Bypass preview snapshots and validate fresh content before using a selection or extending a page.
@@ -524,6 +525,7 @@ export interface FileDiffPage {
     source: DiffSource
     file: ChangedFile
     view: DiffView
+    entireFile?: boolean
     version: string
     lines: DiffLine[]
     nextOffset?: number
@@ -565,6 +567,7 @@ export const FileDiffRequestSchema = z.object({
     source: DiffSourceSchema,
     path: z.string().min(1),
     view: z.enum(["combined", "staged", "unstaged", "base", "ours", "theirs"]).optional(),
+    entireFile: z.boolean().optional(),
     offset: z.number().int().nonnegative().optional(),
     inventoryVersion: z.string().optional(),
     expectedVersion: z.string().optional(),

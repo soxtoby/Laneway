@@ -18,7 +18,14 @@ export const CompositionRequestSchema = z.object({
     source: CompositionSourceSchema,
     target: CompositionTargetSchema,
     mode: z.enum(["move", "copy"]),
-    files: z.array(z.object({ path: z.string().min(1), version: z.string().optional(), lineIds: z.array(z.number().int().nonnegative()).min(1).optional() }))
+    files: z.array(
+        z.object({
+            path: z.string().min(1),
+            version: z.string().optional(),
+            entireFile: z.boolean().optional(),
+            lineIds: z.array(z.number().int().nonnegative()).min(1).optional(),
+        }),
+    )
         .optional(),
     inventoryVersion: z.string().optional(),
     selectedRemote: z.string().optional(),

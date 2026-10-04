@@ -91,6 +91,36 @@ describe("branch tip comparisons", () => {
 })
 
 describe("Working Changes and committed diff reads", () => {
+    test("entire-file context includes both ends and remains paged and version checked", async () => {
+        const { path, api, source } = await repository()
+        const lines = Array.from({ length: 2100 }, (_, index) => `line ${index + 1}\n`)
+        await writeFile(resolve(path, "file.txt"), lines.join(""))
+        git(path, "add", ".")
+        git(path, "commit", "-qm", "long file")
+        lines[1050] = "changed\n"
+        await writeFile(resolve(path, "file.txt"), lines.join(""))
+        const compact = await api.startReadFileDiff({ source, path: "file.txt" }).result
+        expect(compact.lines.some(line => line.text == "line 1")).toBe(false)
+        const first = await api.startReadFileDiff({ source, path: "file.txt", entireFile: true }).result
+        expect(first.entireFile).toBe(true)
+        expect(first.lines).toHaveLength(2000)
+        expect(first.lines[1]).toMatchObject({ text: "line 1", kind: "context", oldLine: 1, newLine: 1 })
+        expect(changed(first.lines)).toEqual(changed(compact.lines))
+        const last = await api.startReadFileDiff({ source, path: "file.txt", entireFile: true, offset: first.nextOffset, expectedVersion: first.version })
+            .result
+        expect(last.lines.at(-1)).toMatchObject({ text: "line 2100", oldLine: 2100, newLine: 2100 })
+        expect(last.nextOffset).toBeUndefined()
+        await expect(api.startReadFileDiff({ source, path: "file.txt", expectedVersion: first.version }).result).rejects.toThrow()
+        git(path, "add", ".")
+        git(path, "commit", "-qm", "change middle")
+        const committed = await api.startReadFileDiff({
+            source: { kind: "commit", objectId: git(path, "rev-parse", "HEAD") },
+            path: "file.txt",
+            entireFile: true,
+        }).result
+        expect(committed.lines).toEqual(first.lines)
+    })
+
     test("validates source edits even when Git normalizes them to the same displayed patch", async () => {
         const { path, api, source } = await repository()
         await writeFile(resolve(path, ".gitattributes"), "file.txt text eol=lf\n")
