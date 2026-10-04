@@ -1,5 +1,7 @@
 # Scope independent file extraction to its actual changes
 
+The extraction algorithm remains applicable. New operations use the checkpoints in [ADR 0017](0017-recover-operations-from-git-checkpoints.md). Existing journal integrity checks remain unchanged.
+
 Moving whole-file modifications from an unpublished commit into its own Working Changes uses a focused planner when the affected history is one unshared linear chain and no descendant touches those paths. Read the original trees and commit objects, then rewrite the chain in one native `fast-import` process. Restore the selected paths' parent blobs in each tree and the index; keep working file bytes unchanged. Preserve authors and messages and use the current committer identity. Commit hooks, signing, published/shared history, merges, additions, deletions, renames, staged selected changes, and unsupported metadata continue through the general planner.
 
 Recovery snapshots declare an optional working-file scope. They still retain the complete index, Git administration, and relevant refs, but capture only working files the focused operation can affect. The scope participates in snapshot identity and survives capture, verification, undo, and redo. Unrelated working edits no longer prevent replay or get overwritten. Existing snapshots keep their original identities and full-worktree behavior.

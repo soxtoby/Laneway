@@ -485,7 +485,7 @@ test("compiled composition recovers across journal boundaries and remains undoab
         const [code, out, err] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
         expect(code, out + err).toBe(expected)
     }
-    for (const phase of ["intent", "worktrees-committed"]) {
+    for (const phase of ["intent", "worktrees-committed", "history-committed"]) {
         const { path, base } = await fixture()
         await writeFile(join(path, "a.txt"), "composed\n")
         const r = request({
@@ -497,13 +497,12 @@ test("compiled composition recovers across journal boundaries and remains undoab
         await writeFile(requestPath, JSON.stringify(r))
         await run(path, ["local", "--request-file", requestPath, "--expected", p.token, "--crash-after", phase], 86)
         await run(path, ["recover"])
-        if (phase == "intent")
+        if (phase != "history-committed")
             expect(git(path, "rev-parse", "HEAD")).toBe(base)
         else {
             expect(git(path, "rev-parse", "HEAD")).not.toBe(base)
-            // Ordinary reflog expiry is an external-history boundary; retain it
-            // here to isolate object retention and crash recovery.
-            git(path, "-c", "gc.reflogExpire=never", "-c", "gc.reflogExpireUnreachable=never", "gc", "--prune=now")
+            git(path, "reflog", "expire", "--expire=now", "--all")
+            git(path, "gc", "--prune=now")
             await run(path, ["undo"])
             expect(git(path, "rev-parse", "HEAD")).toBe(base)
             await run(path, ["redo"])

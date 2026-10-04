@@ -220,12 +220,12 @@ test("compiled recovery survives rewrite and acceptance crashes with GC retainin
         const [code, out, err] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
         expect(code, out + err).toBe(expected)
     }
-    for (const phase of ["intent", "worktrees-committed"]) {
+    for (const phase of ["intent", "worktrees-committed", "history-committed"]) {
         const { path, base, before } = await fixture()
         await run(path, ["conflict", "--request", JSON.stringify({ action: "rewrite", branches: ["topic"], base, path }), "--crash-after", phase], 86)
         await run(path, ["recover"])
         expect(git(path, "rev-parse", "topic")).toBe(before)
-        if (phase == "intent") {
+        if (phase != "history-committed") {
             expect((await conflict(path, { action: "list" })).conflicts).toHaveLength(0)
             continue
         }

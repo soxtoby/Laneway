@@ -67,7 +67,7 @@ for (const format of ["sha1", "sha256"]) {
         const { path, git, head, request } = await fixture(format)
         const repo = await connectRepository(path)
         const prepared = await prepareComposition(repo, request)
-        expect(prepared.before.roots.find(root => root.kind == "working")?.files.map(file => file.name)).toEqual(["selected.txt"])
+        expect(prepared.before.worktrees.find(worktree => worktree.path == path)?.scope).toEqual(["selected.txt"])
         const result = await executeOperationCommand({ command: "local", request, token: prepared.preview.token, noWait: false }, path) as LocalResult
         expect(result.status).toBe("performed")
         expect(git("show", "HEAD:selected.txt")).toBe("before")
@@ -96,7 +96,7 @@ test("file extraction rejects a stale selected file and falls back when descenda
     git("add", "selected.txt")
     git("commit", "-qm", "Descendant edits the selected path")
     const fallback = await prepareComposition(await connectRepository(path), request)
-    expect(fallback.before.roots.find(root => root.kind == "working")?.scope).toBeUndefined()
+    expect(fallback.before.worktrees.find(worktree => worktree.path == path)?.scope).toBeUndefined()
 }, 30_000)
 
 test("file extraction leaves shared history, hooks, and staged selected content to the general planner", async () => {
@@ -127,6 +127,31 @@ test("one-shot transfer applies eligible extraction but returns a preview for sh
     expect(await readFile(join(path, "selected.txt"), "utf8")).toBe("after\n")
 }, 30_000)
 
+test("transfers retain only the starting checkpoint and capture redo when undo runs", async () => {
+    const { path, git, head, request } = await fixture()
+    await executeOperationCommand({ command: "local-transfer", request, noWait: false }, path)
+    const after = git("rev-parse", "HEAD")
+    const history = () => readFile(join(path, ".git", "laneway", "history.jsonl"), "utf8").then(text => text.trim().split("\n").map(line => JSON.parse(line)))
+    const initial = (await history())[0].operation
+    expect(initial.lifecycle).toBeUndefined()
+    expect(initial.checkpoint.restore.refs["refs/heads/feature"]).toBe(head)
+    expect(initial.checkpoint.restore.worktrees[0].stash).toBeUndefined()
+    expect(initial.checkpoint.expected.worktrees[0].stash).toBeUndefined()
+    const retained = async () => {
+        const envelope = JSON.parse(await readFile(join(path, ".git", "laneway", "recovery-objects.json"), "utf8"))
+        return JSON.parse(envelope.data).operations[initial.id] as string[]
+    }
+    expect(await retained()).toContain(head)
+    expect(await retained()).not.toContain(after)
+    await executeOperationCommand({ command: "undo", noWait: false }, path)
+    expect((await history()).at(-1).operation.checkpoint.restore.refs["refs/heads/feature"]).toBe(after)
+    expect(await retained()).toContain(after)
+    git("reflog", "expire", "--expire=now", "--all")
+    git("gc", "--prune=now")
+    await executeOperationCommand({ command: "redo", noWait: false }, path)
+    expect(git("rev-parse", "HEAD")).toBe(after)
+}, 30_000)
+
 test("journal checkpoints preserve audit bytes, detect historical corruption, and recover appended work", async () => {
     const { path, git } = await fixture()
     const run = (command: Parameters<typeof executeOperationCommand>[0]) => executeOperationCommand(command, path)
@@ -150,9 +175,9 @@ test("journal checkpoints preserve audit bytes, detect historical corruption, an
     expect((await readFile(journal, "utf8")).startsWith(original)).toBe(true)
 }, 30_000)
 
-test("compiled file extraction recovers before and after its durable target checkpoint", async () => {
+test("compiled file extraction rolls back interruption until history commits", async () => {
     const engine = resolve(import.meta.dir, "../bin/lane.exe")
-    for (const phase of ["intent", "worktrees-committed"]) {
+    for (const phase of ["intent", "worktrees-committed", "history-committed"]) {
         const { path, git, head, request } = await fixture()
         const requestPath = join(path, ".git", "request.json")
         await writeFile(requestPath, JSON.stringify(request))
@@ -174,12 +199,21 @@ test("compiled file extraction recovers before and after its durable target chec
             await run(["local", "--request-file", requestPath, "--expected", preview.preview.token, "--crash-after", phase], 86)
         }
         await run(["recover"])
-        if (phase == "intent")
+        if (phase != "history-committed")
             expect(git("rev-parse", "HEAD")).toBe(head)
         else {
             expect(git("show", ":selected.txt")).toBe("before")
+            const moved = git("rev-parse", "HEAD")
+            await run(["undo", "--crash-after", "refs-committed"], 86)
+            await run(["recover"])
+            expect(git("rev-parse", "HEAD")).toBe(moved)
+            expect(git("show", ":selected.txt")).toBe("before")
             await run(["undo"])
             expect(git("rev-parse", "HEAD")).toBe(head)
+            await run(["redo", "--crash-after", "refs-committed"], 86)
+            await run(["recover"])
+            expect(git("rev-parse", "HEAD")).toBe(head)
+            expect(git("show", ":selected.txt")).toBe("after")
             await run(["redo"])
             expect(git("show", ":selected.txt")).toBe("before")
         }

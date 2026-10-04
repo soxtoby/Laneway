@@ -806,7 +806,15 @@ async function runMergeTool(repo: RepositoryGit, subject: ConflictSubject, file:
         }
     }
     const gitExec = await gitText(repo, ["--exec-path"])
-    const shell = process.platform == "win32" ? resolve(dirname(repo.descriptor.git.path), "..", "bin", "bash.exe") : "sh"
+    let shell = "sh"
+    if (process.platform == "win32") {
+        // Git for Windows exposes both cmd/git.exe and mingw64/bin/git.exe.
+        const candidates = ["../bin/bash.exe", "../../bin/bash.exe"].map(path => resolve(dirname(repo.descriptor.git.path), path))
+        const available = await Promise.all(candidates.map(path => lstat(path).then(stat => stat.isFile()).catch(() => false)))
+        shell = candidates[available.indexOf(true)]
+        if (!shell)
+            throw new Error("Git Bash was not found beside the selected Git installation.")
+    }
     const script = 'TOOL_MODE=merge; . "$GIT_EXEC_PATH/git-mergetool--lib"; initialize_merge_tool "$WB_TOOL" && run_merge_tool "$WB_TOOL" true'
     const processTool = Bun.spawn([shell, "-c", script], {
         cwd: repo.descriptor.mainWorktree,

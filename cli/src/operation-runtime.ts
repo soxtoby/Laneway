@@ -10,11 +10,12 @@ import { dirname, join, resolve } from "node:path"
 import { z } from "zod"
 import { conflictMutation, conflictPaths, executeConflict, suspendWorkingConflicts } from "./conflict-operations"
 import { isFileExtraction } from "./file-extraction"
+import { captureGitCheckpoint, checkpointIdentity, checkpointMatches, type GitCheckpoint, GitCheckpointSchema, restoreGitCheckpoint, retainCheckpoint } from "./git-checkpoint"
 import { LocalPreconditionError, mutateLocal, prepareLocal } from "./local-mutations"
 import { executePull, preparePull, type PullPreparation, type PullProgressReporter } from "./pull-latest"
 import { migrateRecoveryRefs, releaseRecoveryObjects, retainRecoveryObjects } from "./recovery-objects"
 import { mutateWorktree } from "./worktree-mutations"
-import { captureWorktreeState, relocateRemovedState, restoreWorktreeState, stateIdentity, type WorktreeState, worktreeStateMatches, worktreeStateObjects, WorktreeStateSchema } from "./worktree-state"
+import { relocateRemovedState, restoreWorktreeState, worktreeStateMatches, worktreeStateObjects, WorktreeStateSchema } from "./worktree-state"
 
 const fixtureRef = "refs/laneway/test/fixture"
 const journalFileName = "journal.jsonl"
@@ -43,6 +44,7 @@ const StoredOperationContentSchema = OperationSummarySchema.extend({
     refChanges: z.array(RefChangeSchema),
     worktreeChanges: z.array(WorktreeChangeSchema),
     lifecycle: z.object({ before: WorktreeStateSchema, after: WorktreeStateSchema.optional() }).optional(),
+    checkpoint: z.object({ restore: GitCheckpointSchema, expected: GitCheckpointSchema }).optional(),
 })
 const StoredOperationSchema = StoredOperationContentSchema.extend({
     integrity: z.string().regex(/^[0-9a-f]{64}$/),
@@ -252,7 +254,7 @@ class OperationRuntime {
         if (!conflictMutation(request))
             return executeConflict(this.repository, request, changes, () => this.cancellation.isCancelled())
         let result: ConflictResult | undefined
-        await this.applySnapshot(
+        await this.applyCheckpoint(
             await conflictPaths(this.repository),
             `conflict.${request.action}`,
             request.action == "rewrite" ? "Rewrite stack" : request.action == "accept" ? "Accept conflict resolution" : request.action.replaceAll("-", " "),
@@ -268,7 +270,7 @@ class OperationRuntime {
     async pull(prepared: Extract<PullPreparation, { kind: "prepared" }>, progress: PullProgressReporter, crashAfter?: JournalPhase): Promise<PullResult> {
         const changes = new Map<string, string | null>()
         let stacks: PullResult["stacks"] = []
-        const operation = await this.applySnapshot(await conflictPaths(this.repository), "pull.latest", "Pull latest", async () => {
+        const operation = await this.applyCheckpoint(await conflictPaths(this.repository), "pull.latest", "Pull latest", async () => {
             stacks = await executePull(this.repository, prepared, changes, () => this.cancellation.isCancelled(), progress)
             return changes
         }, crashAfter)
@@ -323,7 +325,7 @@ class OperationRuntime {
         const expectedRefs = new Map<string, string | null>()
         // Preparation happened under this mutation lock, so its snapshot becomes the journal's
         // "before" state. The mutation still validates it immediately before changing Git state.
-        await this.applySnapshot(
+        await this.applyCheckpoint(
             preview.affected,
             `local.${request.action}`,
             request.action.replaceAll("-", " "),
@@ -361,7 +363,7 @@ class OperationRuntime {
         }
         if (request.action == "remove" && preview.ignored.length && !request.allowIgnoredLoss)
             throw new OperationRuntimeError("operation.precondition-failed", "Review ignored-file loss before removal.")
-        const operation = await this.applySnapshot(
+        const operation = await this.applyCheckpoint(
             preview.affected,
             `worktree.${request.action}`,
             `${request.action[0]!.toUpperCase()}${request.action.slice(1)} worktree ${preview.destination ?? ("path" in request ? request.path : "")}`,
@@ -378,18 +380,18 @@ class OperationRuntime {
         return { type: "result", command: "worktree", operation }
     }
 
-    private async applySnapshot(
+    private async applyCheckpoint(
         affected: string[],
         kind: string,
         summary: string,
-        mutate: (before: WorktreeState) => Promise<Set<string> | Map<string, string | null>>,
+        mutate: (before: GitCheckpoint) => Promise<Set<string> | Map<string, string | null>>,
         crashAfter?: JournalPhase,
-        prepared?: WorktreeState,
+        prepared?: GitCheckpoint,
     ): Promise<OperationSummary> {
         const locks = await findGitLockfiles(this.repository.descriptor.commonDirectory)
         if (locks.length)
             throw gitLockfileError(locks)
-        const before = prepared ?? await captureWorktreeState(this.repository, affected)
+        const before = prepared ?? await captureGitCheckpoint(this.repository, affected)
         const projection = await this.store.readHistory()
         const abandoned = projection.operations.slice(projection.position)
         let operation = sealOperation({
@@ -403,10 +405,10 @@ class OperationRuntime {
             expectedGitLockfiles: [],
             refChanges: [],
             worktreeChanges: [],
-            lifecycle: { before },
+            checkpoint: { restore: before, expected: before },
         })
         const executionId = crypto.randomUUID()
-        const retainedHeads = new Map<string, string>()
+        await retainCheckpoint(this.repository, operation.id, before)
         await this.store.appendJournal({
             schemaVersion: 1,
             executionId,
@@ -418,75 +420,56 @@ class OperationRuntime {
             abandonedOperationIds: abandoned.map(item => item.id),
         })
         crashIfRequested("intent", crashAfter)
-        await retainOperation(this.repository, operation, retainedHeads)
-        await this.store.appendJournalPhase(executionId, operation.id, "apply", "recovery-retained")
         crashIfRequested("recovery-retained", crashAfter)
         await this.cancelIfRequested(executionId, operation, "apply")
-        try {
-            // This process captured "before" moments ago and has only written journal and recovery
-            // storage since, so the snapshot is not re-captured for comparison here or after mutation.
-            await validatePreconditions(this.repository, operation, "apply", false)
-        } catch (error) {
-            await this.abortBeforeCommit(executionId, operation, "apply")
-            throw error
-        }
-        await this.store.appendJournalPhase(executionId, operation.id, "apply", "preconditions-verified")
         crashIfRequested("preconditions-verified", crashAfter)
-        await this.cancelIfRequested(executionId, operation, "apply")
-        let changedRefs: Set<string> | Map<string, string | null>
-        try {
-            changedRefs = await mutate(before)
-        } catch (error) {
-            if (await worktreeStateMatches(this.repository, before))
-                await this.abortBeforeCommit(executionId, operation, "apply")
-            else {
-                throw recoveryBlocked(
-                    operation,
-                    "apply",
-                    `The worktree operation stopped: ${
-                        error instanceof Error ? error.message : String(error)
-                    }. Its original state remains retained for recovery.`,
-                )
-            }
-            throw error
-        }
-        const after = await captureWorktreeState(this.repository, affected, before)
-        if ((kind.startsWith("local.") || kind.startsWith("pull.")) && stateIdentity(before) == stateIdentity(after)) {
+        await mutate(before)
+        const expected = await captureGitCheckpoint(this.repository, affected, before, undefined, undefined, false)
+        if ((kind.startsWith("local.") || kind.startsWith("pull.")) && checkpointIdentity(before) == checkpointIdentity(expected)) {
             await this.abortBeforeCommit(executionId, operation, "apply")
             return operation
         }
-        const refChanges = [...new Set([...Object.keys(before.refs), ...Object.keys(after.refs)])].filter(ref => before.refs[ref] != after.refs[ref]).map(
-            ref => ({ ref, before: before.refs[ref] ?? null, after: after.refs[ref] ?? null }),
-        )
-        if (refChanges.some(change => !changedRefs.has(change.ref) || changedRefs instanceof Map && changedRefs.get(change.ref) != change.after)) {
-            throw recoveryBlocked(
-                operation,
-                "apply",
-                "An unrelated ref changed during the worktree mutation. Its state was left intact; inspect recovery before continuing.",
-            )
-        }
-        operation = sealOperation({ ...operation, affectedRefs: refChanges.map(change => change.ref), refChanges, lifecycle: { before, after } })
-        await retainOperation(this.repository, operation, retainedHeads)
-        await this.store.appendJournal({
-            schemaVersion: 1,
-            executionId,
-            operationId: operation.id,
-            action: "apply",
-            phase: "worktrees-committed",
-            timestamp: new Date().toISOString(),
-            operation,
-        })
-        await validateOperationState(this.repository, operation, "apply", "target", false)
+        const refChanges = [...new Set([...Object.keys(before.refs), ...Object.keys(expected.refs)])]
+            .filter(ref => before.refs[ref] != expected.refs[ref])
+            .map(ref => ({ ref, before: before.refs[ref] ?? null, after: expected.refs[ref] ?? null }))
+        operation = sealOperation({ ...operation, affectedRefs: refChanges.map(change => change.ref), refChanges, checkpoint: { restore: before, expected } })
         crashIfRequested("worktrees-committed", crashAfter)
-        await this.store.appendJournalPhase(executionId, operation.id, "apply", "refs-committed")
         crashIfRequested("refs-committed", crashAfter)
         await this.commitHistory(executionId, operation, "apply")
-        await this.store.appendJournalPhase(executionId, operation.id, "apply", "history-committed")
         crashIfRequested("history-committed", crashAfter)
         for (const old of abandoned)
             await releaseOperation(this.repository, old.id)
         await this.store.appendJournalPhase(executionId, operation.id, "apply", "finalized")
         return summarize(operation)
+    }
+
+    private async restoreCheckpoint(operation: StoredOperation, action: "undo" | "redo", crashAfter?: JournalPhase) {
+        await validatePreconditions(this.repository, operation, action)
+        const target = operation.checkpoint!.restore
+        const departing = await captureGitCheckpoint(this.repository, operation.affectedWorktrees, operation.checkpoint!.expected)
+        await retainCheckpoint(this.repository, operation.id, target, departing)
+        const executionId = crypto.randomUUID()
+        const pending = sealOperation({ ...operation, checkpoint: { restore: departing, expected: departing } })
+        await this.store.appendJournal({
+            schemaVersion: 1,
+            executionId,
+            operationId: operation.id,
+            action,
+            phase: "intent",
+            timestamp: new Date().toISOString(),
+            operation: pending,
+        })
+        crashIfRequested("intent", crashAfter)
+        crashIfRequested("recovery-retained", crashAfter)
+        await this.cancelIfRequested(executionId, pending, action)
+        crashIfRequested("preconditions-verified", crashAfter)
+        await restoreGitCheckpoint(this.repository, departing, target)
+        const expected = await captureGitCheckpoint(this.repository, target.worktrees.map(w => w.path), target, undefined, undefined, false)
+        const updated = sealOperation({ ...operation, checkpoint: { restore: departing, expected } })
+        crashIfRequested("refs-committed", crashAfter)
+        await this.commitHistory(executionId, updated, action)
+        crashIfRequested("history-committed", crashAfter)
+        await this.store.appendJournalPhase(executionId, operation.id, action, "finalized")
     }
 
     async applyTestMutation(value: string, crashAfter?: JournalPhase, holdAfterIntentMs?: number): Promise<TestMutationResult> {
@@ -525,7 +508,23 @@ class OperationRuntime {
         if (!operation)
             throw new OperationRuntimeError("operation.history-corrupt", "Operation History has an invalid undo position.")
 
-        if (basename) {
+        if (basename && operation.checkpoint) {
+            if (operation.kind != "worktree.remove")
+                throw new OperationRuntimeError("operation.precondition-failed", "An alternate basename is only available when undoing worktree removal.")
+            const removed = operation.checkpoint.restore.worktrees.find(w => w.registered && !w.main)
+            if (!removed)
+                throw new OperationRuntimeError("operation.precondition-failed", "There is no removed worktree to recreate.")
+            const destination = join(dirname(removed.path), worktreeBasename(basename))
+            if (await pathExists(destination))
+                throw new OperationRuntimeError("operation.precondition-failed", "The alternate worktree path is occupied.")
+            const relocated = structuredClone(operation.checkpoint.restore)
+            relocated.worktrees.find(w => w.id == removed.id)!.path = destination
+            operation = sealOperation({
+                ...operation,
+                affectedWorktrees: operation.affectedWorktrees.map(path => path == removed.path ? destination : path),
+                checkpoint: { ...operation.checkpoint, restore: relocated },
+            })
+        } else if (basename) {
             if (operation.kind != "worktree.remove" || !operation.lifecycle?.after)
                 throw new OperationRuntimeError("operation.precondition-failed", "An alternate basename is only available when undoing worktree removal.")
             const root = operation.lifecycle.before.roots.find(root => root.kind == "working" && root.present)
@@ -544,7 +543,10 @@ class OperationRuntime {
             })
         }
 
-        await this.applyOperation(operation, "undo", [], crashAfter)
+        if (operation.checkpoint)
+            await this.restoreCheckpoint(operation, "undo", crashAfter)
+        else
+            await this.applyOperation(operation, "undo", [], crashAfter)
         return { type: "result", command: "undo", status: "performed", operation: summarize(operation) }
     }
 
@@ -557,7 +559,10 @@ class OperationRuntime {
         if (!operation)
             throw new OperationRuntimeError("operation.history-corrupt", "Operation History has an invalid redo position.")
 
-        await this.applyOperation(operation, "redo", [], crashAfter)
+        if (operation.checkpoint)
+            await this.restoreCheckpoint(operation, "redo", crashAfter)
+        else
+            await this.applyOperation(operation, "redo", [], crashAfter)
         return { type: "result", command: "redo", status: "performed", operation: summarize(operation) }
     }
 
@@ -702,6 +707,30 @@ class OperationRuntime {
 
     private async resumeExecution(execution: JournalExecution) {
         const { action, executionId, operation, operationId } = execution.intent
+        if (operation.checkpoint) {
+            const committed = await this.store.hasHistoryEvent(executionId)
+            if (!committed && !execution.phases.has("aborted") && !execution.phases.has("cancelled")) {
+                const target = operation.checkpoint.restore
+                try {
+                    const current = await captureGitCheckpoint(this.repository, operation.affectedWorktrees, target)
+                    await retainCheckpoint(this.repository, operation.id, target, current)
+                    if (checkpointIdentity(current) != checkpointIdentity(target))
+                        await restoreGitCheckpoint(this.repository, current, target)
+                } catch (error) {
+                    throw recoveryBlocked(operation, action, "Git could not restore the starting checkpoint. It remains retained for manual recovery.", {
+                        reason: error instanceof Error ? error.message : String(error),
+                    })
+                }
+            }
+            if (action == "apply" && !committed)
+                await releaseOperation(this.repository, operation.id)
+            if (committed) {
+                for (const id of execution.intent.abandonedOperationIds ?? [])
+                    await releaseOperation(this.repository, id)
+            }
+            await this.store.appendJournalPhase(executionId, operationId, action, "finalized")
+            return true
+        }
         if (operation.lifecycle && !operation.lifecycle.after && !execution.phases.has("cancelled")) {
             if (await worktreeStateMatches(this.repository, operation.lifecycle.before)) {
                 await this.abortBeforeCommit(executionId, operation, action)
@@ -779,7 +808,7 @@ class OperationRuntime {
             action,
             operationId: operation.id,
             timestamp: new Date().toISOString(),
-            ...(operation.lifecycle ? { operation } : {}),
+            ...(operation.lifecycle || operation.checkpoint ? { operation } : {}),
         })
     }
 }
@@ -1112,6 +1141,17 @@ async function validatePreconditions(repository: RepositoryGit, operation: Store
     const gitLockfiles = await findGitLockfiles(operation.gitCommonDirectory)
     if (!sameStrings(gitLockfiles, operation.expectedGitLockfiles))
         throw gitLockfileError(gitLockfiles)
+
+    if (operation.checkpoint) {
+        if (!await checkpointMatches(repository, operation.checkpoint.expected)) {
+            throw new OperationRuntimeError(
+                "operation.precondition-failed",
+                "Repository state changed outside Laneway. The saved checkpoint remains available.",
+                { reason: "worktree-changed" },
+            )
+        }
+        return
+    }
 
     if (operation.lifecycle && recaptureWorktrees) {
         const expected = action == "undo" ? operation.lifecycle.after : operation.lifecycle.before

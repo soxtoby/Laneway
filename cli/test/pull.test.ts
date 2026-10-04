@@ -206,18 +206,22 @@ test("adopts a rewritten upstream only without local work, and reports disappear
 test("reports no remotes, fetch-only with no open stacks, and cancellation at a stack boundary", async () => {
     const { local } = await fixture()
     expect((await pull(local, [])).status).toBe("fetched")
-    let calls = 0
+    let cancelled = false
     const cancelling = await executeOperationCommand(
         {
             command: "pull",
             request: { branches: ["refs/heads/one", "refs/heads/two"] },
             noWait: false,
             graphOptions: () => ({ authorIdentities: { secondary: [] }, remotePatterns: [] }),
+            progress: message => {
+                if (message.startsWith("Updating "))
+                    cancelled = true
+            },
         },
         local,
         {
             // Cancel as soon as the first stack starts updating.
-            isCancelled: () => calls++ > 3,
+            isCancelled: () => cancelled,
             wait: async () => false,
         },
     ) as PullResult

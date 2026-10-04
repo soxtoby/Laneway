@@ -4,7 +4,7 @@ import { createHash, randomUUID } from "node:crypto"
 import { constants } from "node:fs"
 import { access } from "node:fs/promises"
 import { join } from "node:path"
-import { captureWorktreeState, stateIdentity, type WorktreeState, worktreeStateMatches } from "./worktree-state"
+import { captureGitCheckpoint, checkpointIdentity, checkpointMatches, type GitCheckpoint } from "./git-checkpoint"
 
 interface Change {
     path: string
@@ -20,7 +20,7 @@ interface Commit {
     message: Buffer
 }
 interface Extraction {
-    before: WorktreeState
+    before: GitCheckpoint
     path: string
     ref: string
     head: string
@@ -127,12 +127,12 @@ export async function prepareFileExtraction(repo: RepositoryGit, request: Compos
         return undefined
     const [objects, before] = await Promise.all([
         run(["cat-file", "--batch"], rows.map(row => row[0]).join("\n") + "\n"),
-        captureWorktreeState(repo, [target.path], undefined, worktrees, new Map([[normalize(target.path), paths.slice().sort()]])),
+        captureGitCheckpoint(repo, [target.path], undefined, worktrees, new Map([[normalize(target.path), paths.slice().sort()]])),
     ])
     const expectedRefs = Object.fromEntries(Object.entries(refs).filter(([ref]) => !ref.startsWith("refs/remotes/")))
     if (JSON.stringify(expectedRefs) != JSON.stringify(before.refs) || before.refs[target.branchRef] != target.head)
         throw new Error("Repository refs changed while preparing the transfer. Review it again.")
-    const index = before.roots.find(root => root.path == target.gitDirectory)?.files.find(file => file.name == "index")?.identity
+    const index = (await run(["--literal-pathspecs", "ls-files", "--stage", "-v", "-z", "--", ...paths])).toString()
     const entries = index?.split("\0").filter(Boolean) ?? []
     if (
         !index || entries.some(entry => !/^[A-Za-z] \d{6} [a-f0-9]+ 0\t/.test(entry))
@@ -155,7 +155,7 @@ export async function prepareFileExtraction(repo: RepositoryGit, request: Compos
     }
     const preview: LocalPreview = {
         token: createHash("sha256").update(
-            "file-extraction-v1\0" + stateIdentity(before) + refOutput + configuration
+            "file-extraction-v1\0" + checkpointIdentity(before) + refOutput + configuration
                 + JSON.stringify(CompositionRequestSchema.parse({ ...request, allowConflicts: false })),
         ).digest("hex"),
         affected: [target.path],
@@ -196,7 +196,7 @@ export async function extractFiles(
         )
     }
     chunks.push(Buffer.from(`get-mark :${plan.commits.length}\nreset ${temporary}\n\ndone\n`))
-    if (cancelled() || !await worktreeStateMatches(repo, plan.before))
+    if (cancelled() || !await checkpointMatches(repo, plan.before))
         throw new Error("Repository content changed or the transfer was cancelled. No transfer was applied.")
     const head = (await repo.command(plan.path, ["-c", "gc.auto=0", "-c", "maintenance.auto=false", "fast-import", "--quiet", "--done"], Buffer.concat(chunks)))
         .toString().trim()

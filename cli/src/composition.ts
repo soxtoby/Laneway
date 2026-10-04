@@ -8,7 +8,7 @@ import { z } from "zod"
 import { compositionCommit } from "./composition-commits"
 import { hasPathCollision, selectionTrees, workingTree } from "./composition-source"
 import { extractFiles, isFileExtraction, prepareFileExtraction } from "./file-extraction"
-import { captureWorktreeState, stateIdentity, type WorktreeState, worktreeStateMatches, WorktreeStateSchema } from "./worktree-state"
+import { captureGitCheckpoint, checkpointIdentity, checkpointMatches, type GitCheckpoint, GitCheckpointSchema } from "./git-checkpoint"
 
 type TreeChange = Awaited<ReturnType<typeof replayTree>>
 interface CommitPlan {
@@ -35,7 +35,7 @@ interface WorkingPlan {
     conflictIndex: string
 }
 interface Plan {
-    before: WorktreeState
+    before: GitCheckpoint
     commits: CommitPlan[]
     refs: Array<{ ref: string; before: string | null; after: string | null }>
     working: WorkingPlan[]
@@ -79,7 +79,7 @@ export async function prepareComposition(
     repo: RepositoryGit,
     request: CompositionRequest,
     expectedToken?: string,
-): Promise<{ before: WorktreeState; preview: LocalPreview }> {
+): Promise<{ before: GitCheckpoint; preview: LocalPreview }> {
     if (repo.descriptor.shallow || repo.descriptor.partial || repo.descriptor.sparse)
         throw new Error("Composition requires a complete, non-sparse repository.")
     const extraction = await prepareFileExtraction(repo, request)
@@ -93,7 +93,7 @@ export async function prepareComposition(
         throw new Error("Choose an available Registered Worktree as the source.")
     }
     const affected = worktrees.filter(w => !w.missing).map(w => w.path)
-    const before = await captureWorktreeState(repo, affected, undefined, worktrees)
+    const before = await captureGitCheckpoint(repo, affected, undefined, worktrees)
     for (const w of worktrees.filter(w => !w.missing)) {
         for (const marker of ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply"]) {
             if (await pathExists(join(w.gitDirectory, marker)))
@@ -112,7 +112,7 @@ export async function prepareComposition(
         }),
     ])
     const token = id(
-        stateIdentity(before),
+        checkpointIdentity(before),
         remoteRefs,
         configuration,
         attributes,
@@ -668,7 +668,7 @@ export async function prepareComposition(
         })
         await verifyIgnoredFiles(repo, holder.path, files.tree)
     }
-    if (!await worktreeStateMatches(repo, before))
+    if (!await checkpointMatches(repo, before))
         throw new Error("Repository content changed while preparing the transfer. Select and review it again.")
     if (remoteRefs != await gitText(repo, ["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes", "refs/laneway/conflict-candidates"]))
         throw new Error("Remote refs changed while preparing the transfer. Review it again.")
@@ -691,7 +691,7 @@ export async function prepareComposition(
 }
 
 const PlanSchema = z.object({
-    before: WorktreeStateSchema,
+    before: GitCheckpointSchema,
     commits: z.array(
         z.object({
             oid: z.string(),
@@ -817,7 +817,7 @@ export async function mutateComposition(
         working.head = final.get(working.head) ?? working.head
     for (const working of plan.state.working)
         working.head = final.get(working.head) ?? working.head
-    if (cancelled() || !await worktreeStateMatches(repo, plan.before))
+    if (cancelled() || !await checkpointMatches(repo, plan.before))
         throw new Error("Repository content changed or the transfer was cancelled during commit preparation. No transfer was applied.")
     // All trees and conflict inputs are prepared before this single ref transaction.
     const updates = [...plan.refs]

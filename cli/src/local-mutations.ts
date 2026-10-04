@@ -6,7 +6,8 @@ import { tmpdir } from "node:os"
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { mutateComposition, prepareComposition } from "./composition"
 import { applyStashConflict } from "./conflict-operations"
-import { captureWorktreeState, stateIdentity, type WorktreeState } from "./worktree-state"
+import { captureGitCheckpoint, checkpointIdentity, type GitCheckpoint } from "./git-checkpoint"
+import { captureWorktreeState as captureHookFiles } from "./worktree-state"
 
 interface LocalMetadata {
     stashes: Record<string, string | null>
@@ -41,7 +42,7 @@ export async function prepareLocal(
     request: LocalRequest,
     prefix: string,
     expectedToken?: string,
-): Promise<{ preview: LocalPreview; before: WorktreeState }> {
+): Promise<{ preview: LocalPreview; before: GitCheckpoint }> {
     if (request.action == "compose")
         return prepareComposition(repository, request, expectedToken)
     if (repository.descriptor.shallow || repository.descriptor.partial || repository.descriptor.sparse)
@@ -95,11 +96,11 @@ export async function prepareLocal(
         }
     }
     const affected = worktrees.filter(item => !item.missing).map(item => item.path)
-    const before = await captureWorktreeState(repository, affected, undefined, worktrees)
+    const before = await captureGitCheckpoint(repository, affected, undefined, worktrees)
     const files = (await repository.command(path, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])).toString().split("\0").filter(Boolean)
     const stagedResult = await repository.run(path, ["diff", "--cached", "--quiet", "--exit-code"])
     const refs = await repository.command(path, ["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes"])
-    const token = createHash("sha256").update(stateIdentity(before)).update(refs).digest("hex")
+    const token = createHash("sha256").update(checkpointIdentity(before)).update(refs).digest("hex")
     return {
         before,
         preview: {
@@ -138,7 +139,7 @@ export async function createCommitObject(
 export async function mutateLocal(
     repository: RepositoryGit,
     request: LocalRequest,
-    before: WorktreeState,
+    before: GitCheckpoint,
     preview: LocalPreview,
     expectedRefs: Map<string, string | null>,
     cancelled?: () => boolean,
@@ -268,7 +269,7 @@ export async function mutateLocal(
             if (!preview.staged)
                 await run(["add", "--all"])
             const initialTree = await text(repository, path, ["write-tree"])
-            const initialFiles = await captureWorktreeState(repository, [path])
+            const initialFiles = await captureHookFiles(repository, [path])
             await hookRun(["pre-commit"])
             const gitDirectory = await text(repository, path, ["rev-parse", "--absolute-git-dir"])
             const messagePath = join(gitDirectory, "COMMIT_EDITMSG")
@@ -280,7 +281,7 @@ export async function mutateLocal(
             preparedMessage = cleanup == "verbatim"
                 ? rawMessage
                 : (await run(["stripspace", ...(cleanup == "strip" ? ["--strip-comments"] : [])], rawMessage)).toString()
-            const afterHooks = await captureWorktreeState(repository, [path])
+            const afterHooks = await captureHookFiles(repository, [path])
             if (JSON.stringify(afterHooks.refs) != JSON.stringify(initialFiles.refs))
                 throw new LocalPreconditionError("A ref changed while commit hooks ran. Its state was preserved for recovery.")
             const changedFiles = afterHooks.roots.filter(root => root.kind == "working").flatMap(root => {
