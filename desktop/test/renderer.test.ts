@@ -65,6 +65,112 @@ beforeAll(async () => {
 
 afterAll(() => browserWindow.close())
 
+for (const action of ["restore", "remove"] as const) {
+    test(`interrupted worktree removal has one recovery column and ${action} resolves it`, async () => {
+        const scenario = inspectionScenario()
+        const failedBranch = scenario.graph.branches[2]!
+        const recovery = {
+            operationId: "c290421f-295c-4e27-8934-eeb57e63369c",
+            worktreeId: "failed",
+            path: "D:/project.worktrees/failed",
+            head: failedBranch.tip,
+            branchRef: failedBranch.preferredRef,
+            message: "Files remain in the worktree directory after its Git registration was removed.",
+        }
+        let recoveries = [recovery]
+        const requests: unknown[] = []
+        let previews = 0
+        const saved = scenario.saved()
+        saved.repositories[0]!.columns.push({
+            kind: "branch",
+            id: failedBranch.id,
+            ref: failedBranch.preferredRef,
+            lastSeenObjectId: failedBranch.tip,
+            worktreePath: recovery.path,
+            worktreeId: recovery.worktreeId,
+            width: 420,
+        })
+        await scenario.api.updateWorkspace(saved)
+        scenario.api.readBranchGraph = async () => ({ ok: true, graph: scenario.graph, worktreeRecoveries: recoveries })
+        const preview = scenario.api.localOperation
+        scenario.api.localOperation = async (...args) => {
+            previews++
+            return preview(...args)
+        }
+        scenario.api.recoverWorktree = async (_id, request) => {
+            requests.push(request)
+            recoveries = []
+            if (request.action == "restore") {
+                failedBranch.checkedOut = [{
+                    id: recovery.worktreeId,
+                    path: recovery.path,
+                    name: "failed",
+                    main: false,
+                    head: recovery.head,
+                    branchRef: recovery.branchRef,
+                }]
+            }
+            return { ok: true }
+        }
+        const view = render(scenario.api)
+        try {
+            await flush(view.root)
+            const column = view.container.querySelector<HTMLElement>(`[data-column-id='recovery:${recovery.operationId}']`)!
+            expect(column.style.width).toBe("420px")
+            expect(view.container.querySelectorAll(".worktree-recovery")).toHaveLength(1)
+            expect(column.textContent).toContain("Worktree removal interrupted")
+            expect(column.textContent).toContain(recovery.path)
+            expect(column.textContent).toContain("Remove deletes leftover files and keeps only the saved Git state for Undo.")
+            expect(view.container.querySelector(".commit-notice")).toBeNull()
+            expect(previews).toBe(0)
+            click(column.querySelector<HTMLElement>("[aria-label='Maximize column']")!)
+            await flush(view.root)
+            click(button(column, action == "restore" ? "Recover" : "Remove"))
+            await flush(view.root)
+            expect(requests).toEqual([{ operationId: recovery.operationId, action }])
+            expect(view.container.querySelector(".worktree-recovery")).toBeNull()
+            expect(view.container.querySelector(".branch-column")).not.toBeNull()
+            expect(previews).toBeGreaterThan(0)
+            const restored = scenario.saved().repositories[0]!.columns.find(column => column.id == failedBranch.id)
+            if (action == "restore")
+                expect(restored).toMatchObject({ width: 420, worktreeId: recovery.worktreeId })
+            else
+                expect(restored).toBeUndefined()
+        } finally {
+            view.dispose()
+        }
+    })
+}
+
+test("failed recovery stays in its column across restart and reports its specific failure", async () => {
+    const scenario = inspectionScenario()
+    const recovery = {
+        operationId: "c290421f-295c-4e27-8934-eeb57e63369c",
+        worktreeId: "failed",
+        path: "D:/project.worktrees/failed",
+        head: scenario.graph.branches[2]!.tip,
+        message: "Files remain in the directory.",
+    }
+    scenario.api.readBranchGraph = async () => ({ ok: true, graph: scenario.graph, worktreeRecoveries: [recovery] })
+    scenario.api.recoverWorktree = async () => ({ ok: false, error: { message: "The directory is locked by another program." } })
+    let view = render(scenario.api)
+    try {
+        await flush(view.root)
+        click(button(view.container.querySelector(".worktree-recovery")!, "Recover"))
+        await flush(view.root)
+        expect(view.container.querySelector(".worktree-recovery [role='alert']")?.textContent).toBe("The directory is locked by another program.")
+        expect(view.container.querySelectorAll(".worktree-recovery")).toHaveLength(1)
+        expect(scenario.saved().repositories[0]!.columns.some(column => column.id == `recovery:${recovery.operationId}`)).toBe(true)
+        view.dispose()
+        view = render(scenario.api)
+        await flush(view.root)
+        expect(view.container.querySelectorAll(".worktree-recovery")).toHaveLength(1)
+        expect(button(view.container.querySelector(".worktree-recovery")!, "Remove")).not.toBeNull()
+    } finally {
+        view.dispose()
+    }
+})
+
 test("worktree creation previews the destination and mutates only after confirmation", async () => {
     const scenario = inspectionScenario()
     let executions = 0

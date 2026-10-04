@@ -44,7 +44,7 @@ export const LocalResultSchema = z.object({
     hookToken: z.string().optional(),
 })
 export type LocalResult = z.infer<typeof LocalResultSchema>
-export type LocalActionResult = { ok: true; result: LocalResult } | { ok: false; error: { message: string } }
+export type LocalActionResult = { ok: true; result: LocalResult } | { ok: false; error: { message: string; code?: string } }
 export interface CommitDraft {
     title: string
     message: string

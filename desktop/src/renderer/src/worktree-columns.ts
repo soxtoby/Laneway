@@ -1,4 +1,4 @@
-import type { BranchGraph, BranchGraphBranchNode, WorkspaceColumn } from "@laneway/shared"
+import type { BranchGraph, BranchGraphBranchNode, WorkspaceColumn, WorktreeRecovery } from "@laneway/shared"
 
 // The Git module coalesces equivalent refs into one Branch Node. Graph rows and Workspace Columns retain each local branch identity.
 export function workspaceGraph(graph: BranchGraph): BranchGraph {
@@ -37,7 +37,16 @@ export function branchNodeFor(graph: BranchGraph, id: string) {
     return graph.branches.find(branch => branch.id == id || branch.localRefs.some(ref => `branch:${ref}` == id))
 }
 
-export function reconcileWorktreeColumns(columns: WorkspaceColumn[], graph: BranchGraph, focused?: string) {
+export function recoveryColumnId(recovery: WorktreeRecovery) {
+    return `recovery:${recovery.operationId}`
+}
+
+export function recoveryWorkspaceColumn(recovery: WorktreeRecovery, width = 380): WorkspaceColumn {
+    const common = { id: recoveryColumnId(recovery), worktreePath: recovery.path, worktreeId: recovery.worktreeId, lastSeenObjectId: recovery.head, width }
+    return recovery.branchRef ? { ...common, kind: "branch", ref: recovery.branchRef } : { ...common, kind: "virtual" }
+}
+
+export function reconcileWorktreeColumns(columns: WorkspaceColumn[], graph: BranchGraph, focused?: string, recoveries: WorktreeRecovery[] = []) {
     graph = workspaceGraph(graph)
     const nodes = [...graph.branches, ...graph.virtualBranches]
     const replacements = new Map<string, string | undefined>()
@@ -46,12 +55,18 @@ export function reconcileWorktreeColumns(columns: WorkspaceColumn[], graph: Bran
         const current = nodes.find(node => {
             const worktrees = node.kind == "branch" ? node.checkedOut : [node.worktree]
             return worktrees.some(worktree =>
-                column.worktreeId && worktree.id ? worktree.id == column.worktreeId : equalPath(worktree.path, column.worktreePath!)
+                column.id.startsWith("recovery:")
+                    ? equalPath(worktree.path, column.worktreePath!)
+                    : column.worktreeId && worktree.id
+                    ? worktree.id == column.worktreeId
+                    : equalPath(worktree.path, column.worktreePath!)
             )
         })
-        replacements.set(column.id, current?.id)
-        if (current)
-            retained.add(current.id)
+        const recovery = recoveries.find(item => item.worktreeId == column.worktreeId || equalPath(item.path, column.worktreePath!))
+        const id = recovery ? recoveryColumnId(recovery) : current?.id
+        replacements.set(column.id, id)
+        if (id)
+            retained.add(id)
     }
     const result: WorkspaceColumn[] = []
     for (const column of columns) {
@@ -60,6 +75,11 @@ export function reconcileWorktreeColumns(columns: WorkspaceColumn[], graph: Bran
         const id = replacements.has(column.id) ? replacements.get(column.id) : column.id
         if (!id)
             continue
+        const recovery = recoveries.find(item => recoveryColumnId(item) == id)
+        if (recovery) {
+            result.push({ ...column, ...recoveryWorkspaceColumn(recovery, column.width) })
+            continue
+        }
         const node = nodes.find(node => node.id == id)
         if (!node)
             continue
@@ -79,6 +99,10 @@ export function reconcileWorktreeColumns(columns: WorkspaceColumn[], graph: Bran
                 ? { ...common, kind: "branch", ref: node.preferredRef, lastSeenObjectId: node.tip }
                 : { ...common, kind: "virtual", worktreePath: node.worktree.path, lastSeenObjectId: node.objectId },
         )
+    }
+    for (const recovery of recoveries) {
+        if (!result.some(column => column.id == recoveryColumnId(recovery)))
+            result.push(recoveryWorkspaceColumn(recovery))
     }
     return { columns: result, focused: focused && replacements.has(focused) ? replacements.get(focused) : focused }
 }

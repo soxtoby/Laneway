@@ -4,6 +4,7 @@ import type { WorktreeActionResult, WorktreePreviewResult, WorktreeRequest } fro
 import type { CommitDraft, LocalActionResult, LocalRequest } from "@laneway/shared"
 import type { ConflictActionResult, ConflictRequest } from "@laneway/shared"
 import type { PullActionResult, PullProgress, PullRequest } from "@laneway/shared"
+import type { RecoveryActionResult, RecoveryRequest } from "@laneway/shared"
 
 interface EngineStatusReady {
     state: "ready"
@@ -28,6 +29,7 @@ interface AppState {
 declare global {
     interface Window {
         laneway: {
+            recoverWorktree(repositoryId: string, request: RecoveryRequest): Promise<RecoveryActionResult>
             pullLatest(repositoryId: string, request: PullRequest): Promise<PullActionResult>
             cancelPull(repositoryId: string): Promise<boolean>
             onPullProgress(listener: (progress: PullProgress) => void): () => void

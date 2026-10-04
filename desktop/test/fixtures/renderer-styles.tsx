@@ -796,11 +796,13 @@ async function checkRenderer() {
     root.dispose()
     const graphScrollDrift = await checkBranchGraphScroll()
     const virtualWorktreeCompact = await checkVirtualWorktree()
+    const worktreeRecovery = await checkRecoveryColumn()
     return {
         worktreePreview,
         worktreeCancelled,
         worktreeRowCompact,
         virtualWorktreeCompact,
+        worktreeRecovery,
         historyTrail,
         historySingleLine,
         historyStickyRow,
@@ -1025,6 +1027,47 @@ async function checkVirtualWorktree() {
     } finally {
         root.dispose()
     }
+}
+
+async function checkRecoveryColumn() {
+    const scenario = inspectionScenario()
+    const recovery = {
+        operationId: "c290421f-295c-4e27-8934-eeb57e63369c",
+        worktreeId: "t3code-46aa28b8",
+        path: "C:\\Users\\soxto\\.t3\\worktrees\\Laneway\\t3code-46aa28b8",
+        head: scenario.graph.branches[2]!.tip,
+        message: "Files remain in the worktree directory after its Git registration was removed.",
+    }
+    let previews = 0
+    const preview = scenario.api.localOperation
+    scenario.api.localOperation = async (...args) => {
+        previews++
+        return preview(...args)
+    }
+    scenario.api.readBranchGraph = async () => ({ ok: true, graph: scenario.graph, worktreeRecoveries: [recovery] })
+    scenario.api.recoverWorktree = async () => ({ ok: false, error: { message: "Close the program holding the directory, then retry." } })
+    Object.assign(scenario.saved().repositories[0]!.columns[0]!, { worktreeId: recovery.worktreeId, worktreePath: recovery.path })
+    const container = document.querySelector<HTMLElement>("#app")!
+    container.replaceChildren()
+    const root = createRoot(container)
+    root.render(<LanewayApp api={scenario.api} />)
+    const settle = async () => {
+        for (let index = 0; index < 8; index++) {
+            await new Promise(resolve => setTimeout(resolve, 0))
+            root.flush()
+        }
+    }
+    await settle()
+    const panel = document.querySelector<HTMLElement>(".worktree-recovery")!
+    const buttons = [...panel.querySelectorAll<HTMLButtonElement>("button")]
+    const path = panel.querySelector<HTMLElement>(".recovery-path")!
+    const geometry = buttons.every(button => button.getBoundingClientRect().height >= 32)
+        && path.scrollWidth <= path.clientWidth + 1 && panel.getBoundingClientRect().bottom <= innerHeight
+        && panel.getBoundingClientRect().left >= 0 && panel.getBoundingClientRect().right <= innerWidth
+    buttons.find(button => button.textContent == "Recover")!.click()
+    await settle()
+    return geometry && previews == 0 && document.querySelectorAll(".worktree-recovery").length == 1 && !document.querySelector(".commit-notice")
+        && panel.querySelector("[role='alert']")?.textContent == "Close the program holding the directory, then retry."
 }
 
 Object.assign(window, {

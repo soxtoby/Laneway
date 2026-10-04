@@ -5,6 +5,7 @@ import { type WorktreeRequest, WorktreeRequestSchema } from "@laneway/shared"
 import { type LocalRequest, LocalRequestSchema } from "@laneway/shared"
 import { type ConflictRequest, ConflictRequestSchema } from "@laneway/shared"
 import { type PullRequest, PullRequestSchema } from "@laneway/shared"
+import { type RecoveryRequest, RecoveryRequestSchema } from "@laneway/shared"
 import { readFileSync, statSync } from "node:fs"
 import { executeOperationCommand, type JournalPhase, OperationCancelledError, type OperationCommand, OperationRuntimeError } from "./operation-runtime.ts"
 
@@ -44,6 +45,11 @@ function write(message: string | EngineMessage, json: boolean) {
         )
     } else if (message.command == "recover") {
         console.log(message.status == "clean" ? "No recovery is required." : `Recovered ${message.recovered.length} operation(s).`)
+        if (message.backupPath)
+            console.log(`Remaining files preserved at ${message.backupPath}`)
+    } else if (message.command == "recovery-status") {
+        for (const worktree of message.worktrees)
+            console.log(`${worktree.path}: ${worktree.message}`)
     }
 }
 
@@ -245,11 +251,20 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
     let pullRequest: PullRequest | undefined
     let token: string | undefined
     let worktreeBasename: string | undefined
+    let recoveryRequest: RecoveryRequest | undefined
 
     for (let index = 0; index < commandArguments.length; index += 1) {
         const argument = commandArguments[index]
         if (argument == "--json" || argument == "--no-wait")
             continue
+        if (command == "recover" && argument == "--request") {
+            try {
+                recoveryRequest = RecoveryRequestSchema.parse(JSON.parse(commandArguments[++index]!))
+            } catch {
+                return invalidOperationArgument(command, json, "Provide a valid recovery request.", "--request")
+            }
+            continue
+        }
         if (command == "conflict" && (argument == "--request" || argument == "--request-file")) {
             try {
                 const value = commandArguments[++index]!
@@ -326,7 +341,7 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
         if (
             (command == "test-mutation" || command == "worktree" || command == "local" || command == "local-transfer" || command == "conflict"
                 || command == "pull" || command == "undo"
-                || command == "redo")
+                || command == "redo" || command == "recover")
             && argument == "--crash-after"
             && process.env.LANEWAY_ENABLE_TEST_COMMANDS == "1"
         ) {
@@ -379,6 +394,8 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
             ? { command, value: value!, noWait, crashAfter, holdAfterIntentMs }
             : command == "undo" || command == "redo"
             ? { command, noWait, crashAfter, ...(command == "undo" ? { worktreeBasename } : {}) }
+            : command == "recover"
+            ? { command, noWait, request: recoveryRequest, crashAfter }
             : { command, noWait },
     }
 }
@@ -460,7 +477,7 @@ else if (args[0] == "echo") {
 } else if (
     args[0] == "local" || args[0] == "local-preview" || args[0] == "local-transfer" || args[0] == "worktree" || args[0] == "undo" || args[0] == "redo"
     || args[0] == "history"
-    || args[0] == "recover" || args[0] == "conflict" || args[0] == "pull"
+    || args[0] == "recover" || args[0] == "recovery-status" || args[0] == "conflict" || args[0] == "pull"
 ) {
     process.exitCode = await runOperationCommand(args[0], args.slice(1))
 } else if (args[0] == "test-mutation" && process.env.LANEWAY_ENABLE_TEST_COMMANDS == "1")

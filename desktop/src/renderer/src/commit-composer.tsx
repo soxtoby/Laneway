@@ -16,6 +16,7 @@ export function CommitComposer(
         renderFiles(view: "unstaged" | "staged", stage?: (files: string[], unstage: boolean) => void): RemixNode
         changed(refreshGraph?: boolean): Promise<void>
         busyChanged?(busy: boolean): void
+        blocked?: boolean
         showIgnored: boolean
         toggleIgnored(value: boolean): void
         /** Stashes recorded on this column's branch; shown above Working Changes. */
@@ -41,9 +42,13 @@ export function CommitComposer(
     const defaultBranchName = () => `worktree/${(props.path.split(/[\\/]/).filter(Boolean).at(-1) ?? "changes").replace(/[^\w.-]+/g, "-")}`
     let previewGeneration = 0
     async function refreshPreview() {
+        if (props.blocked)
+            return
         // Overlapping refreshes may finish out of order; only the newest result may become the preview.
         const generation = ++previewGeneration
         const result = await props.api.localOperation(props.repositoryId, previewRequest())
+        if (!result.ok && result.error.code == "operation.recovery-blocked")
+            return
         if (!result.ok)
             throw new Error(result.error.message)
         if (generation != previewGeneration)
@@ -99,7 +104,7 @@ export function CommitComposer(
         return response.result
     }
     async function act(action: () => Promise<void>) {
-        if (busy)
+        if (busy || props.blocked)
             return
         busy = true
         props.busyChanged?.(true)
@@ -140,7 +145,7 @@ export function CommitComposer(
             await run({ action: "stage", path: props.path, files: paths, unstage })
         })
     const clean = () => Boolean(props.inventory) && !files().length && !open && !stashOpen
-    const detached = () => props.virtual || loaded && (!preview?.branch || preview.unborn)
+    const detached = () => props.virtual || loaded && Boolean(preview && (!preview.branch || preview.unborn))
     const unborn = () => Boolean(props.unborn || preview?.unborn)
     return () => (
         <section class="commit-composer" mix={composerStyle}>
@@ -166,7 +171,7 @@ export function CommitComposer(
                                 type="button"
                                 class="branch-stash-apply"
                                 aria-label={`Apply stash ${stash.label}`}
-                                disabled={busy}
+                                disabled={busy || props.blocked}
                                 mix={on(
                                     "click",
                                     () => void act(async () => void await run({ action: "stash-apply", path: props.path, objectId: stash.objectId })),
@@ -179,7 +184,7 @@ export function CommitComposer(
                                 class="branch-stash-drop"
                                 aria-label={`Drop stash ${stash.label}`}
                                 title="Drop stash"
-                                disabled={busy}
+                                disabled={busy || props.blocked}
                                 mix={on("click", () => void act(async () => void await run({ action: "stash-drop", objectId: stash.objectId })))}
                             >
                                 <Icon name="close" size={13} />
@@ -218,7 +223,7 @@ export function CommitComposer(
                     >
                         <button
                             class="commit-open"
-                            disabled={busy || !loaded || !files().length}
+                            disabled={busy || props.blocked || !loaded || !files().length}
                             mix={on("click", () => {
                                 open = true
                                 update()
@@ -232,7 +237,7 @@ export function CommitComposer(
                             aria-label="More commit actions"
                             aria-haspopup="menu"
                             aria-expanded={commitMenuOpen}
-                            disabled={busy || !files().length}
+                            disabled={busy || props.blocked || !files().length}
                             mix={on("click", () => {
                                 commitMenuOpen = !commitMenuOpen
                                 update()
@@ -266,7 +271,7 @@ export function CommitComposer(
                                 aria-label="Commit title"
                                 placeholder="Commit title (required)"
                                 value={draft.title}
-                                disabled={busy}
+                                disabled={busy || props.blocked}
                                 mix={[
                                     ref(element => element.focus()),
                                     on("input", event => {
@@ -282,7 +287,7 @@ export function CommitComposer(
                                 placeholder="Message (optional)"
                                 rows={3}
                                 value={draft.message}
-                                disabled={busy}
+                                disabled={busy || props.blocked}
                                 mix={on("input", event => {
                                     draft.message = event.currentTarget.value
                                     hook = undefined
@@ -292,7 +297,7 @@ export function CommitComposer(
                             />
                             <div class="commit-bulk-actions">
                                 <button
-                                    disabled={busy || !files().some(file => file.unstaged || file.untracked)}
+                                    disabled={busy || props.blocked || !files().some(file => file.unstaged || file.untracked)}
                                     mix={on("click", () =>
                                         stage(
                                             files().filter(file => file.unstaged || file.untracked).flatMap(file =>
@@ -304,7 +309,7 @@ export function CommitComposer(
                                     Stage all
                                 </button>
                                 <button
-                                    disabled={busy || !staged().length}
+                                    disabled={busy || props.blocked || !staged().length}
                                     mix={on("click", () => stage(staged().flatMap(file => file.oldPath ? [file.oldPath, file.path] : [file.path]), true))}
                                 >
                                     Unstage all
@@ -312,7 +317,7 @@ export function CommitComposer(
                             </div>
                             <div class="commit-actions">
                                 <button
-                                    disabled={busy}
+                                    disabled={busy || props.blocked}
                                     mix={on("click", () => {
                                         open = false
                                         hook = undefined
@@ -324,7 +329,8 @@ export function CommitComposer(
                                 </button>
                                 <button
                                     class="commit-submit"
-                                    disabled={busy || !draft.title.trim() || !files().length || (!preview?.branch && !draft.branch.trim()) || Boolean(hook)}
+                                    disabled={busy || props.blocked || !draft.title.trim() || !files().length || (!preview?.branch && !draft.branch.trim())
+                                        || Boolean(hook)}
                                     mix={on("click", () => void act(commit))}
                                 >
                                     {busy ? "Working…" : staged().length ? `Commit staged (${staged().length})` : `Commit all changes (${files().length})`}
@@ -340,7 +346,7 @@ export function CommitComposer(
                         <p>Continue with the prepared commit, or cancel to review the changes.</p>
                         <div class="commit-actions">
                             <button
-                                disabled={busy}
+                                disabled={busy || props.blocked}
                                 mix={on("click", () => {
                                     hook = undefined
                                     update()
@@ -348,7 +354,7 @@ export function CommitComposer(
                             >
                                 Cancel
                             </button>
-                            <button disabled={busy} mix={on("click", () => void act(commit))}>Continue commit</button>
+                            <button disabled={busy || props.blocked} mix={on("click", () => void act(commit))}>Continue commit</button>
                         </div>
                     </div>
                 )}
@@ -364,7 +370,7 @@ export function CommitComposer(
                         />
                         <div class="commit-actions">
                             <button
-                                disabled={busy}
+                                disabled={busy || props.blocked}
                                 mix={on("click", () => {
                                     stashOpen = false
                                     update()
@@ -374,7 +380,7 @@ export function CommitComposer(
                             </button>
                             <button
                                 class="commit-submit"
-                                disabled={busy}
+                                disabled={busy || props.blocked}
                                 mix={on("click", () =>
                                     void act(async () => {
                                         await run({ action: "stash-create", path: props.path, label: stashLabel })
@@ -410,7 +416,7 @@ export function CommitComposer(
                             name={draft.branch || preview?.suggestedBranch || defaultBranchName()}
                             label="new branch"
                             saveOnBlur
-                            disabled={busy}
+                            disabled={busy || props.blocked}
                             commit={name => {
                                 draft.branch = name
                                 void save()

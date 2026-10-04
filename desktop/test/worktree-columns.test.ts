@@ -73,3 +73,42 @@ test("external worktree rename retains a detached column by registration identit
     expect(result.columns[0]).toMatchObject({ id: "virtual:new", worktreePath: "D:/renamed", width: 460 })
     expect(result.focused).toBe("virtual:new")
 })
+
+test("interrupted removal retains column presentation without a Git registration and disappears only after resolution", () => {
+    const graph: BranchGraph = branchGraph("repo")
+    const branch = graph.branches[1]!
+    const recovery = {
+        operationId: "interrupted",
+        worktreeId: "linked",
+        path: "D:/removed",
+        head: branch.tip,
+        branchRef: branch.preferredRef,
+        message: "Files remain in the directory.",
+    }
+    const oldColumn: WorkspaceColumn = {
+        kind: "branch",
+        id: branch.id,
+        ref: branch.preferredRef,
+        worktreePath: recovery.path,
+        worktreeId: "linked",
+        lastSeenObjectId: branch.tip,
+        width: 460,
+        collapsed: true,
+        diffLayout: "split",
+    }
+    const pending = reconcileWorktreeColumns([oldColumn], graph, branch.id, [recovery])
+    expect(pending).toMatchObject({
+        focused: "recovery:interrupted",
+        columns: [{ id: "recovery:interrupted", width: 460, collapsed: true, diffLayout: "split" }],
+    })
+    expect(reconcileWorktreeColumns(pending.columns, graph, pending.focused, [recovery]).columns).toEqual(pending.columns)
+    expect(reconcileWorktreeColumns([], graph, undefined, [recovery]).columns).toHaveLength(1)
+    expect(reconcileWorktreeColumns(pending.columns, graph).columns).toEqual([])
+    branch.checkedOut = [{ id: "linked", path: recovery.path, name: "removed", main: false, head: branch.tip }]
+    expect(reconcileWorktreeColumns(pending.columns, graph, pending.focused)).toMatchObject({ focused: branch.id, columns: [{ id: branch.id, width: 460 }] })
+    branch.checkedOut[0]!.id = "recreated-registration"
+    expect(reconcileWorktreeColumns(pending.columns, graph, pending.focused)).toMatchObject({
+        focused: branch.id,
+        columns: [{ id: branch.id, worktreeId: "recreated-registration", width: 460, collapsed: true, diffLayout: "split" }],
+    })
+})

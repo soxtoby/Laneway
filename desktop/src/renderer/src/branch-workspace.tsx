@@ -1,5 +1,6 @@
 import type { AvailableOpenRepository, BranchGraph, BranchGraphBranchNode, BranchGraphMarker, RepositoryGraphSettings, Workspace, WorkspaceColumn } from "@laneway/shared"
 import type { DiffLayout } from "@laneway/shared"
+import type { RecoveryRequest, WorktreeRecovery } from "@laneway/shared"
 import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 import radio from "remix/ui/radio"
 import { graphLineColor, graphRowHeight, type GraphRowLayout, layoutBranchGraph } from "./branch-graph-layout"
@@ -13,12 +14,16 @@ import { createLocalBranchActions } from "./local-branch-actions"
 import { createPullLatest, type PullControl } from "./pull-latest"
 import { baseName, RepositoryRail } from "./repository-rail"
 import { createWorktreeActions } from "./worktree-actions"
-import { branchNodeFor, localIdentities, reconcileWorktreeColumns, workspaceGraph } from "./worktree-columns"
+import { branchNodeFor, localIdentities, reconcileWorktreeColumns, recoveryColumnId, recoveryWorkspaceColumn, workspaceGraph } from "./worktree-columns"
+import { WorktreeRecoveryPanel } from "./worktree-recovery"
 
 const defaultColumnWidth = 380
 
 interface RepositoryGraphState {
     graph?: BranchGraph
+    worktreeRecoveries: WorktreeRecovery[]
+    recoveryBusy?: string
+    recoveryErrors: Record<string, string>
     loading: boolean
     refreshing: boolean
     error?: string
@@ -109,6 +114,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         signal: options.signal,
         notify: options.notify,
         localChanged: repositoryId => read(repositoryId, false, false),
+        recoveryBlocked: repositoryId => stateFor(repositoryId).worktreeRecoveries.length > 0,
         resolveWorkingConflict: (repositoryId, subject) => conflicts.open(repositoryId, subject),
         localBusyChanged: busy => {
             localMutations += busy ? 1 : -1
@@ -586,6 +592,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                     inspection={inspection}
                                     conflicts={conflicts}
                                     repositoryId={active.id}
+                                    recover={(recovery, action) => void recoverWorktree(active.id, recovery, action)}
                                     worktreePath={id => backingPath(active.id, id)}
                                     worktreeControls={column => worktreeActions.controls(active.id, column, backingPath(active.id, column.id), graph)}
                                     dropBranch={(columnId, branchRef) => {
@@ -615,6 +622,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                 return null
             const columns = state.openedBranchIds.map(id =>
                 graph.branches.find(branch => branch.id == id) ?? graph.virtualBranches.find(branch => branch.id == id)
+                    ?? recoveryNode(state.worktreeRecoveries.find(item => recoveryColumnId(item) == id))
             ).filter(column => column != undefined)
             if (columns.length == 0)
                 return null
@@ -710,6 +718,8 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         if (!state) {
             const saved = options.workspace().repositories.find(repository => repository.id == repositoryId)
             state = {
+                worktreeRecoveries: [],
+                recoveryErrors: {},
                 diffLayouts: Object.fromEntries(saved?.columns.map(column => [column.id, column.diffLayout ?? "unified"]) ?? []),
                 loading: false,
                 refreshing: false,
@@ -761,11 +771,20 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         try {
             const result = await options.api.readBranchGraph(repositoryId, refreshRemote)
             if (result.ok) {
-                if (!changed && (refreshRemote || JSON.stringify(state.graph) != JSON.stringify(result.graph)))
+                const recoveries = result.worktreeRecoveries ?? []
+                if (
+                    !changed
+                    && (refreshRemote || JSON.stringify(state.graph) != JSON.stringify(result.graph)
+                        || JSON.stringify(state.worktreeRecoveries) != JSON.stringify(recoveries))
+                ) {
                     changed = true
+                }
+                state.worktreeRecoveries = recoveries
                 const columns = workspaceGraph(result.graph)
-                const validColumnIds = new Set([...columns.branches, ...columns.virtualBranches].map(branch => branch.id))
-                const removedColumns = state.openedBranchIds.filter(id => !validColumnIds.has(id))
+                const validColumnIds = new Set(
+                    [...columns.branches, ...columns.virtualBranches].map(branch => branch.id).concat(recoveries.map(recoveryColumnId)),
+                )
+                const removedColumns = state.openedBranchIds.filter(id => !validColumnIds.has(id) && !id.startsWith("recovery:"))
                 const previousPatterns = state.graph?.remotePatterns.join(", ")
                 state.graph = result.graph
                 state.openedBranchIds.push(...inspection.refreshComparisons(repositoryId, columns))
@@ -782,7 +801,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                     state.widths[column.id] ??= defaultColumnWidth
                 const savedRepository = options.workspace().repositories.find(repository => repository.id == repositoryId)
                 if (savedRepository?.status == "available") {
-                    const reconciled = reconcileWorktreeColumns(savedRepository.columns, result.graph, savedRepository.focusedColumnId)
+                    const reconciled = reconcileWorktreeColumns(savedRepository.columns, result.graph, savedRepository.focusedColumnId, recoveries)
                     state.openedBranchIds = [
                         ...reconciled.columns.map(column => column.id),
                         ...state.openedBranchIds.filter(id => !savedRepository.columns.some(column => column.id == id)),
@@ -809,11 +828,14 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                     savedRepository.layoutInitialized = true
                 }
                 for (const column of [...columns.branches.filter(branch => branch.checkedOut.length > 0), ...columns.virtualBranches]) {
-                    if (!state.openedBranchIds.includes(column.id))
+                    const worktrees = column.kind == "branch" ? column.checkedOut : [column.worktree]
+                    if (!state.openedBranchIds.includes(column.id) && !worktrees.some(worktree => recoveries.some(item => item.path == worktree.path)))
                         state.openedBranchIds.push(column.id)
                     state.widths[column.id] ??= defaultColumnWidth
                 }
                 state.openedBranchIds = [...new Set(state.openedBranchIds)]
+                if (state.maximizedBranchId && !state.openedBranchIds.includes(state.maximizedBranchId))
+                    state.maximizedBranchId = undefined
                 if (!state.focusedColumnId || !state.openedBranchIds.includes(state.focusedColumnId))
                     state.focusedColumnId = state.openedBranchIds[0]
                 state.baseCandidateSelections = Object.fromEntries(
@@ -997,6 +1019,9 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
     }
 
     function backingPath(repositoryId: string, columnId: string) {
+        const recovery = stateFor(repositoryId).worktreeRecoveries.find(item => recoveryColumnId(item) == columnId)
+        if (recovery)
+            return recovery.path
         const graph = stateFor(repositoryId).graph
         const virtual = graph?.virtualBranches.find(branch => branch.id == columnId)
         if (virtual)
@@ -1014,6 +1039,14 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         if (!repository || !state.graph)
             return
         repository.columns = state.openedBranchIds.flatMap((id): WorkspaceColumn[] => {
+            const recovery = state.worktreeRecoveries.find(item => recoveryColumnId(item) == id)
+            if (recovery) {
+                return [{
+                    ...recoveryWorkspaceColumn(recovery, state.widths[id] ?? defaultColumnWidth),
+                    collapsed: state.collapsedColumnIds.includes(id),
+                    diffLayout: state.diffLayouts[id] ?? "unified",
+                }]
+            }
             const branch = workspaceGraph(state.graph!).branches.find(candidate => candidate.id == id)
             if (branch) {
                 return [{
@@ -1048,6 +1081,29 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         } catch (error) {
             options.notify({ code: "workspace.write-failed", message: errorMessage(error) })
         }
+    }
+
+    async function recoverWorktree(repositoryId: string, recovery: WorktreeRecovery, action: RecoveryRequest["action"]) {
+        const state = stateFor(repositoryId)
+        if (state.recoveryBusy || localMutations || worktreeActions.busy())
+            return
+        state.recoveryBusy = recovery.operationId
+        delete state.recoveryErrors[recovery.operationId]
+        localMutations++
+        await options.update()
+        try {
+            const result = await options.api.recoverWorktree(repositoryId, { operationId: recovery.operationId, action })
+            if (!result.ok)
+                state.recoveryErrors[recovery.operationId] = result.error.message
+            else if (result.backupPath)
+                options.notify({ code: "worktree.recovered", message: `Remaining files preserved at ${result.backupPath}` })
+        } catch (error) {
+            state.recoveryErrors[recovery.operationId] = errorMessage(error)
+        } finally {
+            state.recoveryBusy = undefined
+            localMutations--
+        }
+        await read(repositoryId, false, false)
     }
 
     function maximizeBranch(repositoryId: string, branchId: string) {
@@ -1570,6 +1626,7 @@ function BranchColumns(
             inspection: ReturnType<typeof createInspection>
             conflicts: ReturnType<typeof createConflictResolution>
             repositoryId: string
+            recover(recovery: WorktreeRecovery, action: RecoveryRequest["action"]): void
             branchAction(branch: BranchGraphBranchNode, action: "branch-rename" | "branch-delete"): void
             branchMenu(branch: BranchGraphBranchNode, event: MouseEvent): void
             worktreePath(id: string): string | undefined
@@ -1590,6 +1647,7 @@ function BranchColumns(
         const props = handle.props
         const columns = props.state.openedBranchIds.map(id =>
             props.graph.branches.find(branch => branch.id == id) ?? props.graph.virtualBranches.find(branch => branch.id == id)
+                ?? recoveryNode(props.state.worktreeRecoveries.find(item => recoveryColumnId(item) == id))
         ).filter(column => column != undefined)
         const unavailable = props.inspection.unavailableComparisonSources(props.repositoryId, props.graph)
         if (columns.length == 0 && unavailable.length == 0) {
@@ -1612,7 +1670,7 @@ function BranchColumns(
                 {visible.map(column => {
                     const collapsed = props.state.collapsedColumnIds.includes(column.id)
                     const width = props.state.widths[column.id] ?? defaultColumnWidth
-                    const auxiliary = collapsed ? null : props.inspection.breakout(props.repositoryId, column.id)
+                    const auxiliary = collapsed || column.kind == "recovery" ? null : props.inspection.breakout(props.repositoryId, column.id)
                     // Auxiliary columns join onto their source column's card.
                     const attached = Array.isArray(auxiliary) && auxiliary.length > 0
                     // A maximized column shares the space with its auxiliary columns, split by its own resizable width.
@@ -1632,7 +1690,10 @@ function BranchColumns(
                                 branchColumn,
                                 on("focusin", () => props.focus(column.id)),
                                 // Captured so arrow keys reach the column before the commit accordion's own triggers.
-                                on("keydown", event => props.inspection.navigationKeydown(props.repositoryId, column.id, event), true),
+                                on("keydown", event => {
+                                    if (column.kind != "recovery")
+                                        props.inspection.navigationKeydown(props.repositoryId, column.id, event)
+                                }, true),
                                 on("keydown", event => {
                                     if (
                                         column.kind == "branch" && (event.key == "F2" || event.key == "Delete")
@@ -1642,7 +1703,8 @@ function BranchColumns(
                                         props.branchAction(column, event.key == "F2" ? "branch-rename" : "branch-delete")
                                         return
                                     }
-                                    props.inspection.filterKeydown(props.repositoryId, column.id, event, handle.update)
+                                    if (column.kind != "recovery")
+                                        props.inspection.filterKeydown(props.repositoryId, column.id, event, handle.update)
                                     if (event.ctrlKey && event.shiftKey && (event.key == "<" || event.key == ">")) {
                                         event.preventDefault()
                                         props.move(column.id, event.key == "<" ? -1 : 1)
@@ -1664,7 +1726,9 @@ function BranchColumns(
                                         </span>
                                         <span>{column.name}</span>
                                         <span>
-                                            {props.inspection.workingSummary(props.repositoryId, column, props.graph, props.worktreePath(column.id))}
+                                            {column.kind == "recovery"
+                                                ? "Recovery required"
+                                                : props.inspection.workingSummary(props.repositoryId, column, props.graph, props.worktreePath(column.id))}
                                         </span>
                                     </button>
                                 )
@@ -1705,7 +1769,7 @@ function BranchColumns(
                                                         props.commitMove(source)
                                                     else {
                                                         const branch = event.dataTransfer?.getData(branchDragType)
-                                                        if (branch)
+                                                        if (branch && column.kind != "recovery")
                                                             props.dropBranch(column.id, branch)
                                                     }
                                                 }),
@@ -1735,15 +1799,16 @@ function BranchColumns(
                                                     </span>
                                                 )
                                             })()}
-                                            {!props.worktreePath(column.id) && (
+                                            {(column.kind == "recovery" || !props.worktreePath(column.id)) && (
                                                 <h2 mix={branchColumnH2}>
                                                     {column.name}
                                                 </h2>
                                             )}
-                                            {props.worktreeControls(column)}
+                                            {column.kind != "recovery" && props.worktreeControls(column)}
                                             <div mix={branchColumnActions}>
-                                                {props.inspection.conflictFilter(props.repositoryId, column, props.graph, props.worktreePath(column.id))}
-                                                {props.inspection.filterControl(
+                                                {column.kind != "recovery"
+                                                    && props.inspection.conflictFilter(props.repositoryId, column, props.graph, props.worktreePath(column.id))}
+                                                {column.kind != "recovery" && props.inspection.filterControl(
                                                     props.repositoryId,
                                                     column,
                                                     props.graph,
@@ -1770,15 +1835,24 @@ function BranchColumns(
                                                 )}
                                             </div>
                                         </header>
-                                        {props.inspection.body(
-                                            props.repositoryId,
-                                            column,
-                                            props.graph,
-                                            props.worktreePath(column.id),
-                                            column.kind == "branch"
-                                                ? props.conflicts.controls(props.repositoryId, column, props.worktreePath(column.id))
-                                                : undefined,
-                                        )}
+                                        {column.kind == "recovery"
+                                            ? (
+                                                <WorktreeRecoveryPanel
+                                                    recovery={column.recovery}
+                                                    busy={Boolean(props.state.recoveryBusy)}
+                                                    error={props.state.recoveryErrors[column.recovery.operationId]}
+                                                    resolve={action => props.recover(column.recovery, action)}
+                                                />
+                                            )
+                                            : props.inspection.body(
+                                                props.repositoryId,
+                                                column,
+                                                props.graph,
+                                                props.worktreePath(column.id),
+                                                column.kind == "branch"
+                                                    ? props.conflicts.controls(props.repositoryId, column, props.worktreePath(column.id))
+                                                    : undefined,
+                                            )}
                                     </>
                                 )}
                         </article>,
@@ -2067,9 +2141,16 @@ function shortOid(objectId: string) {
 }
 
 type ColumnNode = BranchGraph["branches"][number] | BranchGraph["virtualBranches"][number]
+type RecoveryColumnNode = { kind: "recovery"; id: string; name: string; recovery: WorktreeRecovery }
+
+function recoveryNode(recovery?: WorktreeRecovery): RecoveryColumnNode | undefined {
+    return recovery && { kind: "recovery", id: recoveryColumnId(recovery), name: baseName(recovery.path), recovery }
+}
 
 // What a column *is* drives its icon (and the icon's tooltip); the name is the worktree or branch.
-function columnIdentity(column: ColumnNode, worktreePath: string | undefined) {
+function columnIdentity(column: ColumnNode | RecoveryColumnNode, worktreePath: string | undefined) {
+    if (column.kind == "recovery")
+        return { icon: "warning" as const, kind: "Worktree recovery", name: column.name, tone: toneWarning }
     const worktree = column.kind == "branch" ? column.checkedOut.find(item => item.path == worktreePath) : column.worktree
     if (worktree) {
         return worktree.main
@@ -2087,6 +2168,7 @@ function columnIdentity(column: ColumnNode, worktreePath: string | undefined) {
 const toneMain = css({ color: "var(--accent)" })
 const toneWorktree = css({ color: "var(--ok)" })
 const toneBranch = css({ color: "var(--focus)" })
+const toneWarning = css({ color: "var(--warning)" })
 
 const columnKindIcon = css({
     flex: "0 0 auto",

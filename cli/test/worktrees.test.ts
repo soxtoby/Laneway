@@ -1,4 +1,4 @@
-import { connectRepository, previewWorktree, readRegisteredWorktrees } from "@laneway/git"
+import { connectRepository, pathExists, previewWorktree, readRegisteredWorktrees } from "@laneway/git"
 import type { WorktreeRequest } from "@laneway/shared"
 import { afterEach, expect, test } from "bun:test"
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
@@ -209,3 +209,159 @@ test("compiled engine recovers worktree apply and undo at durable journal bounda
         }
     }
 }, 180_000)
+
+async function interruptedRemoval() {
+    const path = await fixture()
+    await perform(path, { action: "create", branch: "feature", move: false })
+    const linked = join(`${path}.worktrees`, "feature")
+    await writeFile(join(linked, "a.txt"), "staged\n")
+    git(linked, "add", "a.txt")
+    await writeFile(join(linked, "a.txt"), "unstaged\n")
+    await writeFile(join(linked, "new.txt"), "saved untracked\n")
+    const child = Bun.spawn([
+        process.execPath,
+        resolve(import.meta.dir, "../src/main.ts"),
+        "worktree",
+        "--request",
+        JSON.stringify({
+            action: "remove",
+            path: linked,
+            preserve: true,
+            allowIgnoredLoss: true,
+        }),
+        "--crash-after",
+        "intent",
+        "--json",
+    ], {
+        cwd: path,
+        env: { ...process.env, LANEWAY_ENABLE_TEST_COMMANDS: "1", LANEWAY_SETTINGS_PATH: join(path, "settings.json") },
+        stdout: "pipe",
+        stderr: "pipe",
+    })
+    expect(await child.exited, await new Response(child.stderr).text()).toBe(86)
+    const intent = (await readFile(join(path, ".git/laneway/journal.jsonl"), "utf8")).trim().split("\n").map(line => JSON.parse(line)).at(-1)
+    git(path, "worktree", "remove", "--force", linked)
+    await mkdir(linked)
+    await writeFile(join(linked, "leftover.txt"), "preserve leftover\n")
+    return { path, linked, operationId: intent.operationId as string }
+}
+
+test("interrupted removal is inspectable and recovery preserves leftovers and unrelated refs", async () => {
+    const { path, linked, operationId } = await interruptedRemoval()
+    git(path, "branch", "unrelated")
+    const status = await executeOperationCommand({ command: "recovery-status", noWait: false }, path)
+    expect(status).toMatchObject({ command: "recovery-status", worktrees: [{ operationId, path: linked, message: expect.stringContaining("directory") }] })
+    await executeOperationCommand({ command: "recover", noWait: false, request: { operationId, action: "restore" } }, path)
+    expect(git(linked, "branch", "--show-current")).toBe("feature")
+    expect(git(linked, "show", ":a.txt")).toBe("staged")
+    expect(await readFile(join(linked, "a.txt"), "utf8")).toBe("unstaged\n")
+    expect(await readFile(join(linked, "new.txt"), "utf8")).toBe("saved untracked\n")
+    expect(await readFile(join(`${linked}.laneway-recovery-${operationId}`, "leftover.txt"), "utf8")).toBe("preserve leftover\n")
+    temporary.push(`${linked}.laneway-recovery-${operationId}`)
+    expect(git(path, "rev-parse", "unrelated")).toBe(git(path, "rev-parse", "main"))
+    expect(await executeOperationCommand({ command: "recovery-status", noWait: false }, path)).toMatchObject({ worktrees: [] })
+}, 30_000)
+
+test("finishing interrupted removal deletes leftovers and retains the saved Git state for undo after GC", async () => {
+    const { path, linked, operationId } = await interruptedRemoval()
+    const result = await executeOperationCommand({ command: "recover", noWait: false, request: { operationId, action: "remove" } }, path)
+    temporary.push(`${linked}.laneway-recovery-${operationId}`)
+    expect(result).toMatchObject({ command: "recover", backupPath: undefined })
+    expect(await pathExists(linked)).toBe(false)
+    expect(await pathExists(`${linked}.laneway-recovery-${operationId}`)).toBe(false)
+    expect((await readRegisteredWorktrees(await connectRepository(path))).some(w => w.path == linked)).toBe(false)
+    expect(await executeOperationCommand({ command: "history", noWait: false }, path)).toMatchObject({
+        entries: [expect.objectContaining({ id: operationId, kind: "worktree.remove", isNextUndo: true }), expect.anything()],
+    })
+    git(path, "reflog", "expire", "--expire=now", "--all")
+    git(path, "gc", "--prune=now")
+    await transition(path, "undo")
+    expect(git(linked, "show", ":a.txt")).toBe("staged")
+    expect(await readFile(join(linked, "a.txt"), "utf8")).toBe("unstaged\n")
+    expect(await readFile(join(linked, "new.txt"), "utf8")).toBe("saved untracked\n")
+    expect(await Bun.file(join(linked, "leftover.txt")).exists()).toBe(false)
+}, 30_000)
+
+async function interruptRecovery(path: string, operationId: string, action: "restore" | "remove") {
+    const child = Bun.spawn([
+        process.execPath,
+        resolve(import.meta.dir, "../src/main.ts"),
+        "recover",
+        "--request",
+        JSON.stringify({ operationId, action }),
+        "--crash-after",
+        "worktrees-committed",
+        "--json",
+    ], {
+        cwd: path,
+        env: { ...process.env, LANEWAY_ENABLE_TEST_COMMANDS: "1", LANEWAY_SETTINGS_PATH: join(path, "settings.json") },
+        stdout: "pipe",
+        stderr: "pipe",
+    })
+    expect(await child.exited, await new Response(child.stderr).text()).toBe(86)
+}
+
+test("recovery actions can retry after interruption without replacing their backup or automatically recreating a removed worktree", async () => {
+    for (const action of ["restore", "remove"] as const) {
+        const { path, linked, operationId } = await interruptedRemoval()
+        temporary.push(`${linked}.laneway-recovery-${operationId}`)
+        await interruptRecovery(path, operationId, action)
+        if (action == "remove") {
+            await expect(
+                executeOperationCommand({ command: "local-preview", noWait: false, request: { action: "stage", path, unstage: false, files: [] } }, path),
+            ).rejects.toMatchObject({ code: "operation.recovery-blocked" })
+        }
+        await executeOperationCommand({ command: "recover", noWait: false, request: { operationId, action } }, path)
+        if (action == "restore")
+            expect(await readFile(join(`${linked}.laneway-recovery-${operationId}`, "leftover.txt"), "utf8")).toBe("preserve leftover\n")
+        else
+            expect(await Bun.file(join(`${linked}.laneway-recovery-${operationId}`, "leftover.txt")).exists()).toBe(false)
+        expect((await readRegisteredWorktrees(await connectRepository(path))).some(w => w.path == linked)).toBe(action == "restore")
+        expect(await executeOperationCommand({ command: "recovery-status", noWait: false }, path)).toMatchObject({ worktrees: [] })
+    }
+}, 30_000)
+
+test("Remove after interrupted recovery deletes its leftover backup and still supports Undo", async () => {
+    const { path, linked, operationId } = await interruptedRemoval()
+    const backup = `${linked}.laneway-recovery-${operationId}`
+    temporary.push(backup)
+    await interruptRecovery(path, operationId, "restore")
+    expect(await pathExists(backup)).toBe(true)
+    await executeOperationCommand({ command: "recover", noWait: false, request: { operationId, action: "remove" } }, path)
+    expect(await pathExists(linked)).toBe(false)
+    expect(await pathExists(backup)).toBe(false)
+    await transition(path, "undo")
+    expect(git(linked, "show", ":a.txt")).toBe("staged")
+    expect(await readFile(join(linked, "a.txt"), "utf8")).toBe("unstaged\n")
+    expect(await readFile(join(linked, "new.txt"), "utf8")).toBe("saved untracked\n")
+    expect(await Bun.file(join(linked, "leftover.txt")).exists()).toBe(false)
+}, 30_000)
+
+test("Remove refuses an unrelated worktree occupying the recovery backup", async () => {
+    const { path, linked, operationId } = await interruptedRemoval()
+    const backup = `${linked}.laneway-recovery-${operationId}`
+    temporary.push(backup)
+    git(path, "worktree", "add", "--detach", backup, "main")
+    await expect(executeOperationCommand({ command: "recover", noWait: false, request: { operationId, action: "remove" } }, path)).rejects.toThrow(
+        "Another worktree occupies the recovery backup",
+    )
+    expect(git(backup, "rev-parse", "HEAD")).toBe(git(path, "rev-parse", "main"))
+    expect(await readFile(join(linked, "leftover.txt"), "utf8")).toBe("preserve leftover\n")
+}, 30_000)
+
+test("Recover refuses a changed branch while Remove preserves the new branch tip through Undo", async () => {
+    const { path, linked, operationId } = await interruptedRemoval()
+    await writeFile(join(path, "a.txt"), "later branch state\n")
+    git(path, "commit", "-qam", "Later work")
+    const later = git(path, "rev-parse", "HEAD")
+    git(path, "branch", "-f", "feature", later)
+    await expect(executeOperationCommand({ command: "recover", noWait: false, request: { operationId, action: "restore" } }, path)).rejects.toThrow(
+        "saved branch has changed",
+    )
+    expect(await readFile(join(linked, "leftover.txt"), "utf8")).toBe("preserve leftover\n")
+    await executeOperationCommand({ command: "recover", noWait: false, request: { operationId, action: "remove" } }, path)
+    temporary.push(`${linked}.laneway-recovery-${operationId}`)
+    await transition(path, "undo")
+    expect(git(path, "rev-parse", "feature")).toBe(later)
+    expect(Bun.spawnSync(["git", "symbolic-ref", "-q", "HEAD"], { cwd: linked, stdout: "pipe", stderr: "pipe" }).exitCode).toBe(1)
+}, 30_000)

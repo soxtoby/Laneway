@@ -27,6 +27,7 @@ interface Options {
     compareWith(repositoryId: string, fromRef: string, replaceId?: string, toRef?: string): void
     localChanged?(repositoryId: string): Promise<void>
     localBusyChanged?(busy: boolean): void
+    recoveryBlocked?(repositoryId: string): boolean
     createBranchAt?(repositoryId: string, objectId: string): void
     /** Renames a local branch in place; rejects with the reason when Git declines. */
     renameBranch?(repositoryId: string, name: string, newName: string): Promise<void>
@@ -1509,10 +1510,11 @@ export function createInspection(options: Options) {
                         >
                             {composition.panel(repositoryId, { kind: "working", worktreePath: state.worktreePath })}
                             <CommitComposer
-                                key={state.worktreePath}
+                                key={`${state.worktreePath}:${Boolean(options.recoveryBlocked?.(repositoryId))}`}
                                 api={options.api}
                                 repositoryId={state.repositoryId}
                                 path={state.worktreePath}
+                                blocked={options.recoveryBlocked?.(repositoryId)}
                                 virtual={column.kind != "branch"}
                                 unborn={column.kind == "virtual" && /^0+$/.test(column.objectId)}
                                 busyChanged={options.localBusyChanged}

@@ -2,7 +2,9 @@ import { z } from "zod"
 import { ConflictResultSchema } from "./conflicts"
 import { LocalResultSchema } from "./local-operations"
 import { PullResultSchema } from "./pull"
+import { RecoveryStatusResultSchema, type WorktreeRecovery } from "./worktree-recovery"
 export * from "./conflicts"
+export * from "./worktree-recovery"
 
 export const ENGINE_VERSION = "0.1.0"
 
@@ -122,6 +124,7 @@ export const RecoveryResultSchema = z.object({
     command: z.literal("recover"),
     status: z.enum(["clean", "recovered"]),
     recovered: z.array(RecoveredExecutionSchema),
+    backupPath: z.string().optional(),
 })
 
 export const CancelledEventSchema = z.object({
@@ -148,6 +151,7 @@ export const EngineMessageSchema = z.union([
     ConflictResultSchema,
     PullResultSchema,
     RecoveryResultSchema,
+    RecoveryStatusResultSchema,
     CancelledEventSchema,
     ErrorEventSchema,
 ])
@@ -457,7 +461,7 @@ export interface BranchHistoryPage {
 }
 
 export type BranchGraphResult =
-    | { ok: true; graph: BranchGraph }
+    | { ok: true; graph: BranchGraph; worktreeRecoveries?: WorktreeRecovery[] }
     | { ok: false; error: EntryError }
 
 export type BranchHistoryResult =

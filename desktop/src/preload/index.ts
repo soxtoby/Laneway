@@ -4,9 +4,11 @@ import type { WorktreeRequest } from "@laneway/shared"
 import type { CommitDraft, LocalRequest } from "@laneway/shared"
 import type { ConflictRequest } from "@laneway/shared"
 import type { PullProgress, PullRequest } from "@laneway/shared"
+import type { RecoveryRequest } from "@laneway/shared"
 import { contextBridge, ipcRenderer } from "electron"
 
 contextBridge.exposeInMainWorld("laneway", {
+    recoverWorktree: (repositoryId: string, request: RecoveryRequest) => ipcRenderer.invoke("worktree:recover", repositoryId, request),
     pullLatest: (repositoryId: string, request: PullRequest) => ipcRenderer.invoke("pull:latest", repositoryId, request),
     cancelPull: (repositoryId: string) => ipcRenderer.invoke("pull:cancel", repositoryId),
     onPullProgress: (listener: (progress: PullProgress) => void) => {

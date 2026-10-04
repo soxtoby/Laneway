@@ -6,6 +6,7 @@ import { type WorktreeActionResult, type WorktreePreviewResult, WorktreeRequestS
 import { CommitDraftSchema, type LocalActionResult, LocalRequestSchema } from "@laneway/shared"
 import { type ConflictActionResult, ConflictRequestSchema } from "@laneway/shared"
 import { type PullActionResult, type PullProgress, PullRequestSchema } from "@laneway/shared"
+import { type RecoveryActionResult, RecoveryRequestSchema } from "@laneway/shared"
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from "electron"
 import { mkdtemp, rm, rmdir, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -205,6 +206,9 @@ function registerHandlers() {
                 ],
             }).result
             const result = output.messages.find(message => message.type == "result" && (message.command == "local" || message.command == "local-preview"))
+            const failure = output.messages.find(message => message.type == "error")
+            if (failure)
+                return { ok: false, error: { code: failure.code, message: failure.message } }
             if (!result || !("status" in result) || !(result.command == "local" || result.command == "local-preview"))
                 throw new Error(output.messages.find(message => message.type == "error")?.message ?? output.diagnostics ?? "Local operation failed.")
             return { ok: true, result }
@@ -231,6 +235,25 @@ function registerHandlers() {
         if (value === undefined)
             return commitDrafts.read(repositoryId, draftWorktrees.get(key)!)
         await commitDrafts.write(repositoryId, draftWorktrees.get(key)!, CommitDraftSchema.parse(value))
+    })
+    ipcMain.handle("worktree:recover", async (_event, repositoryId: unknown, value: unknown): Promise<RecoveryActionResult> => {
+        try {
+            if (typeof repositoryId != "string")
+                throw new Error("Choose a repository.")
+            const request = RecoveryRequestSchema.parse(value)
+            const repository = repositories.worktreeRepository(repositoryId)
+            const output = await runEngineCommand({
+                enginePath,
+                cwd: repository.descriptor.mainWorktree,
+                args: ["recover", "--request", JSON.stringify(request), "--git-path", repository.descriptor.git.path],
+            }).result
+            const result = output.messages.find(message => message.type == "result" && message.command == "recover")
+            if (output.exitCode || !result || result.command != "recover")
+                throw new Error(output.messages.find(message => message.type == "error")?.message ?? "Worktree recovery failed.")
+            return { ok: true, backupPath: result.backupPath }
+        } catch (error) {
+            return { ok: false, error: { message: error instanceof Error ? error.message : String(error) } }
+        }
     })
     ipcMain.handle("worktree:preview", async (_event, repositoryId: unknown, value: unknown): Promise<WorktreePreviewResult> => {
         try {
@@ -493,7 +516,19 @@ function registerHandlers() {
             return { ok: false, error: { code: "git.command-failed", message: "Choose a repository." } }
         try {
             const read = await repositories.startBranchGraph(request.repositoryId, request.refreshRemote === true)
-            return { ok: true, graph: await read.result }
+            const repository = repositories.worktreeRepository(request.repositoryId)
+            const [graph, output] = await Promise.all([
+                read.result,
+                runEngineCommand({
+                    enginePath,
+                    cwd: repository.descriptor.mainWorktree,
+                    args: ["recovery-status", "--git-path", repository.descriptor.git.path],
+                }).result,
+            ])
+            const recovery = output.messages.find(message => message.type == "result" && message.command == "recovery-status")
+            if (output.exitCode || !recovery || recovery.command != "recovery-status")
+                throw new Error(output.messages.find(message => message.type == "error")?.message ?? "Could not read worktree recovery.")
+            return { ok: true, graph, worktreeRecoveries: recovery.worktrees }
         } catch (error) {
             return { ok: false, error: entryError(error) }
         }

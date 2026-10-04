@@ -171,6 +171,7 @@ export function branchGraph(repositoryId: string) {
 
 export function fakeLaneway(overrides: Partial<Window["laneway"]> = {}): Window["laneway"] {
     return {
+        recoverWorktree: async () => ({ ok: true }),
         pullLatest: async () => ({ ok: false, error: { message: "Pull latest unavailable" } }),
         cancelPull: async () => false,
         onPullProgress: () => () => undefined,

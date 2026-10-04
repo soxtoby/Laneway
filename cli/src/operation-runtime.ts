@@ -1,12 +1,14 @@
 import { connectRepository, GitError, type RepositoryGit } from "@laneway/git"
 import { pathExists, previewWorktree, worktreeBasename } from "@laneway/git"
+import { normalize, readRegisteredWorktrees } from "@laneway/git"
 import { type OperationAvailability, type OperationAvailabilityReason, type OperationHistoryEntry, type OperationHistoryResult, type OperationSummary, OperationSummarySchema, type OperationTransitionResult, type RecoveredExecution, type RecoveryResult, type TestMutationResult } from "@laneway/shared"
 import type { WorktreeRequest, WorktreeResult } from "@laneway/shared"
 import type { LocalRequest, LocalResult } from "@laneway/shared"
 import type { ConflictRequest, ConflictResult } from "@laneway/shared"
 import type { BranchGraphReadOptions, PullRequest, PullResult } from "@laneway/shared"
-import { link, lstat, mkdir, open, readdir, readFile, readlink, rename, unlink } from "node:fs/promises"
-import { dirname, join, resolve } from "node:path"
+import type { RecoveryRequest, RecoveryStatusResult, WorktreeRecovery } from "@laneway/shared"
+import { link, lstat, mkdir, open, readdir, readFile, readlink, rename, rm, unlink } from "node:fs/promises"
+import { dirname, join, resolve, sep } from "node:path"
 import { z } from "zod"
 import { conflictMutation, conflictPaths, executeConflict, suspendWorkingConflicts } from "./conflict-operations"
 import { isFileExtraction } from "./file-extraction"
@@ -130,13 +132,15 @@ export type OperationCommand =
     | { command: "undo"; noWait: boolean; crashAfter?: JournalPhase; worktreeBasename?: string }
     | { command: "redo"; noWait: boolean; crashAfter?: JournalPhase }
     | { command: "history"; noWait: boolean }
-    | { command: "recover"; noWait: boolean }
+    | { command: "recovery-status"; noWait: boolean }
+    | { command: "recover"; noWait: boolean; request?: RecoveryRequest; crashAfter?: JournalPhase }
 
 export type OperationCommandResult =
     | TestMutationResult
     | OperationTransitionResult
     | OperationHistoryResult
     | RecoveryResult
+    | RecoveryStatusResult
     | WorktreeResult
     | LocalResult
     | ConflictResult
@@ -208,7 +212,11 @@ export async function executeOperationCommand(
 
     return store.withLock(command.noWait, cancellation, async () => {
         const runtime = new OperationRuntime(repository, store, cancellation)
-        const recovery = await runtime.recover()
+        if (command.command == "recovery-status")
+            return runtime.recoveryStatus()
+        if (command.command == "recover" && command.request)
+            return runtime.resolveWorktreeRecovery(command.request, command.crashAfter)
+        const recovery = await runtime.recover(command.command != "recover")
         if (command.command == "recover")
             return recovery
 
@@ -604,12 +612,168 @@ class OperationRuntime {
         }
     }
 
-    async recover(): Promise<RecoveryResult> {
+    async recoveryStatus(): Promise<RecoveryStatusResult> {
+        const pending = await this.store.readPendingExecutions()
+        const worktrees: WorktreeRecovery[] = []
+        const registered = await readRegisteredWorktrees(this.repository)
+        for (const execution of pending) {
+            const operation = execution.intent.operation
+            if (
+                execution.intent.action == "apply" && operation.kind == "worktree.remove" && operation.checkpoint
+                && !execution.phases.has("aborted") && !execution.phases.has("cancelled") && !await this.store.hasHistoryEvent(execution.intent.executionId)
+            ) {
+                for (const worktree of operation.checkpoint.restore.worktrees.filter(w => w.registered && !w.main)) {
+                    const occupied = await pathExists(worktree.path) && !registered.some(w => normalize(w.path) == normalize(worktree.path))
+                    const backupPath = recoveryBackupPath(worktree.path, operation.id)
+                    worktrees.push({
+                        operationId: operation.id,
+                        worktreeId: worktree.id,
+                        path: worktree.path,
+                        head: worktree.head,
+                        branchRef: worktree.branchRef,
+                        message: occupied
+                            ? "Files remain in the worktree directory after its Git registration was removed."
+                            : "Removal stopped before it was recorded.",
+                        backupPath: await pathExists(backupPath) ? backupPath : undefined,
+                    })
+                }
+            }
+        }
+        return { type: "result", command: "recovery-status", worktrees }
+    }
+
+    async resolveWorktreeRecovery(request: RecoveryRequest, crashAfter?: JournalPhase): Promise<RecoveryResult> {
+        const pending = await this.store.readPendingExecutions()
+        const execution = pending.find(item => item.intent.operationId == request.operationId)
+        if (!execution)
+            return { type: "result", command: "recover", status: "clean", recovered: [] }
+        const { operation, executionId, action } = execution.intent
+        if (action != "apply" || operation.kind != "worktree.remove" || !operation.checkpoint)
+            throw new OperationRuntimeError("operation.precondition-failed", "Choose an interrupted worktree removal.")
+        if (execution.phases.has("aborted") || execution.phases.has("cancelled")) {
+            await this.resumeExecution(execution)
+            return { type: "result", command: "recover", status: "clean", recovered: [] }
+        }
+        if (await this.store.hasHistoryEvent(executionId)) {
+            for (const id of execution.intent.abandonedOperationIds ?? [])
+                await releaseOperation(this.repository, id)
+            await this.store.appendJournalPhase(executionId, operation.id, action, "finalized")
+            return { type: "result", command: "recover", status: "recovered", recovered: [{ action, operation: summarize(operation) }] }
+        }
+        const worktree = operation.checkpoint.restore.worktrees.find(w => w.registered && !w.main)
+        if (!worktree || normalize(worktree.path) == normalize(this.repository.descriptor.mainWorktree))
+            throw new OperationRuntimeError("operation.precondition-failed", "The Main Worktree cannot be removed or replaced.")
+        const locks = await findGitLockfiles(this.repository.descriptor.commonDirectory)
+        if (locks.length)
+            throw gitLockfileError(locks)
+        const current = await captureGitCheckpoint(this.repository, operation.affectedWorktrees, operation.checkpoint.restore)
+        await retainCheckpoint(this.repository, operation.id, operation.checkpoint.restore, current)
+        const registrations = await readRegisteredWorktrees(this.repository)
+        const registered = registrations.find(w => normalize(w.path) == normalize(worktree.path))
+        if (registered && registered.id != worktree.id)
+            throw new OperationRuntimeError("operation.precondition-failed", "Another worktree now occupies this path. Its files were left intact.")
+        if (registered?.locked)
+            throw new OperationRuntimeError("operation.precondition-failed", "Unlock the worktree before resolving its removal.")
+        const restore = {
+            ...operation.checkpoint.restore,
+            refs: { ...current.refs },
+            metadata: current.metadata,
+            branchConfig: current.branchConfig,
+            stashes: current.stashes,
+        }
+        const changedBranch = worktree.branchRef && current.refs[worktree.branchRef] && current.refs[worktree.branchRef] != worktree.head
+        const otherHolder = worktree.branchRef
+            && (await readRegisteredWorktrees(this.repository)).some(w => w.branchRef == worktree.branchRef && normalize(w.path) != normalize(worktree.path))
+        if (request.action == "restore" && changedBranch) {
+            throw new OperationRuntimeError(
+                "operation.precondition-failed",
+                "The saved branch has changed. Choose Remove to finish removal, or resolve the branch before recovering.",
+            )
+        }
+        if (request.action == "restore" && otherHolder) {
+            throw new OperationRuntimeError(
+                "operation.precondition-failed",
+                "The saved branch is checked out in another worktree. Switch that worktree away before recovering.",
+            )
+        }
+        if (changedBranch || otherHolder)
+            restore.worktrees = restore.worktrees.map(w => ({ ...w, branchRef: undefined }))
+        else if (worktree.branchRef)
+            restore.refs[worktree.branchRef] = worktree.head
+        const backupPath = recoveryBackupPath(worktree.path, operation.id)
+        if (request.action == "remove") {
+            if (registrations.some(w => normalize(w.path) == normalize(backupPath) || normalize(w.path).startsWith(`${normalize(backupPath)}${sep}`)))
+                throw new OperationRuntimeError("operation.precondition-failed", "Another worktree occupies the recovery backup. Its files were left intact.")
+            if (registered) {
+                const preview = await previewWorktree(this.repository, { action: "remove", path: worktree.path, preserve: true, allowIgnoredLoss: true })
+                await mutateWorktree(this.repository, preview)
+            }
+            await rm(resolve(worktree.path), { recursive: true, force: true })
+            await rm(resolve(backupPath), { recursive: true, force: true })
+        } else if (registered && !registered.missing) {
+            const saved = current.worktrees.find(w => w.id == worktree.id)
+            if (
+                saved?.head != worktree.head || saved.fingerprint != worktree.fingerprint
+                || JSON.stringify(saved.submodules) != JSON.stringify(worktree.submodules)
+            ) {
+                throw new OperationRuntimeError(
+                    "operation.precondition-failed",
+                    "The worktree has newer changes. Preserve them before restoring its saved state.",
+                )
+            }
+        } else {
+            if (await pathExists(worktree.path)) {
+                if (await pathExists(backupPath)) {
+                    throw new OperationRuntimeError(
+                        "operation.precondition-failed",
+                        `A recovery backup already exists at ${backupPath}. Move the remaining directory aside before retrying.`,
+                    )
+                }
+                await rename(worktree.path, backupPath)
+            }
+            if (registered)
+                await this.repository.command(this.repository.descriptor.mainWorktree, ["worktree", "remove", "--force", "--", worktree.path])
+        }
+        if (request.action == "restore") {
+            const source = await captureGitCheckpoint(this.repository, operation.affectedWorktrees, restore, undefined, undefined, false)
+            if (checkpointIdentity(source) != checkpointIdentity(restore))
+                await restoreGitCheckpoint(this.repository, source, restore)
+            crashIfRequested("worktrees-committed", crashAfter)
+        } else {
+            const expected = await captureGitCheckpoint(this.repository, operation.affectedWorktrees, restore, undefined, undefined, false)
+            const completed = sealOperation({ ...operation, checkpoint: { restore, expected } })
+            crashIfRequested("worktrees-committed", crashAfter)
+            await this.commitHistory(executionId, completed, action)
+            crashIfRequested("history-committed", crashAfter)
+            for (const id of execution.intent.abandonedOperationIds ?? [])
+                await releaseOperation(this.repository, id)
+        }
+        await this.store.appendJournalPhase(executionId, operation.id, action, "finalized")
+        if (request.action == "restore")
+            await releaseOperation(this.repository, operation.id)
+        return {
+            type: "result",
+            command: "recover",
+            status: "recovered",
+            recovered: [{ action, operation: summarize(operation) }],
+            backupPath: await pathExists(backupPath) ? backupPath : undefined,
+        }
+    }
+
+    async recover(automatic = false): Promise<RecoveryResult> {
         await migrateRecoveryRefs(this.repository)
         const pending = await this.store.readPendingExecutions()
         const recovered: RecoveredExecution[] = []
 
         for (const execution of pending) {
+            const operation = execution.intent.operation
+            if (
+                automatic && execution.intent.action == "apply" && operation.kind == "worktree.remove" && operation.checkpoint
+                && !execution.phases.has("aborted") && !execution.phases.has("cancelled") && !await this.store.hasHistoryEvent(execution.intent.executionId)
+                && !await checkpointMatches(this.repository, operation.checkpoint.restore)
+            ) {
+                throw recoveryBlocked(operation, "apply", "Worktree removal was interrupted. Recover or remove it from its Workspace Column.")
+            }
             if (await this.resumeExecution(execution))
                 recovered.push({ action: execution.intent.action, operation: summarize(execution.intent.operation) })
         }
@@ -1096,6 +1260,10 @@ function recoveryBlocked(operation: StoredOperation, action: string, message: st
         action,
         ...details,
     })
+}
+
+function recoveryBackupPath(path: string, operationId: string) {
+    return `${path}.laneway-recovery-${operationId}`
 }
 
 function crashIfRequested(phase: JournalPhase, requested?: JournalPhase) {
