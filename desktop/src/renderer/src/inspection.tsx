@@ -73,6 +73,7 @@ interface BreakoutState {
     group: string
     subject?: string
     created: Set<string>
+    collapsed: Set<string>
     focus?: string
     /** Keeps aiming at `focus` while diffs above it are still loading and pushing it down. */
     scrolling?: boolean
@@ -643,13 +644,22 @@ export function createInspection(options: Options) {
         const current = state.breakout
         if (current?.group == group) {
             current.focus = path
+            if (path)
+                current.collapsed.delete(path)
             if (focus)
                 focusBreakout(state)
             scrollBreakout(state, current)
             return
         }
         closeBreakout(state)
-        const breakout: BreakoutState = { kind: "diff", group, subject: subject ?? commitSubject(state, group), created: new Set(), focus: path }
+        const breakout: BreakoutState = {
+            kind: "diff",
+            group,
+            subject: subject ?? commitSubject(state, group),
+            created: new Set(),
+            collapsed: new Set(),
+            focus: path,
+        }
         state.breakout = breakout
         if (focus)
             focusBreakout(state)
@@ -1032,13 +1042,12 @@ export function createInspection(options: Options) {
         )
     }
     function renderDiff(state: ColumnState, diff: FileDiffState): RemixNode {
-        const eligible = selectable(state, diff.group)
-        const page = diff.page && !eligible ? { ...diff.page, selectable: false } : diff.page
-        const layout = state.transientLayout ?? options.layout(state.repositoryId, state.id)
-        const brokenOut = state.breakout?.group == diff.group
+        let page = diff.page
+        let breakout = state.breakout?.group == diff.group ? state.breakout : undefined
+        let collapsed = breakout?.collapsed.has(diff.path) ?? false
         return (
             <section class="diff-inspector" aria-label={`Diff for ${diff.path}`} mix={diffInspector}>
-                {brokenOut && (
+                {breakout && (
                     <header class="diff-toolbar" mix={diffToolbar}>
                         <FileMenu
                             class="diff-file-menu"
@@ -1056,13 +1065,40 @@ export function createInspection(options: Options) {
                                 }]
                                 : []}
                         >
-                            <strong title={diff.path} mix={diffToolbarStrong}>
-                                {fileLabel(diff.path)}
-                            </strong>
+                            <button
+                                type="button"
+                                title={diff.path}
+                                aria-label={`${collapsed ? "Expand" : "Collapse"} ${diff.path}`}
+                                aria-expanded={!collapsed}
+                                mix={[
+                                    diffFileToggle,
+                                    on("click", () => {
+                                        if (collapsed)
+                                            breakout.collapsed.delete(diff.path)
+                                        else
+                                            breakout.collapsed.add(diff.path)
+                                        breakout.scrolling = false
+                                        update()
+                                    }),
+                                ]}
+                            >
+                                <Icon name={collapsed ? "chevron-right" : "chevron-down"} size={12} />
+                                <strong mix={diffToolbarStrong}>{fileLabel(diff.path)}</strong>
+                            </button>
                         </FileMenu>
                         {renderDiffControls(state, diff)}
                     </header>
                 )}
+                {!collapsed && renderDiffContents(state, diff)}
+            </section>
+        )
+    }
+    function renderDiffContents(state: ColumnState, diff: FileDiffState): RemixNode {
+        let eligible = selectable(state, diff.group)
+        let page = diff.page && !eligible ? { ...diff.page, selectable: false } : diff.page
+        let layout = state.transientLayout ?? options.layout(state.repositoryId, state.id)
+        return (
+            <>
                 {page?.source.kind == "working" && diffViewChoices(diff, page.file).length > 1 && (
                     <div class="diff-views" role="group" aria-label="Comparison" mix={diffViews}>
                         {diffViewChoices(diff, page.file).map(view => (
@@ -1169,7 +1205,7 @@ export function createInspection(options: Options) {
                         </button>
                     </p>
                 )}
-            </section>
+            </>
         )
     }
     async function openFilter(state: ColumnState, render: Options["update"]) {
@@ -2116,6 +2152,35 @@ export function createInspection(options: Options) {
                             </span>
                             <button
                                 type="button"
+                                title="Expand all"
+                                aria-label="Expand all"
+                                mix={[
+                                    closeDiffColumnButton,
+                                    on("click", () => {
+                                        breakout.collapsed.clear()
+                                        update()
+                                    }),
+                                ]}
+                            >
+                                <Icon name="expand-all" size={15} />
+                            </button>
+                            <button
+                                type="button"
+                                title="Collapse all"
+                                aria-label="Collapse all"
+                                mix={[
+                                    closeDiffColumnButton,
+                                    on("click", () => {
+                                        breakout.collapsed = new Set(files?.inventory?.files.filter(file => !file.ignored).map(file => file.path))
+                                        breakout.scrolling = false
+                                        update()
+                                    }),
+                                ]}
+                            >
+                                <Icon name="collapse-all" size={15} />
+                            </button>
+                            <button
+                                type="button"
                                 title={maximized ? "Restore columns" : "Maximize column"}
                                 aria-label={maximized ? "Restore columns" : "Maximize column"}
                                 mix={[closeDiffColumnButton, on("click", () => options.maximize(repositoryId, columnId))]}
@@ -2295,6 +2360,21 @@ const diffToolbarStrong = css({
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
     font: "12px var(--mono)",
+})
+
+const diffFileToggle = css({
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    width: "100%",
+    padding: "4px 0",
+    border: 0,
+    background: "transparent",
+    color: "var(--text)",
+    textAlign: "left",
+    cursor: "pointer",
+    "& > svg": { flex: "0 0 auto", color: "var(--muted)" },
+    "&:hover": { background: "var(--control-hover)" },
 })
 
 const diffViews = css({

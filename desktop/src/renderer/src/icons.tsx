@@ -17,6 +17,8 @@ const paths = {
     close: "M4 4l8 8M12 4l-8 8",
     "chevron-right": "M6 3l5 5-5 5",
     "chevron-down": "M3 6l5 5 5-5",
+    "expand-all": "M3 5l5-3 5 3M3 11l5 3 5-3",
+    "collapse-all": "M3 2l5 3 5-3M3 14l5-3 5 3",
     "collapse-left": "M7.5 3 2.5 8l5 5M13.5 3l-5 5 5 5",
     "collapse-right": "M8.5 3l5 5-5 5M2.5 3l5 5-5 5",
     maximize: "M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9",

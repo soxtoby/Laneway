@@ -480,6 +480,19 @@ async function checkRenderer() {
     const breakoutScrolledToFile = breakoutWholeCommit && !document.querySelector(".branch-column .diff-inspector")
         && Math.abs(breakoutFile("src/example.ts").querySelector(".diff-toolbar")!.getBoundingClientRect().top - breakoutHeaderBottom()) <= 1
         && breakoutFile("src/example.ts").querySelector(".pierre-diff")!.shadowRoot!.querySelectorAll("[data-line]").length == 2
+    element(".inspection-breakout [aria-label='Collapse all']").click()
+    await settle()
+    const breakoutCollapsed = !breakout.querySelector(".pierre-diff")
+        && [...breakout.querySelectorAll<HTMLElement>("[data-diff-path]")].every(file => file.getBoundingClientRect().height < 50)
+        && breakout.querySelectorAll(".diff-toolbar [aria-expanded='false']").length == 2
+    commitFiles[1].click()
+    await settle()
+    const breakoutNavigationExpands = breakout.querySelectorAll(".pierre-diff").length == 1
+        && !!breakoutFile("other.txt").querySelector("[aria-expanded='true']")
+    element(".inspection-breakout [aria-label='Expand all']").click()
+    await settle()
+    const breakoutExpanded = breakout.querySelectorAll(".pierre-diff").length == 2
+        && breakout.querySelectorAll(".diff-toolbar [aria-expanded='true']").length == 2
     // A maximized column keeps its own width beside its diff column, which takes the rest; resizing moves the split.
     const sourceWidth = breakoutSource.getBoundingClientRect().width
     breakoutSource.querySelector<HTMLButtonElement>("[aria-label='Maximize column']")!.click()
@@ -847,6 +860,9 @@ async function checkRenderer() {
         breakoutWholeCommit,
         breakoutOpenedAtFile,
         breakoutScrolledToFile,
+        breakoutCollapsed,
+        breakoutNavigationExpands,
+        breakoutExpanded,
         newlineNotice,
         stickyFileRow,
         edgeDropAbove,
