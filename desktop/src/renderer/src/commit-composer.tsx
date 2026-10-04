@@ -2,6 +2,7 @@ import type { BranchGraphMarker, ChangesInventory, CommitDraft, LocalPreview, Lo
 import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 import { EditableName } from "./editable-name"
 import { Icon } from "./icons"
+import { fileActionButton } from "./inspection/file-list"
 
 let composerStyle = css({
     // Stashes and working changes are cards, each tinted by kind so drawers read apart from branches.
@@ -78,12 +79,13 @@ let composerStyle = css({
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
+        gap: "6px",
         minHeight: "38px",
         padding: "0 6px 0 10px",
         background: "var(--accent-wash)",
         borderBottom: "1px solid var(--line)",
     },
-    "& .commit-header h3": { display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 600, margin: 0 },
+    "& .commit-header h3": { display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 600, margin: 0, marginRight: "auto" },
     "& .commit-header h3 svg": { color: "var(--accent-hover)" },
     "& .commit-split[hidden]": { display: "none" },
     "& .commit-card.clean": { borderColor: "var(--line)" },
@@ -212,6 +214,7 @@ export function CommitComposer(
         blocked?: boolean
         showIgnored: boolean
         toggleIgnored(value: boolean): void
+        openDiffColumn?(): void
         /** Stashes recorded on this column's branch; shown above Working Changes. */
         stashes?: BranchGraphMarker[]
         /** Whether a stash's files are showing, and a toggle and renderer for them. */
@@ -308,6 +311,17 @@ export function CommitComposer(
                         <Icon name="folder" size={14} />
                         {clean() ? "No Working Changes" : "Working Changes"}
                     </h3>
+                    {props.openDiffColumn && (
+                        <button
+                            type="button"
+                            aria-label="Open diff column"
+                            title="Open diff column"
+                            disabled={!files().length}
+                            mix={[fileActionButton, on("click", () => props.openDiffColumn?.())]}
+                        >
+                            <Icon name="external" size={14} />
+                        </button>
+                    )}
                     {/* The form's own Commit button takes over while composing. */}
                     <div
                         hidden={clean() || open}

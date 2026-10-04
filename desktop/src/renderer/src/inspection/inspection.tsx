@@ -940,6 +940,7 @@ export function createInspection(options: Options) {
                                 unborn={column.kind == "virtual" && /^0+$/.test(column.objectId)}
                                 busyChanged={options.localBusyChanged}
                                 inventory={state.files.get("working")?.inventory}
+                                openDiffColumn={() => showWorkingBreakout(state)}
                                 stashes={column.kind == "branch" ? column.markers : []}
                                 stashOpen={stash => state.files.get(stash.objectId)?.open ?? false}
                                 toggleStash={stash => {
@@ -2239,6 +2240,18 @@ export function createInspection(options: Options) {
         populateBreakout(state, breakout)
         update()
         scrollBreakout(state, breakout)
+    }
+
+    function showWorkingBreakout(state: ColumnState) {
+        if (state.breakout?.group.startsWith("working")) {
+            focusBreakout(state)
+            return
+        }
+        let selected = [...state.diffs.values()].findLast(diff => diff.group.startsWith("working"))
+        let group = selected?.group ?? (state.files.get("working-staged")?.inventory?.files.some(file => !file.ignored) ? "working-staged" : "working-unstaged")
+        let path = selected?.path ?? state.files.get(group)?.inventory?.files.find(file => !file.ignored)?.path
+        if (path)
+            void showBreakout(state, group, path)
     }
 
     /**
