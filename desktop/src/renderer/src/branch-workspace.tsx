@@ -13,7 +13,7 @@ import { createLocalBranchActions } from "./local-branch-actions"
 import { createPullLatest, type PullControl } from "./pull-latest"
 import { baseName, RepositoryRail } from "./repository-rail"
 import { createWorktreeActions } from "./worktree-actions"
-import { reconcileWorktreeColumns, workspaceGraph } from "./worktree-columns"
+import { branchNodeFor, localIdentities, reconcileWorktreeColumns, workspaceGraph } from "./worktree-columns"
 
 const defaultColumnWidth = 380
 
@@ -272,8 +272,11 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             const state = stateFor(active.id)
             inspection.retain(active.id, state.openedBranchIds, state.graph && workspaceGraph(state.graph))
             const graph = state.graph
+            // Rows show each local branch identity, so every branch sharing a tip can be opened, dragged, and dropped on.
+            const identities = graph && workspaceGraph(graph)
             const visibleBranches = graph ? branchesForDisplay(graph, state.showAll, state.collapsedBranchIds) : []
-            const layout = graph ? layoutBranchGraph(graph, visibleBranches) : { rows: [], width: 26 }
+            const rowBranches = graph ? visibleBranches.flatMap(branch => localIdentities(graph, branch)) : []
+            const layout = graph ? layoutBranchGraph(graph, rowBranches) : { rows: [], width: 26 }
             const selectableIds = layout.rows.map(row => row.node.id)
             const nodeWindow = windowNodes(layout.rows, state.graphScrollTop, state.graphViewportHeight)
             if (
@@ -327,7 +330,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                     Compare with…
                                 </button>
                                 {(() => {
-                                    const branch = graph.branches.find(branch => branch.id == state.contextMenu?.branchId)
+                                    const branch = workspaceGraph(graph).branches.find(branch => branch.id == state.contextMenu?.branchId)
                                     return branch && rebaseable(branch) && (
                                         <button
                                             type="button"
@@ -448,7 +451,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                 {!graph && state.error && <GraphError message={state.error} retry={() => read(active.id, false, true)} />}
                                 {graph && (
                                     <section class="graph-panel" aria-label="Branch Graph" mix={graphPanel}>
-                                        <GraphSummary graph={graph} visibleCount={visibleBranches.length} />
+                                        <GraphSummary graph={graph} visibleCount={rowBranches.length} />
                                         <BaseUnresolved
                                             branches={visibleBranches}
                                             selections={state.baseCandidateSelections}
@@ -479,8 +482,8 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                             {nodeWindow.nodes.map(row => {
                                                 if (row.node.kind == "branch") {
                                                     const branch = row.node.branch
-                                                    const choosing = graph.branches.find(candidate => candidate.id == rebase.choosing(active.id))
-                                                    const dragged = () => graph.branches.find(candidate => candidate.id == state.draggingBranchId)
+                                                    const choosing = identities!.branches.find(candidate => candidate.id == rebase.choosing(active.id))
+                                                    const dragged = () => identities!.branches.find(candidate => candidate.id == state.draggingBranchId)
                                                     return (
                                                         <BranchRow
                                                             branch={branch}
@@ -488,7 +491,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                                             selected={state.selectedId == branch.id}
                                                             rebase={choosing?.id == branch.id
                                                                 ? "source"
-                                                                : choosing && state.selectedId == branch.id && canRebaseOnto(graph, choosing, branch)
+                                                                : choosing && state.selectedId == branch.id && canRebaseOnto(identities!, choosing, branch)
                                                                 ? "target"
                                                                 : undefined}
                                                             // While a rebase chooses its destination, clicking a branch chooses it.
@@ -507,13 +510,13 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                                             dragEnd={() => state.draggingBranchId = undefined}
                                                             accepts={() => {
                                                                 const source = dragged()
-                                                                return !!source && canRebaseOnto(graph, source, branch)
+                                                                return !!source && canRebaseOnto(identities!, source, branch)
                                                             }}
                                                             drop={() => {
                                                                 const source = dragged()
                                                                 state.draggingBranchId = undefined
                                                                 if (source)
-                                                                    void rebase.start(active.id, graph, source.id, branch.id)
+                                                                    void rebase.start(active.id, identities!, source.id, branch.id)
                                                             }}
                                                         />
                                                     )
@@ -668,7 +671,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                         : undefined}
                     query={lensQuery}
                     results={comparisonSource
-                        ? (stateFor(comparisonSource.repositoryId).graph?.branches ?? [])
+                        ? (lensGraph(comparisonSource.repositoryId)?.branches ?? [])
                             .filter(branch => branch.preferredRef != comparisonSource!.fromRef
                                 && branch.name.toLocaleLowerCase().includes(lensQuery.trim().toLocaleLowerCase())
                             )
@@ -870,7 +873,8 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         state.showAll = !state.showAll
         if (
             !state.showAll && state.graph && state.selectedId
-            && !branchesForDisplay(state.graph, false, state.collapsedBranchIds).some(branch => branch.id == state.selectedId)
+            && !branchesForDisplay(state.graph, false, state.collapsedBranchIds)
+                .some(branch => localIdentities(state.graph!, branch).some(identity => identity.id == state.selectedId))
         ) {
             state.selectedId = undefined
         }
@@ -1068,31 +1072,30 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         const nodeIds = rows.map(row => row.node.id)
         const state = stateFor(repositoryId)
         const index = nodeIds.findIndex(id => id == state.selectedId)
+        const selected = state.graph && workspaceGraph(state.graph).branches.find(branch => branch.id == state.selectedId)
         if (event.key == "Enter" && rebase.choosing(repositoryId) && state.selectedId) {
             event.preventDefault()
             chooseRebaseDestination(repositoryId, state.selectedId)
             return
         }
         if (event.key.toLowerCase() == "m" && !event.ctrlKey && !event.altKey && !event.metaKey) {
-            const branch = state.graph?.branches.find(branch => branch.id == state.selectedId)
-            if (branch && rebaseable(branch)) {
+            if (selected && rebaseable(selected)) {
                 event.preventDefault()
-                rebase.choose(repositoryId, branch)
+                rebase.choose(repositoryId, selected)
             }
             return
         }
         if (event.key == "F2" || event.key == "Delete") {
-            const branch = state.graph?.branches.find(branch => branch.id == state.selectedId && branch.localRefs.length > 0)
-            if (branch) {
+            if (selected && selected.localRefs.length > 0) {
                 event.preventDefault()
-                localBranches.open(repositoryId, branch, event.key == "F2" ? "branch-rename" : "branch-delete")
+                localBranches.open(repositoryId, selected, event.key == "F2" ? "branch-rename" : "branch-delete")
             }
             return
         }
-        if ((event.key == "ContextMenu" || event.shiftKey && event.key == "F10") && state.graph?.branches.some(branch => branch.id == state.selectedId)) {
+        if ((event.key == "ContextMenu" || event.shiftKey && event.key == "F10") && selected) {
             event.preventDefault()
             const rect = event.currentTarget instanceof HTMLElement ? event.currentTarget.getBoundingClientRect() : undefined
-            state.contextMenu = { branchId: state.selectedId!, x: rect?.left ?? 0, y: rect?.top ?? 0 }
+            state.contextMenu = { branchId: selected.id, x: rect?.left ?? 0, y: rect?.top ?? 0 }
             void options.update()
         } else if (event.key == "ArrowDown" || event.key == "ArrowUp") {
             event.preventDefault()
@@ -1115,16 +1118,16 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                         rows.scrollTop = state.graphScrollTop
                 })
             }
-        } else if (event.key == "Enter" && state.selectedId && state.graph?.branches.some(branch => branch.id == state.selectedId)) {
+        } else if (event.key == "Enter" && selected) {
             event.preventDefault()
-            openBranch(repositoryId, state.selectedId)
-        } else if (
-            (event.key == "ArrowLeft" || event.key == "ArrowRight") && state.selectedId && state.graph?.branches.some(branch => branch.id == state.selectedId)
-        ) {
+            openBranch(repositoryId, selected.id)
+        } else if ((event.key == "ArrowLeft" || event.key == "ArrowRight") && selected) {
             event.preventDefault()
+            // Branches stack on a whole Branch Node, so collapsing any identity at its tip collapses them all.
+            const nodeId = branchNodeFor(state.graph!, selected.id)!.id
             state.collapsedBranchIds = event.key == "ArrowLeft"
-                ? [...new Set([...state.collapsedBranchIds, state.selectedId])]
-                : state.collapsedBranchIds.filter(id => id != state.selectedId)
+                ? [...new Set([...state.collapsedBranchIds, nodeId])]
+                : state.collapsedBranchIds.filter(id => id != nodeId)
             void options.update()
         } else if (event.key == "Escape" && state.maximizedBranchId) {
             state.maximizedBranchId = undefined
@@ -1133,7 +1136,8 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
     }
 
     function chooseRebaseDestination(repositoryId: string, targetId: string) {
-        const graph = stateFor(repositoryId).graph, sourceId = rebase.choosing(repositoryId)
+        const state = stateFor(repositoryId), sourceId = rebase.choosing(repositoryId)
+        const graph = state.graph && workspaceGraph(state.graph)
         const source = graph?.branches.find(branch => branch.id == sourceId), target = graph?.branches.find(branch => branch.id == targetId)
         if (!graph || !source)
             return
@@ -1143,6 +1147,11 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             options.notify({ code: "rebase.choose", message: `Choose a branch other than ${source.name} and the branches stacked on it.` })
             void options.update()
         }
+    }
+
+    function lensGraph(repositoryId: string) {
+        const graph = stateFor(repositoryId).graph
+        return graph && workspaceGraph(graph)
     }
 
     function openLens() {
@@ -1168,7 +1177,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         if (comparisonSource) {
             const request = comparisonSource
             const state = stateFor(request.repositoryId)
-            const graph = state.graph
+            const graph = lensGraph(request.repositoryId)
             if (request.chooseFirst) {
                 const branch = graph?.branches.find(branch => branch.id == result.nodeId)
                 if (branch) {
@@ -1521,19 +1530,36 @@ function SimpleNodeRow(
 }
 
 function GraphRail(handle: Handle<{ row: GraphRowLayout }>) {
-    return () => (
-        <svg
-            class="graph-rail-lines"
-            aria-hidden="true"
-            width={handle.props.row.width}
-            height={40}
-            viewBox={`0 0 ${handle.props.row.width} 40`}
-            mix={graphRailLines}
-        >
-            {handle.props.row.paths.map(path => <path d={path.d} fill="none" stroke={graphLineColor(path.color)} stroke-width="2" />)}
-            <circle cx={handle.props.row.x} cy={20} r={4} fill="var(--panel)" stroke={graphLineColor(handle.props.row.color)} stroke-width="2" />
-        </svg>
-    )
+    return () => {
+        const { x, color, sameCommit } = handle.props.row
+        return (
+            <svg
+                class="graph-rail-lines"
+                aria-hidden="true"
+                width={handle.props.row.width}
+                height={40}
+                viewBox={`0 0 ${handle.props.row.width} 40`}
+                mix={graphRailLines}
+            >
+                {handle.props.row.paths.map(path => <path d={path.d} fill="none" stroke={graphLineColor(path.color)} stroke-width="2" />)}
+                {sameCommit.above || sameCommit.below
+                    ? (() => {
+                        // One commit labelled by several rows stretches its node across them, so branches sharing a tip
+                        // don't read as a stack. Each row draws its part; open ends meet the neighbouring row's.
+                        const top = sameCommit.above ? 0 : 20, bottom = sameCommit.below ? 40 : 20
+                        const outline = (open: "M" | "L") =>
+                            `M ${x - 4} ${bottom} V ${top} ${sameCommit.above ? `${open} ${x + 4} ${top}` : `A 4 4 0 0 1 ${x + 4} ${top}`} V ${bottom}${
+                                sameCommit.below ? "" : ` A 4 4 0 0 1 ${x - 4} ${bottom}`
+                            }`
+                        return [
+                            <path class="shared-commit" d={`${outline("L")} Z`} fill="var(--panel)" />,
+                            <path d={outline("M")} fill="none" stroke={graphLineColor(color)} stroke-width="2" />,
+                        ]
+                    })()
+                    : <circle cx={x} cy={20} r={4} fill="var(--panel)" stroke={graphLineColor(color)} stroke-width="2" />}
+            </svg>
+        )
+    }
 }
 
 function BranchColumns(
@@ -2004,7 +2030,8 @@ function lensResults(workspace: Workspace, states: Map<string, RepositoryGraphSt
                 score: repoScore,
             })
         }
-        for (const branch of states.get(repository.id)?.graph?.branches ?? []) {
+        const graph = states.get(repository.id)?.graph
+        for (const branch of graph ? workspaceGraph(graph).branches : []) {
             const score = Math.max(...[branch.name, ...branch.aliases].map(value => textScore(value, needle)))
             if (score > 0)
                 results.push({ kind: "branch", repositoryId: repository.id, nodeId: branch.id, label: branch.name, detail: name, score })

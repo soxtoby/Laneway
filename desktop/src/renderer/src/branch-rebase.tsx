@@ -34,16 +34,19 @@ export function rebaseable(branch: BranchGraphBranchNode) {
     return !branch.remoteOnly && !branch.primary && branch.localRefs.length > 0
 }
 
-/** A branch can't be rebased onto itself or onto a branch stacked on it, whose history the rebase rewrites. */
+/**
+ * A branch can't be rebased onto itself or onto a branch stacked on it, whose history the rebase rewrites. Branches sharing
+ * its tip count as itself: Bases name only one of them.
+ */
 export function canRebaseOnto(graph: BranchGraph, source: BranchGraphBranchNode, target: BranchGraphBranchNode) {
-    if (!rebaseable(source) || source.id == target.id)
+    if (!rebaseable(source) || target.tip == source.tip)
         return false
     const seen = new Set<string>()
     for (let node: BranchGraphBranchNode | undefined = target; node?.base.status == "known" && !seen.has(node.id);) {
         seen.add(node.id)
-        const baseId: string = node.base.branchId
-        if (baseId == source.id)
+        if (node.base.tip == source.tip)
             return false
+        const baseId: string = node.base.branchId
         node = graph.branches.find(branch => branch.id == baseId)
     }
     return true

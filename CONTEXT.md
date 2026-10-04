@@ -121,7 +121,7 @@ The repository-wide persistent linear record of Laneway Operations around the cu
 _Avoid_: History, journal, reflog
 
 **Branch Node**:
-One line of work combining its local and upstream tips while exposing their divergence; its expanded history contains commits unique to its Base Branch. Pull-request state appears as a marker, while a qualifying remote-only branch forms its own node.
+One line of work combining its local and upstream tips while exposing their divergence; its expanded history contains commits unique to its Base Branch. Local branches sharing a tip remain separate Branch Nodes drawn on one commit. Pull-request state appears as a marker, while a qualifying remote-only branch forms its own node.
 _Avoid_: Local branch node, remote branch node
 
 **Branch Marker**:

@@ -2903,6 +2903,50 @@ describe("Branch Graph rebase", () => {
         }
     })
 
+    test("shows each branch sharing a tip as its own row to open, drag, and drop onto", async () => {
+        const { api, calls } = scenario(graph => {
+            Object.assign(graph.branches[1], {
+                localRefs: ["refs/heads/feature/laneway", "refs/heads/feature/sibling"],
+                refs: ["refs/heads/feature/laneway", "refs/heads/feature/sibling"],
+                aliases: ["feature/laneway", "feature/sibling"],
+            })
+        })
+        const sibling = { kind: "branch" as const, branch: "refs/heads/feature/sibling", tip: "2".repeat(40) }
+        const view = render(api)
+        try {
+            await flush(view.root)
+            const rows = [...view.container.querySelectorAll<HTMLElement>(".graph-row")].map(row => row.dataset.nodeId)
+            expect(rows.indexOf("branch:refs/heads/feature/sibling")).toBe(rows.indexOf("branch:refs/heads/feature/laneway") + 1)
+            // One commit's node spans both rows, so siblings don't read as a stack.
+            expect(row(view.container, "feature/laneway").querySelector(".shared-commit")).not.toBeNull()
+            expect(row(view.container, "feature/sibling").querySelector(".shared-commit")).not.toBeNull()
+            expect(row(view.container, "other/team").querySelector(".shared-commit")).toBeNull()
+
+            // Neither sibling lands on the other or on a branch stacked on their shared tip.
+            expect(drag(view.container, "feature/sibling", "feature/laneway").accepted).toBe(false)
+            expect(drag(view.container, "feature/laneway", "feature/sibling").accepted).toBe(false)
+            expect(drag(view.container, "feature/sibling", "child").accepted).toBe(false)
+            expect(drag(view.container, "other/team", "feature/sibling").accepted).toBe(true)
+            await flush(view.root)
+            expect(calls.at(-1)?.request.target).toEqual(sibling)
+            expect(drag(view.container, "feature/sibling", "other/team").accepted).toBe(true)
+            await flush(view.root)
+            expect(calls.at(-1)?.request).toMatchObject({ source: sibling, target: team })
+
+            click(row(view.container, "feature/sibling").querySelector<HTMLButtonElement>(".open-branch")!)
+            await flush(view.root)
+            expect(view.container.querySelector("[data-column-id='branch:refs/heads/feature/sibling']")).not.toBeNull()
+            expect(view.container.querySelector("[data-column-id='branch:refs/heads/feature/laneway']")).toBeNull()
+
+            // Keyboard actions on the selected row act on that identity, not the one leading its tip.
+            view.container.querySelector<HTMLElement>(".graph-rows")!.dispatchEvent(new KeyboardEvent("keydown", { key: "F2", bubbles: true }))
+            await flush(view.root)
+            expect([...view.container.querySelectorAll<HTMLInputElement>("input")].some(input => input.value == "feature/sibling")).toBe(true)
+        } finally {
+            view.dispose()
+        }
+    })
+
     test("chooses a destination by keyboard or from the context menu", async () => {
         const { api, calls } = scenario()
         const view = render(api)

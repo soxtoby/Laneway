@@ -95,6 +95,23 @@ test("orders tags by topology and draws uninterrupted rails through tag rows", (
     }
 })
 
+test("stretches a commit's node across consecutive rows of branches sharing its tip", () => {
+    const graph: BranchGraph = branchGraph("test")
+    const [main, feature] = graph.branches
+    const sibling = (name: string) => ({ ...feature, id: `branch:refs/heads/${name}`, name })
+    const { rows } = layoutBranchGraph(graph, [main, feature, sibling("second"), sibling("third")])
+    expect(rows.map(row => row.node.id)).toEqual([feature.id, "branch:refs/heads/second", "branch:refs/heads/third", main.id])
+    expect(rows.map(row => row.sameCommit)).toEqual([{ above: false, below: true }, { above: true, below: true }, { above: true, below: false }, {
+        above: false,
+        below: false,
+    }])
+    expect(new Set(rows.slice(0, 3).map(row => `${row.x}:${row.color}`)).size).toBe(1)
+    // The rail still runs straight through the shared commit's rows.
+    expect(rows[0].paths).toContainEqual({ d: `M ${rows[0].x} 20 V 40`, color: rows[0].color })
+    expect(rows[1].paths).toContainEqual({ d: `M ${rows[0].x} 0 V 40`, color: rows[0].color })
+    expect(rows[2].paths).toContainEqual({ d: `M ${rows[0].x} 0 V 20`, color: rows[0].color })
+})
+
 test("keeps early labels close to the rail when later history gets wider", () => {
     const graph: BranchGraph = branchGraph("test")
     const [main, feature, other] = graph.branches

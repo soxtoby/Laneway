@@ -1,6 +1,6 @@
 import type { BranchGraph, WorkspaceColumn } from "@laneway/shared"
 import { expect, test } from "bun:test"
-import { reconcileWorktreeColumns, workspaceGraph } from "../src/renderer/src/worktree-columns"
+import { branchNodeFor, localIdentities, reconcileWorktreeColumns, workspaceGraph } from "../src/renderer/src/worktree-columns"
 import { branchGraph } from "./renderer-fixtures"
 
 test("equivalent refs retain separate branch-only columns and worktree identity", () => {
@@ -16,6 +16,23 @@ test("equivalent refs retain separate branch-only columns and worktree identity"
             .columns,
     )
         .toMatchObject([{ id: "branch:refs/heads/new", ref: "refs/heads/new", worktreePath: undefined }])
+})
+
+test("branches sharing a tip keep their own identities, led by the node's preferred ref", () => {
+    const graph = branchGraph("repo")
+    const feature = graph.branches[1]!
+    Object.assign(feature, {
+        localRefs: ["refs/heads/a-sibling", "refs/heads/feature/laneway"],
+        remoteRefs: ["refs/remotes/origin/feature/laneway"],
+        refs: ["refs/heads/a-sibling", "refs/heads/feature/laneway", "refs/remotes/origin/feature/laneway"],
+        tags: ["v1"],
+    })
+    const [lead, sibling] = localIdentities(graph, feature)
+    expect([lead?.id, sibling?.id]).toEqual(["branch:refs/heads/feature/laneway", "branch:refs/heads/a-sibling"])
+    expect(lead).toMatchObject({ aliases: ["feature/laneway", "origin/feature/laneway"], remoteRefs: ["refs/remotes/origin/feature/laneway"], tags: ["v1"] })
+    expect(sibling).toMatchObject({ name: "a-sibling", aliases: ["a-sibling"], remoteRefs: [], tags: [], tip: feature.tip, base: feature.base })
+    expect(branchNodeFor(graph, sibling!.id)).toBe(feature)
+    expect(branchNodeFor(graph, lead!.id)).toBe(feature)
 })
 
 test("external checkout keeps the worktree column position and removes an existing branch-only duplicate", () => {

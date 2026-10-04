@@ -1,29 +1,40 @@
-import type { BranchGraph, WorkspaceColumn } from "@laneway/shared"
+import type { BranchGraph, BranchGraphBranchNode, WorkspaceColumn } from "@laneway/shared"
 
-// Graph rows coalesce equivalent refs. Workspace columns retain each local branch identity.
+// The Git module coalesces equivalent refs into one Branch Node. Graph rows and Workspace Columns retain each local branch identity.
 export function workspaceGraph(graph: BranchGraph): BranchGraph {
     if (graph.branches.every(branch => branch.localRefs.length < 2))
         return graph
-    const result = {
-        ...graph,
-        branches: graph.branches.flatMap(branch =>
-            branch.localRefs.length < 2 ? [branch] : branch.localRefs.map(ref => ({
-                ...branch,
-                id: `branch:${ref}`,
-                name: ref.slice(11),
-                preferredRef: ref,
-                localRefs: [ref],
-                refs: [ref, ...(ref == branch.preferredRef ? branch.remoteRefs : [])],
-                aliases: [ref.slice(11)],
-                checkedOut: branch.checkedOut.filter(worktree => worktree.branchRef == ref),
-                markers: branch.markers.filter(marker => marker.branchName ? marker.branchName == ref.slice(11) : ref == branch.preferredRef),
-                primary: branch.primary
-                    && (graph.primaryBranch.ref == ref || !branch.localRefs.includes(graph.primaryBranch.ref ?? "") && ref == branch.preferredRef),
-                ...(ref == branch.preferredRef ? {} : { remoteRefs: [], upstreamRef: undefined, upstreamTip: undefined, ahead: 0, behind: 0 }),
-            }))
-        ),
-    }
-    return result
+    return { ...graph, branches: graph.branches.flatMap(branch => localIdentities(graph, branch)) }
+}
+
+/** Each local branch sharing a Branch Node's tip, led by the node's preferred ref so it keeps the node's place. */
+export function localIdentities(graph: BranchGraph, branch: BranchGraphBranchNode): BranchGraphBranchNode[] {
+    if (branch.localRefs.length < 2)
+        return [branch]
+    return [branch.preferredRef, ...branch.localRefs.filter(ref => ref != branch.preferredRef)].map(ref => {
+        const refs = [ref, ...(ref == branch.preferredRef ? branch.remoteRefs : [])]
+        return {
+            ...branch,
+            id: `branch:${ref}`,
+            name: ref.slice(11),
+            preferredRef: ref,
+            localRefs: [ref],
+            refs,
+            aliases: refs.map(ref => ref.replace(/^refs\/(heads|remotes)\//, "")),
+            checkedOut: branch.checkedOut.filter(worktree => worktree.branchRef == ref),
+            markers: branch.markers.filter(marker => marker.branchName ? marker.branchName == ref.slice(11) : ref == branch.preferredRef),
+            // Tags belong to the shared commit, so they show once, beside the identity that leads it.
+            tags: ref == branch.preferredRef ? branch.tags : [],
+            primary: branch.primary
+                && (graph.primaryBranch.ref == ref || !branch.localRefs.includes(graph.primaryBranch.ref ?? "") && ref == branch.preferredRef),
+            ...(ref == branch.preferredRef ? {} : { remoteRefs: [], upstreamRef: undefined, upstreamTip: undefined, ahead: 0, behind: 0 }),
+        }
+    })
+}
+
+/** The Branch Node holding a local branch identity, which carries its Base relationships. */
+export function branchNodeFor(graph: BranchGraph, id: string) {
+    return graph.branches.find(branch => branch.id == id || branch.localRefs.some(ref => `branch:${ref}` == id))
 }
 
 export function reconcileWorktreeColumns(columns: WorkspaceColumn[], graph: BranchGraph, focused?: string) {

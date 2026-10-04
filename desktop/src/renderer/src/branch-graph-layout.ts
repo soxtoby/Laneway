@@ -11,6 +11,8 @@ export interface GraphRowLayout {
     width: number
     color: number
     paths: Array<{ d: string; color: number }>
+    /** Whether the neighbouring rows label the same commit, so its node stretches to span them. */
+    sameCommit: { above: boolean; below: boolean }
 }
 
 export function graphLineColor(color: number) {
@@ -152,7 +154,20 @@ export function layoutBranchGraph(graph: BranchGraph, branches: BranchGraphBranc
     for (const [index, event] of events.entries()) {
         if (event.node) {
             centers.set(index, rows.length * graphRowHeight + 20)
-            rows.push({ node: event.node, objectId: event.objectId, x: event.x, width: event.x + 13, color: event.color, paths: [] })
+            // Labels of one commit are consecutive events.
+            const previous = rows.at(-1)
+            const above = previous?.objectId == event.objectId
+            if (above)
+                previous.sameCommit.below = true
+            rows.push({
+                node: event.node,
+                objectId: event.objectId,
+                x: event.x,
+                width: event.x + 13,
+                color: event.color,
+                paths: [],
+                sameCommit: { above, below: false },
+            })
         }
     }
     if (rows.length == 0)
