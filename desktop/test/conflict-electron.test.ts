@@ -59,9 +59,7 @@ test("production conflict IPC, candidate isolation, column restart and acceptanc
                 repositories: [{ id: "fixture", path: repository, name: "repository", anchors: [], open: true, columns: [], layoutInitialized: false }],
             }),
         )
-        let build = Bun.spawn([process.execPath, "run", "--cwd", "desktop", "build"], { cwd: root, stdout: "ignore", stderr: "pipe" })
-        let diagnostics = await new Response(build.stderr).text()
-        expect(await build.exited, diagnostics).toBe(0)
+        // The test script builds desktop/out once; parallel test files must not rebuild it.
         for (let phase of ["unresolved", "candidate", "accept"]) {
             let env: NodeJS.ProcessEnv = {
                 ...process.env,

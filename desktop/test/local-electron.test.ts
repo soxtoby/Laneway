@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
 
-test("rebuilt desktop commits through production IPC and restores drafts across process restart", async () => {
+test("built desktop commits through production IPC and restores drafts across process restart", async () => {
     let directory = await mkdtemp(join(tmpdir(), "laneway-local-electron-"))
     let root = resolve(import.meta.dir, "../..")
     try {
@@ -32,10 +32,7 @@ test("rebuilt desktop commits through production IPC and restores drafts across 
             }),
         )
 
-        let build = Bun.spawn([process.execPath, "run", "--cwd", "desktop", "build"], { cwd: root, stdout: "pipe", stderr: "pipe" })
-        let diagnostics = await new Response(build.stderr).text()
-        expect(await build.exited, diagnostics).toBe(0)
-
+        // The test script builds desktop/out once; parallel test files must not rebuild it.
         for (let phase of ["draft", "commit", "compose"]) {
             if (phase == "compose")
                 await writeFile(join(directory, "repository", "file.txt"), "composed desktop change\n")

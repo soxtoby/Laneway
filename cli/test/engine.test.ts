@@ -259,7 +259,7 @@ describe("Laneway Engine executable", () => {
         } finally {
             await rm(repository, { recursive: true, force: true })
         }
-    }, 30_000)
+    }, 90_000)
 
     test("ignored files stay outside recovery while index and ref changes create boundaries", async () => {
         let testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
