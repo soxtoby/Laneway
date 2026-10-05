@@ -1,15 +1,7 @@
 import { z } from "zod"
+import { OperationSummarySchema } from "./operation-history"
 
 let oid = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)
-// Mirrors OperationSummarySchema; index.ts re-exports this module, so it cannot import from it.
-let operationSummary = z.object({
-    id: z.string(),
-    timestamp: z.string(),
-    kind: z.string(),
-    summary: z.string(),
-    affectedRefs: z.array(z.string()),
-    affectedWorktrees: z.array(z.string()),
-})
 
 export let PullRequestSchema = z.object({
     // Open Workspace Column branches whose Active Stacks are in scope, frozen at activation.
@@ -47,7 +39,7 @@ export let PullResultSchema = z.object({
     message: z.string(),
     fetches: z.array(PullFetchSchema),
     stacks: z.array(PullStackOutcomeSchema),
-    operation: operationSummary.optional(),
+    operation: OperationSummarySchema.optional(),
 })
 export type PullResult = z.infer<typeof PullResultSchema>
 

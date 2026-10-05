@@ -1,7 +1,7 @@
 import type { BranchGraphBranchNode, ChangedFile, ConflictRequest, ConflictResult } from "@laneway/shared"
 import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 import { ResolutionReview, resolutionReview } from "./conflict-content"
-import { fileActionButton, fileLabel, InspectionItem } from "./file-list"
+import { fileActionButton, fileLabel, InspectionItem } from "./inspection/file-list"
 import { type ConflictSides, MergeResolution } from "./merge-resolution"
 
 interface Options {

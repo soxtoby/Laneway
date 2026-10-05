@@ -4,8 +4,8 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
-import { conflictResult } from "../src/conflict-operations"
-import { executeOperationCommand } from "../src/operation-runtime"
+import { conflictResult } from "../src/conflicts/conflict-operations"
+import { executeOperationCommand } from "../src/operations/operation-runtime"
 
 let fixtures: string[] = []
 afterEach(async () => {

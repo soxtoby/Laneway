@@ -4,9 +4,9 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
-import { prepareComposition } from "../src/composition"
-import { prepareFileExtraction } from "../src/file-extraction"
-import { executeOperationCommand } from "../src/operation-runtime"
+import { prepareComposition } from "../src/composition/composition"
+import { prepareFileExtraction } from "../src/composition/file-extraction"
+import { executeOperationCommand } from "../src/operations/operation-runtime"
 
 let directories: string[] = []
 afterEach(async () => {

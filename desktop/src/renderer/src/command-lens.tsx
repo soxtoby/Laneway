@@ -1,6 +1,6 @@
 import { css, type Handle, on, ref } from "remix/ui"
 import * as listbox from "remix/ui/listbox"
-import type { LensResult } from "./branch-workspace"
+import type { LensResult } from "./branch-workspace/branch-workspace"
 
 let lensBackdrop = css({
     position: "fixed",

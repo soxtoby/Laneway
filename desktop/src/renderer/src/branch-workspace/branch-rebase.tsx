@@ -1,7 +1,7 @@
 import type { BranchGraph, BranchGraphBranchNode, CompositionRequest, LocalPreview } from "@laneway/shared"
 import { css, on, ref } from "remix/ui"
 import radio from "remix/ui/radio"
-import type { NoticeState } from "./feedback"
+import type { NoticeState } from "../feedback"
 
 /** A tip a Branch Node offers as the new base: its local tip, or its upstream tip when that has commits the local one lacks. */
 interface Destination {

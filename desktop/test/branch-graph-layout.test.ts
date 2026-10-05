@@ -1,6 +1,6 @@
 import type { BranchGraph } from "@laneway/shared"
 import { expect, test } from "bun:test"
-import { layoutBranchGraph } from "../src/renderer/src/branch-graph-layout"
+import { layoutBranchGraph } from "../src/renderer/src/branch-workspace/branch-graph-layout"
 import { branchGraph } from "./renderer-fixtures"
 
 test("draws a merged branch off the main rail and reconnects at its base", () => {

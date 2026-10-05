@@ -1,6 +1,6 @@
 import { gitText, readRegisteredWorktrees, type RepositoryGit } from "@laneway/git"
 import type { BranchGraphBranchNode, BranchGraphReadOptions, PullFetch, PullRequest, PullStackOutcome } from "@laneway/shared"
-import { type ConflictSession, gitHead, openConflictSession, rewriteStack, type StackRewritePlan } from "./conflict-operations"
+import { type ConflictSession, gitHead, openConflictSession, rewriteStack, type StackRewritePlan } from "./conflicts/conflict-operations"
 
 type Changes = Map<string, string | null>
 export type PullProgressReporter = (message: string, completed: number, total: number) => void

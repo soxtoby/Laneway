@@ -1202,7 +1202,7 @@ test("hidden Branch Graph still shows the first read's progress and failure", as
 
 describe("Branch Comparison", () => {
     test("rejects obsolete inventories and cancels only affected requests", async () => {
-        let { createBranchComparisons } = await import("../src/renderer/src/branch-comparison")
+        let { createBranchComparisons } = await import("../src/renderer/src/inspection/branch-comparison")
         let graph = branchGraph("repo")
         let [main, feature, other] = graph.branches
         let pending = new Map<string, (result: ChangesResult) => void>()

@@ -3,7 +3,7 @@ import { afterEach, expect, test } from "bun:test"
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
-import { executeOperationCommand } from "../src/operation-runtime"
+import { executeOperationCommand } from "../src/operations/operation-runtime"
 
 let temporary: string[] = []
 afterEach(async () => {

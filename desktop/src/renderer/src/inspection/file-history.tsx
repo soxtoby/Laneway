@@ -1,8 +1,8 @@
 import type { FileHistoryEntry, FileHistoryPage, FileHistorySource } from "@laneway/shared"
 import { css, on, type RemixNode } from "remix/ui"
-import { auxiliaryCloseButton, auxiliaryColumnFrame, auxiliaryColumnHeader } from "./auxiliary-columns"
+import { auxiliaryCloseButton, auxiliaryColumnFrame, auxiliaryColumnHeader } from "../auxiliary-columns"
+import { Icon } from "../icons"
 import { InspectionItem } from "./file-list"
-import { Icon } from "./icons"
 
 export interface FileHistoryState {
     kind: "history"

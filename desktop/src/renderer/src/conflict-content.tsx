@@ -1,6 +1,6 @@
 import type { ConflictResult, DiffLine, FileDiffPage } from "@laneway/shared"
 import { css, type Handle } from "remix/ui"
-import { DiffLines } from "./diff"
+import { DiffLines } from "./inspection/diff"
 
 type View = NonNullable<ConflictResult["view"]>
 type File = View["files"][number]

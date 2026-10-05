@@ -4,7 +4,7 @@ import { createHash, randomUUID } from "node:crypto"
 import { constants } from "node:fs"
 import { access } from "node:fs/promises"
 import { join } from "node:path"
-import { captureGitCheckpoint, checkpointIdentity, checkpointMatches, type GitCheckpoint } from "./git-checkpoint"
+import { captureGitCheckpoint, checkpointIdentity, checkpointMatches, type GitCheckpoint } from "../operations/git-checkpoint"
 
 interface Change {
     path: string

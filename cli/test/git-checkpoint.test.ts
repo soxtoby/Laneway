@@ -3,7 +3,7 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
-import { captureGitCheckpoint, checkpointMatches, restoreGitCheckpoint, retainCheckpoint } from "../src/git-checkpoint"
+import { captureGitCheckpoint, checkpointMatches, restoreGitCheckpoint, retainCheckpoint } from "../src/operations/git-checkpoint"
 
 let directories: string[] = []
 afterEach(async () => {

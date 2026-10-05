@@ -4,10 +4,10 @@ import { createHash } from "node:crypto"
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path"
-import { mutateComposition, prepareComposition } from "./composition"
-import { applyStashConflict } from "./conflict-operations"
-import { captureGitCheckpoint, checkpointIdentity, type GitCheckpoint } from "./git-checkpoint"
-import { captureWorktreeState as captureHookFiles } from "./worktree-state"
+import { mutateComposition, prepareComposition } from "./composition/composition"
+import { applyStashConflict } from "./conflicts/conflict-operations"
+import { captureGitCheckpoint, checkpointIdentity, type GitCheckpoint } from "./operations/git-checkpoint"
+import { captureWorktreeState as captureHookFiles } from "./worktrees/worktree-state"
 
 interface LocalMetadata {
     stashes: Record<string, string | null>

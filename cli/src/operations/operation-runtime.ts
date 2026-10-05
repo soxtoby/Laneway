@@ -1,113 +1,30 @@
 import { connectRepository, GitError, type RepositoryGit } from "@laneway/git"
 import { pathExists, previewWorktree, worktreeBasename } from "@laneway/git"
 import { normalize, readRegisteredWorktrees } from "@laneway/git"
-import { type OperationAvailability, type OperationAvailabilityReason, type OperationHistoryEntry, type OperationHistoryResult, type OperationSummary, OperationSummarySchema, type OperationTransitionResult, type RecoveredExecution, type RecoveryResult, type TestMutationResult } from "@laneway/shared"
+import { type OperationAvailability, type OperationAvailabilityReason, type OperationHistoryEntry, type OperationHistoryResult, type OperationSummary, type OperationTransitionResult, type RecoveredExecution, type RecoveryResult, type TestMutationResult } from "@laneway/shared"
 import type { WorktreeRequest, WorktreeResult } from "@laneway/shared"
 import type { LocalRequest, LocalResult } from "@laneway/shared"
 import type { ConflictRequest, ConflictResult } from "@laneway/shared"
 import type { BranchGraphReadOptions, PullRequest, PullResult } from "@laneway/shared"
 import type { RecoveryRequest, RecoveryStatusResult, WorktreeRecovery } from "@laneway/shared"
-import { link, lstat, mkdir, open, readdir, readFile, readlink, rename, rm, unlink } from "node:fs/promises"
+import { lstat, readdir, readFile, readlink, rename, rm } from "node:fs/promises"
 import { dirname, join, resolve, sep } from "node:path"
-import { z } from "zod"
-import { conflictMutation, conflictPaths, executeConflict, suspendWorkingConflicts } from "./conflict-operations"
-import { isFileExtraction } from "./file-extraction"
-import { captureGitCheckpoint, checkpointIdentity, checkpointMatches, type GitCheckpoint, GitCheckpointSchema, restoreGitCheckpoint, retainCheckpoint } from "./git-checkpoint"
-import { LocalPreconditionError, mutateLocal, prepareLocal } from "./local-mutations"
-import { executePull, preparePull, type PullPreparation, type PullProgressReporter } from "./pull-latest"
+import { isFileExtraction } from "../composition/file-extraction"
+import { conflictMutation, conflictPaths, executeConflict, suspendWorkingConflicts } from "../conflicts/conflict-operations"
+import { LocalPreconditionError, mutateLocal, prepareLocal } from "../local-mutations"
+import { executePull, preparePull, type PullPreparation, type PullProgressReporter } from "../pull-latest"
+import { mutateWorktree } from "../worktrees/worktree-mutations"
+import { relocateRemovedState, restoreWorktreeState, worktreeStateMatches, worktreeStateObjects } from "../worktrees/worktree-state"
+import { captureGitCheckpoint, checkpointIdentity, checkpointMatches, type GitCheckpoint, restoreGitCheckpoint, retainCheckpoint } from "./git-checkpoint"
+import { type CancellationSignal, OperationCancelledError, OperationRuntimeError } from "./operation-contracts"
+import { type JournalExecution, type JournalPhase, type RefChange, sealOperation, type StoredOperation, type WorktreeFingerprint } from "./operation-record"
+import { OperationStore } from "./operation-store"
 import { migrateRecoveryRefs, releaseRecoveryObjects, retainRecoveryObjects } from "./recovery-objects"
-import { mutateWorktree } from "./worktree-mutations"
-import { relocateRemovedState, restoreWorktreeState, worktreeStateMatches, worktreeStateObjects, WorktreeStateSchema } from "./worktree-state"
+
+export { type CancellationSignal, OperationCancelledError, OperationRuntimeError } from "./operation-contracts"
+export type { JournalPhase } from "./operation-record"
 
 let fixtureRef = "refs/laneway/test/fixture"
-let journalFileName = "journal.jsonl"
-let historyFileName = "history.jsonl"
-
-let RefChangeSchema = z.object({
-    ref: z.string(),
-    before: z.string().nullable(),
-    after: z.string().nullable(),
-})
-
-let WorktreeFingerprintSchema = z.object({
-    index: z.string(),
-    worktree: z.string(),
-})
-
-let WorktreeChangeSchema = z.object({
-    path: z.string(),
-    before: WorktreeFingerprintSchema,
-    after: WorktreeFingerprintSchema,
-})
-
-let StoredOperationContentSchema = OperationSummarySchema.extend({
-    gitCommonDirectory: z.string(),
-    expectedGitLockfiles: z.array(z.string()),
-    refChanges: z.array(RefChangeSchema),
-    worktreeChanges: z.array(WorktreeChangeSchema),
-    lifecycle: z.object({ before: WorktreeStateSchema, after: WorktreeStateSchema.optional() }).optional(),
-    checkpoint: z.object({ restore: GitCheckpointSchema, expected: GitCheckpointSchema }).optional(),
-})
-let StoredOperationSchema = StoredOperationContentSchema.extend({
-    integrity: z.string().regex(/^[0-9a-f]{64}$/),
-})
-
-let OperationEventSchema = z.object({
-    schemaVersion: z.literal(1),
-    type: z.literal("operation"),
-    executionId: z.string(),
-    operation: StoredOperationSchema,
-})
-
-let TransitionEventSchema = z.object({
-    schemaVersion: z.literal(1),
-    type: z.literal("transition"),
-    executionId: z.string(),
-    action: z.enum(["undo", "redo"]),
-    operationId: z.string(),
-    timestamp: z.string(),
-    operation: StoredOperationSchema.optional(),
-})
-
-let HistoryEventSchema = z.discriminatedUnion("type", [OperationEventSchema, TransitionEventSchema])
-let JournalPhaseSchema = z.enum([
-    "intent",
-    "recovery-retained",
-    "preconditions-verified",
-    "worktrees-committed",
-    "refs-committed",
-    "history-committed",
-    "finalized",
-    "cancelled",
-    "aborted",
-])
-let JournalEventSchema = z.object({
-    schemaVersion: z.literal(1),
-    executionId: z.string(),
-    operationId: z.string(),
-    action: z.enum(["apply", "undo", "redo"]),
-    phase: JournalPhaseSchema,
-    timestamp: z.string(),
-    operation: StoredOperationSchema.optional(),
-    abandonedOperationIds: z.array(z.string()).optional(),
-})
-
-type RefChange = z.infer<typeof RefChangeSchema>
-type WorktreeFingerprint = z.infer<typeof WorktreeFingerprintSchema>
-type StoredOperation = z.infer<typeof StoredOperationSchema>
-type HistoryEvent = z.infer<typeof HistoryEventSchema>
-export type JournalPhase = z.infer<typeof JournalPhaseSchema>
-type JournalEvent = z.infer<typeof JournalEventSchema>
-
-interface JournalExecution {
-    intent: JournalEvent & { operation: StoredOperation }
-    phases: Set<JournalPhase>
-}
-
-interface HistoryProjection {
-    operations: StoredOperation[]
-    position: number
-}
 
 export type OperationCommand =
     | { command: "conflict"; request: ConflictRequest; noWait: boolean; crashAfter?: JournalPhase }
@@ -145,29 +62,6 @@ export type OperationCommandResult =
     | LocalResult
     | ConflictResult
     | PullResult
-
-export interface CancellationSignal {
-    isCancelled(): boolean
-    wait(delayMs: number): Promise<boolean>
-}
-
-export class OperationCancelledError extends Error {}
-
-export class OperationRuntimeError extends Error {
-    constructor(
-        readonly code:
-            | "operation.history-corrupt"
-            | "operation.internal"
-            | "operation.journal-corrupt"
-            | "operation.locked"
-            | "operation.precondition-failed"
-            | "operation.recovery-blocked",
-        message: string,
-        readonly details?: Record<string, unknown>,
-    ) {
-        super(message)
-    }
-}
 
 class OperationRuntime {
     constructor(
@@ -933,193 +827,6 @@ class OperationRuntime {
     }
 }
 
-class OperationStore {
-    private readonly directory: string
-    private readonly journalPath: string
-    private readonly historyPath: string
-    private readonly lockPath: string
-    private historyEvents?: Promise<HistoryEvent[]>
-
-    constructor(commonDirectory: string) {
-        this.directory = resolve(commonDirectory, "laneway")
-        this.journalPath = resolve(this.directory, journalFileName)
-        this.historyPath = resolve(this.directory, historyFileName)
-        this.lockPath = resolve(this.directory, "mutation.lock")
-    }
-
-    async withLock<T>(noWait: boolean, cancellation: CancellationSignal, work: () => Promise<T>): Promise<T> {
-        await mkdir(this.directory, { recursive: true })
-        await cleanupStaleLockCandidates(this.directory)
-        let token = crypto.randomUUID()
-        let candidatePath = `${this.lockPath}.candidate-${token}`
-        let candidate = await open(candidatePath, "wx")
-        await candidate.writeFile(JSON.stringify({ token, pid: process.pid, timestamp: new Date().toISOString() }))
-        await candidate.sync()
-        await candidate.close()
-
-        try {
-            while (true) {
-                try {
-                    await link(candidatePath, this.lockPath)
-                } catch (error) {
-                    if (!isAlreadyExists(error))
-                        throw error
-                    if (await reclaimStaleLock(this.lockPath))
-                        continue
-                    if (noWait)
-                        throw new OperationRuntimeError("operation.locked", "Another Laneway mutation holds the repository lock.")
-                    if (await cancellation.wait(50))
-                        throw new OperationCancelledError("Cancellation acknowledged while waiting for the repository lock.")
-                    continue
-                }
-
-                try {
-                    return await work()
-                } finally {
-                    await releaseLock(this.lockPath, token)
-                }
-            }
-        } finally {
-            await unlinkIfPresent(candidatePath)
-        }
-    }
-
-    async readHistory(): Promise<HistoryProjection> {
-        let events = await this.readHistoryEvents()
-        let projection: HistoryProjection = { operations: [], position: 0 }
-        let executionIds = new Set<string>()
-        let operationIds = new Set<string>()
-
-        for (let event of events) {
-            if (executionIds.has(event.executionId))
-                throw new OperationRuntimeError("operation.history-corrupt", "Operation History contains a duplicate execution.")
-            executionIds.add(event.executionId)
-
-            if (event.type == "operation") {
-                validateOperationIntegrity(event.operation, "operation.history-corrupt")
-                if (operationIds.has(event.operation.id))
-                    throw new OperationRuntimeError("operation.history-corrupt", "Operation History contains a duplicate Laneway Operation.")
-                operationIds.add(event.operation.id)
-                projection.operations.splice(projection.position)
-                projection.operations.push(event.operation)
-                projection.position += 1
-                continue
-            }
-
-            let expected = event.action == "undo"
-                ? projection.operations[projection.position - 1]
-                : projection.operations[projection.position]
-            if (expected?.id != event.operationId)
-                throw new OperationRuntimeError("operation.history-corrupt", `Operation History contains an invalid ${event.action} transition.`)
-            if (event.operation) {
-                validateOperationIntegrity(event.operation, "operation.history-corrupt")
-                if (event.operation.id != expected.id)
-                    throw new OperationRuntimeError("operation.history-corrupt", "A transition snapshot belongs to another operation.")
-                projection.operations[event.action == "undo" ? projection.position - 1 : projection.position] = event.operation
-            }
-            projection.position += event.action == "undo" ? -1 : 1
-        }
-
-        return projection
-    }
-
-    async appendHistory(event: HistoryEvent) {
-        await appendJsonLine(this.historyPath, event)
-        this.historyEvents = undefined
-    }
-
-    appendJournal(event: JournalEvent) {
-        return appendJsonLine(this.journalPath, event)
-    }
-
-    appendJournalPhase(executionId: string, operationId: string, action: JournalEvent["action"], phase: JournalPhase) {
-        return this.appendJournal({
-            schemaVersion: 1,
-            executionId,
-            operationId,
-            action,
-            phase,
-            timestamp: new Date().toISOString(),
-        })
-    }
-
-    async hasHistoryEvent(executionId: string) {
-        return (await this.readHistoryEvents()).some(event => event.executionId == executionId)
-    }
-
-    async readPendingExecutions(): Promise<JournalExecution[]> {
-        let content = await readFile(this.journalPath).catch(error => {
-            if (isNotFound(error))
-                return Buffer.alloc(0)
-            throw error
-        })
-        let checkpointPath = resolve(this.directory, "journal-checkpoint.json")
-        let checkpoint = await readJournalCheckpoint(checkpointPath, content)
-        let events: JournalEvent[]
-        try {
-            events = content.subarray(checkpoint?.length ?? 0).toString().split("\n").filter(Boolean).map(line => JournalEventSchema.parse(JSON.parse(line)))
-        } catch {
-            throw new OperationRuntimeError("operation.journal-corrupt", "recovery journal is corrupt.")
-        }
-        let executions = new Map<string, JournalExecution>()
-        let finalized = new Set(checkpoint?.executions ?? [])
-
-        for (let event of events) {
-            if (event.schemaVersion != 1 || !event.executionId || !event.operationId || !event.action || !event.phase)
-                throw new OperationRuntimeError("operation.journal-corrupt", "The recovery journal contains an invalid record.")
-            if (event.phase == "intent") {
-                if (!event.operation)
-                    throw new OperationRuntimeError("operation.journal-corrupt", "A recovery intent does not contain its Laneway Operation.")
-                validateOperationIntegrity(event.operation, "operation.journal-corrupt")
-                if (executions.has(event.executionId) || finalized.has(event.executionId))
-                    throw new OperationRuntimeError("operation.journal-corrupt", "The recovery journal contains a duplicate intent.")
-                executions.set(event.executionId, {
-                    intent: event as JournalEvent & { operation: StoredOperation },
-                    phases: new Set(["intent"]),
-                })
-                continue
-            }
-
-            let execution = executions.get(event.executionId)
-            if (!execution)
-                throw new OperationRuntimeError("operation.journal-corrupt", "A recovery phase has no matching intent.")
-            if (event.operationId != execution.intent.operationId || event.action != execution.intent.action)
-                throw new OperationRuntimeError("operation.journal-corrupt", "A recovery phase does not match its intent.")
-            if (execution.phases.has("finalized") || execution.phases.has(event.phase))
-                throw new OperationRuntimeError("operation.journal-corrupt", "The recovery journal contains an invalid repeated phase.")
-            execution.phases.add(event.phase)
-            if (event.phase == "worktrees-committed" && event.operation) {
-                validateOperationIntegrity(event.operation, "operation.journal-corrupt")
-                execution.intent.operation = event.operation
-            }
-        }
-
-        let pending = [...executions.values()].filter(execution => !execution.phases.has("finalized"))
-        if (!pending.length && content.length && content.at(-1) == 10 && content.length != checkpoint?.length) {
-            // A disposable verification checkpoint, never a replacement for the journal. Hash every
-            // historical byte on each read; any edit forces full validation. Pending work is never cached.
-            let data = JSON.stringify({ version: 1, length: content.length, hash: journalDigest(content), executions: [...finalized, ...executions.keys()] })
-            let temporary = `${checkpointPath}.${crypto.randomUUID()}.tmp`
-            let file = await open(temporary, "wx")
-            try {
-                await file.writeFile(JSON.stringify({ data, hash: journalDigest(data) }))
-            } finally {
-                await file.close()
-            }
-            try {
-                await rename(temporary, checkpointPath)
-            } finally {
-                await unlinkIfPresent(temporary)
-            }
-        }
-        return pending
-    }
-
-    private readHistoryEvents() {
-        return this.historyEvents ??= readJsonLines(this.historyPath, "Operation History", "operation.history-corrupt", HistoryEventSchema)
-    }
-}
-
 let neverCancelled: CancellationSignal = {
     isCancelled: () => false,
     wait: async delayMs => {
@@ -1209,31 +916,6 @@ export async function executeOperationCommand(
     })
 }
 
-async function readJournalCheckpoint(path: string, content: Buffer): Promise<{ length: number; executions: string[] } | undefined> {
-    try {
-        let envelope = JSON.parse(await readFile(path, "utf8"))
-        if (typeof envelope.data != "string" || journalDigest(envelope.data) != envelope.hash)
-            return
-
-        let value = JSON.parse(envelope.data)
-        if (
-            value.version != 1 || !Number.isSafeInteger(value.length) || value.length <= 0 || value.length > content.length
-            || content[value.length - 1] != 10 || !Array.isArray(value.executions) || value.executions.some((id: unknown) => typeof id != "string")
-            || journalDigest(content.subarray(0, value.length)) != value.hash
-        ) {
-            return
-        }
-        return value
-    } catch {
-        // Missing, obsolete, truncated or damaged checkpoints are rebuilt from the durable journal.
-        return undefined
-    }
-}
-
-function journalDigest(content: string | Buffer) {
-    return new Bun.CryptoHasher("sha256").update(content).digest("hex")
-}
-
 function summarize(operation: StoredOperation): OperationSummary {
     return {
         id: operation.id,
@@ -1243,24 +925,6 @@ function summarize(operation: StoredOperation): OperationSummary {
         affectedRefs: operation.affectedRefs,
         affectedWorktrees: operation.affectedWorktrees,
     }
-}
-
-function sealOperation(content: z.input<typeof StoredOperationContentSchema>): StoredOperation {
-    let parsed = StoredOperationContentSchema.parse(content)
-    return { ...parsed, integrity: operationIntegrity(parsed) }
-}
-
-function validateOperationIntegrity(
-    operation: StoredOperation,
-    code: "operation.history-corrupt" | "operation.journal-corrupt",
-) {
-    let { integrity, ...content } = operation
-    if (integrity != operationIntegrity(content))
-        throw new OperationRuntimeError(code, "A stored Laneway Operation failed its integrity check.")
-}
-
-function operationIntegrity(content: z.output<typeof StoredOperationContentSchema>) {
-    return new Bun.CryptoHasher("sha256").update(JSON.stringify(content)).digest("hex")
 }
 
 function availabilityReason(reason: unknown): OperationAvailabilityReason {
@@ -1434,7 +1098,7 @@ async function findGitLockfiles(commonDirectory: string) {
         try {
             entries = await readdir(directory, { withFileTypes: true })
         } catch (error) {
-            if (isNotFound(error))
+            if (error instanceof Error && "code" in error && error.code == "ENOENT")
                 return
             throw error
         }
@@ -1490,116 +1154,4 @@ function hashPart(hasher: Bun.CryptoHasher, label: string, value: string | Uint8
     let length = typeof value == "string" ? Buffer.byteLength(value) : value.byteLength
     hasher.update(`${label}\0${length}\0`)
     hasher.update(value)
-}
-
-async function appendJsonLine(path: string, value: unknown) {
-    let handle = await open(path, "a")
-    try {
-        await handle.writeFile(`${JSON.stringify(value)}\n`)
-        await handle.sync()
-    } finally {
-        await handle.close()
-    }
-}
-
-async function readJsonLines<T>(
-    path: string,
-    label: string,
-    code: "operation.history-corrupt" | "operation.journal-corrupt",
-    schema: z.ZodType<T>,
-): Promise<T[]> {
-    let content: string
-    try {
-        content = await readFile(path, "utf8")
-    } catch (error) {
-        if (isNotFound(error))
-            return []
-        throw error
-    }
-
-    try {
-        return content.split("\n").filter(Boolean).map(line => schema.parse(JSON.parse(line)))
-    } catch {
-        throw new OperationRuntimeError(code, `${label} is corrupt.`)
-    }
-}
-
-async function releaseLock(path: string, token: string) {
-    try {
-        let lock = JSON.parse(await readFile(path, "utf8")) as { token?: string }
-        if (lock.token == token)
-            await unlink(path)
-    } catch (error) {
-        if (!isNotFound(error))
-            throw error
-    }
-}
-
-async function reclaimStaleLock(path: string) {
-    try {
-        let lock = JSON.parse(await readFile(path, "utf8")) as { pid?: number }
-        if (lock.pid && isProcessAlive(lock.pid))
-            return false
-
-        let stalePath = `${path}.stale-${crypto.randomUUID()}`
-        await rename(path, stalePath)
-        await unlink(stalePath)
-        return true
-    } catch (error) {
-        if (isNotFound(error))
-            return true
-        let stalePath = `${path}.stale-${crypto.randomUUID()}`
-        try {
-            await rename(path, stalePath)
-            await unlink(stalePath)
-            return true
-        } catch (renameError) {
-            return isNotFound(renameError)
-        }
-    }
-}
-
-async function cleanupStaleLockCandidates(directory: string) {
-    for (let entry of await readdir(directory, { withFileTypes: true })) {
-        if (!entry.isFile() || !entry.name.startsWith("mutation.lock.candidate-"))
-            continue
-
-        let path = resolve(directory, entry.name)
-        try {
-            let lock = JSON.parse(await readFile(path, "utf8")) as { pid?: number }
-            if (!Number.isInteger(lock.pid) || !lock.pid || lock.pid < 0 || isProcessAlive(lock.pid))
-                continue
-        } catch {
-            // A competing process may have opened this file but not finished
-            // writing it. Only reclaim candidates with a known, dead owner.
-            continue
-        }
-        await unlinkIfPresent(path)
-    }
-}
-
-async function unlinkIfPresent(path: string) {
-    try {
-        await unlink(path)
-    } catch (error) {
-        if (!isNotFound(error))
-            throw error
-    }
-}
-
-function isProcessAlive(pid: number) {
-    try {
-        process.kill(pid, 0)
-        return true
-    } catch {
-        return false
-    }
-}
-
-function isAlreadyExists(error: unknown): error is NodeJS.ErrnoException {
-    return error instanceof Error && "code" in error && error.code == "EEXIST"
-}
-
-function isNotFound(error: unknown): error is NodeJS.ErrnoException {
-    return error instanceof Error && "code" in error && error.code == "ENOENT"
 }

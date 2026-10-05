@@ -3,7 +3,7 @@ import { afterEach, expect, test } from "bun:test"
 import { copyFile, mkdtemp, readdir, readFile, rm, unlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
-import { migrateRecoveryRefs, releaseRecoveryObjects, retainRecoveryObjects } from "../src/recovery-objects"
+import { migrateRecoveryRefs, releaseRecoveryObjects, retainRecoveryObjects } from "../src/operations/recovery-objects"
 
 let temporary: string[] = []
 afterEach(async () => {

@@ -7,7 +7,7 @@ import { type ConflictRequest, ConflictRequestSchema } from "@laneway/shared"
 import { type PullRequest, PullRequestSchema } from "@laneway/shared"
 import { type RecoveryRequest, RecoveryRequestSchema } from "@laneway/shared"
 import { readFileSync, statSync } from "node:fs"
-import { executeOperationCommand, type JournalPhase, OperationCancelledError, type OperationCommand, OperationRuntimeError } from "./operation-runtime.ts"
+import { executeOperationCommand, type JournalPhase, OperationCancelledError, type OperationCommand, OperationRuntimeError } from "./operations/operation-runtime.ts"
 
 let args = process.argv.slice(2)
 

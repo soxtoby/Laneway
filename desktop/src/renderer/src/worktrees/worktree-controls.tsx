@@ -1,14 +1,9 @@
-import type { BranchGraph, BranchGraphBranchNode, BranchGraphVirtualBranch, WorktreePreview, WorktreeRequest } from "@laneway/shared"
+import type { BranchGraph, BranchGraphBranchNode, BranchGraphVirtualBranch, WorktreeRequest } from "@laneway/shared"
 import { css, type Handle, on, ref } from "remix/ui"
-import { CommandLens } from "./command-lens"
-import { Icon } from "./icons"
+import { CommandLens } from "../command-lens"
+import { Icon } from "../icons"
 
-type Column = BranchGraphBranchNode | BranchGraphVirtualBranch
-interface Options {
-    api: Window["laneway"]
-    update(): Promise<AbortSignal>
-    completed(repositoryId: string, request: WorktreeRequest, columnId?: string): Promise<void>
-}
+export type Column = BranchGraphBranchNode | BranchGraphVirtualBranch
 
 // Lives inside the column header: `display: contents` lets the name sit beside the kind icon
 // while the overflow button lands at the far right of the header's action group.
@@ -17,6 +12,7 @@ let controlStyle = css({
     color: "var(--text)",
     "& > [aria-haspopup='menu']": { order: "2" },
 })
+
 // The worktree's name sits over its path so the column says both what it is and where it lives.
 let titleStyle = css({
     flex: "1 1 auto",
@@ -24,12 +20,14 @@ let titleStyle = css({
     display: "grid",
     alignContent: "center",
 })
+
 let titleRowStyle = css({
     minWidth: 0,
     display: "flex",
     alignItems: "center",
     gap: "6px",
 })
+
 // Too truncated to select usefully; left unselectable, a double-click on it maximizes the column like the rest of the header.
 let pathStyle = css({
     userSelect: "none",
@@ -40,6 +38,7 @@ let pathStyle = css({
     fontSize: "11px",
     lineHeight: "14px",
 })
+
 // The name and its rename input size to their text, leaving the rest of the header free to drag and click.
 let nameStyle = css({
     flex: "0 1 auto",
@@ -62,6 +61,7 @@ let nameStyle = css({
     "&:hover:not(:disabled)": { borderColor: "var(--line-strong)", background: "var(--panel-deep)" },
     "&:disabled": { opacity: 1, cursor: "default" },
 })
+
 let nameInputStyle = css({
     flex: "0 1 auto",
     minWidth: "4ch",
@@ -78,6 +78,7 @@ let nameInputStyle = css({
     color: "var(--text)",
     background: "var(--panel)",
 })
+
 let stateChip = css({
     flex: "0 0 auto",
     padding: "1px 6px",
@@ -88,6 +89,7 @@ let stateChip = css({
     fontSize: "10.5px",
     fontWeight: 600,
 })
+
 let iconStyle = css({
     flexShrink: 0,
     width: "28px",
@@ -103,6 +105,7 @@ let iconStyle = css({
     "&:hover:not(:disabled)": { color: "var(--text)", borderColor: "var(--line)", background: "var(--control-hover)" },
     "&:disabled": { opacity: 0.5, cursor: "default" },
 })
+
 let menuStyle = css({
     position: "absolute",
     zIndex: 20,
@@ -119,6 +122,7 @@ let menuStyle = css({
     boxShadow: "var(--shadow-popover)",
     whiteSpace: "normal",
 })
+
 let menuItemStyle = css({
     display: "block",
     width: "100%",
@@ -133,298 +137,10 @@ let menuItemStyle = css({
     "&:hover:not(:disabled), &:focus-visible:not(:disabled)": { background: "var(--hover)" },
     "&:disabled": { opacity: 0.5, cursor: "default" },
 })
+
 let menuPathStyle = css({ display: "block", overflowWrap: "anywhere", color: "var(--muted)", fontSize: "10px" })
-let dialogStyle = css({
-    width: "460px",
-    maxWidth: "calc(100vw - 32px)",
-    maxHeight: "80vh",
-    overflow: "auto",
-    color: "var(--text)",
-    background: "var(--panel)",
-    border: "1px solid var(--line)",
-    boxShadow: "var(--shadow-dialog)",
-    "&::backdrop": { background: "var(--scrim)" },
-    borderRadius: "8px",
-    padding: "20px",
-    "& h2": { margin: "0 0 16px", fontSize: "17px", fontWeight: 600 },
-    "& p, & li": { overflowWrap: "anywhere", fontSize: "13px", lineHeight: 1.5 },
-    "& label": { display: "flex", alignItems: "flex-start", gap: "8px", fontSize: "13px", lineHeight: 1.5, marginBlock: "12px" },
-    "& [role='alert']": { color: "var(--danger)", background: "var(--danger-wash)", padding: "10px", borderRadius: "4px" },
-})
-let affectedPathsStyle = css({ display: "grid", gap: "8px", marginBottom: "16px" })
-let workingChangesStyle = css({
-    marginTop: "14px",
-    padding: "10px 12px",
-    border: "1px solid var(--warning-edge)",
-    borderRadius: "5px",
-    background: "var(--warning-wash)",
-    color: "var(--text)",
-    "& > strong": { fontSize: "13px", fontWeight: 600 },
-    "& p": { margin: "4px 0 0", color: "var(--muted)" },
-    "& label": { margin: "10px 0 0" },
-})
-let affectedPathStyle = css({
-    display: "grid",
-    gap: "4px",
-    padding: "10px 12px",
-    border: "1px solid var(--line)",
-    borderRadius: "5px",
-    background: "var(--canvas)",
-    "& strong": { fontSize: "13px", fontWeight: 600, overflowWrap: "anywhere" },
-    "& span": { fontFamily: "var(--mono)", fontSize: "11px", lineHeight: 1.5, color: "var(--muted)", overflowWrap: "anywhere" },
-})
-let dialogFooterStyle = css({
-    display: "flex",
-    justifyContent: "flex-end",
-    gap: "8px",
-    margin: "20px -20px -20px",
-    padding: "12px 20px",
-    borderTop: "1px solid var(--line)",
-    background: "var(--canvas)",
-})
-let dialogButtonStyle = css({
-    minHeight: "32px",
-    padding: "0 14px",
-    borderRadius: "4px",
-    fontFamily: "inherit",
-    fontSize: "13px",
-    fontWeight: 600,
-    cursor: "pointer",
-    "&:disabled": { opacity: 0.5, cursor: "default" },
-})
-let removeButtonStyle = css({
-    color: "var(--danger)",
-    background: "var(--danger-wash)",
-    border: "1px solid var(--danger-edge)",
-    "&:hover:not(:disabled)": { background: "var(--danger)", color: "var(--panel)" },
-})
 
-export function createWorktreeActions(options: Options) {
-    let preview: WorktreePreview | undefined
-    let repositoryId = "", columnId: string | undefined
-    let error = "", busy = false, preserve = true
-    let returnFocus: HTMLElement | null = null
-    let undoRepository: string | undefined, restoredName = ""
-    return {
-        busy: () => busy,
-        prepare,
-        transition,
-        controls(id: string, column: Column, path: string | undefined, graph: BranchGraph) {
-            return (
-                <WorktreeControls
-                    column={column}
-                    path={path}
-                    graph={graph}
-                    busy={busy}
-                    prepare={request => prepare(id, request, column.id)}
-                    chooseDirectory={options.api.chooseDirectory}
-                />
-            )
-        },
-        dialog() {
-            if (!preview && !error)
-                return null
-            let request = preview?.request
-            return (
-                <dialog
-                    aria-label="Worktree operation"
-                    mix={[
-                        dialogStyle,
-                        ref(dialog => dialog.showModal()),
-                        on("cancel", event => {
-                            event.preventDefault()
-                            close()
-                        }),
-                    ]}
-                >
-                    <h2>{request ? `${request.action[0]!.toUpperCase()}${request.action.slice(1)} worktree` : "Worktree operation"}</h2>
-                    {preview && (
-                        <>
-                            {preview.destination && (
-                                <p>
-                                    Destination: <strong>{preview.destination}</strong>
-                                </p>
-                            )}
-                            <div mix={affectedPathsStyle}>
-                                {preview.affected.map(path => (
-                                    <div mix={affectedPathStyle}>
-                                        <strong>{path.split(/[\\/]/).pop()}</strong>
-                                        <span>{path}</span>
-                                    </div>
-                                ))}
-                            </div>
-                            {(request?.action == "switch" || request?.action == "create") && (
-                                <p>
-                                    Working Changes are stashed before switching. A previous holder stays detached. Existing stashes remain available for
-                                    explicit application.
-                                </p>
-                            )}
-                            {request?.action == "remove" && (
-                                <>
-                                    {preview.dirty || preview.uniqueCommits
-                                        ? (
-                                            <div mix={workingChangesStyle}>
-                                                <strong>{preview.dirty ? "Working Changes detected" : "Worktree-only commits detected"}</strong>
-                                                <p>
-                                                    {preview.dirty
-                                                        ? "Keep these changes available after removing the worktree."
-                                                        : "Keep these commits reachable after removing the worktree."}
-                                                </p>
-                                                <label>
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={preserve}
-                                                        mix={on("change", event => {
-                                                            preserve = event.currentTarget.checked
-                                                            void options.update()
-                                                        })}
-                                                    />
-                                                    {preview.uniqueCommits
-                                                        ? preview.dirty ? "Create a protective branch and stash Working Changes" : "Create a protective branch"
-                                                        : "Stash Working Changes"}
-                                                </label>
-                                            </div>
-                                        )
-                                        : <p>Remove this worktree and its column.</p>}
-                                    {!preserve && (
-                                        <p>Delete Working Changes and Worktree-only Commits from visible state. Git state remains retained for undo.</p>
-                                    )}
-                                    {preview.worktrees.some(item => item.missing && item.path == request.path) && (
-                                        <p>Remove the missing registration. Unavailable file contents cannot be recovered.</p>
-                                    )}
-                                </>
-                            )}
-                        </>
-                    )}
-                    {error && <p role="alert">{error}</p>}
-                    {undoRepository && (
-                        <form
-                            mix={on("submit", event => {
-                                event.preventDefault()
-                                void transition(undoRepository!, "undo", restoredName)
-                            })}
-                        >
-                            <label>
-                                Restore within the same parent:{" "}
-                                <input
-                                    aria-label="Restored worktree basename"
-                                    value={restoredName}
-                                    mix={on("input", event => {
-                                        restoredName = event.currentTarget.value
-                                        void options.update()
-                                    })}
-                                />
-                            </label>
-                            <button class="primary-button" mix={dialogButtonStyle} disabled={busy || !restoredName}>Restore worktree</button>
-                        </form>
-                    )}
-                    <footer mix={dialogFooterStyle}>
-                        <button class="secondary-button" type="button" disabled={busy} mix={[dialogButtonStyle, on("click", close)]}>Cancel</button>
-                        {preview && (
-                            <button
-                                type="button"
-                                class={request?.action == "remove" ? undefined : "primary-button"}
-                                disabled={busy}
-                                mix={[dialogButtonStyle, ...(request?.action == "remove" ? [removeButtonStyle] : []), on("click", execute)]}
-                            >
-                                {busy ? "Working…" : request?.action == "remove" ? "Remove worktree" : "Confirm"}
-                            </button>
-                        )}
-                    </footer>
-                </dialog>
-            )
-        },
-    }
-
-    async function prepare(id: string, request: WorktreeRequest, sourceColumn?: string) {
-        if (busy)
-            return
-
-        repositoryId = id
-        columnId = sourceColumn
-        returnFocus = document.activeElement as HTMLElement | null
-        busy = true
-        error = ""
-        undoRepository = undefined
-        preserve = true
-        await options.update()
-
-        try {
-            let result = await options.api.previewWorktree(id, request)
-            if (result.ok)
-                preview = result.preview
-            else
-                error = result.error.message
-        } catch (reason) {
-            error = String(reason)
-        }
-        busy = false
-        await options.update()
-    }
-
-    function close() {
-        if (busy)
-            return
-
-        preview = undefined
-        error = ""
-        void options.update().then(() => returnFocus?.focus())
-    }
-
-    async function execute() {
-        if (!preview || busy)
-            return
-
-        busy = true
-        error = ""
-        await options.update()
-
-        try {
-            let request = preview.request.action == "remove" ? { ...preview.request, preserve, allowIgnoredLoss: true } : preview.request
-            // Changed preservation choices need a matching preview token, while retaining
-            // the original evidence check for changes made while the dialog was open.
-            let original = await options.api.previewWorktree(repositoryId, preview.request)
-            if (!original.ok || original.preview.token != preview.token)
-                throw new Error("Worktree state changed. Cancel and review the operation again.")
-            let fresh = await options.api.previewWorktree(repositoryId, request)
-            if (!fresh.ok)
-                throw new Error(fresh.error.message)
-            let result = await options.api.executeWorktree(repositoryId, request, fresh.preview.token)
-            if (!result.ok)
-                throw new Error(result.error.message)
-            preview = undefined
-            await options.completed(repositoryId, request, columnId)
-        } catch (reason) {
-            error = reason instanceof Error ? reason.message : String(reason)
-        }
-        busy = false
-        await options.update()
-    }
-
-    async function transition(id: string, action: "undo" | "redo", basename?: string) {
-        if (busy)
-            return
-
-        busy = true
-        error = ""
-        await options.update()
-
-        try {
-            let result = await options.api.transitionOperation(id, action, basename)
-            if (!result.ok)
-                throw new Error(result.error.message)
-            undoRepository = undefined
-            await options.completed(id, { action: "unlock", path: "" })
-        } catch (reason) {
-            error = reason instanceof Error ? reason.message : String(reason)
-            undoRepository = action == "undo" && /occupied/.test(error) ? id : undefined
-        }
-        busy = false
-        await options.update()
-    }
-}
-
-function WorktreeControls(
+export function WorktreeControls(
     handle: Handle<{
         column: Column
         path?: string

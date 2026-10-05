@@ -1,8 +1,12 @@
-import { blob, candidateReady, conflictHunks, conflictStateRef, gitText, hasConflictMarkers, isText, normalize, readConflictState, readRegisteredWorktrees, replaceTreeFiles, replayTree, type RepositoryGit, retainedDocument, rewriteCommit, storeConflictState, temporaryBranchPrefix, treeEntries, withConflictScratch } from "@laneway/git"
-import { type ConflictFile, type ConflictRequest, type ConflictResult, type ConflictState, type ConflictSubject, type ResolutionCandidate, ResolutionCandidateSchema, type UnresolvedStack } from "@laneway/shared"
-import { createHash } from "node:crypto"
-import { lstat, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
+import { blob, candidateReady, conflictHunks, conflictStateRef, gitText, hasConflictMarkers, isText, normalize, readConflictState, readRegisteredWorktrees, replaceTreeFiles, replayTree, type RepositoryGit, rewriteCommit, storeConflictState, temporaryBranchPrefix, treeEntries, withConflictScratch } from "@laneway/git"
+import { type ConflictRequest, type ConflictState, type ConflictSubject, type UnresolvedStack } from "@laneway/shared"
+import { lstat, readFile, realpath } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
+import { candidateRef, checkedCandidate, readCandidate, saveCandidate } from "./conflict-candidates"
+import { conflictResult, findSubject } from "./conflict-inspection"
+import { cleanupResolutionFiles, runMergeTool } from "./conflict-resolution-files"
+
+export { conflictResult } from "./conflict-inspection"
 
 type Changes = Map<string, string | null>
 export let conflictMutation = (request: ConflictRequest) =>
@@ -203,185 +207,6 @@ export async function executeConflict(repo: RepositoryGit, request: ConflictRequ
     if (request.action != "tool")
         await cleanupResolutionFiles(repo, subject, file.path)
     return conflictResult(repo, subject.id)
-}
-async function saveCandidate(repo: RepositoryGit, subject: ConflictSubject, candidate: ResolutionCandidate) {
-    let objects = new Map<string, string>()
-    for (let entry of Object.values(candidate.files)) {
-        if (entry && entry.mode != "160000")
-            objects.set(entry.object, "blob")
-    }
-
-    let after = await retainedDocument(repo, candidate, objects)
-    await repo.updateRefs([{ ref: candidateRef(subject), before: candidate.revision || null, after }])
-}
-async function checkedCandidate(repo: RepositoryGit, subject: ConflictSubject, request: { input: string; revision: string }) {
-    if (subject.input != request.input)
-        throw new Error("Conflict inputs changed. The previous result remains a suggestion; refresh before accepting.")
-    let candidate = await readCandidate(repo, subject)
-    if (candidate.revision != request.revision)
-        throw new Error("Resolution progress changed. Reload the candidate before continuing.")
-    return candidate
-}
-
-export async function conflictResult(repo: RepositoryGit, subjectId?: string, requestedFiles?: string[]): Promise<ConflictResult> {
-    let result: ConflictResult = { type: "result", command: "conflict", conflicts: [], recovery: [] }
-    let state = await readConflictState(repo).catch(() => undefined)
-    if (!state) {
-        result.recovery.push({
-            stack: "untracked",
-            branch: "",
-            message: "Conflict metadata is damaged. Use Operation History to restore the last recorded state. Existing branches remain available to Git.",
-            candidates: [],
-        })
-        result.publishable = false
-        return result
-    }
-
-    let inspectedCandidate = subjectId && requestedFiles ? readCandidate(repo, findSubject(state, subjectId).subject) : undefined
-    for (let stack of state.stacks) {
-        if (subjectId && requestedFiles && !stack.steps.some(step => step.conflict?.id == subjectId))
-            continue
-        let tip = subjectId && requestedFiles ? stack.temporaryRef : await repo.resolveRef(stack.temporaryRef)
-        let branch = stack.branches.at(-1)!.ref.slice(11)
-        if (!tip) {
-            let refs = await repo.listRefs("refs/heads/")
-            let candidates: string[] = []
-            for (let ref of refs) {
-                if (await repo.resolveRef(ref) == (stack.steps.at(-1)?.current ?? stack.base))
-                    candidates.push(ref.slice(11))
-            }
-            result.recovery.push({ stack: stack.id, branch, message: "The unresolved branch is missing.", candidates })
-        }
-        for (let step of stack.steps) {
-            if (step.conflict && (!subjectId || !requestedFiles || step.conflict.id == subjectId)) {
-                result.conflicts.push({
-                    id: step.conflict.id,
-                    stackId: stack.id,
-                    kind: "commit",
-                    branch,
-                    commit: step.current,
-                    title: await gitText(repo, ["log", "-1", "--format=%s", step.source]),
-                    files: step.conflict.files.length,
-                })
-            }
-        }
-    }
-
-    for (let working of state.working) {
-        result.conflicts.push({
-            id: working.conflict.id,
-            kind: "working",
-            branch: working.branch?.slice(11) ?? "Detached worktree",
-            title: "Working Changes Conflict",
-            files: working.conflict.files.length,
-            suspended: Boolean(working.suspended),
-        })
-    }
-
-    for (let ref of requestedFiles ? [] : await repo.listRefs(temporaryBranchPrefix)) {
-        if (!state.stacks.some(stack => stack.temporaryRef == ref)) {
-            result.recovery.push({
-                stack: "untracked",
-                branch: ref.slice(11),
-                message: "Conflict metadata is unavailable. Keep this branch until recovery is restored.",
-                candidates: [],
-            })
-        }
-    }
-
-    if (subjectId) {
-        let { subject, step, working } = findSubject(state, subjectId)
-        let candidate = await (inspectedCandidate ?? readCandidate(repo, subject))
-        let suggestion = subject.suggestion && requestedFiles?.length != 0 ? await treeEntries(repo, subject.suggestion) : undefined
-        let needsReview = requestedFiles == undefined || requestedFiles.some(path => path in candidate.files)
-        let [candidateTree, reviewTree] = needsReview
-            ? await Promise.all([
-                replaceTreeFiles(repo, subject.tree, candidate.files),
-                replaceTreeFiles(repo, subject.tree, Object.fromEntries(subject.files.map(file => [file.path, file.left]))),
-            ])
-            : [subject.tree, subject.tree]
-
-        let blobs = new Map<string, Promise<Buffer | null>>()
-        let readBlob = (entry: ConflictFile["base"]) => {
-            if (!entry || entry.mode == "160000")
-                return Promise.resolve(null)
-            let pending = blobs.get(entry.object)
-            if (!pending) {
-                pending = blob(repo, entry)
-                blobs.set(entry.object, pending)
-            }
-            return pending
-        }
-
-        let files: NonNullable<ConflictResult["view"]>["files"] = []
-        for (let file of subject.files) {
-            if (requestedFiles && !requestedFiles.includes(file.path)) {
-                let bytes = file.path in candidate.files ? await readBlob(candidate.files[file.path]) : null
-                files.push({
-                    ...file,
-                    loaded: false,
-                    baseText: null,
-                    leftText: null,
-                    rightText: null,
-                    resultText: null,
-                    suggestionText: null,
-                    diff: "",
-                    hunks: [],
-                    resolved: file.path in candidate.files && !hasConflictMarkers(bytes?.toString() ?? "", subject),
-                })
-                continue
-            }
-            let entries = [
-                file.base,
-                file.left,
-                file.right,
-                file.path in candidate.files ? candidate.files[file.path] : file.provisional,
-                suggestion?.get(file.path) ?? null,
-            ]
-            let texts = await Promise.all(entries.map(async entry => {
-                let bytes = await readBlob(entry)
-                return isText(bytes) && bytes!.length <= 2_000_000 ? bytes!.toString() : null
-            }))
-            let diff = !needsReview
-                ? ""
-                : (await repo.command(repo.descriptor.mainWorktree, ["diff", "--no-ext-diff", "--no-textconv", reviewTree, candidateTree, "--", file.path]))
-                    .toString()
-            files.push({
-                ...file,
-                baseText: texts[0],
-                leftText: texts[1],
-                rightText: texts[2],
-                resultText: texts[3],
-                suggestionText: texts[4],
-                diff: diff.slice(0, 2_000_000),
-                resolved: file.path in candidate.files && !hasConflictMarkers(texts[3] ?? "", subject),
-                hunks: conflictHunks(texts[3] ?? "", subject),
-            })
-        }
-
-        result.view = {
-            subject,
-            sourceCommit: step?.source ?? working!.stash,
-            candidate,
-            files,
-            reviewTree,
-            resultTree: candidateTree,
-            ready: await candidateReady(repo, subject, candidate),
-        }
-    }
-
-    return result
-}
-function findSubject(state: ConflictState, id: string) {
-    let found = state.stacks.map(stack => ({ stack, step: stack.steps.find(step => step.conflict?.id == id) })).find(item => item.step?.conflict)
-    let working = state.working.find(w => w.conflict.id == id)
-
-    if (found?.step?.conflict)
-        return { subject: found.step.conflict, stack: found.stack, step: found.step }
-    else if (working)
-        return { subject: working.conflict, working }
-    else
-        throw new Error("This conflict no longer exists. Refresh the branch.")
 }
 // Reads authoritative conflict state and prepares CAS-guarded ref updates for one mutation.
 export async function openConflictSession(repo: RepositoryGit, changes: Changes): Promise<ConflictSession> {
@@ -647,13 +472,6 @@ async function rebaseStack(repo: RepositoryGit, stack: UnresolvedStack, cancelle
         }
     }
 }
-async function readCandidate(repo: RepositoryGit, subject: ConflictSubject): Promise<ResolutionCandidate> {
-    let ref = await repo.resolveRef(candidateRef(subject))
-    if (!ref)
-        return { subject: subject.id, input: subject.input, revision: "", files: {} }
-    let candidate = ResolutionCandidateSchema.parse(JSON.parse((await repo.command(repo.descriptor.mainWorktree, ["show", `${ref}:state.json`])).toString()))
-    return { ...candidate, revision: ref }
-}
 async function publishProvisional(
     repo: RepositoryGit,
     state: ConflictState,
@@ -803,85 +621,6 @@ async function dropStash(repo: RepositoryGit, oid: string, changes: Changes) {
     await gitText(repo, ["stash", "drop", `stash@{${index}}`])
     changes.set("refs/stash", await repo.resolveRef("refs/stash"))
 }
-async function runMergeTool(repo: RepositoryGit, subject: ConflictSubject, file: ConflictFile, candidate: ResolutionCandidate) {
-    if ([file.base, file.left, file.right].some(entry => entry && !entry.mode.startsWith("100")))
-        throw new Error("Use a named version for symbolic-link and submodule conflicts.")
-    // Git owns configured tool selection and command expansion. Only temporary copies are exposed.
-    let name = (await repo.run(repo.descriptor.mainWorktree, ["config", "--get", "merge.tool"])).stdout.toString().trim()
-    if (!name)
-        throw new Error("Configure Git merge.tool before opening an external merge tool.")
-
-    let directory = join(
-        repo.descriptor.commonDirectory,
-        "laneway",
-        "resolutions",
-        subject.id,
-        subject.input,
-        createHash("sha256").update(file.path).digest("hex"),
-    )
-    await mkdir(directory, { recursive: true })
-    for (
-        let [name, entry] of [["BASE", file.base], ["LOCAL", file.left], ["REMOTE", file.right], [
-            "MERGED",
-            file.path in candidate.files ? candidate.files[file.path] : file.provisional,
-        ]] as const
-    ) {
-        let target = join(directory, name)
-        // Recover saved external edits after a crash; never truncate an existing result.
-        try {
-            await writeFile(target, await blob(repo, entry) ?? "", { flag: name == "MERGED" ? "wx" : "w" })
-        } catch (error) {
-            if (!(error instanceof Error && "code" in error && error.code == "EEXIST"))
-                throw error
-        }
-    }
-
-    let gitExec = await gitText(repo, ["--exec-path"])
-    let shell = "sh"
-    if (process.platform == "win32") {
-        // Git for Windows exposes both cmd/git.exe and mingw64/bin/git.exe.
-        let candidates = ["../bin/bash.exe", "../../bin/bash.exe"].map(path => resolve(dirname(repo.descriptor.git.path), path))
-        let available = await Promise.all(candidates.map(path => lstat(path).then(stat => stat.isFile()).catch(() => false)))
-        shell = candidates[available.indexOf(true)]
-        if (!shell)
-            throw new Error("Git Bash was not found beside the selected Git installation.")
-    }
-
-    let script = 'TOOL_MODE=merge; . "$GIT_EXEC_PATH/git-mergetool--lib"; initialize_merge_tool "$WB_TOOL" && run_merge_tool "$WB_TOOL" true'
-    let processTool = Bun.spawn([shell, "-c", script], {
-        cwd: repo.descriptor.mainWorktree,
-        env: {
-            ...process.env,
-            GIT_EXEC_PATH: gitExec,
-            WB_TOOL: name,
-            BASE: join(directory, "BASE"),
-            LOCAL: join(directory, "LOCAL"),
-            REMOTE: join(directory, "REMOTE"),
-            MERGED: join(directory, "MERGED"),
-            BACKUP: join(directory, "BACKUP"),
-        },
-        stdin: "ignore",
-        stdout: "pipe",
-        stderr: "pipe",
-        windowsHide: true,
-    })
-    let [code, stderr] = await Promise.all([processTool.exited, new Response(processTool.stderr).text(), new Response(processTool.stdout).text()])
-    if (code)
-        throw new Error(`The merge tool did not complete successfully. Saved edits remain recoverable. ${stderr}`)
-
-    candidate.files[file.path] = {
-        mode: file.provisional?.mode ?? "100644",
-        object: await gitText(repo, ["hash-object", "-w", "--stdin"], await readFile(join(directory, "MERGED"))),
-    }
-}
-
-async function cleanupResolutionFiles(repo: RepositoryGit, subject: ConflictSubject, file?: string) {
-    let root = resolve(repo.descriptor.commonDirectory, "laneway", "resolutions")
-    let path = resolve(root, subject.id, subject.input, ...(file ? [createHash("sha256").update(file).digest("hex")] : []))
-    if (isAbsolute(relative(root, path)) || relative(root, path).startsWith(".."))
-        throw new Error("Invalid resolution directory")
-    await rm(path, { recursive: true, force: true })
-}
 
 export async function suspendWorkingConflicts(repo: RepositoryGit, changes: Changes) {
     let state = await readConflictState(repo).catch(() => undefined)
@@ -904,10 +643,6 @@ export async function suspendWorkingConflicts(repo: RepositoryGit, changes: Chan
 
     if (changed)
         changes.set(conflictStateRef, await storeConflictState(repo, state, before))
-}
-
-function candidateRef(subject: ConflictSubject) {
-    return `refs/laneway/conflict-candidates/${subject.id}/${subject.input}`
 }
 
 function commitParent(repo: RepositoryGit, commit: string) {

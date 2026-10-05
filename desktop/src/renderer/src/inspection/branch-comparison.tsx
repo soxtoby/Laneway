@@ -1,10 +1,10 @@
 import type { BranchGraph, BranchGraphBranchNode, ChangesInventory, DiffLayout, FileDiffPage } from "@laneway/shared"
 import { css, on, type RemixNode } from "remix/ui"
-import { auxiliaryCloseButton, auxiliaryColumnFrame, auxiliaryColumnHeader } from "./auxiliary-columns"
+import { auxiliaryCloseButton, auxiliaryColumnFrame, auxiliaryColumnHeader } from "../auxiliary-columns"
+import { Icon } from "../icons"
 import { DiffLines } from "./diff"
 import { DiffControls } from "./diff-controls"
 import { FileTree } from "./file-list"
-import { Icon } from "./icons"
 
 export interface BranchComparisonState {
     kind: "comparison"

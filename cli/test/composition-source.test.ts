@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { selectedText } from "../src/composition-source"
+import { selectedText } from "../src/composition/composition-source"
 
 test("literal line selections preserve CRLF, omit only chosen deletions, and honor final newlines", () => {
     let lines = [{ id: 0, kind: "hunk" as const, text: "@@ -1,2 +1,2 @@", hunk: 0 }, { id: 1, kind: "deletion" as const, text: "old\r", oldLine: 1, hunk: 0 }, {

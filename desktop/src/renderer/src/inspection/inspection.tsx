@@ -1,20 +1,21 @@
-import type { BranchGraph, BranchGraphBranchNode, BranchGraphVirtualBranch, BranchHistoryPage, ChangedFile, ChangeSelection, ChangesInventory, CompositionSource, DiffLayout, DiffSource, DiffView, FileDiffPage } from "@laneway/shared"
-import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
+import type { BranchGraph, BranchGraphBranchNode, BranchGraphVirtualBranch, BranchHistoryPage, ChangedFile, ChangesInventory, CompositionSource, DiffLayout, DiffSource, DiffView } from "@laneway/shared"
+import { css, on, ref, type RemixNode } from "remix/ui"
 import * as accordion from "remix/ui/accordion/primitives"
-import { auxiliaryCloseButton, auxiliaryColumnFrame, auxiliaryColumnHeader, AuxiliaryColumns } from "./auxiliary-columns"
+import { auxiliaryCloseButton, auxiliaryColumnFrame, auxiliaryColumnHeader, AuxiliaryColumns } from "../auxiliary-columns"
+import { CommitComposer } from "../commit-composer"
+import { compositionStyles, createComposition } from "../composition"
+import { ConflictResolution } from "../conflict-resolution"
+import { EditableName } from "../editable-name"
+import type { NoticeState } from "../feedback"
+import { Icon } from "../icons"
+import { OverflowMenu } from "../overflow-menu"
 import { type BranchComparisonState, createBranchComparisons } from "./branch-comparison"
 import { columnItem, focusItem, isFileItem, parentItem, scrollBehavior, stepItem } from "./column-navigation"
-import { CommitComposer } from "./commit-composer"
-import { compositionStyles, createComposition } from "./composition"
-import { ConflictResolution } from "./conflict-resolution"
-import { DiffLines } from "./diff"
 import { DiffControls } from "./diff-controls"
-import { EditableName } from "./editable-name"
-import type { NoticeState } from "./feedback"
 import { fileLabel, FileTree } from "./file-list"
 import { FileMenu } from "./file-menu"
-import { Icon } from "./icons"
-import { OverflowMenu } from "./overflow-menu"
+import { createDiffSession, type FileDiffState } from "./inspection-diff-session"
+import { InspectionDiffContents, inspectionMuted, inspectionProgress, selectionSummary } from "./inspection-diff-view"
 
 type Column = BranchGraphBranchNode | BranchGraphVirtualBranch
 interface Options {
@@ -54,20 +55,6 @@ interface HistoryState {
     open: boolean
     generation: number
 }
-interface FileDiffState {
-    showWhitespace: boolean
-    group: string
-    path: string
-    view: DiffView
-    page?: FileDiffPage
-    loading: boolean
-    /** A quiet re-read is in flight; the current page stays on screen until a different version arrives. */
-    refreshing?: boolean
-    error?: string
-    selection?: ChangeSelection
-    generation: number
-    notice?: string
-}
 /** One group's whole diff beside its source column; `focus` is the file the column last scrolled to. */
 interface BreakoutState {
     kind: "diff"
@@ -90,7 +77,6 @@ interface ColumnState {
     baseSelections: Map<string, string>
     requestIds: Set<string>
     diffs: Map<string, FileDiffState>
-    cachedDiffs: Map<string, FileDiffPage>
     wholeFiles: Map<string, { source: DiffSource; path: string; version: string }>
     breakout?: BreakoutState
     showIgnored: boolean
@@ -159,35 +145,6 @@ let inspectionProgressContainer = css({
     position: "relative",
 })
 
-let inspectionProgress = css({
-    position: "absolute",
-    top: "0",
-    right: "0",
-    zIndex: 1,
-    margin: "0",
-    padding: "4px 8px",
-    maxWidth: "100%",
-    boxSizing: "border-box",
-    border: "1px solid var(--line)",
-    borderRadius: "3px",
-    background: "var(--panel)",
-    color: "var(--muted)",
-    fontSize: "12px",
-    overflowWrap: "anywhere",
-    pointerEvents: "none",
-    "& button": {
-        pointerEvents: "auto",
-    },
-})
-
-let inspectionMuted = css({
-    margin: "0",
-    padding: "8px 10px",
-    color: "var(--muted)",
-    fontSize: "12px",
-    overflowWrap: "anywhere",
-})
-
 let diffInspector = css({
     position: "relative",
     borderBlock: "1px solid var(--line-strong)",
@@ -234,74 +191,6 @@ let diffFileToggle = css({
     "&:hover": { background: "var(--control-hover)" },
 })
 
-let diffViews = css({
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "4px",
-    padding: "6px 8px",
-})
-
-let diffViewsButton = css({
-    border: "1px solid var(--line)",
-    background: "var(--control)",
-    color: "var(--text)",
-    borderRadius: "3px",
-    padding: "3px 6px",
-    font: "inherit",
-    cursor: "pointer",
-    fontSize: "11px",
-    '&[aria-pressed="true"]': {
-        background: "var(--accent-wash-strong)",
-        borderColor: "var(--accent-edge)",
-    },
-    "&:hover": {
-        background: "var(--control-hover)",
-    },
-})
-
-let inspectionNotice = css({
-    margin: "0",
-    padding: "8px 10px",
-    color: "var(--warning)",
-    fontSize: "12px",
-    overflowWrap: "anywhere",
-    background: "var(--warning-wash)",
-})
-
-let diffInspectorP = css({
-    margin: 0,
-    padding: "8px 10px",
-    color: "var(--muted)",
-    fontSize: "12px",
-    overflowWrap: "anywhere",
-})
-
-let diffInspectorButton = css({
-    border: "1px solid var(--line)",
-    background: "var(--control)",
-    color: "var(--text)",
-    borderRadius: "3px",
-    padding: "3px 6px",
-    font: "inherit",
-    cursor: "pointer",
-    '&[aria-pressed="true"]': {
-        background: "var(--accent-wash-strong)",
-        borderColor: "var(--accent-edge)",
-    },
-    "&:hover": {
-        background: "var(--control-hover)",
-    },
-})
-
-let diffSummary = css({
-    margin: "0",
-    padding: "4px 10px",
-    color: "var(--muted)",
-    fontSize: "11px",
-    lineHeight: "16px",
-    overflowWrap: "anywhere",
-})
-
 let renameSelection = css({
     display: "flex",
     alignItems: "center",
@@ -326,68 +215,6 @@ let diffInspectorInput = css({
     padding: 0,
     margin: "0 3px 0 0",
     flex: "0 0 14px",
-})
-
-let selectionSummary = css({
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "6px 8px",
-    fontSize: "11px",
-    color: "var(--accent)",
-    borderTop: "1px solid var(--line)",
-})
-
-let selectionSummaryButton = css({
-    border: "1px solid var(--line)",
-    background: "var(--control)",
-    color: "var(--text)",
-    borderRadius: "3px",
-    padding: "3px 6px",
-    font: "inherit",
-    cursor: "pointer",
-    '&[aria-pressed="true"]': {
-        background: "var(--accent-wash-strong)",
-        borderColor: "var(--accent-edge)",
-    },
-    "&:hover": {
-        background: "var(--control-hover)",
-    },
-})
-
-let loadDiff = css({
-    border: "1px solid var(--line)",
-    background: "var(--control)",
-    color: "var(--text)",
-    borderRadius: "3px",
-    padding: "3px 6px",
-    font: "inherit",
-    cursor: "pointer",
-    margin: "8px",
-    '&[aria-pressed="true"]': {
-        background: "var(--accent-wash-strong)",
-        borderColor: "var(--accent-edge)",
-    },
-    "&:hover": {
-        background: "var(--control-hover)",
-    },
-})
-
-let inspectionMutedButton = css({
-    border: "1px solid var(--line)",
-    background: "var(--control)",
-    color: "var(--text)",
-    borderRadius: "3px",
-    padding: "3px 6px",
-    font: "inherit",
-    cursor: "pointer",
-    '&[aria-pressed="true"]': {
-        background: "var(--accent-wash-strong)",
-        borderColor: "var(--accent-edge)",
-    },
-    "&:hover": {
-        background: "var(--control-hover)",
-    },
 })
 
 let columnInspection = css({
@@ -730,10 +557,11 @@ let inspectionBreakoutHeader = css({
 let closeDiffColumnButton = css(auxiliaryCloseButton)
 import type { FileHistorySource } from "@laneway/shared"
 import type { FileHistoryEntry } from "@laneway/shared"
+import { createTrailCommits, type TrailCommitState } from "../trail-commit"
 import { createFileHistories, type FileHistoryState } from "./file-history"
-import { createTrailCommits, type TrailCommitState } from "./trail-commit"
 
 export function createInspection(options: Options) {
+    let diffSessions = new WeakMap<ColumnState, ReturnType<typeof createDiffSession>>()
     let navigationHighlight: Animation | undefined
     let columns = new Map<string, ColumnState>()
     let auxiliary = new AuxiliaryColumns<BreakoutState | BranchComparisonState | FileHistoryState | TrailCommitState>()
@@ -1868,7 +1696,6 @@ export function createInspection(options: Options) {
                 diffs: new Map(),
                 requestIds: new Set(),
                 wholeFiles: new Map(),
-                cachedDiffs: new Map(),
                 history: new Map(),
                 transientLayout: "unified",
                 filter: "",
@@ -1935,7 +1762,6 @@ export function createInspection(options: Options) {
                 baseSelections: new Map(),
                 requestIds: new Set(),
                 diffs: new Map(),
-                cachedDiffs: new Map(),
                 showIgnored: false,
                 filter: "",
                 filterOpen: false,
@@ -2288,7 +2114,6 @@ export function createInspection(options: Options) {
                 worktreePath: source.kind == "worktree" ? source.worktreePath : undefined,
                 files: new Map(),
                 diffs: new Map(),
-                cachedDiffs: new Map(),
                 requestIds: new Set(),
                 wholeFiles: new Map(),
                 history: new Map(),
@@ -2558,18 +2383,12 @@ export function createInspection(options: Options) {
 
     function createDiff(state: ColumnState, group: string, path: string) {
         let files = state.files.get(group)
-        let view: FileDiffState["view"] = group == "working-staged" ? "staged" : group == "working-unstaged" ? "unstaged" : "combined"
-        let diff: FileDiffState = {
-            group,
-            path,
-            view,
-            page: files?.error
-                ? undefined
-                : state.cachedDiffs.get(JSON.stringify([files?.source, files?.inventory?.version, path, view, !!state.showEntireFiles])),
-            loading: false,
-            generation: 0,
-            showWhitespace: false,
-        }
+        let diff = diffSession(state).create(group, path, {
+            source: files?.source,
+            inventoryVersion: files?.inventory?.version,
+            entireFile: state.showEntireFiles,
+            unavailable: !!files?.error,
+        })
         state.diffs.set(diffKey(group, path), diff)
 
         return diff
@@ -2625,119 +2444,36 @@ export function createInspection(options: Options) {
     }
 
     function renderDiffContents(state: ColumnState, diff: FileDiffState): RemixNode {
-        let eligible = selectable(state, diff.group)
-        let page = diff.page && !eligible ? { ...diff.page, selectable: false } : diff.page
-        let layout = state.transientLayout ?? options.layout(state.repositoryId, state.id)
+        let page = diff.page
 
         return (
-            <>
-                {page?.source.kind == "working" && diffViewChoices(diff, page.file).length > 1 && (
-                    <div class="diff-views" role="group" aria-label="Comparison" mix={diffViews}>
-                        {diffViewChoices(diff, page.file).map(view => (
-                            <button
-                                type="button"
-                                aria-pressed={diff.view == view}
-                                mix={[diffViewsButton, on("click", () => changeView(state, diff, view))]}
-                            >
-                                {view == "combined" ? "Working Changes" : view[0].toUpperCase() + view.slice(1)}
-                            </button>
-                        ))}
-                    </div>
-                )}
-                {diff.notice && (
-                    <p class="inspection-notice" role="status" mix={inspectionNotice}>
-                        {diff.notice}
-                    </p>
-                )}
-                {diff.error && (
-                    <p role="alert" mix={diffInspectorP}>
-                        {diff.error}{" "}
-                        <button type="button" mix={[diffInspectorButton, on("click", () => readDiff(state, diff))]}>
-                            Retry diff
-                        </button>
-                    </p>
-                )}
-                {page && (
-                    <>
-                        {page.summary.map(text => (
-                            <p class="diff-summary" mix={diffSummary}>
-                                {text}
-                            </p>
-                        ))}
-                        {page.lines.length == 0 && page.summary.length == 0 && (
-                            <p class="inspection-muted" mix={inspectionMuted}>
-                                No net content difference in this view.
-                            </p>
-                        )}
-                        <DiffLines
-                            page={page}
-                            layout={layout}
-                            showWhitespace={diff.showWhitespace}
-                            selected={eligible ? diff.selection?.lineIds ?? [] : []}
-                            select={ids => {
-                                if (eligible)
-                                    selectLines(diff, ids)
-                            }}
-                        />
-                        {eligible && diff.selection && (
-                            <div class="selection-summary" role="status" mix={selectionSummary}>
-                                {transferSource(state, page.source) && composition.source({
-                                    repositoryId: state.repositoryId,
-                                    selectedRemote: state.graph.selectedRemote,
-                                    source: transferSource(state, page.source)!,
-                                    files: [{ path: diff.path, version: page.version, entireFile: page.entireFile, lineIds: diff.selection.lineIds }],
-                                    view: diff.view == "staged" || diff.view == "unstaged" ? diff.view : "combined",
-                                    label: `${diff.selection.lineIds.length} lines in ${diff.path}`,
-                                })}
-                                {diff.selection.lineIds.length} lines selected{diff.selection.rename ? " · rename selected" : ""}
-                                <button
-                                    type="button"
-                                    data-mousedown-activate
-                                    mix={[
-                                        selectionSummaryButton,
-                                        on("click", () => {
-                                            diff.selection = undefined
-                                            update()
-                                        }),
-                                    ]}
-                                >
-                                    Clear selection
-                                </button>
-                            </div>
-                        )}
-                        {page.nextOffset != undefined && (
-                            <button
-                                type="button"
-                                class="load-diff"
-                                disabled={diff.loading}
-                                mix={[loadDiff, on("click", () => readDiff(state, diff, true))]}
-                            >
-                                Load more
-                            </button>
-                        )}
-                    </>
-                )}
-                {diff.loading && (
-                    <p class="inspection-progress" role="status" mix={inspectionProgress}>
-                        Reading diff…{" "}
-                        <button
-                            type="button"
-                            mix={[
-                                inspectionMutedButton,
-                                on("click", () => {
-                                    diff.generation++
-                                    diff.loading = false
-                                    diff.error = "Diff read cancelled."
-                                    cancel(state, diffRequestId(state, diff))
-                                    update()
-                                }),
-                            ]}
-                        >
-                            Cancel
-                        </button>
-                    </p>
-                )}
-            </>
+            <InspectionDiffContents
+                diff={diff}
+                eligible={selectable(state, diff.group)}
+                layout={state.transientLayout ?? options.layout(state.repositoryId, state.id)}
+                selectionControl={page && diff.selection && transferSource(state, page.source) && composition.source({
+                    repositoryId: state.repositoryId,
+                    selectedRemote: state.graph.selectedRemote,
+                    source: transferSource(state, page.source)!,
+                    files: [{ path: diff.path, version: page.version, entireFile: page.entireFile, lineIds: diff.selection.lineIds }],
+                    view: diff.view == "staged" || diff.view == "unstaged" ? diff.view : "combined",
+                    label: `${diff.selection.lineIds.length} lines in ${diff.path}`,
+                })}
+                changeView={view => changeView(state, diff, view)}
+                read={more => readDiff(state, diff, more)}
+                select={ids => diffSession(state).select(diff, ids)}
+                clearSelection={() => {
+                    diff.selection = undefined
+                    update()
+                }}
+                cancel={() => {
+                    diff.generation++
+                    diff.loading = false
+                    diff.error = "Diff read cancelled."
+                    cancel(state, diffRequestId(state, diff))
+                    update()
+                }}
+            />
         )
     }
 
@@ -2758,71 +2494,36 @@ export function createInspection(options: Options) {
     /** Reads a file's diff. With `refresh`, a page already on screen stays put until a different version arrives. */
     async function readDiff(state: ColumnState, diff: FileDiffState, more = false, refresh = false) {
         let files = state.files.get(diff.group)
-        let source = files?.source
-        let inventoryVersion = files?.inventory?.version
-        if (!source || !state.alive || refresh && (diff.loading || diff.refreshing))
-            return
-        let previous = diff.page
-        let generation = ++diff.generation
-        let quiet = refresh && !!previous
-        if (quiet)
-            diff.refreshing = true
-        else {
-            diff.loading = true
-            diff.error = undefined
-            update()
+        await diffSession(state).read(
+            diff,
+            {
+                source: files?.source,
+                inventoryVersion: files?.inventory?.version,
+                entireFile: state.showEntireFiles,
+            },
+            more,
+            refresh,
+        )
+    }
+
+    function diffSession(state: ColumnState) {
+        let session = diffSessions.get(state)
+        if (!session) {
+            session = createDiffSession({
+                api: options.api,
+                repositoryId: state.repositoryId,
+                alive: () => state.alive,
+                requestId: diff => diffRequestId(state, diff),
+                update,
+                settled(diff) {
+                    if (state.breakout?.scrolling && state.breakout.group == diff.group)
+                        scrollBreakout(state, state.breakout)
+                },
+            })
+            diffSessions.set(state, session)
         }
 
-        try {
-            let result = await options.api.readFileDiff(state.repositoryId, diffRequestId(state, diff), {
-                source,
-                path: diff.path,
-                view: diff.view,
-                entireFile: state.showEntireFiles,
-                inventoryVersion,
-                ...(more && previous ? { offset: previous.nextOffset, expectedVersion: previous.version } : {}),
-            })
-            if (!state.alive || generation != diff.generation)
-                return
-            if (!result.ok)
-                throw new Error(result.error.message)
-            let page = result.page
-            if (!more && diffTextLength(page) <= 128_000) {
-                let id = JSON.stringify([source, inventoryVersion, diff.path, diff.view, !!state.showEntireFiles])
-                state.cachedDiffs.delete(id)
-                state.cachedDiffs.set(id, page)
-                if (state.cachedDiffs.size > 16)
-                    state.cachedDiffs.delete(state.cachedDiffs.keys().next().value!)
-            }
-            if (previous && previous.version != page.version) {
-                diff.selection = undefined
-                diff.notice = "File changed. Change Selection cleared."
-            }
-            diff.page = more && previous
-                ? { ...page, lines: [...previous.lines, ...page.lines] }
-                : refresh && previous?.version == page.version
-                ? previous
-                : page
-            if (quiet && diff.page == previous)
-                return
-        } catch (error) {
-            if (state.alive && generation == diff.generation) {
-                diff.error = message(error)
-                diff.selection = undefined
-                if (!more)
-                    diff.page = undefined
-            }
-        } finally {
-            if (generation == diff.generation) {
-                diff.loading = false
-                diff.refreshing = false
-                // A quiet re-read that found the same version leaves the screen alone.
-                if (!quiet || diff.page != previous || diff.error)
-                    update()
-                if (state.breakout?.scrolling && state.breakout.group == diff.group)
-                    scrollBreakout(state, state.breakout)
-            }
-        }
+        return session
     }
 
     /** Scrolls the diff column so its focused file's toolbar sits under the column header. */
@@ -2862,23 +2563,6 @@ export function createInspection(options: Options) {
 
     function breakoutColumn(state: ColumnState, breakout: BreakoutState) {
         return auxiliary.descendants(key(state.repositoryId, state.id)).find(column => column.value == breakout)
-    }
-
-    function selectLines(diff: FileDiffState, ids: number[]) {
-        let page = diff.page
-        if (!page?.selectable)
-            return
-        let selection = diff.selection ?? { source: page.source, path: page.file.path, version: page.version, lineIds: [], rename: false }
-        let current = new Set(selection.lineIds)
-        let remove = ids.every(id => current.has(id))
-        for (let id of ids) {
-            if (remove)
-                current.delete(id)
-            else
-                current.add(id)
-        }
-        diff.selection = { ...selection, lineIds: [...current].sort((a, b) => a - b) }
-        update()
     }
 
     function selectable(state: ColumnState, group: string) {
@@ -2952,13 +2636,6 @@ export function createInspection(options: Options) {
 
 // The staged and unstaged lists each show their own side of a file, so only conflict views remain
 // selectable there; the combined Working Changes view keeps its staged and unstaged toggles.
-function diffViewChoices(diff: FileDiffState, file: ChangedFile): DiffView[] {
-    let fixed = diff.group.startsWith("working-")
-    return [
-        ...(fixed ? [diff.view] : ["combined", ...(file.staged ? ["staged", "unstaged"] : [])]),
-        ...(file.conflicted ? ["base", "ours", "theirs"] : []),
-    ] as DiffView[]
-}
 
 function message(error: unknown) {
     return error instanceof Error ? error.message : String(error)
@@ -2984,11 +2661,4 @@ function conflictIcon() {
             <path d="M8 6v4m0 1.5v1" />
         </svg>
     )
-}
-
-function diffTextLength(page: FileDiffPage) {
-    let length = 0
-    for (let line of page.lines)
-        length += line.text.length
-    return length
 }

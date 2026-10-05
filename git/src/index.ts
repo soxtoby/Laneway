@@ -1,33 +1,21 @@
 import type { BranchGraphReadOptions, BranchHistoryRequest, ChangesRequest, DiffSource, FileDiffRequest } from "@laneway/shared"
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
-import { constants } from "node:fs"
 import { access, lstat, mkdir, readdir, readFile, realpath } from "node:fs/promises"
-import { basename, delimiter, dirname, isAbsolute, resolve } from "node:path"
+import { isAbsolute, resolve } from "node:path"
 import { type BranchGraphReadCache, startBranchGraphRead, startBranchHistoryRead } from "./branch-graph"
 import { type ChangesReadCache, startChangesRead, startFileDiffRead } from "./changes"
 import { conflictComparisonSource, conflictHistoryRequest, projectConflictGraph } from "./conflict-graph"
+import { GitError } from "./git-error"
+import { selectGit } from "./git-installation"
+import { commandFailure, type GitRunResult, redactGitText, runGitProcess, startGitProcess } from "./git-process"
 import { readRegisteredWorktrees } from "./worktrees"
 
-let minimumGitVersion = [2, 41, 0] as const
-let credentialPattern = /([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]+)(?::[^\s/@]*)?@/gi
-let sensitiveQueryPattern = /([?&](?:access_token|auth|key|password|signature|token)=)[^&#\s]*/gi
-let sensitiveHeaderPattern = /^(authorization|proxy-authorization):.*$/gim
+export { GitError, type GitErrorCode } from "./git-error"
+export { parseGitVersion, selectGit } from "./git-installation"
+export { redactGitText } from "./git-process"
 
 export type ObjectFormat = "sha1" | "sha256"
 declare const objectIdBrand: unique symbol
 export type ObjectId = string & { readonly [objectIdBrand]: true }
-
-export type GitErrorCode =
-    | "git.unavailable"
-    | "git.too-old"
-    | "git.invalid-root"
-    | "git.bare-repository"
-    | "git.missing-main-worktree"
-    | "git.unsupported-format"
-    | "git.authentication-required"
-    | "git.destination-conflict"
-    | "git.cancelled"
-    | "git.command-failed"
 
 export interface GitInstallation {
     path: string
@@ -61,34 +49,6 @@ export interface WorktreeGitState {
     status: Uint8Array
     diff: Uint8Array
     untracked: string[]
-}
-
-export class GitError extends Error {
-    constructor(
-        readonly code: GitErrorCode,
-        message: string,
-        readonly details?: Record<string, unknown>,
-    ) {
-        super(message)
-    }
-}
-
-interface GitRunOptions {
-    env?: Record<string, string>
-    readOnly?: boolean
-    onOutput?: (chunk: Buffer) => void
-    installation: GitInstallation
-    args: string[]
-    cwd?: string
-    input?: string | Uint8Array
-    secrets?: string[]
-    onProgress?: (message: string) => void
-}
-
-interface GitRunResult {
-    exitCode: number
-    stderr: Buffer
-    stdout: Buffer
 }
 
 export interface GitTask<T> {
@@ -511,86 +471,6 @@ function resolveGitSelection(git: GitSelection) {
     return typeof git == "object" ? Promise.resolve(git) : selectGit(git)
 }
 
-export async function selectGit(override?: string): Promise<GitInstallation> {
-    let path = override ? resolve(override) : await findGitOnPath()
-    if (override) {
-        try {
-            await access(path, constants.X_OK)
-        } catch {
-            throw new GitError("git.unavailable", `The selected Git executable does not exist or cannot run: ${path}.`, { path })
-        }
-    }
-
-    let result: GitRunResult
-    try {
-        result = await runGitProcess({ installation: { path, version: "" }, args: ["--version"] })
-    } catch (error) {
-        if (error instanceof GitError)
-            throw error
-        throw new GitError("git.unavailable", `Laneway could not start Git at ${path}.`, { path })
-    }
-    if (result.exitCode != 0)
-        throw new GitError("git.unavailable", redactGitText(result.stderr.toString()) || `Git at ${path} could not run.`, { path })
-
-    let version = parseGitVersion(result.stdout.toString())
-
-    // Git for Windows supports direct invocation of its native executable. Avoid the extra
-    // launcher process for automatic discovery; explicit executable overrides stay exact.
-    if (!override && process.platform == "win32" && basename(dirname(path)).toLowerCase() == "cmd" && /\.windows\./.test(result.stdout.toString())) {
-        for (let runtime of ["ucrt64", "mingw64", "mingw32", "clangarm64"]) {
-            let native = resolve(dirname(path), "..", runtime, "bin", "git.exe")
-            try {
-                await access(native, constants.X_OK)
-                let check = await runGitProcess({ installation: { path: native, version }, args: ["--version"] })
-                if (!check.exitCode && check.stdout.equals(result.stdout))
-                    return { path: await realpath(native), version }
-            } catch {
-                // Nonstandard installations keep using their discovered launcher.
-            }
-        }
-    }
-
-    return { path, version }
-}
-
-export function parseGitVersion(output: string) {
-    let match = /^git version (\d+)\.(\d+)\.(\d+)(?:[^\d].*)?\s*$/.exec(output)
-    if (!match)
-        throw new GitError("git.unavailable", "The selected executable did not return a valid Git version.")
-
-    let numbers = match.slice(1, 4).map(Number) as [number, number, number]
-    let difference = numbers.findIndex((number, index) => number != minimumGitVersion[index])
-    if (difference >= 0 && numbers[difference] < minimumGitVersion[difference]) {
-        throw new GitError(
-            "git.too-old",
-            `Git ${numbers.join(".")} is too old. Git ${minimumGitVersion.join(".")} or newer is required.`,
-            { version: numbers.join("."), minimumVersion: minimumGitVersion.join(".") },
-        )
-    }
-
-    return numbers.join(".")
-}
-
-async function findGitOnPath() {
-    let pathValue = process.env.PATH
-    if (!pathValue)
-        throw new GitError("git.unavailable", "Git was not found because PATH is empty. Install Git 2.41 or newer, or choose it in Settings.")
-
-    let candidates = process.platform == "win32" ? ["git.exe"] : ["git"]
-    for (let directory of pathValue.split(delimiter).map(value => value.replace(/^"|"$/g, "")).filter(Boolean)) {
-        for (let candidate of candidates) {
-            let path = resolve(directory, candidate)
-            try {
-                await access(path, constants.X_OK)
-                return await realpath(path)
-            } catch {
-                // Try the next PATH entry.
-            }
-        }
-    }
-    throw new GitError("git.unavailable", "Git was not found on PATH. Install Git 2.41 or newer, or choose it in Settings.")
-}
-
 function invalidRoot(path: string) {
     return new GitError("git.invalid-root", `The selected path is not a valid Git repository root: ${path}.`, { path })
 }
@@ -629,117 +509,4 @@ function parseWorktreeRoots(output: string) {
         .map(record => record.split("\0").find(line => line.startsWith("worktree "))?.slice("worktree ".length))
         .filter((value): value is string => Boolean(value))
         .map(value => resolve(value))
-}
-
-function commandFailure(result: GitRunResult, fallback: string, secrets: string[] = []) {
-    let diagnostics = redactGitText(result.stderr.toString(), secrets)
-    let authentication = /authentication failed|could not read username|permission denied \(publickey\)|host key verification failed|terminal prompts disabled/i
-        .test(
-            diagnostics,
-        )
-    return new GitError(
-        authentication ? "git.authentication-required" : "git.command-failed",
-        diagnostics || fallback,
-        { gitExitCode: result.exitCode },
-    )
-}
-
-async function runGitProcess(options: GitRunOptions) {
-    return startGitProcess(options).result
-}
-
-function startGitProcess(options: GitRunOptions) {
-    let cancelled = false
-    let forceTimer: ReturnType<typeof setTimeout> | undefined
-    let child: ChildProcessWithoutNullStreams
-    try {
-        child = spawn(options.installation.path, options.readOnly ? ["-c", "diff.autoRefreshIndex=false", ...options.args] : options.args, {
-            cwd: options.cwd,
-            detached: process.platform != "win32",
-            env: {
-                ...process.env,
-                ...options.env,
-                GIT_TERMINAL_PROMPT: "0",
-                ...(options.readOnly ? { GIT_OPTIONAL_LOCKS: "0", GIT_NO_LAZY_FETCH: "1", GIT_LITERAL_PATHSPECS: "1" } : {}),
-            },
-            stdio: ["pipe", "pipe", "pipe"],
-            windowsHide: true,
-        })
-    } catch {
-        throw new GitError("git.unavailable", `Laneway could not start Git at ${options.installation.path}.`, { path: options.installation.path })
-    }
-
-    let stdout: Buffer[] = []
-    let stderr: Buffer[] = []
-    let progressBuffer = ""
-    child.stdout.on("data", (chunk: Buffer) => options.onOutput ? options.onOutput(chunk) : stdout.push(Buffer.from(chunk)))
-    child.stderr.on("data", (chunk: Buffer) => {
-        stderr.push(Buffer.from(chunk))
-        progressBuffer += chunk.toString()
-        let segments = progressBuffer.split(/[\r\n]+/)
-        progressBuffer = segments.pop() ?? ""
-        for (let segment of segments) {
-            let message = redactGitText(segment, options.secrets)
-            if (message)
-                options.onProgress?.(message)
-        }
-    })
-
-    if (options.input == undefined)
-        child.stdin.end()
-    else
-        child.stdin.end(options.input)
-
-    let result = new Promise<GitRunResult>((resolveResult, rejectResult) => {
-        child.once("error", () => rejectResult(new GitError("git.unavailable", `Laneway could not start Git at ${options.installation.path}.`)))
-        child.once("close", code => {
-            if (forceTimer)
-                clearTimeout(forceTimer)
-            let finalProgress = redactGitText(progressBuffer, options.secrets)
-            if (finalProgress)
-                options.onProgress?.(finalProgress)
-            resolveResult({ exitCode: code ?? 1, stderr: Buffer.concat(stderr), stdout: Buffer.concat(stdout) })
-        })
-    })
-
-    return {
-        result,
-        wasCancelled: () => cancelled,
-        cancel() {
-            if (cancelled || child.exitCode != null)
-                return
-
-            cancelled = true
-            void terminateProcessTree(child.pid!, false)
-            forceTimer = setTimeout(() => void terminateProcessTree(child.pid!, true), 1500)
-        },
-    }
-}
-
-export function redactGitText(text: string, secrets: string[] = []) {
-    let redacted = text
-        .replace(credentialPattern, "$1")
-        .replace(sensitiveQueryPattern, "$1[redacted]")
-        .replace(sensitiveHeaderPattern, "$1: [redacted]")
-
-    for (let secret of secrets.filter(Boolean).sort((left, right) => right.length - left.length))
-        redacted = redacted.replaceAll(secret, "[redacted]")
-
-    return redacted.trim()
-}
-
-async function terminateProcessTree(pid: number, force: boolean) {
-    if (process.platform == "win32") {
-        let args = ["/pid", String(pid), "/t"]
-        if (force)
-            args.push("/f")
-        let killer = spawn("taskkill.exe", args, { stdio: "ignore", windowsHide: true })
-        await new Promise<void>(resolveCompletion => killer.once("close", () => resolveCompletion()))
-    } else {
-        try {
-            process.kill(-pid, force ? "SIGKILL" : "SIGTERM")
-        } catch {
-            // The process may have exited between the completion check and signal.
-        }
-    }
 }
