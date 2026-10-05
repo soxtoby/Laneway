@@ -1,56 +1,16 @@
-import { ENGINE_VERSION, type EngineMessage, EngineMessageSchema } from "@laneway/shared"
+import { type EngineMessage, EngineMessageSchema, engineVersion } from "@laneway/shared"
 import { execFile, spawn } from "node:child_process"
 import { dirname, join, resolve } from "node:path"
 import { createInterface } from "node:readline"
 import { promisify } from "node:util"
 
-const execFileAsync = promisify(execFile)
+let execFileAsync = promisify(execFile)
 
 export interface EnginePathOptions {
     override?: string
     isPackaged: boolean
     applicationPath: string
     workspacePath: string
-}
-
-export function resolveEnginePath(options: EnginePathOptions) {
-    if (options.override)
-        return resolve(options.override)
-
-    if (options.isPackaged)
-        return join(dirname(options.applicationPath), "lane.exe")
-
-    return join(options.workspacePath, "cli", "bin", "lane.exe")
-}
-
-export function parseEngineIdentity(output: string) {
-    const match = /^lane (\d+\.\d+\.\d+)\r?\n?$/.exec(output)
-
-    if (!match)
-        throw new Error("The selected Laneway Engine returned an invalid --version response.")
-
-    const version = match[1]
-    if (version != ENGINE_VERSION)
-        throw new Error(`Incompatible Laneway Engine version ${version}; expected ${ENGINE_VERSION}.`)
-
-    return { name: "lane" as const, version }
-}
-
-export async function inspectEngine(enginePath: string) {
-    const { stdout } = await execFileAsync(enginePath, ["--version"], {
-        encoding: "utf8",
-        windowsHide: true,
-    })
-
-    return { path: enginePath, ...parseEngineIdentity(stdout) }
-}
-
-export function parseEngineMessage(line: string) {
-    try {
-        return EngineMessageSchema.parse(JSON.parse(line))
-    } catch {
-        throw new Error(`Laneway Engine returned malformed NDJSON: ${line}`)
-    }
 }
 
 export interface EngineCommandOptions {
@@ -66,16 +26,49 @@ export interface EngineCommandResult {
     messages: EngineMessage[]
 }
 
+export function resolveEnginePath(options: EnginePathOptions) {
+    if (options.override)
+        return resolve(options.override)
+
+    if (options.isPackaged)
+        return join(dirname(options.applicationPath), "lane.exe")
+
+    return join(options.workspacePath, "cli", "bin", "lane.exe")
+}
+
+export async function inspectEngine(enginePath: string) {
+    let { stdout } = await execFileAsync(enginePath, ["--version"], {
+        encoding: "utf8",
+        windowsHide: true,
+    })
+
+    return { path: enginePath, ...parseEngineIdentity(stdout) }
+}
+
+export function parseEngineIdentity(output: string) {
+    let match = /^lane (\d+\.\d+\.\d+)\r?\n?$/.exec(output)
+
+    if (!match)
+        throw new Error("The selected Laneway Engine returned an invalid --version response.")
+
+    let version = match[1]
+    if (version != engineVersion)
+        throw new Error(`Incompatible Laneway Engine version ${version}; expected ${engineVersion}.`)
+
+    return { name: "lane" as const, version }
+}
+
 export function runEngineCommand(options: EngineCommandOptions) {
-    const args = options.args.includes("--json")
+    let args = options.args.includes("--json")
         ? options.args
         : [...options.args, "--json"]
-    const child = spawn(options.enginePath, args, {
+
+    let child = spawn(options.enginePath, args, {
         cwd: options.cwd,
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
     })
-    const messages: EngineMessage[] = []
+    let messages: EngineMessage[] = []
     let diagnostics = ""
 
     child.stderr.setEncoding("utf8")
@@ -83,29 +76,28 @@ export function runEngineCommand(options: EngineCommandOptions) {
         diagnostics += chunk
     })
 
-    const completion = new Promise<number>((resolveCompletion, rejectCompletion) => {
+    let completion = new Promise<number>((resolveCompletion, rejectCompletion) => {
         child.once("error", rejectCompletion)
         child.once("close", code => resolveCompletion(code ?? 1))
     })
 
-    const result = (async (): Promise<EngineCommandResult> => {
-        const lines = createInterface({ input: child.stdout })
+    let result = (async (): Promise<EngineCommandResult> => {
+        let lines = createInterface({ input: child.stdout })
         let protocolError: Error | undefined
 
-        for await (const line of lines) {
-            if (protocolError || line.length === 0)
-                continue
-
-            try {
-                const message = parseEngineMessage(line)
-                messages.push(message)
-                options.onMessage?.(message)
-            } catch {
-                protocolError = new Error(`Laneway Engine returned malformed NDJSON: ${line}`)
+        for await (let line of lines) {
+            if (!protocolError && line.length > 0) {
+                try {
+                    let message = parseEngineMessage(line)
+                    messages.push(message)
+                    options.onMessage?.(message)
+                } catch {
+                    protocolError = new Error(`Laneway Engine returned malformed NDJSON: ${line}`)
+                }
             }
         }
 
-        const exitCode = await completion
+        let exitCode = await completion
         if (protocolError)
             throw protocolError
 
@@ -117,5 +109,13 @@ export function runEngineCommand(options: EngineCommandOptions) {
         cancel() {
             child.stdin.end("cancel\n")
         },
+    }
+}
+
+export function parseEngineMessage(line: string) {
+    try {
+        return EngineMessageSchema.parse(JSON.parse(line))
+    } catch {
+        throw new Error(`Laneway Engine returned malformed NDJSON: ${line}`)
     }
 }

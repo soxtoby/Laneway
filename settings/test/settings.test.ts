@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { resolve } from "node:path"
 import { defaultSettingsPath, defaultWorkspacePath, readSettings, readWorkspace, resetWorkspace, SettingsError, WorkspaceStateError, writeSettings, writeWorkspace } from "../src/index"
 
-const temporaryDirectories: string[] = []
+let temporaryDirectories: string[] = []
 
 afterEach(async () => {
     await Promise.all(temporaryDirectories.splice(0).map(path => rm(path, { recursive: true, force: true })))
@@ -16,7 +16,7 @@ describe("Workspace State", () => {
     })
 
     test("round-trips presentation state and ignores unknown fields", async () => {
-        const path = (await temporarySettingsPath()).replace("settings.json", "workspace.json")
+        let path = (await temporarySettingsPath()).replace("settings.json", "workspace.json")
         await writeWorkspace({
             version: 1,
             repositories: [{
@@ -40,7 +40,8 @@ describe("Workspace State", () => {
             }],
             activeRepositoryId: "repository-1",
         }, path)
-        const value = JSON.parse(await readFile(path, "utf8"))
+
+        let value = JSON.parse(await readFile(path, "utf8"))
         value.unknown = true
         await writeFile(path, JSON.stringify(value))
 
@@ -52,37 +53,36 @@ describe("Workspace State", () => {
     })
 
     test("skips malformed repository records", async () => {
-        const path = (await temporarySettingsPath()).replace("settings.json", "workspace.json")
+        let path = (await temporarySettingsPath()).replace("settings.json", "workspace.json")
         await mkdir(resolve(path, ".."), { recursive: true })
         await writeFile(path, JSON.stringify({ version: 1, repositories: [{ id: "bad" }] }))
-        const result = await readWorkspace(path)
+
+        let result = await readWorkspace(path)
+
         expect(result.workspace.repositories).toEqual([])
         expect(result.skipped).toBe(1)
     })
 
     test("preserves corrupt state as a best-effort backup on reset", async () => {
-        const path = (await temporarySettingsPath()).replace("settings.json", "workspace.json")
+        let path = (await temporarySettingsPath()).replace("settings.json", "workspace.json")
         await mkdir(resolve(path, ".."), { recursive: true })
         await writeFile(path, "broken")
+
         await resetWorkspace(path)
+
         expect(await readFile(`${path}.bak`, "utf8")).toBe("broken")
         expect((await readWorkspace(path)).workspace).toEqual({ version: 1, repositories: [] })
     })
 
     test("rejects unknown future versions", async () => {
-        const path = (await temporarySettingsPath()).replace("settings.json", "workspace.json")
+        let path = (await temporarySettingsPath()).replace("settings.json", "workspace.json")
         await mkdir(resolve(path, ".."), { recursive: true })
         await writeFile(path, JSON.stringify({ version: 2, repositories: [] }))
+
         await expect(readWorkspace(path)).rejects.toBeInstanceOf(WorkspaceStateError)
         await expect(readWorkspace(path)).rejects.toMatchObject({ code: "workspace.unsupported-version" })
     })
 })
-
-async function temporarySettingsPath() {
-    const directory = await mkdtemp(resolve(tmpdir(), "laneway-settings-"))
-    temporaryDirectories.push(directory)
-    return resolve(directory, "nested", "settings.json")
-}
 
 describe("Laneway settings", () => {
     test("uses the platform configuration directory", () => {
@@ -94,7 +94,7 @@ describe("Laneway settings", () => {
     })
 
     test("round-trips the global Git override", async () => {
-        const path = await temporarySettingsPath()
+        let path = await temporarySettingsPath()
         await writeSettings({ version: 1, gitPath: "D:\\Git\\cmd\\git.exe" }, path)
         await writeSettings({ version: 1, gitPath: "D:\\PortableGit\\git.exe" }, path)
 
@@ -103,7 +103,7 @@ describe("Laneway settings", () => {
     })
 
     test("round-trips author identities and repository graph settings", async () => {
-        const path = await temporarySettingsPath()
+        let path = await temporarySettingsPath()
         await writeSettings({
             version: 1,
             authorIdentities: { primary: "developer@example.test", secondary: ["old@example.test"] },
@@ -128,17 +128,18 @@ describe("Laneway settings", () => {
     })
 
     test("round-trips the appearance preference and rejects unknown values", async () => {
-        const path = await temporarySettingsPath()
+        let path = await temporarySettingsPath()
         await writeSettings({ version: 1, appearance: "dark" }, path)
 
         expect(await readSettings(path)).toEqual({ version: 1, appearance: "dark" })
 
         await writeFile(path, JSON.stringify({ version: 1, appearance: "sepia" }))
+
         await expect(readSettings(path)).rejects.toMatchObject({ code: "settings.corrupt", path })
     })
 
     test("reports corrupt settings without falling back", async () => {
-        const path = await temporarySettingsPath()
+        let path = await temporarySettingsPath()
         await mkdir(resolve(path, ".."), { recursive: true })
         await writeFile(path, "not-json")
 
@@ -146,3 +147,9 @@ describe("Laneway settings", () => {
         await expect(readSettings(path)).rejects.toMatchObject({ code: "settings.corrupt", path })
     })
 })
+
+async function temporarySettingsPath() {
+    let directory = await mkdtemp(resolve(tmpdir(), "laneway-settings-"))
+    temporaryDirectories.push(directory)
+    return resolve(directory, "nested", "settings.json")
+}

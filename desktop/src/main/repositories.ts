@@ -1,13 +1,11 @@
 import { GitError, type GitInstallation, type GitTask, inferCloneDirectoryName, initializeRepository, openRepository, type RepositoryGit, selectGit, startCloneRepository } from "@laneway/git"
 import { defaultSettingsPath, readSettings, SettingsError, WorkspaceStateError, writeSettings } from "@laneway/settings"
 import type { Appearance, AuthorIdentitySettings, BranchGraph, BranchGraphReadOptions, BranchHistoryPage, BranchHistoryRequest, ChangesRequest, EntryError, FileDiffRequest, GitSettingsState, RepositoryGraphSettings, RepositoryInfo } from "@laneway/shared"
+import type { FileHistoryRequest } from "@laneway/shared"
 import { resolve } from "node:path"
 import { watchRepository } from "./repository-watcher"
 
 export class OpenRepositories {
-    worktreeRepository(repositoryId: string) {
-        return this.requireRepository(repositoryId).git
-    }
     /** Called when an open repository's HEADs, refs, or worktree registrations change on disk. */
     changed: ((repositoryId: string) => void) | undefined
     private readonly repositories = new Map<string, { info: RepositoryInfo; git: RepositoryGit }>()
@@ -23,13 +21,17 @@ export class OpenRepositories {
         private readonly selectInstallation: typeof selectGit = selectGit,
     ) {}
 
+    worktreeRepository(repositoryId: string) {
+        return this.requireRepository(repositoryId).git
+    }
+
     list() {
         return [...this.repositories.values()].map(repository => repository.info)
     }
 
     async gitSettings(): Promise<GitSettingsState> {
         try {
-            const settings = await readSettings(this.settingsPath)
+            let settings = await readSettings(this.settingsPath)
             return {
                 path: this.settingsPath,
                 override: settings.gitPath,
@@ -46,10 +48,12 @@ export class OpenRepositories {
     }
 
     async setGitOverride(path?: string): Promise<GitSettingsState> {
-        const git = await this.selectInstallation(path)
-        const override = path ? resolve(path) : undefined
-        const settings = await this.updateSettings(current => ({ ...current, gitPath: override }))
+        let git = await this.selectInstallation(path)
+        let override = path ? resolve(path) : undefined
+        let settings = await this.updateSettings(current => ({ ...current, gitPath: override }))
+
         this.cachedGit = { override, installation: git }
+
         return { path: this.settingsPath, override, git, authorIdentities: settings.authorIdentities ?? { secondary: [] } }
     }
 
@@ -79,26 +83,29 @@ export class OpenRepositories {
 
     async setRepositoryGraphSettings(repositoryId: string, graphSettings: RepositoryGraphSettings) {
         await this.requireRepository(repositoryId)
+
         await this.updateSettings(current => ({
             ...current,
             repositories: { ...current.repositories, [repositoryId]: graphSettings },
         }))
+
         return graphSettings
     }
 
     async startBranchGraph(repositoryId: string, refreshRemote = false) {
-        const repository = this.requireRepository(repositoryId)
-        const settings = await readSettings(this.settingsPath)
-        const graphSettings = settings.repositories?.[repositoryId] ?? { remotePatterns: [] }
-        const options: BranchGraphReadOptions = {
+        let repository = this.requireRepository(repositoryId)
+        let settings = await readSettings(this.settingsPath)
+        let graphSettings = settings.repositories?.[repositoryId] ?? { remotePatterns: [] }
+        let options: BranchGraphReadOptions = {
             authorIdentities: settings.authorIdentities ?? { secondary: [] },
             selectedRemote: graphSettings.selectedRemote,
             remotePatterns: graphSettings.remotePatterns,
             refreshRemote,
         }
+
         this.graphReads.get(repositoryId)?.cancel()
-        const read = repository.git.startReadBranchGraph(options)
-        const tracked: GitTask<BranchGraph> = {
+        let read = repository.git.startReadBranchGraph(options)
+        let tracked: GitTask<BranchGraph> = {
             cancel: read.cancel,
             result: read.result.then(async graph => {
                 await this.seedGraphSettings(repositoryId, graph)
@@ -108,14 +115,16 @@ export class OpenRepositories {
                     this.graphReads.delete(repositoryId)
             }),
         }
+
         this.graphReads.set(repositoryId, tracked)
         return tracked
     }
 
     startBranchHistory(repositoryId: string, request: BranchHistoryRequest) {
-        const repository = this.requireRepository(repositoryId)
+        let repository = this.requireRepository(repositoryId)
+
         if (request.requestId) {
-            const requestId = request.requestId
+            let requestId = request.requestId
             return {
                 result: this.trackInspection(repositoryId, requestId, () => repository.git.startReadBranchHistory(request)),
                 cancel: () => {
@@ -123,27 +132,29 @@ export class OpenRepositories {
                 },
             }
         }
+
         this.historyReads.get(repositoryId)?.cancel()
-        const read = repository.git.startReadBranchHistory(request)
-        const tracked: GitTask<BranchHistoryPage> = {
+        let read = repository.git.startReadBranchHistory(request)
+        let tracked: GitTask<BranchHistoryPage> = {
             cancel: read.cancel,
             result: read.result.finally(() => {
                 if (this.historyReads.get(repositoryId) == tracked)
                     this.historyReads.delete(repositoryId)
             }),
         }
+
         this.historyReads.set(repositoryId, tracked)
         return tracked
     }
 
     cancelBranchGraph(repositoryId: string) {
-        const read = this.graphReads.get(repositoryId)
+        let read = this.graphReads.get(repositoryId)
         read?.cancel()
         return Boolean(read)
     }
 
     cancelBranchHistory(repositoryId: string) {
-        const read = this.historyReads.get(repositoryId)
+        let read = this.historyReads.get(repositoryId)
         read?.cancel()
         return Boolean(read)
     }
@@ -161,7 +172,7 @@ export class OpenRepositories {
     }
 
     cancelInspection(repositoryId: string, requestId: string) {
-        const read = this.inspectionReads.get(repositoryId)?.get(requestId)
+        let read = this.inspectionReads.get(repositoryId)?.get(requestId)
         read?.cancel()
         return Boolean(read)
     }
@@ -172,9 +183,11 @@ export class OpenRepositories {
             reads = new Map()
             this.inspectionReads.set(repositoryId, reads)
         }
+
         reads.get(requestId)?.cancel()
-        const read = start()
+        let read = start()
         reads.set(requestId, read)
+
         return read.result.finally(() => {
             if (reads.get(requestId) == read)
                 reads.delete(requestId)
@@ -184,21 +197,22 @@ export class OpenRepositories {
     }
 
     async open(path: string, id?: string) {
-        const settings = await readSettings(this.settingsPath)
+        let settings = await readSettings(this.settingsPath)
         return this.add(await openRepository(path, await this.git(settings.gitPath)), id)
     }
 
     async initialize(parent: string, name: string, initialBranch?: string, id?: string) {
-        const settings = await readSettings(this.settingsPath)
+        let settings = await readSettings(this.settingsPath)
         return this.add(await initializeRepository({ path: resolve(parent, name), initialBranch, git: await this.git(settings.gitPath) }), id)
     }
 
     async startClone(
         options: { source: string; parent: string; name: string; onProgress?: (message: string) => void; id?: string },
     ): Promise<GitTask<RepositoryInfo>> {
-        const settings = await readSettings(this.settingsPath)
-        const { parent, name, ...clone } = options
-        const task = await startCloneRepository({ ...clone, destination: resolve(parent, name), git: await this.git(settings.gitPath) })
+        let settings = await readSettings(this.settingsPath)
+        let { parent, name, ...clone } = options
+        let task = await startCloneRepository({ ...clone, destination: resolve(parent, name), git: await this.git(settings.gitPath) })
+
         return {
             cancel: task.cancel,
             result: task.result.then(repository => this.add(repository, options.id)),
@@ -212,8 +226,9 @@ export class OpenRepositories {
     close(id: string) {
         this.graphReads.get(id)?.cancel()
         this.historyReads.get(id)?.cancel()
-        for (const read of this.inspectionReads.get(id)?.values() ?? [])
+        for (let read of this.inspectionReads.get(id)?.values() ?? [])
             read.cancel()
+
         this.unwatch(id)
         return this.repositories.delete(id)
     }
@@ -229,25 +244,29 @@ export class OpenRepositories {
     private async git(override: string | undefined): Promise<GitInstallation> {
         if (this.cachedGit && this.cachedGit.override == override)
             return this.cachedGit.installation
-        const installation = await this.selectInstallation(override)
+
+        let installation = await this.selectInstallation(override)
         this.cachedGit = { override, installation }
+
         return installation
     }
 
     private add(repository: RepositoryGit, preferredId?: string) {
-        const existing = [...this.repositories.values()].find(candidate => candidate.git.descriptor.commonDirectory == repository.descriptor.commonDirectory)
-        const id = existing?.info.id ?? preferredId ?? crypto.randomUUID()
-        const info: RepositoryInfo = { ...repository.descriptor, id }
+        let existing = [...this.repositories.values()].find(candidate => candidate.git.descriptor.commonDirectory == repository.descriptor.commonDirectory)
+        let id = existing?.info.id ?? preferredId ?? crypto.randomUUID()
+        let info: RepositoryInfo = { ...repository.descriptor, id }
         if (existing && existing.info.id != id) {
             this.repositories.delete(existing.info.id)
             this.unwatch(existing.info.id)
         }
+
         this.repositories.set(id, { info, git: repository })
-        const { commonDirectory } = repository.descriptor
+        let { commonDirectory } = repository.descriptor
         if (this.watchers.get(id)?.commonDirectory != commonDirectory) {
             this.unwatch(id)
             this.watchers.set(id, { commonDirectory, stop: watchRepository(commonDirectory, () => this.changed?.(id)) })
         }
+
         return info
     }
 
@@ -257,7 +276,7 @@ export class OpenRepositories {
     }
 
     private requireRepository(repositoryId: string) {
-        const repository = this.repositories.get(repositoryId)
+        let repository = this.repositories.get(repositoryId)
         if (!repository)
             throw new GitError("git.invalid-root", "The repository is no longer open in this Workspace.", { repositoryId })
         return repository
@@ -265,13 +284,14 @@ export class OpenRepositories {
 
     private async seedGraphSettings(repositoryId: string, graph: BranchGraph) {
         await this.updateSettings(current => {
-            const authorIdentities = current.authorIdentities?.primary || !graph.effectiveAuthorEmail
+            let authorIdentities = current.authorIdentities?.primary || !graph.effectiveAuthorEmail
                 ? current.authorIdentities
                 : { primary: graph.effectiveAuthorEmail, secondary: current.authorIdentities?.secondary ?? [] }
-            const existing = current.repositories?.[repositoryId] ?? { remotePatterns: [] }
-            const repository = existing.selectedRemote || !graph.selectedRemote
+            let existing = current.repositories?.[repositoryId] ?? { remotePatterns: [] }
+            let repository = existing.selectedRemote || !graph.selectedRemote
                 ? existing
                 : { ...existing, selectedRemote: graph.selectedRemote }
+
             return {
                 ...current,
                 ...(authorIdentities ? { authorIdentities } : {}),
@@ -282,12 +302,14 @@ export class OpenRepositories {
 
     private async updateSettings(change: (settings: Awaited<ReturnType<typeof readSettings>>) => Awaited<ReturnType<typeof readSettings>>) {
         let result: Awaited<ReturnType<typeof readSettings>> | undefined
-        const write = async () => {
+        let write = async () => {
             result = change(await readSettings(this.settingsPath))
             await writeSettings(result, this.settingsPath)
         }
+
         this.settingsWrite = this.settingsWrite.then(write, write)
         await this.settingsWrite
+
         return result!
     }
 }
@@ -299,11 +321,10 @@ export function entryError(error: unknown): EntryError {
             message: error.message,
             destination: typeof error.details?.destination == "string" ? error.details.destination : undefined,
         }
-    }
-    if (error instanceof SettingsError)
+    } else if (error instanceof SettingsError)
         return { code: error.code, message: error.message }
-    if (error instanceof WorkspaceStateError)
+    else if (error instanceof WorkspaceStateError)
         return { code: error.code, message: error.message }
-    return { code: "git.command-failed", message: error instanceof Error ? error.message : String(error) }
+    else
+        return { code: "git.command-failed", message: error instanceof Error ? error.message : String(error) }
 }
-import type { FileHistoryRequest } from "@laneway/shared"

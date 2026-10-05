@@ -12,8 +12,8 @@ let LanewayApp: typeof LanewayAppComponent
 
 beforeAll(async () => {
     browserWindow = new HappyWindow({ url: "file:///renderer/index.html" })
-    const browserGlobal = browserWindow as unknown as Record<string, unknown>
-    const globals = [
+    let browserGlobal = browserWindow as unknown as Record<string, unknown>
+    let globals = [
         "window",
         "document",
         "Node",
@@ -47,7 +47,7 @@ beforeAll(async () => {
     Object.defineProperty(globalThis, "requestAnimationFrame", { configurable: true, value: browserWindow.requestAnimationFrame.bind(browserWindow) })
     Object.defineProperty(globalThis, "cancelAnimationFrame", { configurable: true, value: browserWindow.cancelAnimationFrame.bind(browserWindow) })
     Object.defineProperty(globalThis, "getComputedStyle", { configurable: true, value: browserWindow.getComputedStyle.bind(browserWindow) })
-    for (const name of globals)
+    for (let name of globals)
         Object.defineProperty(globalThis, name, { configurable: true, value: browserGlobal[name] })
     // Happy DOM does not parse CSS layers. These tests exercise DOM behavior;
     // renderer-styles.test.ts checks the real stylesheet cascade in Electron.
@@ -65,11 +65,11 @@ beforeAll(async () => {
 
 afterAll(() => browserWindow.close())
 
-for (const action of ["restore", "remove"] as const) {
+for (let action of ["restore", "remove"] as const) {
     test(`interrupted worktree removal has one recovery column and ${action} resolves it`, async () => {
-        const scenario = inspectionScenario()
-        const failedBranch = scenario.graph.branches[2]!
-        const recovery = {
+        let scenario = inspectionScenario()
+        let failedBranch = scenario.graph.branches[2]!
+        let recovery = {
             operationId: "c290421f-295c-4e27-8934-eeb57e63369c",
             worktreeId: "failed",
             path: "D:/project.worktrees/failed",
@@ -78,9 +78,9 @@ for (const action of ["restore", "remove"] as const) {
             message: "Files remain in the worktree directory after its Git registration was removed.",
         }
         let recoveries = [recovery]
-        const requests: unknown[] = []
+        let requests: unknown[] = []
         let previews = 0
-        const saved = scenario.saved()
+        let saved = scenario.saved()
         saved.repositories[0]!.columns.push({
             kind: "branch",
             id: failedBranch.id,
@@ -92,7 +92,7 @@ for (const action of ["restore", "remove"] as const) {
         })
         await scenario.api.updateWorkspace(saved)
         scenario.api.readBranchGraph = async () => ({ ok: true, graph: scenario.graph, worktreeRecoveries: recoveries })
-        const preview = scenario.api.localOperation
+        let preview = scenario.api.localOperation
         scenario.api.localOperation = async (...args) => {
             previews++
             return preview(...args)
@@ -112,10 +112,10 @@ for (const action of ["restore", "remove"] as const) {
             }
             return { ok: true }
         }
-        const view = render(scenario.api)
+        let view = render(scenario.api)
         try {
             await flush(view.root)
-            const column = view.container.querySelector<HTMLElement>(`[data-column-id='recovery:${recovery.operationId}']`)!
+            let column = view.container.querySelector<HTMLElement>(`[data-column-id='recovery:${recovery.operationId}']`)!
             expect(column.style.width).toBe("420px")
             expect(view.container.querySelectorAll(".worktree-recovery")).toHaveLength(1)
             expect(column.textContent).toContain("Worktree removal interrupted")
@@ -131,7 +131,7 @@ for (const action of ["restore", "remove"] as const) {
             expect(view.container.querySelector(".worktree-recovery")).toBeNull()
             expect(view.container.querySelector(".branch-column")).not.toBeNull()
             expect(previews).toBeGreaterThan(0)
-            const restored = scenario.saved().repositories[0]!.columns.find(column => column.id == failedBranch.id)
+            let restored = scenario.saved().repositories[0]!.columns.find(column => column.id == failedBranch.id)
             if (action == "restore")
                 expect(restored).toMatchObject({ width: 420, worktreeId: recovery.worktreeId })
             else
@@ -143,8 +143,8 @@ for (const action of ["restore", "remove"] as const) {
 }
 
 test("failed recovery stays in its column across restart and reports its specific failure", async () => {
-    const scenario = inspectionScenario()
-    const recovery = {
+    let scenario = inspectionScenario()
+    let recovery = {
         operationId: "c290421f-295c-4e27-8934-eeb57e63369c",
         worktreeId: "failed",
         path: "D:/project.worktrees/failed",
@@ -172,7 +172,7 @@ test("failed recovery stays in its column across restart and reports its specifi
 })
 
 test("worktree creation previews the destination and mutates only after confirmation", async () => {
-    const scenario = inspectionScenario()
+    let scenario = inspectionScenario()
     let executions = 0
     scenario.api.previewWorktree = async (_id, request) => ({
         ok: true,
@@ -194,7 +194,7 @@ test("worktree creation previews the destination and mutates only after confirma
         executions++
         return { ok: true }
     }
-    const { container, root, dispose } = render(scenario.api)
+    let { container, root, dispose } = render(scenario.api)
     await flush(root)
     click(button(container.querySelector("[data-node-id='branch:refs/heads/main']")!, "Open"))
     await flush(root)
@@ -202,7 +202,7 @@ test("worktree creation previews the destination and mutates only after confirma
     await flush(root)
     click(button(container, "New worktree"))
     await flush(root)
-    const dialog = container.querySelector<HTMLDialogElement>('dialog[aria-label="Worktree operation"]')!
+    let dialog = container.querySelector<HTMLDialogElement>('dialog[aria-label="Worktree operation"]')!
     expect(dialog.open).toBe(true)
     expect(dialog.textContent).toContain("D:/project.worktrees/feature")
     expect(executions).toBe(0)
@@ -220,30 +220,30 @@ test("worktree creation previews the destination and mutates only after confirma
 })
 
 test("worktree row renames inline and switches through branch search; removal stays in overflow", async () => {
-    const scenario = inspectionScenario()
-    const readGraph = scenario.api.readBranchGraph
+    let scenario = inspectionScenario()
+    let readGraph = scenario.api.readBranchGraph
     scenario.api.readBranchGraph = async (...args) => {
-        const result = await readGraph(...args)
+        let result = await readGraph(...args)
         if (result.ok)
             result.graph.branches[1]!.checkedOut[0]!.main = false
         return result
     }
-    const requests: WorktreeRequest[] = []
+    let requests: WorktreeRequest[] = []
     scenario.api.previewWorktree = async (_id, request) => {
         requests.push(request)
         return { ok: false, error: { message: "Preview requested" } }
     }
-    const { container, root, dispose } = render(scenario.api)
+    let { container, root, dispose } = render(scenario.api)
     try {
         await flush(root)
-        const row = container.querySelector<HTMLElement>(".column-worktree")!
+        let row = container.querySelector<HTMLElement>(".column-worktree")!
         expect(row.querySelector("details, select, input")).toBeNull()
         expect(row.textContent).not.toContain("Remove")
         expect(row.textContent).not.toContain("commit")
-        const rename = row.querySelector<HTMLButtonElement>("[aria-label='Rename worktree']")!
+        let rename = row.querySelector<HTMLButtonElement>("[aria-label='Rename worktree']")!
         click(rename)
         await flush(root)
-        const name = row.querySelector<HTMLInputElement>("[aria-label='Worktree directory name']")!
+        let name = row.querySelector<HTMLInputElement>("[aria-label='Worktree directory name']")!
         expect(name.value).toBe("inspection")
         input(name, "cancelled")
         name.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
@@ -252,7 +252,7 @@ test("worktree row renames inline and switches through branch search; removal st
         expect(row.querySelector("input")).toBeNull()
         click(row.querySelector<HTMLButtonElement>("[aria-label='Rename worktree']")!)
         await flush(root)
-        const nextName = row.querySelector<HTMLInputElement>("input")!
+        let nextName = row.querySelector<HTMLInputElement>("input")!
         input(nextName, "renamed")
         nextName.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
         await flush(root)
@@ -262,7 +262,7 @@ test("worktree row renames inline and switches through branch search; removal st
 
         click(row.querySelector<HTMLButtonElement>("[aria-label='Worktree actions']")!)
         await flush(root)
-        const switchBranch = row.querySelector<HTMLButtonElement>("[role='menu'] [aria-label='Switch worktree branch']")!
+        let switchBranch = row.querySelector<HTMLButtonElement>("[role='menu'] [aria-label='Switch worktree branch']")!
         click(switchBranch)
         await flush(root)
         expect(container.querySelector(".lens-results")!.textContent).not.toContain("feature/laneway")
@@ -303,7 +303,7 @@ test("worktree row renames inline and switches through branch search; removal st
         await flush(root)
         expect(requests[2]).toEqual({ action: "remove", path: "D:\\Source\\inspection", preserve: true, allowIgnoredLoss: false })
         expect(row.querySelector("[role='menu']")).toBeNull()
-        const removeDialog = container.querySelector<HTMLDialogElement>('dialog[aria-label="Worktree operation"]')!
+        let removeDialog = container.querySelector<HTMLDialogElement>('dialog[aria-label="Worktree operation"]')!
         expect(removeDialog.textContent).toContain("Working Changes detected")
         expect(removeDialog.textContent).not.toContain("ignored")
         click(button(removeDialog, "Remove worktree"))
@@ -316,8 +316,8 @@ test("worktree row renames inline and switches through branch search; removal st
 
 describe("Remix repository entry renderer", () => {
     test("initializes a repository and opens the resulting workspace", async () => {
-        const repository = repositoryInfo("D:\\Source\\new-project")
-        const api = fakeLaneway({
+        let repository = repositoryInfo("D:\\Source\\new-project")
+        let api = fakeLaneway({
             initializeRepository: async (parent, name, branch) => {
                 expect(parent).toBe("D:\\Source")
                 expect(name).toBe("new-project")
@@ -325,13 +325,13 @@ describe("Remix repository entry renderer", () => {
                 return { ok: true, workspace: openedWorkspace(repository) }
             },
         })
-        const { container, root, dispose } = render(api)
+        let { container, root, dispose } = render(api)
 
         await flush(root)
         click(container.querySelectorAll<HTMLElement>(".welcome .entry-card")[2]!)
         await flush(root)
-        const dialog = container.querySelector<HTMLDialogElement>("dialog[aria-labelledby='init-heading']")!
-        const parent = container.querySelector<HTMLInputElement>("#init-parent")!
+        let dialog = container.querySelector<HTMLDialogElement>("dialog[aria-labelledby='init-heading']")!
+        let parent = container.querySelector<HTMLInputElement>("#init-parent")!
         expect(parent.value).toBe("C:\\Users\\developer\\Documents")
         input(parent, "D:\\Source")
         input(container.querySelector<HTMLInputElement>("#init-name")!, "new-project")
@@ -347,7 +347,7 @@ describe("Remix repository entry renderer", () => {
 
     test("updates Git settings without entering the repository operation state", async () => {
         let chooseCalls = 0
-        const api = fakeLaneway({
+        let api = fakeLaneway({
             chooseGit: async () => {
                 chooseCalls++
                 return {
@@ -358,7 +358,7 @@ describe("Remix repository entry renderer", () => {
                 }
             },
         })
-        const { container, root, dispose } = render(api)
+        let { container, root, dispose } = render(api)
 
         await flush(root)
         click(container.querySelector<HTMLElement>("button[aria-label='Git settings']")!)
@@ -378,8 +378,8 @@ describe("Remix repository entry renderer", () => {
         let finishClone: (result: EntryResult) => void = () => undefined
         let cancelCalls = 0
         let cloneRequest: string[] = []
-        const cloneResult = new Promise<EntryResult>(resolve => finishClone = resolve)
-        const api = fakeLaneway({
+        let cloneResult = new Promise<EntryResult>(resolve => finishClone = resolve)
+        let api = fakeLaneway({
             cloneRepository: (...request) => {
                 cloneRequest = request
                 return cloneResult
@@ -393,16 +393,16 @@ describe("Remix repository entry renderer", () => {
                 return () => progressListener = undefined
             },
         })
-        const { container, root, dispose } = render(api)
+        let { container, root, dispose } = render(api)
 
         await flush(root)
         click(container.querySelectorAll<HTMLElement>(".welcome .entry-card")[1]!)
         await flush(root)
 
-        const dialog = container.querySelector<HTMLDialogElement>("dialog[aria-labelledby='clone-heading']")!
-        const source = container.querySelector<HTMLInputElement>("#clone-source")!
-        const parent = container.querySelector<HTMLInputElement>("#clone-parent")!
-        const name = container.querySelector<HTMLInputElement>("#clone-name")!
+        let dialog = container.querySelector<HTMLDialogElement>("dialog[aria-labelledby='clone-heading']")!
+        let source = container.querySelector<HTMLInputElement>("#clone-source")!
+        let parent = container.querySelector<HTMLInputElement>("#clone-parent")!
+        let name = container.querySelector<HTMLInputElement>("#clone-name")!
         expect(parent.value).toBe("C:\\Users\\developer\\Documents")
         input(source, "https://host/team/project.git")
         await flush(root)
@@ -434,10 +434,10 @@ describe("Remix repository entry renderer", () => {
     })
 
     test("pre-fills the clone source from a clipboard repository address", async () => {
-        const api = fakeLaneway({
+        let api = fakeLaneway({
             entryDefaults: async form => ({ parent: "D:\\Source", ...(form == "clone" ? { source: "https://host/team/project.git" } : {}) }),
         })
-        const { container, root, dispose } = render(api)
+        let { container, root, dispose } = render(api)
 
         await flush(root)
         click(container.querySelectorAll<HTMLElement>(".welcome .entry-card")[1]!)
@@ -450,15 +450,15 @@ describe("Remix repository entry renderer", () => {
     })
 
     test("applies the saved appearance and persists a toggle", async () => {
-        const saved: string[] = []
-        const api = fakeLaneway({
+        let saved: string[] = []
+        let api = fakeLaneway({
             getState: async () => ({ ...appState(), appearance: "dark" as const }),
             setAppearance: async appearance => {
                 saved.push(appearance)
                 return appearance
             },
         })
-        const { container, root, dispose } = render(api)
+        let { container, root, dispose } = render(api)
 
         await flush(root)
         expect(document.documentElement.dataset.appearance).toBe("dark")
@@ -472,7 +472,7 @@ describe("Remix repository entry renderer", () => {
 
     test("shows a retryable fatal state when bootstrap rejects", async () => {
         let attempts = 0
-        const api = fakeLaneway({
+        let api = fakeLaneway({
             getState: async () => {
                 attempts++
                 if (attempts == 1)
@@ -480,7 +480,7 @@ describe("Remix repository entry renderer", () => {
                 return appState()
             },
         })
-        const { container, root, dispose } = render(api)
+        let { container, root, dispose } = render(api)
 
         await flush(root)
         expect(container.textContent).toContain("Laneway could not start.")
@@ -494,14 +494,14 @@ describe("Remix repository entry renderer", () => {
     })
 
     test("separates graph selection, branch opening, filtering, and Command Lens navigation", async () => {
-        const repository = repositoryInfo("D:\\Source\\graph-project")
-        const graph = branchGraph(repository.id)
-        const api = fakeLaneway({
+        let repository = repositoryInfo("D:\\Source\\graph-project")
+        let graph = branchGraph(repository.id)
+        let api = fakeLaneway({
             getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
             readBranchGraph: async () => ({ ok: true, graph }),
             selectRepository: async () => openedWorkspace(repository),
         })
-        const { container, root, dispose } = render(api)
+        let { container, root, dispose } = render(api)
 
         await flush(root)
         expect(container.textContent).toContain("feature/laneway")
@@ -536,8 +536,8 @@ describe("Remix repository entry renderer", () => {
         expect(container.textContent).toContain("other/team")
 
         // Graph rows drag onto columns, so pressing one must leave the native drag free to start; the click selects.
-        const feature = container.querySelector<HTMLElement>("[data-node-id='branch:refs/heads/feature/laneway']")!
-        const press = new MouseEvent("mousedown", { button: 0, detail: 1, bubbles: true, cancelable: true })
+        let feature = container.querySelector<HTMLElement>("[data-node-id='branch:refs/heads/feature/laneway']")!
+        let press = new MouseEvent("mousedown", { button: 0, detail: 1, bubbles: true, cancelable: true })
         feature.dispatchEvent(press)
         root.flush()
         expect(press.defaultPrevented).toBe(false)
@@ -561,9 +561,9 @@ describe("Remix repository entry renderer", () => {
     })
 
     test("virtualizes large semantic Branch Graph row sets", async () => {
-        const repository = repositoryInfo("D:\\Source\\large-graph")
-        const graph = branchGraph(repository.id)
-        const template = graph.branches[1]
+        let repository = repositoryInfo("D:\\Source\\large-graph")
+        let graph = branchGraph(repository.id)
+        let template = graph.branches[1]
         graph.branches = [
             graph.branches[0],
             ...Array.from({ length: 120 }, (_, index) => ({
@@ -582,16 +582,16 @@ describe("Remix repository entry renderer", () => {
             lineId: graph.branches[0].id,
             parentIds: [],
         }]
-        const api = fakeLaneway({
+        let api = fakeLaneway({
             getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
             readBranchGraph: async () => ({ ok: true, graph }),
         })
-        const { container, root, dispose } = render(api)
+        let { container, root, dispose } = render(api)
 
         await flush(root)
         expect(container.querySelectorAll(".graph-row").length).toBeLessThan(30)
         expect(container.querySelector(".graph-spacer")).not.toBeNull()
-        const rows = container.querySelector<HTMLElement>(".graph-rows")!
+        let rows = container.querySelector<HTMLElement>(".graph-rows")!
         rows.scrollTop = 1600
         rows.dispatchEvent(new Event("scroll", { bubbles: true }))
         root.flush()
@@ -601,12 +601,12 @@ describe("Remix repository entry renderer", () => {
     })
 
     test("background refreshes leave the Branch Graph header still", async () => {
-        const repository = repositoryInfo("D:\\Source\\refresh-graph")
-        const graph = branchGraph(repository.id)
+        let repository = repositoryInfo("D:\\Source\\refresh-graph")
+        let graph = branchGraph(repository.id)
         let calls = 0
         let finishRefresh: () => void = () => {}
-        const refresh = new Promise<void>(resolve => finishRefresh = resolve)
-        const api = fakeLaneway({
+        let refresh = new Promise<void>(resolve => finishRefresh = resolve)
+        let api = fakeLaneway({
             getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
             readBranchGraph: async () => {
                 calls++
@@ -615,12 +615,12 @@ describe("Remix repository entry renderer", () => {
                 return { ok: true, graph }
             },
         })
-        const { container, root, dispose } = render(api)
+        let { container, root, dispose } = render(api)
 
         await flush(root)
-        const toolbar = container.querySelector<HTMLElement>(".graph-toolbar")!
+        let toolbar = container.querySelector<HTMLElement>(".graph-toolbar")!
         expect(toolbar.querySelector("h1")?.textContent).toBe("Branch Graph")
-        const before = toolbar.innerHTML
+        let before = toolbar.innerHTML
         refreshGraph()
         await flush(root)
         expect(calls).toBe(3)
@@ -634,15 +634,15 @@ describe("Remix repository entry renderer", () => {
     })
 
     test("drags a repository along the rail while the others step aside, committing the order on release", async () => {
-        const alpha = repositoryInfo("D:\\Source\\alpha")
-        const beta = repositoryInfo("D:\\Source\\beta")
-        const gamma = repositoryInfo("D:\\Source\\gamma")
+        let alpha = repositoryInfo("D:\\Source\\alpha")
+        let beta = repositoryInfo("D:\\Source\\beta")
+        let gamma = repositoryInfo("D:\\Source\\gamma")
         let saved = {
             repositories: [alpha, beta, gamma].flatMap(info => openedWorkspace(info).repositories),
             activeRepositoryId: alpha.id,
         }
-        const selected: string[] = []
-        const api = fakeLaneway({
+        let selected: string[] = []
+        let api = fakeLaneway({
             getState: async () => ({ ...appState(), workspace: saved }),
             readBranchGraph: async () => ({ ok: true, graph: branchGraph(alpha.id) }),
             selectRepository: async id => {
@@ -651,28 +651,28 @@ describe("Remix repository entry renderer", () => {
             },
             updateWorkspace: async workspace => saved = structuredClone(workspace) as typeof saved,
         })
-        const { container, root, dispose } = render(api)
+        let { container, root, dispose } = render(api)
         await flush(root)
-        const rows = () => [...container.querySelectorAll<HTMLElement>(".repository-row")]
-        const item = (row: HTMLElement) => row.querySelector<HTMLButtonElement>(".repository-item")!
-        const order = () => rows().map(row => item(row).getAttribute("aria-label"))
-        const offsets = () => rows().map(row => row.style.transform)
-        const transitions = () => rows().map(row => row.style.transition)
-        const pointer = (type: string, target: EventTarget, clientY: number) =>
+        let rows = () => [...container.querySelectorAll<HTMLElement>(".repository-row")]
+        let item = (row: HTMLElement) => row.querySelector<HTMLButtonElement>(".repository-item")!
+        let order = () => rows().map(row => item(row).getAttribute("aria-label"))
+        let offsets = () => rows().map(row => row.style.transform)
+        let transitions = () => rows().map(row => row.style.transition)
+        let pointer = (type: string, target: EventTarget, clientY: number) =>
             target.dispatchEvent(new PointerEvent(type, { pointerId: 1, button: 0, clientY, bubbles: true, cancelable: true }))
-        const settle = async () => {
+        let settle = async () => {
             await new Promise(resolve => setTimeout(resolve, 200))
             await flush(root)
         }
         // Happy DOM has no layout: rows are 36px tall with a 4px gap.
-        for (const [index, row] of rows().entries()) {
+        for (let [index, row] of rows().entries()) {
             row.getBoundingClientRect = () => ({ top: index * 40, height: 36 }) as DOMRect
             row.setPointerCapture = () => undefined
         }
-        const [first, second, third] = rows()
+        let [first, second, third] = rows()
 
         // Pressing to drag must not choose the repository.
-        const mousedown = new MouseEvent("mousedown", { button: 0, detail: 1, bubbles: true, cancelable: true })
+        let mousedown = new MouseEvent("mousedown", { button: 0, detail: 1, bubbles: true, cancelable: true })
         item(second).dispatchEvent(mousedown)
         expect(mousedown.defaultPrevented).toBe(false)
 
@@ -716,7 +716,7 @@ describe("Remix repository entry renderer", () => {
         expect(selected).toEqual([])
 
         // Escape returns the row to where it started.
-        for (const [index, row] of rows().entries())
+        for (let [index, row] of rows().entries())
             row.getBoundingClientRect = () => ({ top: index * 40, height: 36 }) as DOMRect
         pointer("pointerdown", item(third), 98)
         pointer("pointermove", document.body, 10)
@@ -738,10 +738,10 @@ describe("Remix repository entry renderer", () => {
     })
 
     test("restores, reorders, resizes, and persists Workspace Columns", async () => {
-        const repository = repositoryInfo("D:\\Source\\persisted-graph")
-        const graph = branchGraph(repository.id)
-        const main = graph.branches[0]
-        const feature = graph.branches[1]
+        let repository = repositoryInfo("D:\\Source\\persisted-graph")
+        let graph = branchGraph(repository.id)
+        let main = graph.branches[0]
+        let feature = graph.branches[1]
         let saved = {
             repositories: [{
                 status: "available" as const,
@@ -760,31 +760,31 @@ describe("Remix repository entry renderer", () => {
             }],
             activeRepositoryId: repository.id,
         }
-        const api = fakeLaneway({
+        let api = fakeLaneway({
             getState: async () => ({ ...appState(), workspace: saved }),
             readBranchGraph: async () => ({ ok: true, graph }),
             updateWorkspace: async workspace => saved = structuredClone(workspace) as typeof saved,
         })
-        const { container, root, dispose } = render(api)
+        let { container, root, dispose } = render(api)
 
         await flush(root)
         expect(container.querySelector(".status-bar")).toBeNull()
-        const masthead = container.querySelector(".masthead")!
+        let masthead = container.querySelector(".masthead")!
         expect(masthead.textContent).toContain("Stashes")
         expect(masthead.querySelector('[aria-label="Undo last operation"]')).not.toBeNull()
         expect(masthead.querySelector('[aria-label="Redo operation"]')).not.toBeNull()
         expect(container.querySelector(".graph-toolbar")?.textContent).not.toContain("Stashes")
         expect(container.querySelector('.graph-toolbar [aria-label="Undo last operation"]')).toBeNull()
-        const columnHeaders = [...container.querySelectorAll(".branch-column > header")].map(header => header.textContent).join(" ")
+        let columnHeaders = [...container.querySelectorAll(".branch-column > header")].map(header => header.textContent).join(" ")
         expect(columnHeaders).not.toContain("refs/heads/")
         expect(columnHeaders).not.toContain(main.tip.slice(0, 8))
-        const mainColumn = container.querySelector<HTMLElement>(`[data-column-id='${main.id}']`)!
+        let mainColumn = container.querySelector<HTMLElement>(`[data-column-id='${main.id}']`)!
         mainColumn.querySelector("button")!.dispatchEvent(new KeyboardEvent("keydown", { key: ">", ctrlKey: true, shiftKey: true, bubbles: true }))
         await flush(root)
         expect(saved.repositories[0].columns.map(column => column.id)).toEqual([feature.id, main.id])
         expect(document.activeElement?.getAttribute("data-column-id")).toBe(main.id)
 
-        const divider = container.querySelector<HTMLElement>(`[data-column-id='${main.id}'] + [role='separator']`)!
+        let divider = container.querySelector<HTMLElement>(`[data-column-id='${main.id}'] + [role='separator']`)!
         divider.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))
         await flush(root)
         expect(saved.repositories[0].columns.find(column => column.id == main.id)?.width).toBe(390)
@@ -793,11 +793,11 @@ describe("Remix repository entry renderer", () => {
 })
 
 test("Pull latest freezes open-column scope, streams progress with Cancel, and summarizes outcomes by stack", async () => {
-    const repository = repositoryInfo("D:\Source\pull-graph")
-    const graph = branchGraph(repository.id)
-    const main = graph.branches[0]
-    const feature = graph.branches[1]
-    const saved = {
+    let repository = repositoryInfo("D:\Source\pull-graph")
+    let graph = branchGraph(repository.id)
+    let main = graph.branches[0]
+    let feature = graph.branches[1]
+    let saved = {
         repositories: [{
             status: "available" as const,
             id: repository.id,
@@ -821,7 +821,7 @@ test("Pull latest freezes open-column scope, streams progress with Cancel, and s
     let finish: ((value: Awaited<ReturnType<Window["laneway"]["pullLatest"]>>) => void) | undefined
     let cancelled = 0
     let graphReads = 0
-    const api = fakeLaneway({
+    let api = fakeLaneway({
         getState: async () => ({ ...appState(), workspace: saved }),
         readBranchGraph: async () => {
             graphReads++
@@ -840,10 +840,10 @@ test("Pull latest freezes open-column scope, streams progress with Cancel, and s
             return true
         },
     })
-    const { container, root, dispose } = render(api)
+    let { container, root, dispose } = render(api)
     await flush(root)
-    const readsBefore = graphReads
-    const pull = button(container, "Pull latest")
+    let readsBefore = graphReads
+    let pull = button(container, "Pull latest")
     expect(pull.disabled).toBe(false)
     expect(pull.getAttribute("title")).toBe("Fetch and synchronize open stacks")
     click(pull)
@@ -879,10 +879,10 @@ test("Pull latest freezes open-column scope, streams progress with Cancel, and s
     })
     await flush(root)
     expect(graphReads).toBeGreaterThan(readsBefore)
-    const outcome = container.querySelector(".pull-outcome")!
+    let outcome = container.querySelector(".pull-outcome")!
     expect(outcome.querySelector(".pull-summary")?.textContent).toBe("Pull complete: 1 updated, 1 need resolution.")
     expect(outcome.querySelector(".pull-counts")?.textContent).toBe("1 updated · 1 needs resolution")
-    const stacks = [...outcome.querySelectorAll<HTMLDetailsElement>(".pull-stack")]
+    let stacks = [...outcome.querySelectorAll<HTMLDetailsElement>(".pull-stack")]
     expect(stacks.map(stack => stack.querySelector(".pull-status")?.textContent)).toEqual(["Updated", "Needs resolution"])
     expect(stacks[1].open).toBe(true)
     expect(stacks[1].textContent).toContain("1 commit conflict deferred")
@@ -895,9 +895,9 @@ test("Pull latest freezes open-column scope, streams progress with Cancel, and s
 })
 
 test("an uneventful Pull latest confirms in passing without a dialog", async () => {
-    const repository = repositoryInfo("D:\Source\quiet-pull")
-    const graph = branchGraph(repository.id)
-    const api = fakeLaneway({
+    let repository = repositoryInfo("D:\Source\quiet-pull")
+    let graph = branchGraph(repository.id)
+    let api = fakeLaneway({
         getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
         readBranchGraph: async () => ({ ok: true, graph }),
         pullLatest: async () => ({
@@ -912,7 +912,7 @@ test("an uneventful Pull latest confirms in passing without a dialog", async () 
             },
         }),
     })
-    const { container, root, dispose } = render(api)
+    let { container, root, dispose } = render(api)
     await flush(root)
     click(button(container, "Pull latest"))
     await flush(root)
@@ -923,9 +923,9 @@ test("an uneventful Pull latest confirms in passing without a dialog", async () 
 
 test("confirmation notices close themselves, but not while hovered", async () => {
     // Capture only the notice countdown so the test controls when it elapses.
-    const countdowns = new Map<number, () => void>()
+    let countdowns = new Map<number, () => void>()
     let nextCountdown = 0
-    const { setTimeout: realSetTimeout, clearTimeout: realClearTimeout } = browserWindow
+    let { setTimeout: realSetTimeout, clearTimeout: realClearTimeout } = browserWindow
     Object.assign(browserWindow, {
         setTimeout(handler: () => void, delay?: number) {
             if (delay != 5_000)
@@ -938,9 +938,9 @@ test("confirmation notices close themselves, but not while hovered", async () =>
                 realClearTimeout.call(browserWindow, id as never)
         },
     })
-    const repository = repositoryInfo("D:\Source\quiet-pull")
-    const graph = branchGraph(repository.id)
-    const api = fakeLaneway({
+    let repository = repositoryInfo("D:\Source\quiet-pull")
+    let graph = branchGraph(repository.id)
+    let api = fakeLaneway({
         getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
         readBranchGraph: async () => ({ ok: true, graph }),
         pullLatest: async () => ({
@@ -948,19 +948,19 @@ test("confirmation notices close themselves, but not while hovered", async () =>
             result: { type: "result", command: "pull", status: "fetched", message: "Pull complete: 1 already current.", fetches: [], stacks: [] },
         }),
     })
-    const { container, root, dispose } = render(api)
+    let { container, root, dispose } = render(api)
     try {
         await flush(root)
         click(button(container, "Pull latest"))
         await flush(root)
-        const notice = container.querySelector<HTMLElement>(".notice:not([hidden])")!
+        let notice = container.querySelector<HTMLElement>(".notice:not([hidden])")!
         expect(notice.textContent).toContain("Pull complete")
         expect(countdowns.size).toBe(1)
         notice.dispatchEvent(new Event("pointerenter"))
         expect(countdowns.size).toBe(0)
         notice.dispatchEvent(new Event("pointerleave"))
         expect(countdowns.size).toBe(1)
-        for (const elapse of countdowns.values())
+        for (let elapse of countdowns.values())
             elapse()
         await flush(root)
         expect(container.querySelector(".notice:not([hidden])")).toBeNull()
@@ -971,10 +971,10 @@ test("confirmation notices close themselves, but not while hovered", async () =>
 })
 
 test("Branch Graph settings apply patterns on Enter, close on Escape, and skip a single-remote choice", async () => {
-    const repository = repositoryInfo("D:\Source\graph-settings")
-    const graph = branchGraph(repository.id)
-    const applied: unknown[] = []
-    const api = fakeLaneway({
+    let repository = repositoryInfo("D:\Source\graph-settings")
+    let graph = branchGraph(repository.id)
+    let applied: unknown[] = []
+    let api = fakeLaneway({
         getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
         readBranchGraph: async () => ({ ok: true, graph }),
         setRepositoryGraphSettings: async (_id, settings) => {
@@ -982,16 +982,16 @@ test("Branch Graph settings apply patterns on Enter, close on Escape, and skip a
             return settings
         },
     })
-    const { container, root, dispose } = render(api)
+    let { container, root, dispose } = render(api)
     await flush(root)
-    const toggle = container.querySelector<HTMLButtonElement>("[aria-label='Branch Graph settings']")!
+    let toggle = container.querySelector<HTMLButtonElement>("[aria-label='Branch Graph settings']")!
     click(toggle)
     await flush(root)
-    const dialog = container.querySelector<HTMLElement>(".graph-settings")!
+    let dialog = container.querySelector<HTMLElement>(".graph-settings")!
     expect(toggle.getAttribute("aria-expanded")).toBe("true")
     expect(dialog.querySelector("h2")?.textContent).toBe("Branch Graph settings")
     expect(dialog.querySelector("input[type='radio']")).toBeNull()
-    const patterns = dialog.querySelector<HTMLInputElement>("#remote-patterns")!
+    let patterns = dialog.querySelector<HTMLInputElement>("#remote-patterns")!
     input(patterns, "origin/release/**, upstream/topic/*")
     patterns.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
     await flush(root)
@@ -1006,34 +1006,34 @@ test("Branch Graph settings apply patterns on Enter, close on Escape, and skip a
 })
 
 test("Pull latest is disabled without remotes and explains why", async () => {
-    const repository = repositoryInfo("D:\Source\no-remotes")
-    const graph = { ...branchGraph(repository.id), availableRemotes: [], selectedRemote: undefined }
-    const api = fakeLaneway({
+    let repository = repositoryInfo("D:\Source\no-remotes")
+    let graph = { ...branchGraph(repository.id), availableRemotes: [], selectedRemote: undefined }
+    let api = fakeLaneway({
         getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
         readBranchGraph: async () => ({ ok: true, graph }),
     })
-    const { container, root, dispose } = render(api)
+    let { container, root, dispose } = render(api)
     await flush(root)
-    const pull = button(container, "Pull latest")
+    let pull = button(container, "Pull latest")
     expect(pull.disabled).toBe(true)
     expect(pull.getAttribute("title")).toBe("Add a remote to pull.")
     dispose()
 })
 
 test("double-clicking a column header toggles maximizing it, but not on its controls", async () => {
-    const scenario = inspectionScenario()
-    const initial = await scenario.api.getState()
-    const graphResult = await scenario.api.readBranchGraph(initial.workspace.activeRepositoryId!, false)
+    let scenario = inspectionScenario()
+    let initial = await scenario.api.getState()
+    let graphResult = await scenario.api.readBranchGraph(initial.workspace.activeRepositoryId!, false)
     if (!graphResult.ok)
         throw new Error("Missing graph")
-    const main = graphResult.graph.branches[0]
+    let main = graphResult.graph.branches[0]
     main.checkedOut = [{ path: "D:/other", name: "other", head: main.tip, main: false }]
-    const view = render(scenario.api)
+    let view = render(scenario.api)
     await flush(view.root)
-    const columnIds = () => [...view.container.querySelectorAll("[data-column-id]")].map(node => node.getAttribute("data-column-id"))
-    const opened = columnIds()
+    let columnIds = () => [...view.container.querySelectorAll("[data-column-id]")].map(node => node.getAttribute("data-column-id"))
+    let opened = columnIds()
     expect(opened.length).toBeGreaterThan(1)
-    const header = () => view.container.querySelector<HTMLElement>(`[data-column-id="${opened[1]}"] header`)!
+    let header = () => view.container.querySelector<HTMLElement>(`[data-column-id="${opened[1]}"] header`)!
     header().querySelector("button")!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))
     await flush(view.root)
     expect(columnIds()).toEqual(opened)
@@ -1047,23 +1047,23 @@ test("double-clicking a column header toggles maximizing it, but not on its cont
 })
 
 test("a diff column opens beside its source column, before the next column, and maximizes it", async () => {
-    const scenario = inspectionScenario()
-    const initial = await scenario.api.getState()
-    const graphResult = await scenario.api.readBranchGraph(initial.workspace.activeRepositoryId!, false)
+    let scenario = inspectionScenario()
+    let initial = await scenario.api.getState()
+    let graphResult = await scenario.api.readBranchGraph(initial.workspace.activeRepositoryId!, false)
     if (!graphResult.ok)
         throw new Error("Missing graph")
-    const main = graphResult.graph.branches[0]
+    let main = graphResult.graph.branches[0]
     main.checkedOut = [{ path: "D:/other", name: "other", head: main.tip, main: false }]
-    const view = render(scenario.api)
+    let view = render(scenario.api)
     await flush(view.root)
-    const [source, next] = view.container.querySelectorAll<HTMLElement>(".branch-column")
-    const order = () => [...view.container.querySelector(".branch-columns")!.children].map(node => node.classList[0])
+    let [source, next] = view.container.querySelectorAll<HTMLElement>(".branch-column")
+    let order = () => [...view.container.querySelector(".branch-columns")!.children].map(node => node.classList[0])
     click(source.querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
     await flush(view.root)
     for (let opening = 0; opening < 2; opening++) {
         click(source.querySelector<HTMLButtonElement>("[aria-label='Break out diff']")!)
         await flush(view.root)
-        const children = [...view.container.querySelector(".branch-columns")!.children]
+        let children = [...view.container.querySelector(".branch-columns")!.children]
         expect(order()).toEqual(["branch-column", "column-divider", "inspection-breakout", "branch-column", "column-divider"])
         expect([children[0], children[3]]).toEqual([source, next])
         click(view.container.querySelector<HTMLButtonElement>("[aria-label='Close diff column']")!)
@@ -1073,8 +1073,8 @@ test("a diff column opens beside its source column, before the next column, and 
     // A diff column's header button or a double-click on its header maximizes its source column, split with the diff.
     click(source.querySelector<HTMLButtonElement>("[aria-label='Break out diff']")!)
     await flush(view.root)
-    const split = ["branch-column", "column-divider", "inspection-breakout"]
-    const header = () => view.container.querySelector<HTMLElement>(".inspection-breakout header")!
+    let split = ["branch-column", "column-divider", "inspection-breakout"]
+    let header = () => view.container.querySelector<HTMLElement>(".inspection-breakout header")!
     click(header().querySelector<HTMLButtonElement>("[aria-label='Maximize column']")!)
     await flush(view.root)
     expect(order()).toEqual(split)
@@ -1097,21 +1097,21 @@ test("a diff column opens beside its source column, before the next column, and 
 })
 
 test("retains worktree columns and restores collapse in place across restart", async () => {
-    const scenario = inspectionScenario()
-    const initial = await scenario.api.getState()
-    const graphResult = await scenario.api.readBranchGraph(initial.workspace.activeRepositoryId!, false)
+    let scenario = inspectionScenario()
+    let initial = await scenario.api.getState()
+    let graphResult = await scenario.api.readBranchGraph(initial.workspace.activeRepositoryId!, false)
     if (!graphResult.ok)
         throw new Error("Missing graph")
-    const graph = graphResult.graph
-    const branch = graph.branches[1]
-    const main = graph.branches[0]
+    let graph = graphResult.graph
+    let branch = graph.branches[1]
+    let main = graph.branches[0]
     main.checkedOut = [{ path: "D:/other", name: "other", head: main.tip, main: false }]
     let view = render(scenario.api)
     await flush(view.root)
     expect([...view.container.querySelectorAll("[data-column-id]")].map(node => node.getAttribute("data-column-id"))).toEqual([branch.id, main.id])
-    const column = view.container.querySelector<HTMLElement>(".branch-column")!
+    let column = view.container.querySelector<HTMLElement>(".branch-column")!
     expect(column.querySelector('[title="Close column"]')).toBeNull()
-    const divider = column.nextElementSibling as HTMLElement
+    let divider = column.nextElementSibling as HTMLElement
     expect(divider.getAttribute("aria-label")).toBe("Resize branch column")
     divider.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))
     await flush(view.root)
@@ -1119,13 +1119,13 @@ test("retains worktree columns and restores collapse in place across restart", a
     await flush(view.root)
     expect(column.classList.contains("collapsed")).toBe(true)
     expect(column.textContent).toContain("2 changed files")
-    const saved = (await scenario.api.getState()).workspace.repositories[0].columns
+    let saved = (await scenario.api.getState()).workspace.repositories[0].columns
     expect(saved.map(column => column.id)).toEqual([branch.id, main.id])
     expect(saved[0]).toMatchObject({ collapsed: true, width: 390 })
     view.dispose()
     view = render(scenario.api)
     await flush(view.root)
-    const restored = view.container.querySelector<HTMLElement>(".branch-column")!
+    let restored = view.container.querySelector<HTMLElement>(".branch-column")!
     expect(restored.classList.contains("collapsed")).toBe(true)
     click(restored.querySelector<HTMLButtonElement>(".expand-column")!)
     await flush(view.root)
@@ -1148,7 +1148,7 @@ test("retains worktree columns and restores collapse in place across restart", a
     await flush(view.root)
     expect(view.container.querySelector('[aria-label="Show Branch Graph"]')).toBeNull()
     // Choosing the repository that is already active toggles its Branch Graph.
-    const activeRepository = view.container.querySelector<HTMLButtonElement>(".repository-item.active")!
+    let activeRepository = view.container.querySelector<HTMLButtonElement>(".repository-item.active")!
     expect(activeRepository.getAttribute("aria-expanded")).toBe("true")
     click(activeRepository)
     await flush(view.root)
@@ -1165,8 +1165,8 @@ test("retains worktree columns and restores collapse in place across restart", a
 })
 
 test("hidden Branch Graph still shows the first read's progress and failure", async () => {
-    const scenario = inspectionScenario()
-    const readGraph = scenario.api.readBranchGraph
+    let scenario = inspectionScenario()
+    let readGraph = scenario.api.readBranchGraph
     let finish = () => {}
     let fail = false
     scenario.api.readBranchGraph = async (...args) => {
@@ -1202,13 +1202,13 @@ test("hidden Branch Graph still shows the first read's progress and failure", as
 
 describe("Branch Comparison", () => {
     test("rejects obsolete inventories and cancels only affected requests", async () => {
-        const { createBranchComparisons } = await import("../src/renderer/src/branch-comparison")
-        const graph = branchGraph("repo")
-        const [main, feature, other] = graph.branches
-        const pending = new Map<string, (result: ChangesResult) => void>()
-        const cancelled: string[] = []
-        const signal = new AbortController().signal
-        const comparisons = createBranchComparisons({
+        let { createBranchComparisons } = await import("../src/renderer/src/branch-comparison")
+        let graph = branchGraph("repo")
+        let [main, feature, other] = graph.branches
+        let pending = new Map<string, (result: ChangesResult) => void>()
+        let cancelled: string[] = []
+        let signal = new AbortController().signal
+        let comparisons = createBranchComparisons({
             api: fakeLaneway({
                 readChanges: async (_repo, id) => new Promise<ChangesResult>(resolve => pending.set(id, resolve)),
                 cancelInspection: async (_repo, id) => {
@@ -1220,15 +1220,15 @@ describe("Branch Comparison", () => {
             signal,
         })
         comparisons.activate("repo")
-        const first = comparisons.create("repo", feature, main, graph)
-        const sibling = comparisons.create("repo", other, main, graph)
-        const [oldId, siblingId] = [...pending.keys()]
+        let first = comparisons.create("repo", feature, main, graph)
+        let sibling = comparisons.create("repo", other, main, graph)
+        let [oldId, siblingId] = [...pending.keys()]
         feature.tip = "a".repeat(40)
         comparisons.refresh("repo", graph)
         expect(cancelled).toContain(oldId)
         expect(cancelled).not.toContain(siblingId)
-        const freshId = [...pending.keys()].at(-1)!
-        const result = (version: string): ChangesResult => ({
+        let freshId = [...pending.keys()].at(-1)!
+        let result = (version: string): ChangesResult => ({
             ok: true,
             inventory: { source: { kind: "comparison", fromObjectId: feature.tip, toObjectId: main.tip }, version, files: [], parents: [] },
         })
@@ -1245,22 +1245,22 @@ describe("Branch Comparison", () => {
         comparisons.dispose(first)
     })
     test("opens ordered comparisons through a context menu, pages files lazily, reuses identities and refreshes moved tips", async () => {
-        const scenario = inspectionScenario()
-        const graphResult = await scenario.api.readBranchGraph("repository")
+        let scenario = inspectionScenario()
+        let graphResult = await scenario.api.readBranchGraph("repository")
         if (!graphResult.ok)
             throw new Error("Fixture graph unavailable")
-        const graph = graphResult.graph
-        const [main, feature] = graph.branches
+        let graph = graphResult.graph
+        let [main, feature] = graph.branches
         let inventories = 0, patches = 0
-        const requested: string[] = []
-        const api = {
+        let requested: string[] = []
+        let api = {
             ...scenario.api,
             readChanges: async (...args: Parameters<Window["laneway"]["readChanges"]>): Promise<ChangesResult> => {
-                const request = args[2]
+                let request = args[2]
                 if (request.source.kind != "branches" && request.source.kind != "comparison")
                     return scenario.api.readChanges(...args)
                 inventories++
-                const anchor = request.source
+                let anchor = request.source
                 if (
                     anchor.kind == "branches"
                     && (!graph.branches.some(branch => branch.preferredRef == anchor.fromRef)
@@ -1268,7 +1268,7 @@ describe("Branch Comparison", () => {
                 ) {
                     return { ok: false, error: { code: "git.command-failed", message: "Compared branch unavailable" } }
                 }
-                const source = anchor.kind == "branches"
+                let source = anchor.kind == "branches"
                     ? {
                         kind: "comparison" as const,
                         fromObjectId: graph.branches.find(branch => branch.preferredRef == anchor.fromRef)!.tip,
@@ -1307,9 +1307,9 @@ describe("Branch Comparison", () => {
                 }
             },
         }
-        const { container, root, dispose } = render(api)
+        let { container, root, dispose } = render(api)
         await flush(root)
-        const chooseComparison = async () => {
+        let chooseComparison = async () => {
             container.querySelector<HTMLElement>(`[data-node-id='${feature.id}']`)!.dispatchEvent(
                 new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 50 }),
             )
@@ -1322,14 +1322,14 @@ describe("Branch Comparison", () => {
             await flush(root)
         }
         await chooseComparison()
-        const comparison = container.querySelector<HTMLElement>(".branch-comparison")!
+        let comparison = container.querySelector<HTMLElement>(".branch-comparison")!
         expect(comparison).not.toBeNull()
         expect(comparison.previousElementSibling?.previousElementSibling?.classList.contains("branch-column")).toBe(true)
         expect(comparison.textContent).toContain(`${feature.name} → ${main.name}`)
         expect(document.activeElement).toBe(comparison)
         expect(requested).toEqual([`${feature.preferredRef} -> ${main.preferredRef}`])
         expect(patches).toBe(0)
-        const id = comparison.dataset.auxiliaryId
+        let id = comparison.dataset.auxiliaryId
         click(container.querySelector<HTMLButtonElement>(".branch-column [title='src/file.txt']")!)
         await flush(root)
         click(container.querySelector<HTMLButtonElement>("[aria-label='Break out diff']")!)
@@ -1363,7 +1363,7 @@ describe("Branch Comparison", () => {
         graph.branches = [...graph.branches.filter(branch => branch != feature), main]
         refreshGraph()
         await flush(root)
-        const orphaned = container.querySelector<HTMLElement>(".branch-comparison")!
+        let orphaned = container.querySelector<HTMLElement>(".branch-comparison")!
         expect(orphaned).not.toBeNull()
         expect(orphaned.textContent).toContain("Showing the last comparison")
         click(button(orphaned, "Compare with…"))
@@ -1383,9 +1383,9 @@ describe("Branch Comparison", () => {
 
 describe("Working Changes inspection", () => {
     test("marks column commits and branches their remote already has as remote", async () => {
-        const scenario = inspectionScenario()
-        const branch = scenario.graph.branches[1]
-        const local = "4".repeat(40)
+        let scenario = inspectionScenario()
+        let branch = scenario.graph.branches[1]
+        let local = "4".repeat(40)
         branch.upstreamRef = "refs/remotes/origin/feature/laneway"
         branch.remoteRefs = [branch.upstreamRef]
         branch.upstreamTip = branch.tip
@@ -1393,10 +1393,10 @@ describe("Working Changes inspection", () => {
         branch.ahead = 1
         branch.checkedOut[0].head = local
         // A remote branch reaches main's tip, so its card is remote even though it is a local branch.
-        const main = scenario.graph.branches[0]
+        let main = scenario.graph.branches[0]
         main.published = true
         scenario.graph.remoteTips = [branch.upstreamTip, "5".repeat(40)]
-        const requests: Parameters<Window["laneway"]["readBranchHistory"]>[1][] = []
+        let requests: Parameters<Window["laneway"]["readBranchHistory"]>[1][] = []
         scenario.api.readBranchHistory = async (_repositoryId, request) => {
             requests.push(request)
             return {
@@ -1418,11 +1418,11 @@ describe("Working Changes inspection", () => {
             }
         }
 
-        const { container, root, dispose } = render(scenario.api)
+        let { container, root, dispose } = render(scenario.api)
         try {
             await flush(root)
             expect(requests[0]).toMatchObject({ tip: local, remoteTips: scenario.graph.remoteTips })
-            const commits = [...container.querySelectorAll<HTMLElement>(".inspect-commit")]
+            let commits = [...container.querySelectorAll<HTMLElement>(".inspect-commit")]
             expect(commits.map(commit => [commit.textContent, commit.dataset.remote])).toEqual([["Unpublished", "false"], ["Published", "true"]])
             expect([...container.querySelectorAll(".stack-branch")].map(card => card.classList.contains("remote"))).toEqual([false, true])
         } finally {
@@ -1431,13 +1431,13 @@ describe("Working Changes inspection", () => {
     })
 
     test("pages unresolved branch commits before offering a continuation branch", async () => {
-        const scenario = inspectionScenario()
-        const graphResult = await scenario.api.readBranchGraph((await scenario.api.getState()).workspace.activeRepositoryId!, false)
+        let scenario = inspectionScenario()
+        let graphResult = await scenario.api.readBranchGraph((await scenario.api.getState()).workspace.activeRepositoryId!, false)
         if (!graphResult.ok)
             throw new Error("Missing graph")
-        const graph = graphResult.graph
-        const branch = graph.branches[1]
-        const candidates = [graph.branches[0], graph.branches[2]]
+        let graph = graphResult.graph
+        let branch = graph.branches[1]
+        let candidates = [graph.branches[0], graph.branches[2]]
         branch.base = {
             status: "ambiguous",
             candidates: candidates.map(candidate => ({
@@ -1447,7 +1447,7 @@ describe("Working Changes inspection", () => {
                 tip: candidate.tip,
             })),
         }
-        const requests: Parameters<Window["laneway"]["readBranchHistory"]>[1][] = []
+        let requests: Parameters<Window["laneway"]["readBranchHistory"]>[1][] = []
         scenario.api.readBranchHistory = async (_repositoryId, request) => {
             requests.push(request)
             return {
@@ -1469,13 +1469,13 @@ describe("Working Changes inspection", () => {
             }
         }
 
-        const { container, root, dispose } = render(scenario.api)
+        let { container, root, dispose } = render(scenario.api)
         await flush(root)
         expect(requests[0]).toMatchObject({ limit: 50, baseTips: candidates.map(candidate => candidate.tip) })
         expect(container.querySelector("[aria-label='Branch after feature/laneway']")).toBeNull()
         click(button(container, "Load more"))
         await flush(root)
-        const continuation = container.querySelector<HTMLSelectElement>("[aria-label='Branch after feature/laneway']")!
+        let continuation = container.querySelector<HTMLSelectElement>("[aria-label='Branch after feature/laneway']")!
         expect(continuation).not.toBeNull()
         expect([...continuation.options].map(option => option.textContent)).toEqual(["Choose branch…", "main", "other/team"])
         continuation.value = graph.branches[0].id
@@ -1486,14 +1486,14 @@ describe("Working Changes inspection", () => {
     })
 
     test("opens column filtering on demand and clears it with Escape", async () => {
-        const { container, root, dispose } = render(inspectionScenario().api)
+        let { container, root, dispose } = render(inspectionScenario().api)
         await flush(root)
-        const column = container.querySelector<HTMLElement>(".branch-column")!
-        const search = column.querySelector<HTMLButtonElement>('[aria-label="Filter files"]')!
+        let column = container.querySelector<HTMLElement>(".branch-column")!
+        let search = column.querySelector<HTMLButtonElement>('[aria-label="Filter files"]')!
         expect(column.querySelector(".inspection-filters")).toBeNull()
         click(search)
         await flush(root)
-        const input = column.querySelector<HTMLInputElement>('[aria-label="Filter changed files"]')!
+        let input = column.querySelector<HTMLInputElement>('[aria-label="Filter changed files"]')!
         expect(document.activeElement).toBe(input)
         input.value = "SRC/FI"
         input.dispatchEvent(new Event("input", { bubbles: true }))
@@ -1524,21 +1524,21 @@ describe("Working Changes inspection", () => {
         dispose()
     })
     test("arrow keys move between commits and files, expand and collapse them, and drive the diff column", async () => {
-        const scenario = inspectionScenario()
-        const { container, root, dispose } = render(scenario.api)
+        let scenario = inspectionScenario()
+        let { container, root, dispose } = render(scenario.api)
         await flush(root)
-        const column = container.querySelector<HTMLElement>(".branch-column")!
-        const press = (element: HTMLElement, key: string) => element.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }))
+        let column = container.querySelector<HTMLElement>(".branch-column")!
+        let press = (element: HTMLElement, key: string) => element.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }))
         // Compared by identity: printing a mismatched Happy DOM element on failure is prohibitively slow.
-        const focused = (element: Element | null | undefined) => expect(document.activeElement == element).toBe(true)
-        const heading = column.querySelector<HTMLElement>(".commit-heading")!
+        let focused = (element: Element | null | undefined) => expect(document.activeElement == element).toBe(true)
+        let heading = column.querySelector<HTMLElement>(".commit-heading")!
         heading.focus()
         // Right expands a collapsed commit, and Down then reaches its first file.
         press(heading, "ArrowRight")
         await flush(root)
         expect(heading.getAttribute("aria-expanded")).toBe("true")
         press(heading, "ArrowDown")
-        const first = column.querySelector<HTMLButtonElement>(".inspect-commit [title='src/file.txt']")!
+        let first = column.querySelector<HTMLButtonElement>(".inspect-commit [title='src/file.txt']")!
         focused(first)
         // Right opens a file's diff beneath it, Left closes it, and Left again returns to the commit.
         press(first, "ArrowRight")
@@ -1552,14 +1552,14 @@ describe("Working Changes inspection", () => {
         focused(heading)
         // Up from the commit reaches the last Working Changes row.
         press(heading, "ArrowUp")
-        const working = [...column.querySelectorAll<HTMLElement>(".working-changes .change-file > button")]
+        let working = [...column.querySelectorAll<HTMLElement>(".working-changes .change-file > button")]
         expect(working.length).toBeGreaterThan(0)
         focused(working.at(-1))
         // Down past the last file reaches the base branch's heading, where the sequence ends.
-        const last = column.querySelector<HTMLButtonElement>(".inspect-commit [title='other.txt']")!
+        let last = column.querySelector<HTMLButtonElement>(".inspect-commit [title='other.txt']")!
         last.focus()
         press(last, "ArrowDown")
-        const base = column.querySelector<HTMLElement>(".stack-heading")!
+        let base = column.querySelector<HTMLElement>(".stack-heading")!
         focused(base)
         press(base, "ArrowDown")
         focused(base)
@@ -1575,12 +1575,12 @@ describe("Working Changes inspection", () => {
         // With the diff column open, choosing a file keeps focus in the column, and Up and Down select and scroll to files.
         click(container.querySelector<HTMLButtonElement>("[aria-label='Show full diff for commit Inspect changes']")!)
         await flush(root)
-        const breakout = container.querySelector<HTMLElement>(".inspection-breakout")!
+        let breakout = container.querySelector<HTMLElement>(".inspection-breakout")!
         focused(breakout)
         breakout.querySelector("header")!.getBoundingClientRect = () => ({ top: 0, bottom: 46 } as DOMRect)
-        for (const [index, section] of breakout.querySelectorAll<HTMLElement>("[data-diff-path]").entries())
+        for (let [index, section] of breakout.querySelectorAll<HTMLElement>("[data-diff-path]").entries())
             section.getBoundingClientRect = () => ({ top: 46 + index * 300 - breakout.scrollTop } as DOMRect)
-        const reopened = column.querySelector<HTMLButtonElement>(".inspect-commit [title='src/file.txt']")!
+        let reopened = column.querySelector<HTMLButtonElement>(".inspect-commit [title='src/file.txt']")!
         click(button(breakout, "Collapse all"))
         await flush(root)
         expect(breakout.querySelectorAll(".pierre-diff")).toHaveLength(0)
@@ -1593,7 +1593,7 @@ describe("Working Changes inspection", () => {
         expect(breakout.querySelector("[aria-label='Collapse src/file.txt']")).not.toBeNull()
         press(reopened, "ArrowDown")
         await flush(root)
-        const second = column.querySelector<HTMLButtonElement>(".inspect-commit [title='other.txt']")!
+        let second = column.querySelector<HTMLButtonElement>(".inspect-commit [title='other.txt']")!
         focused(second)
         expect(second.parentElement!.classList.contains("active")).toBe(true)
         expect(breakout.scrollTop).toBe(300)
@@ -1610,20 +1610,20 @@ describe("Working Changes inspection", () => {
         dispose()
     })
     test("activates on mousedown, except on draggable rows which wait for the click", async () => {
-        const scenario = inspectionScenario()
-        const { container, root, dispose } = render(scenario.api)
+        let scenario = inspectionScenario()
+        let { container, root, dispose } = render(scenario.api)
         await flush(root)
-        const down = (element: HTMLElement, button = 0) => {
-            const event = new MouseEvent("mousedown", { button, detail: 1, bubbles: true, cancelable: true, composed: true })
+        let down = (element: HTMLElement, button = 0) => {
+            let event = new MouseEvent("mousedown", { button, detail: 1, bubbles: true, cancelable: true, composed: true })
             element.dispatchEvent(event)
             return event
         }
-        const release = (element: HTMLElement) => {
+        let release = (element: HTMLElement) => {
             element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, composed: true }))
             element.dispatchEvent(new MouseEvent("click", { detail: 1, bubbles: true, cancelable: true, composed: true }))
         }
         // The whole file row drags, and a prevented mousedown would stop the native drag before it starts.
-        const file = container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!
+        let file = container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!
         expect(file.closest(".change-file")?.getAttribute("draggable")).toBe("true")
         expect(down(file).defaultPrevented).toBe(false)
         await flush(root)
@@ -1632,7 +1632,7 @@ describe("Working Changes inspection", () => {
         await flush(root)
         expect(file.getAttribute("aria-expanded")).toBe("true")
         expect(Boolean(container.querySelector("[aria-label='Select file src/file.txt']"))).toBe(true)
-        const line = diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!
+        let line = diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!
         down(line)
         await flush(root)
         expect(diffRoot(container).querySelectorAll(".diff-line.selected")).toHaveLength(1)
@@ -1646,7 +1646,7 @@ describe("Working Changes inspection", () => {
         await flush(root)
         expect(file.getAttribute("aria-expanded")).toBe("false")
         // Commit rows drag too, so the heading toggles on click alone.
-        const commit = container.querySelector<HTMLButtonElement>(".commit-heading")!
+        let commit = container.querySelector<HTMLButtonElement>(".commit-heading")!
         expect(commit.closest(".disclosure-heading")?.getAttribute("draggable")).toBe("true")
         expect(down(commit).defaultPrevented).toBe(false)
         await flush(root)
@@ -1658,7 +1658,7 @@ describe("Working Changes inspection", () => {
         await flush(root)
         expect(commit.getAttribute("aria-expanded")).toBe("false")
         // The checkbox sits on the draggable file row, so it also waits for the click.
-        const checkbox = container.querySelector<HTMLInputElement>("[aria-label='Select file src/file.txt']")!
+        let checkbox = container.querySelector<HTMLInputElement>("[aria-label='Select file src/file.txt']")!
         down(checkbox)
         await flush(root)
         expect(checkbox.checked).toBe(false)
@@ -1673,13 +1673,13 @@ describe("Working Changes inspection", () => {
     })
 
     test("reopens working snapshots immediately and discards them when the file list changes", async () => {
-        const scenario = inspectionScenario()
+        let scenario = inspectionScenario()
         let reads = 0
         let version = "one"
-        const { container, root, dispose } = render({
+        let { container, root, dispose } = render({
             ...scenario.api,
             readChanges: async (...args) => {
-                const result = await scenario.api.readChanges(...args)
+                let result = await scenario.api.readChanges(...args)
                 return result.ok ? { ...result, inventory: { ...result.inventory, version } } : result
             },
             readFileDiff: async (...args) => {
@@ -1689,7 +1689,7 @@ describe("Working Changes inspection", () => {
             },
         })
         await flush(root)
-        const file = () => container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!
+        let file = () => container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!
         click(file())
         await flush(root)
         click(file())
@@ -1710,9 +1710,9 @@ describe("Working Changes inspection", () => {
     })
 
     test("reopens a committed file without another diff read", async () => {
-        const scenario = inspectionScenario()
+        let scenario = inspectionScenario()
         let reads = 0
-        const { container, root, dispose } = render({
+        let { container, root, dispose } = render({
             ...scenario.api,
             readFileDiff: async (...args) => {
                 reads++
@@ -1722,7 +1722,7 @@ describe("Working Changes inspection", () => {
         await flush(root)
         click(container.querySelector<HTMLButtonElement>(".commit-heading")!)
         await flush(root)
-        const file = () => container.querySelector<HTMLButtonElement>(".inspect-commit [title='src/file.txt']")!
+        let file = () => container.querySelector<HTMLButtonElement>(".inspect-commit [title='src/file.txt']")!
         click(file())
         await flush(root)
         click(file())
@@ -1735,10 +1735,10 @@ describe("Working Changes inspection", () => {
     })
 
     test("offers a complete commit diff only from an expanded commit", async () => {
-        const scenario = inspectionScenario()
+        let scenario = inspectionScenario()
         let commitInventories = 0
         let commitDiffs = 0
-        const api = {
+        let api = {
             ...scenario.api,
             readChanges: async (...args: Parameters<Window["laneway"]["readChanges"]>) => {
                 if (args[2].source.kind == "commit")
@@ -1751,9 +1751,9 @@ describe("Working Changes inspection", () => {
                 return scenario.api.readFileDiff(...args)
             },
         }
-        const { container, root, dispose } = render(api)
+        let { container, root, dispose } = render(api)
         await flush(root)
-        const commit = container.querySelector<HTMLButtonElement>(".commit-heading")!
+        let commit = container.querySelector<HTMLButtonElement>(".commit-heading")!
         expect(commit.getAttribute("aria-expanded")).toBe("false")
         expect(container.querySelector("[aria-label='Show full diff for commit Inspect changes']")).toBeNull()
         click(commit)
@@ -1766,7 +1766,7 @@ describe("Working Changes inspection", () => {
         expect(commitDiffs).toBe(2)
         expect(container.querySelectorAll(".branch-column .diff-inspector")).toHaveLength(0)
         expect(container.querySelectorAll(".inspection-breakout .diff-inspector")).toHaveLength(2)
-        const auxiliaryId = container.querySelector<HTMLElement>(".inspection-breakout")!.dataset.auxiliaryId
+        let auxiliaryId = container.querySelector<HTMLElement>(".inspection-breakout")!.dataset.auxiliaryId
         click(container.querySelector<HTMLButtonElement>("[aria-label='Show full diff for commit Inspect changes']")!)
         await flush(root)
         expect(container.querySelector<HTMLElement>(".inspection-breakout")!.dataset.auxiliaryId).toBe(auxiliaryId)
@@ -1778,10 +1778,10 @@ describe("Working Changes inspection", () => {
     })
 
     test("offers Create branch here from an expanded commit's overflow menu", async () => {
-        const scenario = inspectionScenario()
-        const { container, root, dispose } = render(scenario.api)
+        let scenario = inspectionScenario()
+        let { container, root, dispose } = render(scenario.api)
         await flush(root)
-        const label = "[aria-label='More actions for commit Inspect changes']"
+        let label = "[aria-label='More actions for commit Inspect changes']"
         expect(container.querySelector(label)).toBeNull()
         click(container.querySelector<HTMLButtonElement>(".commit-heading")!)
         await flush(root)
@@ -1789,12 +1789,12 @@ describe("Working Changes inspection", () => {
         expect(container.querySelector("[aria-label='Open commit Inspect changes in new worktree']")).toBeNull()
         click(container.querySelector<HTMLButtonElement>(label)!)
         await flush(root)
-        const menu = container.querySelector<HTMLElement>(`dialog${label} [role='menu']`)!
+        let menu = container.querySelector<HTMLElement>(`dialog${label} [role='menu']`)!
         expect(menu.textContent).toContain("Create branch here…")
         click(button(menu, "Create branch here…"))
         await flush(root)
         expect(container.querySelector(`dialog${label}`)).toBeNull()
-        const dialog = container.querySelector<HTMLDialogElement>("dialog[aria-label='Local Git operation']")!
+        let dialog = container.querySelector<HTMLDialogElement>("dialog[aria-label='Local Git operation']")!
         expect(dialog.querySelector("h2")!.textContent).toBe("Create branch")
         click(button(dialog, "Cancel"))
         await flush(root)
@@ -1802,10 +1802,10 @@ describe("Working Changes inspection", () => {
     })
 
     test("disposes pending commit breakout reads with its source and restores no auxiliary columns", async () => {
-        const scenario = inspectionScenario()
-        const pending = new Map<string, (result: FileDiffResult) => void>()
-        const cancelled: string[] = []
-        const api = {
+        let scenario = inspectionScenario()
+        let pending = new Map<string, (result: FileDiffResult) => void>()
+        let cancelled: string[] = []
+        let api = {
             ...scenario.api,
             readFileDiff: async (_repositoryId: string, id: string) => new Promise<FileDiffResult>(resolve => pending.set(id, resolve)),
             cancelInspection: async (_repositoryId: string, id: string) => {
@@ -1813,7 +1813,7 @@ describe("Working Changes inspection", () => {
                 return true
             },
         }
-        const { container, root, dispose } = render(api)
+        let { container, root, dispose } = render(api)
         await flush(root)
         click(container.querySelector<HTMLButtonElement>(".commit-heading")!)
         await flush(root)
@@ -1821,11 +1821,11 @@ describe("Working Changes inspection", () => {
         await flush(root)
         expect(pending.size).toBe(2)
         dispose()
-        for (const [id, finish] of pending) {
+        for (let [id, finish] of pending) {
             expect(cancelled).toContain(id)
             finish({ ok: true, page: scenario.page })
         }
-        const restarted = render(scenario.api)
+        let restarted = render(scenario.api)
         await flush(restarted.root)
         expect(restarted.container.querySelector(".inspection-breakout")).toBeNull()
         expect(restarted.container.querySelector(".diff-inspector")).toBeNull()
@@ -1833,19 +1833,19 @@ describe("Working Changes inspection", () => {
     })
 
     test("opens file diffs independently beneath their rows and isolates pending reads", async () => {
-        const scenario = inspectionScenario()
-        const pending = new Map<string, { id: string; finish(result: FileDiffResult): void; request: Parameters<Window["laneway"]["readFileDiff"]>[2] }>()
-        const { container, root, dispose } = render({
+        let scenario = inspectionScenario()
+        let pending = new Map<string, { id: string; finish(result: FileDiffResult): void; request: Parameters<Window["laneway"]["readFileDiff"]>[2] }>()
+        let { container, root, dispose } = render({
             ...scenario.api,
             readFileDiff: async (_repositoryId, id, request) => new Promise<FileDiffResult>(finish => pending.set(request.path, { id, request, finish })),
         })
         await flush(root)
         click(container.querySelector<HTMLButtonElement>(".commit-heading")!)
         await flush(root)
-        const first = container.querySelector<HTMLButtonElement>(".inspect-commit [title='src/file.txt']")!
-        const second = container.querySelector<HTMLButtonElement>(".inspect-commit [title='other.txt']")!
-        const firstRow = first.closest(".file-inspection")!
-        const secondRow = second.closest(".file-inspection")!
+        let first = container.querySelector<HTMLButtonElement>(".inspect-commit [title='src/file.txt']")!
+        let second = container.querySelector<HTMLButtonElement>(".inspect-commit [title='other.txt']")!
+        let firstRow = first.closest(".file-inspection")!
+        let secondRow = second.closest(".file-inspection")!
         click(first)
         click(second)
         await flush(root)
@@ -1854,13 +1854,13 @@ describe("Working Changes inspection", () => {
         expect(firstRow.nextElementSibling).toBe(secondRow)
         expect(firstRow.querySelector(".change-file")!.nextElementSibling?.classList.contains("diff-inspector")).toBe(true)
         expect(secondRow.querySelector(".diff-inspector")).not.toBeNull()
-        const complete = async (path: string) => {
-            const read = pending.get(path)!
+        let complete = async (path: string) => {
+            let read = pending.get(path)!
             read.finish(await scenario.api.readFileDiff("repository", read.id, read.request))
             await flush(root)
         }
         await complete("other.txt")
-        const secondViewer = secondRow.querySelector(".pierre-diff")!
+        let secondViewer = secondRow.querySelector(".pierre-diff")!
         click(diffRoot(secondRow).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
         await flush(root)
         click(first)
@@ -1877,13 +1877,13 @@ describe("Working Changes inspection", () => {
         await flush(root)
         expect(container.querySelectorAll(".branch-column .diff-inspector")).toHaveLength(0)
         // The diff column shows the whole commit, marking the broken-out file in the source list.
-        const breakout = container.querySelector<HTMLElement>(".inspection-breakout")!
-        const breakoutPaths = () => [...breakout.querySelectorAll<HTMLElement>("[data-diff-path]")].map(element => element.dataset.diffPath)
-        const marked = () => [firstRow, secondRow].map(row => row.querySelector(".change-file")!.classList.contains("active"))
+        let breakout = container.querySelector<HTMLElement>(".inspection-breakout")!
+        let breakoutPaths = () => [...breakout.querySelectorAll<HTMLElement>("[data-diff-path]")].map(element => element.dataset.diffPath)
+        let marked = () => [firstRow, secondRow].map(row => row.querySelector(".change-file")!.classList.contains("active"))
         expect(breakoutPaths()).toEqual(["src/file.txt", "other.txt"])
         expect(breakout.querySelector("header")?.textContent).toContain("Commit · Inspect changes")
         expect(marked()).toEqual([false, true])
-        const fileToggle = breakout.querySelector<HTMLButtonElement>("[aria-label='Collapse other.txt']")!
+        let fileToggle = breakout.querySelector<HTMLButtonElement>("[aria-label='Collapse other.txt']")!
         click(fileToggle)
         await flush(root)
         expect(fileToggle.getAttribute("aria-expanded")).toBe("false")
@@ -1904,7 +1904,7 @@ describe("Working Changes inspection", () => {
         await flush(root)
         // Choosing another file keeps the column and scrolls it so that file's toolbar sits under the header.
         breakout.querySelector("header")!.getBoundingClientRect = () => ({ top: 0, bottom: 46 } as DOMRect)
-        for (const [index, section] of breakout.querySelectorAll<HTMLElement>("[data-diff-path]").entries())
+        for (let [index, section] of breakout.querySelectorAll<HTMLElement>("[data-diff-path]").entries())
             section.getBoundingClientRect = () => ({ top: 46 + index * 300 - breakout.scrollTop } as DOMRect)
         click(first)
         await flush(root)
@@ -1938,10 +1938,10 @@ describe("Working Changes inspection", () => {
     })
 
     test("reads patches lazily, respects literal selection, and restores only diff layout", async () => {
-        const scenario = inspectionScenario()
+        let scenario = inspectionScenario()
         let reads = 0
-        const views: string[] = []
-        const api = {
+        let views: string[] = []
+        let api = {
             ...scenario.api,
             readFileDiff: async (...args: Parameters<Window["laneway"]["readFileDiff"]>) => {
                 reads++
@@ -1949,13 +1949,13 @@ describe("Working Changes inspection", () => {
                 return scenario.api.readFileDiff(...args)
             },
         }
-        const { container, root, dispose } = render(api)
+        let { container, root, dispose } = render(api)
         await flush(root)
         expect(container.textContent).toContain("Working Changes")
         expect(container.querySelector(".staged-divider")?.textContent).toContain("Staged")
         expect(reads).toBe(0)
         // A partially staged file appears in both lists; each opens its own side without a view toggle.
-        const rows = container.querySelectorAll<HTMLButtonElement>("[title='src/file.txt']")
+        let rows = container.querySelectorAll<HTMLButtonElement>("[title='src/file.txt']")
         expect(rows).toHaveLength(2)
         click(rows[0])
         await flush(root)
@@ -1982,12 +1982,12 @@ describe("Working Changes inspection", () => {
         click(button(container, "Break out diff"))
         await flush(root)
         expect(container.querySelector(".branch-column + .column-divider")?.nextElementSibling?.classList.contains("inspection-breakout")).toBe(true)
-        const breakout = container.querySelector<HTMLElement>(".inspection-breakout")!
+        let breakout = container.querySelector<HTMLElement>(".inspection-breakout")!
         expect(document.activeElement).toBe(breakout)
         expect(breakout.querySelector("header")?.textContent).toContain("Staged · ")
         expect(breakout.dataset.sourceColumnId).toBe(container.querySelector<HTMLElement>(".branch-column")!.dataset.columnId)
         expect(breakout.querySelector(".auxiliary-source")?.textContent).toContain("From ")
-        const auxiliaryId = breakout.dataset.auxiliaryId
+        let auxiliaryId = breakout.dataset.auxiliaryId
         click(button(breakout, "Collapse all"))
         await flush(root)
         expect(breakout.querySelectorAll(".pierre-diff")).toHaveLength(0)
@@ -2004,7 +2004,7 @@ describe("Working Changes inspection", () => {
         expect(document.activeElement).toBe(container.querySelector(".branch-column"))
         expect(container.querySelector(".branch-column .diff-inspector")).not.toBeNull()
         dispose()
-        const restarted = render(api)
+        let restarted = render(api)
         await flush(restarted.root)
         expect(restarted.container.querySelector(".diff-inspector")).toBeNull()
         click(restarted.container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
@@ -2015,15 +2015,15 @@ describe("Working Changes inspection", () => {
     })
 
     test("entire-file toolbar toggle reloads open diffs, separates cached views, and rejects superseded reads", async () => {
-        const scenario = inspectionScenario()
-        const requests: Parameters<Window["laneway"]["readFileDiff"]>[2][] = []
-        const pending: (() => void)[] = []
-        const api = {
+        let scenario = inspectionScenario()
+        let requests: Parameters<Window["laneway"]["readFileDiff"]>[2][] = []
+        let pending: (() => void)[] = []
+        let api = {
             ...scenario.api,
             readFileDiff: async (...args: Parameters<Window["laneway"]["readFileDiff"]>) => {
-                const request = args[2]
+                let request = args[2]
                 requests.push(request)
-                const result = await scenario.api.readFileDiff(...args)
+                let result = await scenario.api.readFileDiff(...args)
                 if (request.entireFile) {
                     await new Promise<void>(resolve => pending.push(resolve))
                     if (result.ok) {
@@ -2038,15 +2038,15 @@ describe("Working Changes inspection", () => {
                 return result
             },
         }
-        const { container, root, dispose } = render(api)
+        let { container, root, dispose } = render(api)
         try {
             await flush(root)
             click(container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
             await flush(root)
             click(button(container, "Break out diff"))
             await flush(root)
-            const column = container.querySelector<HTMLElement>(".inspection-breakout")!
-            const toggle = () => column.querySelector<HTMLButtonElement>("[aria-label='Show entire files']")!
+            let column = container.querySelector<HTMLElement>(".inspection-breakout")!
+            let toggle = () => column.querySelector<HTMLButtonElement>("[aria-label='Show entire files']")!
             expect(toggle().getAttribute("aria-pressed")).toBe("false")
             click(toggle())
             await flush(root)
@@ -2068,7 +2068,7 @@ describe("Working Changes inspection", () => {
             expect(diffRoot(column).textContent).not.toContain("outside changes")
             click(button(column, "Close diff column"))
             await flush(root)
-            const file = container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!
+            let file = container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!
             click(file)
             await flush(root)
             click(file)
@@ -2080,15 +2080,15 @@ describe("Working Changes inspection", () => {
     })
 
     test("rejects superseded reads and clears stale or collapsed-file selections", async () => {
-        const scenario = inspectionScenario()
+        let scenario = inspectionScenario()
         let finish: (page: FileDiffResult) => void = () => {}
         let first = true
         let version = "one"
-        const api = {
+        let api = {
             ...scenario.api,
             // A changed file changes the inventory version too; open diffs are only re-read once it does.
             readChanges: async (...args: Parameters<Window["laneway"]["readChanges"]>): Promise<ChangesResult> => {
-                const result = await scenario.api.readChanges(...args)
+                let result = await scenario.api.readChanges(...args)
                 return result.ok ? { ...result, inventory: { ...result.inventory, version: `${result.inventory.version}:${version}` } } : result
             },
             readFileDiff: async (...args: Parameters<Window["laneway"]["readFileDiff"]>) => {
@@ -2096,11 +2096,11 @@ describe("Working Changes inspection", () => {
                     first = false
                     return new Promise<FileDiffResult>(resolve => finish = resolve)
                 }
-                const result = await scenario.api.readFileDiff(...args)
+                let result = await scenario.api.readFileDiff(...args)
                 return result.ok ? { ...result, page: { ...result.page, version } } : result
             },
         }
-        const { container, root, dispose } = render(api)
+        let { container, root, dispose } = render(api)
         await flush(root)
         click(container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
         await flush(root)
@@ -2131,16 +2131,16 @@ describe("Working Changes inspection", () => {
     })
 
     test("expands pinned commit history and keeps large patches virtualized", async () => {
-        const scenario = inspectionScenario()
+        let scenario = inspectionScenario()
         let historyReads = 0
-        const api = {
+        let api = {
             ...scenario.api,
             readBranchHistory: async (...args: Parameters<Window["laneway"]["readBranchHistory"]>) => {
                 historyReads++
                 return scenario.api.readBranchHistory(...args)
             },
             readFileDiff: async (...args: Parameters<Window["laneway"]["readFileDiff"]>) => {
-                const result = await scenario.api.readFileDiff(...args)
+                let result = await scenario.api.readFileDiff(...args)
                 return result.ok
                     ? {
                         ...result,
@@ -2152,7 +2152,7 @@ describe("Working Changes inspection", () => {
                     : result
             },
         }
-        const { container, root, dispose } = render(api)
+        let { container, root, dispose } = render(api)
         await flush(root)
         expect(historyReads).toBe(1)
         expect(container.querySelector(".stack-branch")?.querySelector(".stack-heading") == null).toBe(true)
@@ -2183,8 +2183,8 @@ describe("Working Changes inspection", () => {
 })
 
 test("sparse File History fills a page of matching commits, stays lazy, and retains progress on refresh", async () => {
-    const scenario = inspectionScenario()
-    const cursors: Array<string | undefined> = []
+    let scenario = inspectionScenario()
+    let cursors: Array<string | undefined> = []
     let releaseScan: (() => void) | undefined
     let releaseMore: (() => void) | undefined
     let cancellations = 0
@@ -2193,14 +2193,14 @@ test("sparse File History fills a page of matching commits, stays lazy, and reta
         return true
     }
     let patches = 0
-    const readDiff = scenario.api.readFileDiff
+    let readDiff = scenario.api.readFileDiff
     scenario.api.readFileDiff = (...args) => {
         patches++
         return readDiff(...args)
     }
     scenario.api.readFileHistory = async (_repo, _id, request) => {
         cursors.push(request.cursor?.objectId)
-        const offset = !request.cursor ? 0 : Number(request.cursor.objectId[0]) - 2
+        let offset = !request.cursor ? 0 : Number(request.cursor.objectId[0]) - 2
         if (offset == 1) {
             await new Promise<void>(resolve => {
                 releaseScan = resolve
@@ -2229,14 +2229,14 @@ test("sparse File History fills a page of matching commits, stays lazy, and reta
             },
         }
     }
-    const { container, root, dispose } = render(scenario.api)
+    let { container, root, dispose } = render(scenario.api)
     try {
         await flush(root)
         container.querySelector<HTMLElement>(".change-file")!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }))
         await flush(root)
         click(button(container, "File history"))
         await flush(root)
-        const history = container.querySelector<HTMLElement>(".file-history")!
+        let history = container.querySelector<HTMLElement>(".file-history")!
         expect(history.querySelectorAll(".history-entry")).toHaveLength(1)
         expect(cursors).toEqual([undefined, "3".repeat(40)])
         releaseScan!()
@@ -2264,8 +2264,8 @@ test("sparse File History fills a page of matching commits, stays lazy, and reta
 })
 
 test("File History shares file inspection, opens blame origins, reuses inputs and closes descendants", async () => {
-    const scenario = inspectionScenario()
-    const oid = "2".repeat(40)
+    let scenario = inspectionScenario()
+    let oid = "2".repeat(40)
     let reads = 0
     scenario.api.readFileHistory = async (_repo, _id, request) => {
         reads++
@@ -2290,18 +2290,18 @@ test("File History shares file inspection, opens blame origins, reuses inputs an
                 },
         }
     }
-    const { container, root, dispose } = render(scenario.api)
+    let { container, root, dispose } = render(scenario.api)
     try {
         await flush(root)
-        const row = container.querySelector<HTMLElement>(".change-file")!
-        const menu = async () => {
+        let row = container.querySelector<HTMLElement>(".change-file")!
+        let menu = async () => {
             row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 50, clientY: 50 }))
             await flush(root)
             click(button(container, "File history"))
             await flush(root)
         }
         await menu()
-        const history = container.querySelector<HTMLElement>(".file-history")!
+        let history = container.querySelector<HTMLElement>(".file-history")!
         expect(history).not.toBeNull()
         expect(history.textContent).not.toContain("Following parent 1")
         expect(history.textContent).toContain("Working Changes")
@@ -2312,10 +2312,10 @@ test("File History shares file inspection, opens blame origins, reuses inputs an
         await flush(root)
         expect(history.querySelector(".pierre-diff")).not.toBeNull()
         expect(history.querySelector("input[type='checkbox']")).not.toBeNull()
-        const commitRow = history.querySelector<HTMLElement>(".history-entry .change-file")!
+        let commitRow = history.querySelector<HTMLElement>(".history-entry .change-file")!
         expect(history.querySelectorAll(".change-file")).toHaveLength(1)
-        for (const label of ["Unified", "Side by side", "Show whitespace"]) {
-            const control = commitRow.querySelector<HTMLButtonElement>(`[aria-label='${label}']`)!
+        for (let label of ["Unified", "Side by side", "Show whitespace"]) {
+            let control = commitRow.querySelector<HTMLButtonElement>(`[aria-label='${label}']`)!
             expect(control).not.toBeNull()
             click(control)
             await flush(root)
@@ -2328,16 +2328,16 @@ test("File History shares file inspection, opens blame origins, reuses inputs an
         click(button(history, "History commit"))
         await flush(root)
         expect(history.querySelector(".pierre-diff")).not.toBeNull()
-        const historyMenu = async () => {
+        let historyMenu = async () => {
             commitRow.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }))
             await flush(root)
         }
         await historyMenu()
         click(button(history, "Complete commit diff"))
         await flush(root)
-        const commit = container.querySelector<HTMLElement>(".trail-commit")!
+        let commit = container.querySelector<HTMLElement>(".trail-commit")!
         expect(commit.querySelectorAll(".change-file")).toHaveLength(2)
-        const parent = commit.querySelector<HTMLSelectElement>("[aria-label='Commit diff parent']")!
+        let parent = commit.querySelector<HTMLSelectElement>("[aria-label='Commit diff parent']")!
         parent.value = "3".repeat(40)
         parent.dispatchEvent(new Event("change", { bubbles: true }))
         await flush(root)
@@ -2366,18 +2366,18 @@ test("File History shares file inspection, opens blame origins, reuses inputs an
 })
 
 test("commit composer reveals staging controls, retains cancelled drafts, and commits the staged snapshot", async () => {
-    const scenario = inspectionScenario()
+    let scenario = inspectionScenario()
     let staged = false, committed = false, version = 0
     let draft = { title: "", message: "", branch: "" }
-    const mutations: string[] = []
-    const api: Window["laneway"] = {
+    let mutations: string[] = []
+    let api: Window["laneway"] = {
         ...scenario.api,
         readCommitDraft: async () => ({ ...draft }),
         saveCommitDraft: async (_id, _path, value) => {
             draft = { ...value }
         },
         readChanges: async (...args) => {
-            const result = await scenario.api.readChanges(...args)
+            let result = await scenario.api.readChanges(...args)
             if (!result.ok)
                 return result
             return {
@@ -2426,12 +2426,12 @@ test("commit composer reveals staging controls, retains cancelled drafts, and co
             }
         },
     }
-    const view = render(api)
+    let view = render(api)
     try {
         await flush(view.root)
         expect(view.container.querySelector(".staged-divider")).toBeNull()
         expect(view.container.querySelector('[aria-label="Staged files"]')).toBeNull()
-        const header = view.container.querySelector(".commit-header")!
+        let header = view.container.querySelector(".commit-header")!
         expect(header.textContent).toContain("Working Changes")
         expect(header.textContent).toContain("Commit…")
         expect(header.querySelector('[aria-label="More commit actions"] svg')).not.toBeNull()
@@ -2447,7 +2447,7 @@ test("commit composer reveals staging controls, retains cancelled drafts, and co
         expect(header.querySelector<HTMLElement>(".commit-split")!.hidden).toBe(true)
         expect(view.container.querySelector('[aria-label="Staged files"]')!.textContent).toContain("Drop files here to stage them")
         expect(button(view.container, "Commit all changes (2)").disabled).toBe(true)
-        const title = view.container.querySelector<HTMLInputElement>('[aria-label="Commit title"]')!
+        let title = view.container.querySelector<HTMLInputElement>('[aria-label="Commit title"]')!
         title.value = "Keep snapshot"
         title.dispatchEvent(new Event("input", { bubbles: true }))
         await flush(view.root)
@@ -2478,9 +2478,9 @@ test("commit composer reveals staging controls, retains cancelled drafts, and co
 })
 
 test("a detached worktree lists its proposed branch below Working Changes with an editable name", async () => {
-    const scenario = inspectionScenario()
-    const repository = repositoryInfo("D:\Source\inspection")
-    const head = "2".repeat(40)
+    let scenario = inspectionScenario()
+    let repository = repositoryInfo("D:\Source\inspection")
+    let head = "2".repeat(40)
     scenario.graph.branches[1].checkedOut = []
     scenario.graph.virtualBranches = [{
         kind: "virtual",
@@ -2491,9 +2491,9 @@ test("a detached worktree lists its proposed branch below Working Changes with a
         tooltip: "detached at 22222222",
     }]
     let draft = { title: "", message: "", branch: "" }
-    const requests: Parameters<Window["laneway"]["localOperation"]>[1][] = []
-    const opened = openedWorkspace(repository)
-    const api: Window["laneway"] = {
+    let requests: Parameters<Window["laneway"]["localOperation"]>[1][] = []
+    let opened = openedWorkspace(repository)
+    let api: Window["laneway"] = {
         ...scenario.api,
         getState: async () => ({ ...appState(), workspace: { ...opened, repositories: [{ ...opened.repositories[0], layoutInitialized: true }] } }),
         readCommitDraft: async () => ({ ...draft }),
@@ -2526,11 +2526,11 @@ test("a detached worktree lists its proposed branch below Working Changes with a
             }
         },
     }
-    const view = render(api)
+    let view = render(api)
     try {
         await flush(view.root)
         expect(view.container.querySelector('[aria-label="New branch name"]')).toBeNull()
-        const card = view.container.querySelector<HTMLElement>(".working-changes .virtual-branch")!
+        let card = view.container.querySelector<HTMLElement>(".working-changes .virtual-branch")!
         expect(card).not.toBeNull()
         // The proposed branch reads like the branch cards below a real branch's Working Changes.
         expect(view.container.querySelector(".commit-card")!.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
@@ -2538,7 +2538,7 @@ test("a detached worktree lists its proposed branch below Working Changes with a
         expect(button(card, "Rename new branch").textContent).toBe("inspection")
         click(button(card, "Rename new branch"))
         await flush(view.root)
-        const field = card.querySelector<HTMLInputElement>('[aria-label="New name for new branch"]')!
+        let field = card.querySelector<HTMLInputElement>('[aria-label="New name for new branch"]')!
         input(field, "feature/detached")
         field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
         await flush(view.root)
@@ -2560,9 +2560,9 @@ test("a detached worktree lists its proposed branch below Working Changes with a
 })
 
 test("a detached worktree proposes its branch before the engine preview answers, and disk changes refresh the graph", async () => {
-    const scenario = inspectionScenario()
-    const repository = repositoryInfo("D:\\Source\\inspection")
-    const head = "2".repeat(40)
+    let scenario = inspectionScenario()
+    let repository = repositoryInfo("D:\\Source\\inspection")
+    let head = "2".repeat(40)
     scenario.graph.branches[1].checkedOut = []
     scenario.graph.virtualBranches = [{
         kind: "virtual",
@@ -2573,11 +2573,11 @@ test("a detached worktree proposes its branch before the engine preview answers,
         tooltip: "detached at 22222222",
     }]
     let releasePreview: (() => void) | undefined
-    const released = new Promise<void>(resolve => releasePreview = resolve)
+    let released = new Promise<void>(resolve => releasePreview = resolve)
     let graphReads = 0
     let notifyChange: ((change: { repositoryId: string }) => void) | undefined
-    const opened = openedWorkspace(repository)
-    const api: Window["laneway"] = {
+    let opened = openedWorkspace(repository)
+    let api: Window["laneway"] = {
         ...scenario.api,
         getState: async () => ({ ...appState(), workspace: { ...opened, repositories: [{ ...opened.repositories[0], layoutInitialized: true }] } }),
         readBranchGraph: async () => {
@@ -2611,18 +2611,18 @@ test("a detached worktree proposes its branch before the engine preview answers,
             }
         },
     }
-    const view = render(api)
+    let view = render(api)
     try {
         await flush(view.root)
         // The Branch Graph already says the worktree is detached; the engine's slower preview only refines the name.
-        const card = () => view.container.querySelector<HTMLElement>(".working-changes .virtual-branch")!
+        let card = () => view.container.querySelector<HTMLElement>(".working-changes .virtual-branch")!
         expect(card()).not.toBeNull()
         expect(button(card(), "Rename new branch").textContent).toBe("worktree/inspection")
         releasePreview!()
         await flush(view.root)
         expect(button(card(), "Rename new branch").textContent).toBe("inspection-2")
         // A change noticed on disk refreshes the active repository without waiting for the next poll.
-        const before = graphReads
+        let before = graphReads
         notifyChange!({ repositoryId: repository.id })
         await flush(view.root)
         expect(graphReads).toBe(before + 1)
@@ -2635,9 +2635,9 @@ test("a detached worktree proposes its branch before the engine preview answers,
 })
 
 test("deleting a branch from its column reuses the reviewed preview instead of previewing again", async () => {
-    const scenario = inspectionScenario()
-    const calls: Array<{ action: string; token?: string }> = []
-    const api: Window["laneway"] = {
+    let scenario = inspectionScenario()
+    let calls: Array<{ action: string; token?: string }> = []
+    let api: Window["laneway"] = {
         ...scenario.api,
         localOperation: async (_id, request, token) => {
             calls.push({ action: request.action, token })
@@ -2664,10 +2664,10 @@ test("deleting a branch from its column reuses the reviewed preview instead of p
             }
         },
     }
-    const view = render(api)
+    let view = render(api)
     try {
         await flush(view.root)
-        const column = view.container.querySelector<HTMLElement>('[data-column-id="branch:refs/heads/feature/laneway"]')!
+        let column = view.container.querySelector<HTMLElement>('[data-column-id="branch:refs/heads/feature/laneway"]')!
         column.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true }))
         await flush(view.root)
         click(button(view.container, "Delete"))
@@ -2682,10 +2682,10 @@ test("deleting a branch from its column reuses the reviewed preview instead of p
 })
 
 test("the column branch renames in place from its heading", async () => {
-    const scenario = inspectionScenario()
-    const branch = scenario.graph.branches[1]
-    const requests: Parameters<Window["laneway"]["localOperation"]>[1][] = []
-    const api: Window["laneway"] = {
+    let scenario = inspectionScenario()
+    let branch = scenario.graph.branches[1]
+    let requests: Parameters<Window["laneway"]["localOperation"]>[1][] = []
+    let api: Window["laneway"] = {
         ...scenario.api,
         localOperation: async (id, request, token) => {
             if (!token)
@@ -2706,11 +2706,11 @@ test("the column branch renames in place from its heading", async () => {
             return { ok: true, result: { type: "result", command: "local", status: "performed" } }
         },
     }
-    const view = render(api)
+    let view = render(api)
     try {
         await flush(view.root)
-        const heading = view.container.querySelector<HTMLElement>(".composition-branch-target")!
-        const name = button(heading, "Rename branch feature/laneway")
+        let heading = view.container.querySelector<HTMLElement>(".composition-branch-target")!
+        let name = button(heading, "Rename branch feature/laneway")
         expect(name.textContent).toBe("feature/laneway")
         // F2 on the name edits in place instead of opening the rename dialog.
         name.dispatchEvent(new KeyboardEvent("keydown", { key: "F2", bubbles: true }))
@@ -2739,7 +2739,7 @@ test("the column branch renames in place from its heading", async () => {
             name: "feature/laneway",
             newName: "feature/renamed",
         }])
-        const renamed = view.container.querySelector<HTMLElement>(".composition-branch-target")!
+        let renamed = view.container.querySelector<HTMLElement>(".composition-branch-target")!
         expect(button(renamed, "Rename branch feature/renamed").textContent).toBe("feature/renamed")
         expect(renamed.querySelector("input")).toBeNull()
     } finally {
@@ -2747,10 +2747,297 @@ test("the column branch renames in place from its heading", async () => {
     }
 })
 
+test("Branch Graph settings keep a typed pattern draft across quiet refreshes", async () => {
+    let repository = repositoryInfo("D:\Source\graph-settings-draft")
+    let graph: BranchGraph = branchGraph(repository.id)
+    let api = fakeLaneway({
+        getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
+        readBranchGraph: async () => ({ ok: true, graph }),
+        setRepositoryGraphSettings: async (_id, settings) => {
+            graph = { ...graph, remotePatterns: settings.remotePatterns }
+            return settings
+        },
+    })
+    let { container, root, dispose } = render(api)
+    await flush(root)
+    click(container.querySelector<HTMLButtonElement>("[aria-label='Branch Graph settings']")!)
+    await flush(root)
+    let patterns = container.querySelector<HTMLInputElement>("#remote-patterns")!
+    input(patterns, "origin/releases/**")
+    await flush(root)
+    expect(patterns.value).toBe("origin/releases/**")
+    refreshGraph()
+    await flush(root)
+    expect(container.querySelector<HTMLInputElement>("#remote-patterns")!.value).toBe("origin/releases/**")
+    patterns.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+    await flush(root)
+    click(container.querySelector<HTMLButtonElement>("[aria-label='Branch Graph settings']")!)
+    await flush(root)
+    expect(container.querySelector<HTMLInputElement>("#remote-patterns")!.value).toBe("origin/releases/**")
+    dispose()
+})
+
+describe("Branch Graph rebase", () => {
+    let upstreamTip = "4".repeat(40)
+    let notice = (container: HTMLElement) => container.querySelector(".notice:not([hidden])")?.textContent ?? ""
+    let dialog = (container: HTMLElement) => container.querySelector<HTMLElement>("dialog.branch-rebase")
+    let row = (container: HTMLElement, name: string) => container.querySelector<HTMLElement>(`[data-node-id="branch:refs/heads/${name}"]`)!
+    let feature = { kind: "branch" as const, branch: "refs/heads/feature/laneway", tip: "2".repeat(40) }
+    let team = { kind: "branch" as const, branch: "refs/heads/other/team", tip: "3".repeat(40) }
+
+    test("rebases a dropped branch with its dependents straight away when nothing needs deciding", async () => {
+        let { api, calls } = scenario()
+        let view = render(api)
+        try {
+            await flush(view.root)
+            // The Primary Branch has no Base to bound its commits, and a branch can't land on one stacked on it.
+            expect(drag(view.container, "main", "feature/laneway").accepted).toBe(false)
+            expect(drag(view.container, "feature/laneway", "child").accepted).toBe(false)
+            expect(calls).toEqual([])
+            expect(drag(view.container, "feature/laneway", "other/team")).toEqual({ accepted: true, highlighted: true })
+            await flush(view.root)
+            expect(row(view.container, "other/team").classList.contains("rebase-target")).toBe(false)
+            expect(dialog(view.container)).toBeNull()
+            expect(calls.map(call => [call.request.source, call.request.target, call.request.descendants, call.token])).toEqual([[
+                feature,
+                team,
+                true,
+                undefined,
+            ], [feature, team, true, "reviewed-1"]])
+            expect(notice(view.container)).toContain("Rebased feature/laneway and child onto other/team.")
+        } finally {
+            view.dispose()
+        }
+    })
+
+    test("asks which tip to rebase onto when the destination's local tip lags its upstream", async () => {
+        let { api, calls } = scenario(graph => {
+            Object.assign(graph.branches[0], { upstreamRef: "refs/remotes/origin/main", upstreamTip, behind: 2, remoteRefs: ["refs/remotes/origin/main"] })
+        })
+        let view = render(api)
+        try {
+            await flush(view.root)
+            drag(view.container, "feature/laneway", "main")
+            await flush(view.root)
+            let shown = dialog(view.container)!
+            expect(shown.textContent).toContain("Local tip, 2 commits behind origin/main")
+            expect(shown.textContent).toContain("1 commit since main")
+            expect(shown.textContent).toContain("Laneway work")
+            expect(calls.map(call => call.request.target)).toEqual([{ kind: "branch", branch: "refs/heads/main", tip: "1".repeat(40) }])
+            let upstream = [...shown.querySelectorAll<HTMLInputElement>("input[type=radio]")][1]
+            upstream.checked = true
+            upstream.dispatchEvent(new Event("change", { bubbles: true }))
+            await flush(view.root)
+            expect(calls.at(-1)?.request.target).toEqual({ kind: "branch", branch: "refs/remotes/origin/main", tip: upstreamTip })
+            click(button(dialog(view.container)!, "Rebase"))
+            await flush(view.root)
+            expect(calls.at(-1)).toMatchObject({ token: "reviewed-2", request: { target: { branch: "refs/remotes/origin/main" } } })
+            expect(dialog(view.container)).toBeNull()
+            expect(notice(view.container)).toContain("onto origin/main.")
+        } finally {
+            view.dispose()
+        }
+    })
+
+    test("confirms published rewrites, can leave dependents behind, and opens conflicts to resolve now", async () => {
+        let { api, calls, review } = scenario()
+        let view = render(api)
+        try {
+            await flush(view.root)
+            review({ published: ["feature/laneway"] })
+            drag(view.container, "feature/laneway", "other/team")
+            await flush(view.root)
+            expect(dialog(view.container)!.textContent).toContain("Rewrites history already published on feature/laneway")
+            let dependents = dialog(view.container)!.querySelector<HTMLInputElement>("input[type=checkbox]")!
+            expect(dependents.parentElement?.textContent).toContain("Move dependent branches too: child")
+            review({ published: ["feature/laneway"], branches: ["feature/laneway"] })
+            dependents.checked = false
+            dependents.dispatchEvent(new Event("change", { bubbles: true }))
+            await flush(view.root)
+            expect(calls.at(-1)?.request.descendants).toBe(false)
+            // The dependents stay on offer after a review that leaves them out.
+            expect(dialog(view.container)!.textContent).toContain("Move dependent branches too: child")
+            click(button(dialog(view.container)!, "Rebase"))
+            await flush(view.root)
+            expect(calls.at(-1)).toMatchObject({ token: "reviewed-2", request: { descendants: false, allowConflicts: false } })
+            expect(notice(view.container)).toContain("Rebased feature/laneway onto other/team.")
+
+            review({ conflicts: [{ subject: "commit 22222222", files: ["src/file.txt"] }] })
+            drag(view.container, "feature/laneway", "other/team")
+            await flush(view.root)
+            expect(dialog(view.container)!.textContent).toContain("Conflicts in commit 22222222: src/file.txt")
+            click(button(dialog(view.container)!, "Continue and resolve now"))
+            await flush(view.root)
+            expect(calls.at(-1)).toMatchObject({ token: "reviewed-4", request: { allowConflicts: true } })
+            expect(view.container.querySelector("[data-column-id='branch:refs/heads/feature/laneway']")).not.toBeNull()
+        } finally {
+            view.dispose()
+        }
+    })
+
+    test("shows each branch sharing a tip as its own row to open, drag, and drop onto", async () => {
+        let { api, calls } = scenario(graph => {
+            Object.assign(graph.branches[1], {
+                localRefs: ["refs/heads/feature/laneway", "refs/heads/feature/sibling"],
+                refs: ["refs/heads/feature/laneway", "refs/heads/feature/sibling"],
+                aliases: ["feature/laneway", "feature/sibling"],
+            })
+        })
+        let sibling = { kind: "branch" as const, branch: "refs/heads/feature/sibling", tip: "2".repeat(40) }
+        let view = render(api)
+        try {
+            await flush(view.root)
+            let rows = [...view.container.querySelectorAll<HTMLElement>(".graph-row")].map(row => row.dataset.nodeId)
+            expect(rows.indexOf("branch:refs/heads/feature/sibling")).toBe(rows.indexOf("branch:refs/heads/feature/laneway") + 1)
+            // One commit's node spans both rows, so siblings don't read as a stack.
+            expect(row(view.container, "feature/laneway").querySelector(".shared-commit")).not.toBeNull()
+            expect(row(view.container, "feature/sibling").querySelector(".shared-commit")).not.toBeNull()
+            expect(row(view.container, "other/team").querySelector(".shared-commit")).toBeNull()
+
+            // Neither sibling lands on the other or on a branch stacked on their shared tip.
+            expect(drag(view.container, "feature/sibling", "feature/laneway").accepted).toBe(false)
+            expect(drag(view.container, "feature/laneway", "feature/sibling").accepted).toBe(false)
+            expect(drag(view.container, "feature/sibling", "child").accepted).toBe(false)
+            expect(drag(view.container, "other/team", "feature/sibling").accepted).toBe(true)
+            await flush(view.root)
+            expect(calls.at(-1)?.request.target).toEqual(sibling)
+            expect(drag(view.container, "feature/sibling", "other/team").accepted).toBe(true)
+            await flush(view.root)
+            expect(calls.at(-1)?.request).toMatchObject({ source: sibling, target: team })
+
+            click(row(view.container, "feature/sibling").querySelector<HTMLButtonElement>(".open-branch")!)
+            await flush(view.root)
+            expect(view.container.querySelector("[data-column-id='branch:refs/heads/feature/sibling']")).not.toBeNull()
+            expect(view.container.querySelector("[data-column-id='branch:refs/heads/feature/laneway']")).toBeNull()
+
+            // Keyboard actions on the selected row act on that identity, not the one leading its tip.
+            view.container.querySelector<HTMLElement>(".graph-rows")!.dispatchEvent(new KeyboardEvent("keydown", { key: "F2", bubbles: true }))
+            await flush(view.root)
+            expect([...view.container.querySelectorAll<HTMLInputElement>("input")].some(input => input.value == "feature/sibling")).toBe(true)
+        } finally {
+            view.dispose()
+        }
+    })
+
+    test("chooses a destination by keyboard or from the context menu", async () => {
+        let { api, calls } = scenario()
+        let view = render(api)
+        try {
+            await flush(view.root)
+            let rows = view.container.querySelector<HTMLElement>(".graph-rows")!
+            click(row(view.container, "feature/laneway"))
+            await flush(view.root)
+            rows.dispatchEvent(new KeyboardEvent("keydown", { key: "m", bubbles: true }))
+            await flush(view.root)
+            expect(row(view.container, "feature/laneway").classList.contains("rebase-source")).toBe(true)
+            expect(notice(view.container)).toContain("Rebase feature/laneway · Choose a destination branch")
+            // Enter on the source itself only explains what to choose.
+            rows.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+            await flush(view.root)
+            expect(calls).toEqual([])
+            expect(notice(view.container)).toContain("Choose a branch other than feature/laneway")
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+            await flush(view.root)
+            expect(row(view.container, "feature/laneway").classList.contains("rebase-source")).toBe(false)
+
+            row(view.container, "feature/laneway").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }))
+            await flush(view.root)
+            click(button(view.container, "Rebase onto…"))
+            await flush(view.root)
+            expect(row(view.container, "feature/laneway").classList.contains("rebase-source")).toBe(true)
+            click(row(view.container, "other/team"))
+            await flush(view.root)
+            expect(calls.map(call => call.request.target)).toEqual([team, team])
+            expect(row(view.container, "feature/laneway").classList.contains("rebase-source")).toBe(false)
+        } finally {
+            view.dispose()
+        }
+    })
+    function scenario(configure: (graph: BranchGraph) => void = () => {}) {
+        let repository = repositoryInfo("D:\\Source\\rebase-graph")
+        let graph = branchGraph(repository.id)
+        let feature = graph.branches[1]
+        graph.branches[2].involvement = "involved"
+        graph.branches.push({
+            ...feature,
+            id: "branch:refs/heads/child",
+            name: "child",
+            preferredRef: "refs/heads/child",
+            refs: ["refs/heads/child"],
+            aliases: ["child"],
+            localRefs: ["refs/heads/child"],
+            tip: "5".repeat(40),
+            base: { status: "known", branchId: feature.id, name: feature.name, ref: feature.preferredRef, tip: feature.tip },
+        })
+        graph.history.unshift({ objectId: "5".repeat(40), lineId: "branch:refs/heads/child", parentIds: [feature.tip] })
+        configure(graph)
+        let calls: Array<{ request: CompositionRequest; token?: string }> = []
+        let review: Partial<CompositionPreview> = {}
+        let api = fakeLaneway({
+            getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
+            readBranchGraph: async () => ({ ok: true, graph }),
+            localOperation: async (_id, request, token) => {
+                calls.push({ request: request as CompositionRequest, token })
+                if (token)
+                    return { ok: true, result: { type: "result", command: "local", status: "performed" } }
+                let composition: CompositionPreview = {
+                    branches: ["feature/laneway", "child"],
+                    removed: [],
+                    conflicts: [],
+                    published: [],
+                    skipped: [],
+                    noop: false,
+                    commits: [{ objectId: feature.tip, subject: "Laneway work" }],
+                    ...review,
+                }
+                return {
+                    ok: true,
+                    result: {
+                        type: "result",
+                        command: "local-preview",
+                        status: "preview",
+                        preview: {
+                            token: `reviewed-${calls.length}`,
+                            affected: [],
+                            uniqueCommits: false,
+                            unborn: false,
+                            suggestedBranch: "",
+                            staged: false,
+                            files: [],
+                            stashes: [],
+                            worktrees: [],
+                            composition,
+                        },
+                    },
+                }
+            },
+        })
+        return { api, calls, review: (value: Partial<CompositionPreview>) => review = value }
+    }
+    function drag(container: HTMLElement, from: string, to: string) {
+        let transfer = new (window as unknown as { DataTransfer: new() => DataTransfer }).DataTransfer()
+        let event = (type: string) => {
+            let value = new MouseEvent(type, { bubbles: true, cancelable: true })
+            Object.defineProperty(value, "dataTransfer", { value: transfer })
+            return value
+        }
+        let source = container.querySelector<HTMLElement>(`[data-node-id="branch:refs/heads/${from}"]`)!
+        let target = container.querySelector<HTMLElement>(`[data-node-id="branch:refs/heads/${to}"]`)!
+        source.dispatchEvent(event("dragstart"))
+        let over = event("dragover")
+        target.dispatchEvent(over)
+        let highlighted = target.classList.contains("rebase-target")
+        if (over.defaultPrevented)
+            target.dispatchEvent(event("drop"))
+        source.dispatchEvent(event("dragend"))
+        return { accepted: over.defaultPrevented, highlighted }
+    }
+})
+
 function render(api: Window["laneway"]) {
-    const container = document.createElement("div")
+    let container = document.createElement("div")
     document.body.append(container)
-    const root = createRoot(container)
+    let root = createRoot(container)
     root.render(createElement(LanewayApp, { api }))
     root.flush()
     return {
@@ -2790,7 +3077,7 @@ function submit(form: HTMLFormElement) {
 }
 
 function button(container: HTMLElement, label: string) {
-    const result = [...container.querySelectorAll<HTMLButtonElement>("button")].find(candidate =>
+    let result = [...container.querySelectorAll<HTMLButtonElement>("button")].find(candidate =>
         candidate.getAttribute("aria-label") == label || candidate.textContent?.trim() == label
     )
     if (!result)
@@ -2801,290 +3088,3 @@ function button(container: HTMLElement, label: string) {
 function diffRoot(container: Element): ShadowRoot | Element {
     return container.querySelector(".pierre-diff")?.shadowRoot ?? container
 }
-
-test("Branch Graph settings keep a typed pattern draft across quiet refreshes", async () => {
-    const repository = repositoryInfo("D:\Source\graph-settings-draft")
-    let graph: BranchGraph = branchGraph(repository.id)
-    const api = fakeLaneway({
-        getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
-        readBranchGraph: async () => ({ ok: true, graph }),
-        setRepositoryGraphSettings: async (_id, settings) => {
-            graph = { ...graph, remotePatterns: settings.remotePatterns }
-            return settings
-        },
-    })
-    const { container, root, dispose } = render(api)
-    await flush(root)
-    click(container.querySelector<HTMLButtonElement>("[aria-label='Branch Graph settings']")!)
-    await flush(root)
-    const patterns = container.querySelector<HTMLInputElement>("#remote-patterns")!
-    input(patterns, "origin/releases/**")
-    await flush(root)
-    expect(patterns.value).toBe("origin/releases/**")
-    refreshGraph()
-    await flush(root)
-    expect(container.querySelector<HTMLInputElement>("#remote-patterns")!.value).toBe("origin/releases/**")
-    patterns.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
-    await flush(root)
-    click(container.querySelector<HTMLButtonElement>("[aria-label='Branch Graph settings']")!)
-    await flush(root)
-    expect(container.querySelector<HTMLInputElement>("#remote-patterns")!.value).toBe("origin/releases/**")
-    dispose()
-})
-
-describe("Branch Graph rebase", () => {
-    const upstreamTip = "4".repeat(40)
-    function scenario(configure: (graph: BranchGraph) => void = () => {}) {
-        const repository = repositoryInfo("D:\\Source\\rebase-graph")
-        const graph = branchGraph(repository.id)
-        const feature = graph.branches[1]
-        graph.branches[2].involvement = "involved"
-        graph.branches.push({
-            ...feature,
-            id: "branch:refs/heads/child",
-            name: "child",
-            preferredRef: "refs/heads/child",
-            refs: ["refs/heads/child"],
-            aliases: ["child"],
-            localRefs: ["refs/heads/child"],
-            tip: "5".repeat(40),
-            base: { status: "known", branchId: feature.id, name: feature.name, ref: feature.preferredRef, tip: feature.tip },
-        })
-        graph.history.unshift({ objectId: "5".repeat(40), lineId: "branch:refs/heads/child", parentIds: [feature.tip] })
-        configure(graph)
-        const calls: Array<{ request: CompositionRequest; token?: string }> = []
-        let review: Partial<CompositionPreview> = {}
-        const api = fakeLaneway({
-            getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
-            readBranchGraph: async () => ({ ok: true, graph }),
-            localOperation: async (_id, request, token) => {
-                calls.push({ request: request as CompositionRequest, token })
-                if (token)
-                    return { ok: true, result: { type: "result", command: "local", status: "performed" } }
-                const composition: CompositionPreview = {
-                    branches: ["feature/laneway", "child"],
-                    removed: [],
-                    conflicts: [],
-                    published: [],
-                    skipped: [],
-                    noop: false,
-                    commits: [{ objectId: feature.tip, subject: "Laneway work" }],
-                    ...review,
-                }
-                return {
-                    ok: true,
-                    result: {
-                        type: "result",
-                        command: "local-preview",
-                        status: "preview",
-                        preview: {
-                            token: `reviewed-${calls.length}`,
-                            affected: [],
-                            uniqueCommits: false,
-                            unborn: false,
-                            suggestedBranch: "",
-                            staged: false,
-                            files: [],
-                            stashes: [],
-                            worktrees: [],
-                            composition,
-                        },
-                    },
-                }
-            },
-        })
-        return { api, calls, review: (value: Partial<CompositionPreview>) => review = value }
-    }
-    function drag(container: HTMLElement, from: string, to: string) {
-        const transfer = new (window as unknown as { DataTransfer: new() => DataTransfer }).DataTransfer()
-        const event = (type: string) => {
-            const value = new MouseEvent(type, { bubbles: true, cancelable: true })
-            Object.defineProperty(value, "dataTransfer", { value: transfer })
-            return value
-        }
-        const source = container.querySelector<HTMLElement>(`[data-node-id="branch:refs/heads/${from}"]`)!
-        const target = container.querySelector<HTMLElement>(`[data-node-id="branch:refs/heads/${to}"]`)!
-        source.dispatchEvent(event("dragstart"))
-        const over = event("dragover")
-        target.dispatchEvent(over)
-        const highlighted = target.classList.contains("rebase-target")
-        if (over.defaultPrevented)
-            target.dispatchEvent(event("drop"))
-        source.dispatchEvent(event("dragend"))
-        return { accepted: over.defaultPrevented, highlighted }
-    }
-    const notice = (container: HTMLElement) => container.querySelector(".notice:not([hidden])")?.textContent ?? ""
-    const dialog = (container: HTMLElement) => container.querySelector<HTMLElement>("dialog.branch-rebase")
-    const row = (container: HTMLElement, name: string) => container.querySelector<HTMLElement>(`[data-node-id="branch:refs/heads/${name}"]`)!
-    const feature = { kind: "branch" as const, branch: "refs/heads/feature/laneway", tip: "2".repeat(40) }
-    const team = { kind: "branch" as const, branch: "refs/heads/other/team", tip: "3".repeat(40) }
-
-    test("rebases a dropped branch with its dependents straight away when nothing needs deciding", async () => {
-        const { api, calls } = scenario()
-        const view = render(api)
-        try {
-            await flush(view.root)
-            // The Primary Branch has no Base to bound its commits, and a branch can't land on one stacked on it.
-            expect(drag(view.container, "main", "feature/laneway").accepted).toBe(false)
-            expect(drag(view.container, "feature/laneway", "child").accepted).toBe(false)
-            expect(calls).toEqual([])
-            expect(drag(view.container, "feature/laneway", "other/team")).toEqual({ accepted: true, highlighted: true })
-            await flush(view.root)
-            expect(row(view.container, "other/team").classList.contains("rebase-target")).toBe(false)
-            expect(dialog(view.container)).toBeNull()
-            expect(calls.map(call => [call.request.source, call.request.target, call.request.descendants, call.token])).toEqual([[
-                feature,
-                team,
-                true,
-                undefined,
-            ], [feature, team, true, "reviewed-1"]])
-            expect(notice(view.container)).toContain("Rebased feature/laneway and child onto other/team.")
-        } finally {
-            view.dispose()
-        }
-    })
-
-    test("asks which tip to rebase onto when the destination's local tip lags its upstream", async () => {
-        const { api, calls } = scenario(graph => {
-            Object.assign(graph.branches[0], { upstreamRef: "refs/remotes/origin/main", upstreamTip, behind: 2, remoteRefs: ["refs/remotes/origin/main"] })
-        })
-        const view = render(api)
-        try {
-            await flush(view.root)
-            drag(view.container, "feature/laneway", "main")
-            await flush(view.root)
-            const shown = dialog(view.container)!
-            expect(shown.textContent).toContain("Local tip, 2 commits behind origin/main")
-            expect(shown.textContent).toContain("1 commit since main")
-            expect(shown.textContent).toContain("Laneway work")
-            expect(calls.map(call => call.request.target)).toEqual([{ kind: "branch", branch: "refs/heads/main", tip: "1".repeat(40) }])
-            const upstream = [...shown.querySelectorAll<HTMLInputElement>("input[type=radio]")][1]
-            upstream.checked = true
-            upstream.dispatchEvent(new Event("change", { bubbles: true }))
-            await flush(view.root)
-            expect(calls.at(-1)?.request.target).toEqual({ kind: "branch", branch: "refs/remotes/origin/main", tip: upstreamTip })
-            click(button(dialog(view.container)!, "Rebase"))
-            await flush(view.root)
-            expect(calls.at(-1)).toMatchObject({ token: "reviewed-2", request: { target: { branch: "refs/remotes/origin/main" } } })
-            expect(dialog(view.container)).toBeNull()
-            expect(notice(view.container)).toContain("onto origin/main.")
-        } finally {
-            view.dispose()
-        }
-    })
-
-    test("confirms published rewrites, can leave dependents behind, and opens conflicts to resolve now", async () => {
-        const { api, calls, review } = scenario()
-        const view = render(api)
-        try {
-            await flush(view.root)
-            review({ published: ["feature/laneway"] })
-            drag(view.container, "feature/laneway", "other/team")
-            await flush(view.root)
-            expect(dialog(view.container)!.textContent).toContain("Rewrites history already published on feature/laneway")
-            const dependents = dialog(view.container)!.querySelector<HTMLInputElement>("input[type=checkbox]")!
-            expect(dependents.parentElement?.textContent).toContain("Move dependent branches too: child")
-            review({ published: ["feature/laneway"], branches: ["feature/laneway"] })
-            dependents.checked = false
-            dependents.dispatchEvent(new Event("change", { bubbles: true }))
-            await flush(view.root)
-            expect(calls.at(-1)?.request.descendants).toBe(false)
-            // The dependents stay on offer after a review that leaves them out.
-            expect(dialog(view.container)!.textContent).toContain("Move dependent branches too: child")
-            click(button(dialog(view.container)!, "Rebase"))
-            await flush(view.root)
-            expect(calls.at(-1)).toMatchObject({ token: "reviewed-2", request: { descendants: false, allowConflicts: false } })
-            expect(notice(view.container)).toContain("Rebased feature/laneway onto other/team.")
-
-            review({ conflicts: [{ subject: "commit 22222222", files: ["src/file.txt"] }] })
-            drag(view.container, "feature/laneway", "other/team")
-            await flush(view.root)
-            expect(dialog(view.container)!.textContent).toContain("Conflicts in commit 22222222: src/file.txt")
-            click(button(dialog(view.container)!, "Continue and resolve now"))
-            await flush(view.root)
-            expect(calls.at(-1)).toMatchObject({ token: "reviewed-4", request: { allowConflicts: true } })
-            expect(view.container.querySelector("[data-column-id='branch:refs/heads/feature/laneway']")).not.toBeNull()
-        } finally {
-            view.dispose()
-        }
-    })
-
-    test("shows each branch sharing a tip as its own row to open, drag, and drop onto", async () => {
-        const { api, calls } = scenario(graph => {
-            Object.assign(graph.branches[1], {
-                localRefs: ["refs/heads/feature/laneway", "refs/heads/feature/sibling"],
-                refs: ["refs/heads/feature/laneway", "refs/heads/feature/sibling"],
-                aliases: ["feature/laneway", "feature/sibling"],
-            })
-        })
-        const sibling = { kind: "branch" as const, branch: "refs/heads/feature/sibling", tip: "2".repeat(40) }
-        const view = render(api)
-        try {
-            await flush(view.root)
-            const rows = [...view.container.querySelectorAll<HTMLElement>(".graph-row")].map(row => row.dataset.nodeId)
-            expect(rows.indexOf("branch:refs/heads/feature/sibling")).toBe(rows.indexOf("branch:refs/heads/feature/laneway") + 1)
-            // One commit's node spans both rows, so siblings don't read as a stack.
-            expect(row(view.container, "feature/laneway").querySelector(".shared-commit")).not.toBeNull()
-            expect(row(view.container, "feature/sibling").querySelector(".shared-commit")).not.toBeNull()
-            expect(row(view.container, "other/team").querySelector(".shared-commit")).toBeNull()
-
-            // Neither sibling lands on the other or on a branch stacked on their shared tip.
-            expect(drag(view.container, "feature/sibling", "feature/laneway").accepted).toBe(false)
-            expect(drag(view.container, "feature/laneway", "feature/sibling").accepted).toBe(false)
-            expect(drag(view.container, "feature/sibling", "child").accepted).toBe(false)
-            expect(drag(view.container, "other/team", "feature/sibling").accepted).toBe(true)
-            await flush(view.root)
-            expect(calls.at(-1)?.request.target).toEqual(sibling)
-            expect(drag(view.container, "feature/sibling", "other/team").accepted).toBe(true)
-            await flush(view.root)
-            expect(calls.at(-1)?.request).toMatchObject({ source: sibling, target: team })
-
-            click(row(view.container, "feature/sibling").querySelector<HTMLButtonElement>(".open-branch")!)
-            await flush(view.root)
-            expect(view.container.querySelector("[data-column-id='branch:refs/heads/feature/sibling']")).not.toBeNull()
-            expect(view.container.querySelector("[data-column-id='branch:refs/heads/feature/laneway']")).toBeNull()
-
-            // Keyboard actions on the selected row act on that identity, not the one leading its tip.
-            view.container.querySelector<HTMLElement>(".graph-rows")!.dispatchEvent(new KeyboardEvent("keydown", { key: "F2", bubbles: true }))
-            await flush(view.root)
-            expect([...view.container.querySelectorAll<HTMLInputElement>("input")].some(input => input.value == "feature/sibling")).toBe(true)
-        } finally {
-            view.dispose()
-        }
-    })
-
-    test("chooses a destination by keyboard or from the context menu", async () => {
-        const { api, calls } = scenario()
-        const view = render(api)
-        try {
-            await flush(view.root)
-            const rows = view.container.querySelector<HTMLElement>(".graph-rows")!
-            click(row(view.container, "feature/laneway"))
-            await flush(view.root)
-            rows.dispatchEvent(new KeyboardEvent("keydown", { key: "m", bubbles: true }))
-            await flush(view.root)
-            expect(row(view.container, "feature/laneway").classList.contains("rebase-source")).toBe(true)
-            expect(notice(view.container)).toContain("Rebase feature/laneway · Choose a destination branch")
-            // Enter on the source itself only explains what to choose.
-            rows.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
-            await flush(view.root)
-            expect(calls).toEqual([])
-            expect(notice(view.container)).toContain("Choose a branch other than feature/laneway")
-            window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
-            await flush(view.root)
-            expect(row(view.container, "feature/laneway").classList.contains("rebase-source")).toBe(false)
-
-            row(view.container, "feature/laneway").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }))
-            await flush(view.root)
-            click(button(view.container, "Rebase onto…"))
-            await flush(view.root)
-            expect(row(view.container, "feature/laneway").classList.contains("rebase-source")).toBe(true)
-            click(row(view.container, "other/team"))
-            await flush(view.root)
-            expect(calls.map(call => call.request.target)).toEqual([team, team])
-            expect(row(view.container, "feature/laneway").classList.contains("rebase-source")).toBe(false)
-        } finally {
-            view.dispose()
-        }
-    })
-})

@@ -6,13 +6,15 @@ export interface FileChange {
     previousPath?: string
 }
 export function parseFileChanges(raw: string): FileChange[] {
-    const fields = raw.split("\0")
-    const changes: FileChange[] = []
+    let fields = raw.split("\0")
+    let changes: FileChange[] = []
+
     for (let index = 0; index < fields.length - 1;) {
-        const status = fields[index++]
-        const before = fields[index++]
+        let status = fields[index++]
+        let before = fields[index++]
         changes.push(/^[RC]/.test(status) ? { status, path: fields[index++], previousPath: before } : { status, path: before })
     }
+
     return changes
 }
 /** Evidence only: shared text and co-change never assert a unique origin. */
@@ -23,17 +25,19 @@ export function rankRelatedFiles(
     changes: FileChange[],
     contents: Map<string, string>,
 ): RelatedFile[] {
-    const anchorLines = new Set((contents.get(anchor) ?? "").split("\n").map(line => line.trim()).filter(line => line.length >= 12))
-    const previousPath = changes.find(change => change.path == anchor)?.previousPath
-    const predecessor: RelatedFile[] = previousPath && parentId ? [{ path: previousPath, objectId: parentId, evidence: "rename/copy", score: 100 }] : []
+    let anchorLines = new Set((contents.get(anchor) ?? "").split("\n").map(line => line.trim()).filter(line => line.length >= 12))
+    let previousPath = changes.find(change => change.path == anchor)?.previousPath
+    let predecessor: RelatedFile[] = previousPath && parentId ? [{ path: previousPath, objectId: parentId, evidence: "rename/copy", score: 100 }] : []
+
     return [
         ...predecessor,
         ...changes.filter(change => change.path != anchor && change.path != previousPath).map(change => {
-            const origin = change.status == "D" && parentId ? parentId : objectId
+            let origin = change.status == "D" && parentId ? parentId : objectId
             if (change.previousPath == anchor || changes.some(other => other.path == anchor && other.previousPath == change.path))
                 return { path: change.path, objectId: origin, evidence: "rename/copy" as const, score: 100 }
-            const text = contents.get(change.path) ?? ""
-            const shared = new Set(text.split("\n").map(line => line.trim()).filter(line => anchorLines.has(line))).size
+
+            let text = contents.get(change.path) ?? ""
+            let shared = new Set(text.split("\n").map(line => line.trim()).filter(line => anchorLines.has(line))).size
             return {
                 path: change.path,
                 objectId: origin,

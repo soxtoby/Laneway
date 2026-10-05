@@ -1,6 +1,26 @@
 import type { RecoveryRequest, WorktreeRecovery } from "@laneway/shared"
 import { css, type Handle, on } from "remix/ui"
 
+let recoveryPanel = css({
+    alignSelf: "start",
+    margin: "12px",
+    padding: "14px",
+    border: "1px solid var(--warning-edge)",
+    borderRadius: "var(--radius-card)",
+    background: "var(--warning-wash)",
+    fontSize: "13px",
+    overflowWrap: "anywhere",
+    "& h3": { margin: "0 0 10px", fontSize: "14px", color: "var(--warning)" },
+    "& p": { margin: "0 0 12px", lineHeight: "1.5" },
+    "& .recovery-path, & details": { fontSize: "11px", color: "var(--muted)" },
+    "& .recovery-actions": { display: "flex", gap: "8px", marginBottom: "12px" },
+    "& .recovery-actions button": { minHeight: "32px", padding: "6px 12px", borderRadius: "var(--radius-control)", fontSize: "12px" },
+    "& .recovery-help": { color: "var(--muted)", fontSize: "12px" },
+    "& .recovery-error": { color: "var(--danger)" },
+    "& summary": { cursor: "pointer" },
+    "& details p": { margin: "8px 0 0" },
+})
+
 export function WorktreeRecoveryPanel(
     handle: Handle<{
         recovery: WorktreeRecovery
@@ -34,23 +54,3 @@ export function WorktreeRecoveryPanel(
         </section>
     )
 }
-
-const recoveryPanel = css({
-    alignSelf: "start",
-    margin: "12px",
-    padding: "14px",
-    border: "1px solid var(--warning-edge)",
-    borderRadius: "var(--radius-card)",
-    background: "var(--warning-wash)",
-    fontSize: "13px",
-    overflowWrap: "anywhere",
-    "& h3": { margin: "0 0 10px", fontSize: "14px", color: "var(--warning)" },
-    "& p": { margin: "0 0 12px", lineHeight: "1.5" },
-    "& .recovery-path, & details": { fontSize: "11px", color: "var(--muted)" },
-    "& .recovery-actions": { display: "flex", gap: "8px", marginBottom: "12px" },
-    "& .recovery-actions button": { minHeight: "32px", padding: "6px 12px", borderRadius: "var(--radius-control)", fontSize: "12px" },
-    "& .recovery-help": { color: "var(--muted)", fontSize: "12px" },
-    "& .recovery-error": { color: "var(--danger)" },
-    "& summary": { cursor: "pointer" },
-    "& details p": { margin: "8px 0 0" },
-})

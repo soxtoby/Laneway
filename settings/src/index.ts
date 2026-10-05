@@ -30,9 +30,10 @@ export function defaultSettingsPath(
 ) {
     if (platform == "win32")
         return resolve(environment.APPDATA ?? resolve(homedir(), "AppData", "Roaming"), "Laneway", "settings.json")
-    if (platform == "darwin")
+    else if (platform == "darwin")
         return resolve(homedir(), "Library", "Application Support", "Laneway", "settings.json")
-    return resolve(environment.XDG_CONFIG_HOME ?? resolve(homedir(), ".config"), "laneway", "settings.json")
+    else
+        return resolve(environment.XDG_CONFIG_HOME ?? resolve(homedir(), ".config"), "laneway", "settings.json")
 }
 
 export async function readSettings(path = defaultSettingsPath()): Promise<LanewaySettings> {
@@ -46,19 +47,22 @@ export async function readSettings(path = defaultSettingsPath()): Promise<Lanewa
     }
 
     try {
-        const value = JSON.parse(content) as unknown
+        let value = JSON.parse(content) as unknown
         if (!value || typeof value != "object" || Array.isArray(value))
             throw new Error("Settings must be an object.")
-        const record = value as Record<string, unknown>
+
+        let record = value as Record<string, unknown>
         if (record.version != 1)
             throw new Error("Unsupported settings version.")
         if (record.gitPath != undefined && !nonEmptyString(record.gitPath))
             throw new Error("gitPath must be a non-empty string.")
         if (record.virtualBranchPrefix != undefined && !nonEmptyString(record.virtualBranchPrefix))
             throw new Error("virtualBranchPrefix must be a non-empty string.")
-        const authorIdentities = parseAuthorIdentities(record.authorIdentities)
-        const appearance = parseAppearance(record.appearance)
-        const repositories = parseRepositories(record.repositories)
+
+        let authorIdentities = parseAuthorIdentities(record.authorIdentities)
+        let appearance = parseAppearance(record.appearance)
+        let repositories = parseRepositories(record.repositories)
+
         return {
             version: 1,
             gitPath: record.gitPath as string | undefined,
@@ -89,11 +93,13 @@ function parseAuthorIdentities(value: unknown): AuthorIdentitySettings | undefin
         return undefined
     if (!value || typeof value != "object" || Array.isArray(value))
         throw new Error("authorIdentities must be an object.")
-    const record = value as Record<string, unknown>
+
+    let record = value as Record<string, unknown>
     if (record.primary != undefined && !nonEmptyString(record.primary))
         throw new Error("authorIdentities.primary must be a non-empty string.")
     if (!Array.isArray(record.secondary) || !record.secondary.every(nonEmptyString))
         throw new Error("authorIdentities.secondary must contain non-empty strings.")
+
     return {
         primary: record.primary as string | undefined,
         secondary: [...new Set(record.secondary as string[])],
@@ -105,20 +111,24 @@ function parseRepositories(value: unknown): Record<string, RepositoryGraphSettin
         return undefined
     if (!value || typeof value != "object" || Array.isArray(value))
         throw new Error("repositories must be an object.")
-    const result: Record<string, RepositoryGraphSettings> = {}
-    for (const [repositoryId, settings] of Object.entries(value as Record<string, unknown>)) {
+
+    let result: Record<string, RepositoryGraphSettings> = {}
+    for (let [repositoryId, settings] of Object.entries(value as Record<string, unknown>)) {
         if (!repositoryId || !settings || typeof settings != "object" || Array.isArray(settings))
             throw new Error("repositories contains an invalid entry.")
-        const record = settings as Record<string, unknown>
+
+        let record = settings as Record<string, unknown>
         if (record.selectedRemote != undefined && !nonEmptyString(record.selectedRemote))
             throw new Error("selectedRemote must be a non-empty string.")
         if (!Array.isArray(record.remotePatterns) || !record.remotePatterns.every(nonEmptyString))
             throw new Error("remotePatterns must contain non-empty strings.")
+
         result[repositoryId] = {
             selectedRemote: record.selectedRemote as string | undefined,
             remotePatterns: [...new Set(record.remotePatterns as string[])],
         }
     }
+
     return result
 }
 
@@ -127,7 +137,7 @@ function nonEmptyString(value: unknown): value is string {
 }
 
 export async function writeSettings(settings: LanewaySettings, path = defaultSettingsPath()) {
-    const temporaryPath = `${path}.${crypto.randomUUID()}.tmp`
+    let temporaryPath = `${path}.${crypto.randomUUID()}.tmp`
     try {
         await mkdir(dirname(path), { recursive: true })
         await writeFile(temporaryPath, `${JSON.stringify(settings, null, 4)}\n`, { encoding: "utf8", flag: "wx" })

@@ -4,13 +4,36 @@ export interface FileAction {
     label: string
     run(): void
 }
+let menu = css({
+    position: "fixed",
+    margin: 0,
+    width: "max-content",
+    maxWidth: "calc(100vw - 16px)",
+    padding: "4px",
+    borderRadius: "3px",
+    border: "1px solid var(--line-strong)",
+    background: "var(--panel)",
+    "& button": {
+        display: "block",
+        width: "100%",
+        textAlign: "left",
+        padding: "4px 8px",
+        border: 0,
+        background: "transparent",
+        color: "var(--text)",
+        font: "inherit",
+        cursor: "pointer",
+    },
+    "& button:hover": { background: "var(--control-hover)" },
+    "&::backdrop": { background: "transparent" },
+})
 export function FileMenu(handle: Handle<{ actions: FileAction[]; children?: RemixNode; class?: string }>) {
     let position: { x: number; y: number } | undefined
     return () => (
         <div
             class={handle.props.class}
             mix={ref((element, signal) => {
-                const open = (x: number, y: number) => {
+                let open = (x: number, y: number) => {
                     if (handle.props.actions.length) {
                         position = { x, y }
                         void handle.update()
@@ -25,7 +48,7 @@ export function FileMenu(handle: Handle<{ actions: FileAction[]; children?: Remi
                     if (event.key == "ContextMenu" || event.shiftKey && event.key == "F10") {
                         event.preventDefault()
                         event.stopPropagation()
-                        const bounds = element.getBoundingClientRect()
+                        let bounds = element.getBoundingClientRect()
                         open(bounds.left, bounds.top)
                     }
                 }, { signal })
@@ -41,7 +64,7 @@ export function FileMenu(handle: Handle<{ actions: FileAction[]; children?: Remi
                             element.style.left = `${position!.x}px`
                             element.style.top = `${position!.y}px`
                             element.showModal()
-                            const bounds = element.getBoundingClientRect()
+                            let bounds = element.getBoundingClientRect()
                             element.style.left = `${Math.max(0, Math.min(position!.x, window.innerWidth - bounds.width))}px`
                             element.style.top = `${Math.max(0, Math.min(position!.y, window.innerHeight - bounds.height))}px`
                         }),
@@ -73,26 +96,3 @@ export function FileMenu(handle: Handle<{ actions: FileAction[]; children?: Remi
         </div>
     )
 }
-const menu = css({
-    position: "fixed",
-    margin: 0,
-    width: "max-content",
-    maxWidth: "calc(100vw - 16px)",
-    padding: "4px",
-    borderRadius: "3px",
-    border: "1px solid var(--line-strong)",
-    background: "var(--panel)",
-    "& button": {
-        display: "block",
-        width: "100%",
-        textAlign: "left",
-        padding: "4px 8px",
-        border: 0,
-        background: "transparent",
-        color: "var(--text)",
-        font: "inherit",
-        cursor: "pointer",
-    },
-    "& button:hover": { background: "var(--control-hover)" },
-    "&::backdrop": { background: "transparent" },
-})

@@ -6,17 +6,17 @@ type View = NonNullable<ConflictResult["view"]>
 type File = View["files"][number]
 
 export function resolutionReview(view: View, file: File): FileDiffPage {
-    const lines: DiffLine[] = []
+    let lines: DiffLine[] = []
     let oldLine = 0, newLine = 0, hunk = -1
-    for (const text of file.diff.split("\n")) {
-        const header = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(text)
+    for (let text of file.diff.split("\n")) {
+        let header = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(text)
         if (header) {
             oldLine = Number(header[1])
             newLine = Number(header[2])
             hunk++
             lines.push({ id: lines.length, kind: "hunk", text, hunk })
         } else if (hunk >= 0 && /^[ +\-]/.test(text)) {
-            const kind = text[0] == "+" ? "addition" : text[0] == "-" ? "deletion" : "context"
+            let kind: DiffLine["kind"] = text[0] == "+" ? "addition" : text[0] == "-" ? "deletion" : "context"
             lines.push({
                 id: lines.length,
                 kind,
@@ -29,6 +29,7 @@ export function resolutionReview(view: View, file: File): FileDiffPage {
             lines.push({ id: lines.length, kind: "notice", text, hunk })
         }
     }
+
     return {
         source: { kind: "comparison", fromObjectId: view.reviewTree, toObjectId: view.resultTree },
         file: { path: file.path, status: "M", staged: false, unstaged: false, untracked: false, ignored: false, conflicted: false },

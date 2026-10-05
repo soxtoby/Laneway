@@ -3,64 +3,12 @@ import { access, mkdir, mkdtemp, open, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { resolve } from "node:path"
 
-const enginePath = resolve(import.meta.dir, "../bin/lane.exe")
-const testSettingsPath = resolve(tmpdir(), `lane-tests-${process.pid}.json`)
-
-async function runEngineAt(
-    cwd: string,
-    args: string[],
-    environment: Record<string, string> = {},
-) {
-    const child = Bun.spawn([enginePath, ...args], {
-        cwd,
-        env: { ...process.env, LANEWAY_SETTINGS_PATH: testSettingsPath, ...environment },
-        stderr: "pipe",
-        stdout: "pipe",
-    })
-
-    const [exitCode, stderr, stdout] = await Promise.all([child.exited, new Response(child.stderr).text(), new Response(child.stdout).text()])
-
-    return { exitCode, stderr, stdout }
-}
-
-async function runEngine(...args: string[]) {
-    return runEngineAt(resolve(import.meta.dir, "../.."), args)
-}
-
-function runGitAt(cwd: string, ...args: string[]) {
-    return Bun.spawnSync(["git", ...args], { cwd, stderr: "pipe", stdout: "pipe" })
-}
-
-async function createRepository(objectFormat: "sha1" | "sha256" = "sha1") {
-    const repository = await mkdtemp(resolve(tmpdir(), "laneway-mutation-"))
-    expect(runGitAt(repository, "init", "--quiet", `--object-format=${objectFormat}`).exitCode).toBe(0)
-    expect(runGitAt(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
-    expect(runGitAt(repository, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
-    await writeFile(resolve(repository, "README.md"), "initial\n")
-    expect(runGitAt(repository, "add", "README.md").exitCode).toBe(0)
-    expect(runGitAt(repository, "commit", "--quiet", "-m", "Initial").exitCode).toBe(0)
-    return repository
-}
-
-async function waitForFile(path: string) {
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-        try {
-            await access(path)
-            return
-        } catch {
-            await Bun.sleep(20)
-        }
-    }
-    throw new Error(`Timed out waiting for ${path}`)
-}
-
-function parseNdjson(output: string): unknown[] {
-    return output.trimEnd().split("\n").map(line => JSON.parse(line))
-}
+let enginePath = resolve(import.meta.dir, "../bin/lane.exe")
+let testSettingsPath = resolve(tmpdir(), `lane-tests-${process.pid}.json`)
 
 describe("Laneway Engine executable", () => {
     test("reports its version", async () => {
-        const result = await runEngine("--version")
+        let result = await runEngine("--version")
 
         expect(result).toEqual({
             exitCode: 0,
@@ -70,7 +18,7 @@ describe("Laneway Engine executable", () => {
     })
 
     test("echo writes human-readable progress and its result", async () => {
-        const result = await runEngine("echo", "Hello, Laneway", "--delay-ms", "0")
+        let result = await runEngine("echo", "Hello, Laneway", "--delay-ms", "0")
 
         expect(result).toEqual({
             exitCode: 0,
@@ -80,7 +28,7 @@ describe("Laneway Engine executable", () => {
     })
 
     test("echo streams machine-readable progress and its result", async () => {
-        const result = await runEngine(
+        let result = await runEngine(
             "echo",
             "Hello, Laneway",
             "--delay-ms",
@@ -106,7 +54,7 @@ describe("Laneway Engine executable", () => {
     })
 
     test("echo uses its default payload when only options are passed", async () => {
-        const result = await runEngine("echo", "--delay-ms", "0", "--json")
+        let result = await runEngine("echo", "--delay-ms", "0", "--json")
 
         expect(result.exitCode).toBe(0)
         expect(parseNdjson(result.stdout).at(-1)).toEqual({
@@ -117,7 +65,7 @@ describe("Laneway Engine executable", () => {
     })
 
     test("echo acknowledges cancellation from stdin", async () => {
-        const process = Bun.spawn(
+        let process = Bun.spawn(
             [enginePath, "echo", "Too late", "--delay-ms", "1000", "--json"],
             { stdin: "pipe", stderr: "pipe", stdout: "pipe" },
         )
@@ -125,8 +73,8 @@ describe("Laneway Engine executable", () => {
         process.stdin.write("cancel\n")
         await process.stdin.end()
 
-        const [exitCode, stderr, stdout] = await Promise.all([process.exited, new Response(process.stderr).text(), new Response(process.stdout).text()])
-        const messages = parseNdjson(stdout)
+        let [exitCode, stderr, stdout] = await Promise.all([process.exited, new Response(process.stderr).text(), new Response(process.stdout).text()])
+        let messages = parseNdjson(stdout)
 
         expect(exitCode).toBe(3)
         expect(stderr).toBe("")
@@ -143,7 +91,7 @@ describe("Laneway Engine executable", () => {
     })
 
     test("unknown commands return a structured usage error", async () => {
-        const result = await runEngine("frobnicate", "--json")
+        let result = await runEngine("frobnicate", "--json")
 
         expect(result.exitCode).toBe(2)
         expect(result.stderr).toBe('Unknown command "frobnicate".\n')
@@ -156,7 +104,7 @@ describe("Laneway Engine executable", () => {
     })
 
     test("malformed options return a structured usage error", async () => {
-        const result = await runEngine(
+        let result = await runEngine(
             "echo",
             "Hello",
             "--delay-ms",
@@ -177,19 +125,21 @@ describe("Laneway Engine executable", () => {
     })
 
     test("a Laneway Operation can be undone and redone by later Engine processes", async () => {
-        const repository = await createRepository()
-        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
+        let repository = await createRepository()
+        let testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
 
         try {
-            const mutation = await runEngineAt(
+            let mutation = await runEngineAt(
                 repository,
                 ["test-mutation", "--value", "first", "--json"],
                 testEnvironment,
             )
+
             expect(mutation.exitCode).toBe(0)
             expect(runGitAt(repository, "show", "refs/laneway/test/fixture").stdout.toString()).toBe("first")
 
-            const undo = await runEngineAt(repository, ["undo", "--json"], testEnvironment)
+            let undo = await runEngineAt(repository, ["undo", "--json"], testEnvironment)
+
             expect(undo.exitCode).toBe(0)
             expect(parseNdjson(undo.stdout).at(-1)).toMatchObject({
                 type: "result",
@@ -198,7 +148,8 @@ describe("Laneway Engine executable", () => {
             })
             expect(runGitAt(repository, "rev-parse", "--verify", "--quiet", "refs/laneway/test/fixture").exitCode).toBe(1)
 
-            const redo = await runEngineAt(repository, ["redo", "--json"], testEnvironment)
+            let redo = await runEngineAt(repository, ["redo", "--json"], testEnvironment)
+
             expect(redo.exitCode).toBe(0)
             expect(parseNdjson(redo.stdout).at(-1)).toMatchObject({
                 type: "result",
@@ -207,7 +158,8 @@ describe("Laneway Engine executable", () => {
             })
             expect(runGitAt(repository, "show", "refs/laneway/test/fixture").stdout.toString()).toBe("first")
 
-            const history = await runEngineAt(repository, ["history", "--json"], testEnvironment)
+            let history = await runEngineAt(repository, ["history", "--json"], testEnvironment)
+
             expect(history.exitCode).toBe(0)
             expect(parseNdjson(history.stdout).at(-1)).toMatchObject({
                 type: "result",
@@ -230,16 +182,18 @@ describe("Laneway Engine executable", () => {
     })
 
     test("a Laneway Operation supports SHA-256 and an ephemeral Git path", async () => {
-        const repository = await createRepository("sha256")
-        const gitPath = Bun.which("git")
+        let repository = await createRepository("sha256")
+        let gitPath = Bun.which("git")
+
         expect(gitPath).toBeTruthy()
 
         try {
-            const mutation = await runEngineAt(
+            let mutation = await runEngineAt(
                 repository,
                 ["test-mutation", "--value", "sha256", "--git-path", gitPath!, "--json"],
                 { LANEWAY_ENABLE_TEST_COMMANDS: "1" },
             )
+
             expect(mutation.exitCode).toBe(0)
             expect(runGitAt(repository, "rev-parse", "refs/laneway/test/fixture").stdout.toString().trim()).toHaveLength(64)
             expect((await runEngineAt(repository, ["undo", "--git-path", gitPath!, "--json"])).exitCode).toBe(0)
@@ -249,8 +203,8 @@ describe("Laneway Engine executable", () => {
     })
 
     test("an external worktree change creates an undo boundary without changing refs", async () => {
-        const repository = await createRepository()
-        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
+        let repository = await createRepository()
+        let testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
 
         try {
             expect(
@@ -260,10 +214,11 @@ describe("Laneway Engine executable", () => {
                     testEnvironment,
                 )).exitCode,
             ).toBe(0)
-            const fixtureOid = runGitAt(repository, "rev-parse", "refs/laneway/test/fixture").stdout.toString().trim()
+
+            let fixtureOid = runGitAt(repository, "rev-parse", "refs/laneway/test/fixture").stdout.toString().trim()
 
             await writeFile(resolve(repository, "README.md"), "changed outside Laneway\n")
-            const undo = await runEngineAt(repository, ["undo", "--json"], testEnvironment)
+            let undo = await runEngineAt(repository, ["undo", "--json"], testEnvironment)
 
             expect(undo.exitCode).toBe(1)
             expect(parseNdjson(undo.stdout).at(-1)).toMatchObject({
@@ -273,7 +228,8 @@ describe("Laneway Engine executable", () => {
             })
             expect(runGitAt(repository, "rev-parse", "refs/laneway/test/fixture").stdout.toString().trim()).toBe(fixtureOid)
 
-            const history = await runEngineAt(repository, ["history", "--json"], testEnvironment)
+            let history = await runEngineAt(repository, ["history", "--json"], testEnvironment)
+
             expect(parseNdjson(history.stdout).at(-1)).toMatchObject({
                 undo: { available: false, reason: "worktree-changed" },
             })
@@ -283,19 +239,21 @@ describe("Laneway Engine executable", () => {
     })
 
     test("recover finalizes a mutation that crashed after its ref transaction", async () => {
-        const repository = await createRepository()
-        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
+        let repository = await createRepository()
+        let testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
 
         try {
-            const crashed = await runEngineAt(
+            let crashed = await runEngineAt(
                 repository,
                 ["test-mutation", "--value", "survived", "--crash-after", "refs-committed", "--json"],
                 testEnvironment,
             )
+
             expect(crashed.exitCode).toBe(86)
             expect(runGitAt(repository, "show", "refs/laneway/test/fixture").stdout.toString()).toBe("survived")
 
-            const recovery = await runEngineAt(repository, ["recover", "--json"], testEnvironment)
+            let recovery = await runEngineAt(repository, ["recover", "--json"], testEnvironment)
+
             expect(recovery.exitCode).toBe(0)
             expect(parseNdjson(recovery.stdout).at(-1)).toMatchObject({
                 type: "result",
@@ -312,8 +270,8 @@ describe("Laneway Engine executable", () => {
     })
 
     test("recover finalizes an undo that crashed after its ref transaction", async () => {
-        const repository = await createRepository()
-        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
+        let repository = await createRepository()
+        let testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
 
         try {
             expect(
@@ -324,15 +282,17 @@ describe("Laneway Engine executable", () => {
                 )).exitCode,
             ).toBe(0)
 
-            const crashed = await runEngineAt(
+            let crashed = await runEngineAt(
                 repository,
                 ["undo", "--crash-after", "refs-committed", "--json"],
                 testEnvironment,
             )
+
             expect(crashed.exitCode).toBe(86)
             expect(runGitAt(repository, "rev-parse", "--verify", "--quiet", "refs/laneway/test/fixture").exitCode).toBe(1)
 
-            const recovery = await runEngineAt(repository, ["recover", "--json"], testEnvironment)
+            let recovery = await runEngineAt(repository, ["recover", "--json"], testEnvironment)
+
             expect(recovery.exitCode).toBe(0)
             expect(parseNdjson(recovery.stdout).at(-1)).toMatchObject({
                 status: "recovered",
@@ -347,17 +307,19 @@ describe("Laneway Engine executable", () => {
     })
 
     test("lock cleanup preserves candidates still being written", async () => {
-        const repository = await createRepository()
-        const directory = resolve(repository, ".git", "laneway")
+        let repository = await createRepository()
+        let directory = resolve(repository, ".git", "laneway")
         await mkdir(directory)
-        const path = resolve(directory, "mutation.lock.candidate-writing")
-        const candidate = await open(path, "wx")
+        let path = resolve(directory, "mutation.lock.candidate-writing")
+        let candidate = await open(path, "wx")
         try {
             expect((await runEngineAt(repository, ["recover", "--json"])).exitCode).toBe(0)
             expect(await Bun.file(path).exists()).toBe(true)
+
             await candidate.writeFile(JSON.stringify({ pid: process.pid, token: "writing" }))
-            const stale = resolve(directory, "mutation.lock.candidate-dead")
+            let stale = resolve(directory, "mutation.lock.candidate-dead")
             await writeFile(stale, JSON.stringify({ pid: 2147483647, token: "dead" }))
+
             expect((await runEngineAt(repository, ["recover", "--json"])).exitCode).toBe(0)
             expect(await Bun.file(path).exists()).toBe(true)
             expect(await Bun.file(stale).exists()).toBe(false)
@@ -370,33 +332,36 @@ describe("Laneway Engine executable", () => {
     })
 
     test("a held repository lock can fail immediately and its operation can cancel safely", async () => {
-        const repository = await createRepository()
-        const testEnvironment = { ...process.env, LANEWAY_ENABLE_TEST_COMMANDS: "1" }
-        const lockPath = resolve(repository, ".git", "laneway", "mutation.lock")
+        let repository = await createRepository()
+        let testEnvironment = { ...process.env, LANEWAY_ENABLE_TEST_COMMANDS: "1" }
+        let lockPath = resolve(repository, ".git", "laneway", "mutation.lock")
 
         try {
-            const held = Bun.spawn(
+            let held = Bun.spawn(
                 [enginePath, "test-mutation", "--value", "cancelled", "--hold-after-intent-ms", "5000", "--json"],
                 { cwd: repository, env: testEnvironment, stdin: "pipe", stderr: "pipe", stdout: "pipe" },
             )
             await waitForFile(lockPath)
 
-            const blocked = await runEngineAt(
+            let blocked = await runEngineAt(
                 repository,
                 ["test-mutation", "--value", "blocked", "--no-wait", "--json"],
                 testEnvironment,
             )
+
             expect(blocked.exitCode).toBe(1)
             expect(parseNdjson(blocked.stdout).at(-1)).toMatchObject({ type: "error", code: "operation.locked" })
 
             held.stdin.write("cancel\n")
             await held.stdin.end()
-            const [exitCode, stdout] = await Promise.all([held.exited, new Response(held.stdout).text()])
+            let [exitCode, stdout] = await Promise.all([held.exited, new Response(held.stdout).text()])
+
             expect(exitCode).toBe(3)
             expect(parseNdjson(stdout).at(-1)).toMatchObject({ type: "cancelled", command: "test-mutation" })
             expect(runGitAt(repository, "rev-parse", "--verify", "--quiet", "refs/laneway/test/fixture").exitCode).toBe(1)
 
-            const recovery = await runEngineAt(repository, ["recover", "--json"], testEnvironment)
+            let recovery = await runEngineAt(repository, ["recover", "--json"], testEnvironment)
+
             expect(parseNdjson(recovery.stdout).at(-1)).toMatchObject({ status: "clean", recovered: [] })
         } finally {
             await rm(repository, { recursive: true, force: true })
@@ -404,12 +369,12 @@ describe("Laneway Engine executable", () => {
     })
 
     test("a Git lockfile blocks a Laneway mutation before refs change", async () => {
-        const repository = await createRepository()
-        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
+        let repository = await createRepository()
+        let testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
 
         try {
             await writeFile(resolve(repository, ".git", "index.lock"), "external Git owns this lock")
-            const mutation = await runEngineAt(
+            let mutation = await runEngineAt(
                 repository,
                 ["test-mutation", "--value", "blocked", "--json"],
                 testEnvironment,
@@ -428,12 +393,12 @@ describe("Laneway Engine executable", () => {
     })
 
     test("an unrelated .lock file in the Git directory does not block a Laneway mutation", async () => {
-        const repository = await createRepository()
-        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
+        let repository = await createRepository()
+        let testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
 
         try {
             await writeFile(resolve(repository, ".git", "project.lock"), "")
-            const mutation = await runEngineAt(
+            let mutation = await runEngineAt(
                 repository,
                 ["test-mutation", "--value", "allowed", "--json"],
                 testEnvironment,
@@ -448,19 +413,20 @@ describe("Laneway Engine executable", () => {
     })
 
     test("corrupt Operation History fails safely with a stable error", async () => {
-        const repository = await createRepository()
-        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
-        const head = runGitAt(repository, "rev-parse", "HEAD").stdout.toString().trim()
+        let repository = await createRepository()
+        let testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
+        let head = runGitAt(repository, "rev-parse", "HEAD").stdout.toString().trim()
 
         try {
-            const lanewayDirectory = resolve(repository, ".git", "laneway")
+            let lanewayDirectory = resolve(repository, ".git", "laneway")
             await mkdir(lanewayDirectory, { recursive: true })
             await writeFile(
                 resolve(lanewayDirectory, "history.jsonl"),
                 `${JSON.stringify({ schemaVersion: 1, type: "operation", executionId: "missing-operation" })}\n`,
             )
 
-            const history = await runEngineAt(repository, ["history", "--json"], testEnvironment)
+            let history = await runEngineAt(repository, ["history", "--json"], testEnvironment)
+
             expect(history.exitCode).toBe(1)
             expect(parseNdjson(history.stdout).at(-1)).toMatchObject({ type: "error", code: "operation.history-corrupt" })
             expect(runGitAt(repository, "rev-parse", "HEAD").stdout.toString().trim()).toBe(head)
@@ -470,9 +436,9 @@ describe("Laneway Engine executable", () => {
     })
 
     test("valid JSON corruption cannot redirect undo onto an ordinary branch", async () => {
-        const repository = await createRepository()
-        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
-        const head = runGitAt(repository, "rev-parse", "HEAD").stdout.toString().trim()
+        let repository = await createRepository()
+        let testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
+        let head = runGitAt(repository, "rev-parse", "HEAD").stdout.toString().trim()
 
         try {
             expect(
@@ -483,8 +449,8 @@ describe("Laneway Engine executable", () => {
                 )).exitCode,
             ).toBe(0)
 
-            const historyPath = resolve(repository, ".git", "laneway", "history.jsonl")
-            const event = JSON.parse(await Bun.file(historyPath).text()) as {
+            let historyPath = resolve(repository, ".git", "laneway", "history.jsonl")
+            let event = JSON.parse(await Bun.file(historyPath).text()) as {
                 operation: {
                     affectedRefs: string[]
                     affectedWorktrees: string[]
@@ -498,7 +464,8 @@ describe("Laneway Engine executable", () => {
             event.operation.worktreeChanges = []
             await writeFile(historyPath, `${JSON.stringify(event)}\n`)
 
-            const undo = await runEngineAt(repository, ["undo", "--json"])
+            let undo = await runEngineAt(repository, ["undo", "--json"])
+
             expect(undo.exitCode).toBe(1)
             expect(parseNdjson(undo.stdout).at(-1)).toMatchObject({ type: "error", code: "operation.history-corrupt" })
             expect(runGitAt(repository, "rev-parse", "refs/heads/master").stdout.toString().trim()).toBe(head)
@@ -508,11 +475,12 @@ describe("Laneway Engine executable", () => {
     })
 
     test("empty history is unavailable without being an error and unsafe overrides are rejected", async () => {
-        const repository = await createRepository()
+        let repository = await createRepository()
 
         try {
-            for (const command of ["undo", "redo"] as const) {
-                const result = await runEngineAt(repository, [command, "--json"])
+            for (let command of ["undo", "redo"] as const) {
+                let result = await runEngineAt(repository, [command, "--json"])
+
                 expect(result.exitCode).toBe(0)
                 expect(parseNdjson(result.stdout).at(-1)).toEqual({
                     type: "result",
@@ -530,28 +498,29 @@ describe("Laneway Engine executable", () => {
     })
 
     test("history centres ten entries and a new operation abandons the redo path", async () => {
-        const repository = await createRepository()
-        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
-        const operationIds: string[] = []
+        let repository = await createRepository()
+        let testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
+        let operationIds: string[] = []
 
         try {
             for (let index = 1; index <= 12; index += 1) {
-                const mutation = await runEngineAt(
+                let mutation = await runEngineAt(
                     repository,
                     ["test-mutation", "--value", `value-${index}`, "--json"],
                     testEnvironment,
                 )
-                const message = parseNdjson(mutation.stdout).at(-1) as { operation: { id: string } }
+                let message = parseNdjson(mutation.stdout).at(-1) as { operation: { id: string } }
                 operationIds.push(message.operation.id)
             }
             for (let index = 0; index < 4; index += 1)
                 expect((await runEngineAt(repository, ["undo", "--json"])).exitCode).toBe(0)
 
-            const history = parseNdjson((await runEngineAt(repository, ["history", "--json"])).stdout).at(-1) as {
+            let history = parseNdjson((await runEngineAt(repository, ["history", "--json"])).stdout).at(-1) as {
                 position: number
                 total: number
                 entries: Array<{ id: string; state: string; isNextUndo: boolean; isNextRedo: boolean }>
             }
+
             expect(history.position).toBe(8)
             expect(history.total).toBe(12)
             expect(history.entries).toHaveLength(10)
@@ -559,21 +528,25 @@ describe("Laneway Engine executable", () => {
             expect(history.entries.find(entry => entry.isNextUndo)?.id).toBe(operationIds[7])
             expect(history.entries.find(entry => entry.isNextRedo)?.id).toBe(operationIds[8])
 
-            const replacement = await runEngineAt(
+            let replacement = await runEngineAt(
                 repository,
                 ["test-mutation", "--value", "replacement", "--json"],
                 testEnvironment,
             )
+
             expect(replacement.exitCode).toBe(0)
-            const branched = parseNdjson((await runEngineAt(repository, ["history", "--json"])).stdout).at(-1) as {
+
+            let branched = parseNdjson((await runEngineAt(repository, ["history", "--json"])).stdout).at(-1) as {
                 position: number
                 total: number
                 redo: { available: boolean; reason: string }
             }
+
             expect(branched).toMatchObject({ position: 9, total: 9, redo: { available: false, reason: "empty" } })
 
-            for (const operationId of operationIds.slice(8)) {
-                const refs = runGitAt(repository, "for-each-ref", "--format=%(refname)", `refs/laneway/recovery/${operationId}/`)
+            for (let operationId of operationIds.slice(8)) {
+                let refs = runGitAt(repository, "for-each-ref", "--format=%(refname)", `refs/laneway/recovery/${operationId}/`)
+
                 expect(refs.stdout.toString()).toBe("")
             }
         } finally {
@@ -582,11 +555,12 @@ describe("Laneway Engine executable", () => {
     }, 30_000)
 
     test("ignored files stay outside recovery while index and ref changes create boundaries", async () => {
-        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
+        let testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
 
-        const ignoredRepository = await createRepository()
+        let ignoredRepository = await createRepository()
         try {
             await writeFile(resolve(ignoredRepository, ".gitignore"), "ignored.log\n")
+
             expect(runGitAt(ignoredRepository, "add", ".gitignore").exitCode).toBe(0)
             expect(runGitAt(ignoredRepository, "commit", "--quiet", "-m", "Ignore test log").exitCode).toBe(0)
             expect(
@@ -596,13 +570,15 @@ describe("Laneway Engine executable", () => {
                     testEnvironment,
                 )).exitCode,
             ).toBe(0)
+
             await writeFile(resolve(ignoredRepository, "ignored.log"), "not recoverable\n")
+
             expect((await runEngineAt(ignoredRepository, ["undo", "--json"])).exitCode).toBe(0)
         } finally {
             await rm(ignoredRepository, { recursive: true, force: true })
         }
 
-        const indexRepository = await createRepository()
+        let indexRepository = await createRepository()
         try {
             expect(
                 (await runEngineAt(
@@ -611,9 +587,13 @@ describe("Laneway Engine executable", () => {
                     testEnvironment,
                 )).exitCode,
             ).toBe(0)
+
             await writeFile(resolve(indexRepository, "README.md"), "staged outside Laneway\n")
+
             expect(runGitAt(indexRepository, "add", "README.md").exitCode).toBe(0)
-            const undo = await runEngineAt(indexRepository, ["undo", "--json"])
+
+            let undo = await runEngineAt(indexRepository, ["undo", "--json"])
+
             expect(parseNdjson(undo.stdout).at(-1)).toMatchObject({
                 code: "operation.precondition-failed",
                 details: { reason: "index-changed" },
@@ -622,7 +602,7 @@ describe("Laneway Engine executable", () => {
             await rm(indexRepository, { recursive: true, force: true })
         }
 
-        const refRepository = await createRepository()
+        let refRepository = await createRepository()
         try {
             expect(
                 (await runEngineAt(
@@ -632,8 +612,10 @@ describe("Laneway Engine executable", () => {
                 )).exitCode,
             ).toBe(0)
             expect(runGitAt(refRepository, "update-ref", "refs/laneway/test/fixture", "HEAD").exitCode).toBe(0)
-            const externalOid = runGitAt(refRepository, "rev-parse", "refs/laneway/test/fixture").stdout.toString().trim()
-            const undo = await runEngineAt(refRepository, ["undo", "--json"])
+
+            let externalOid = runGitAt(refRepository, "rev-parse", "refs/laneway/test/fixture").stdout.toString().trim()
+            let undo = await runEngineAt(refRepository, ["undo", "--json"])
+
             expect(parseNdjson(undo.stdout).at(-1)).toMatchObject({
                 code: "operation.precondition-failed",
                 details: { reason: "ref-changed" },
@@ -645,10 +627,10 @@ describe("Laneway Engine executable", () => {
     })
 
     test("linked worktrees share repository-wide Operation History", async () => {
-        const repository = await createRepository()
-        const linkedContainer = await mkdtemp(resolve(tmpdir(), "laneway-linked-"))
-        const linkedWorktree = resolve(linkedContainer, "worktree")
-        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
+        let repository = await createRepository()
+        let linkedContainer = await mkdtemp(resolve(tmpdir(), "laneway-linked-"))
+        let linkedWorktree = resolve(linkedContainer, "worktree")
+        let testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
 
         try {
             expect(runGitAt(repository, "worktree", "add", "--quiet", "-b", "linked-test", linkedWorktree).exitCode).toBe(0)
@@ -660,7 +642,8 @@ describe("Laneway Engine executable", () => {
                 )).exitCode,
             ).toBe(0)
 
-            const linkedHistory = parseNdjson((await runEngineAt(linkedWorktree, ["history", "--json"])).stdout).at(-1)
+            let linkedHistory = parseNdjson((await runEngineAt(linkedWorktree, ["history", "--json"])).stdout).at(-1)
+
             expect(linkedHistory).toMatchObject({ position: 1, total: 1 })
             expect((await runEngineAt(linkedWorktree, ["undo", "--json"])).exitCode).toBe(0)
             expect(runGitAt(repository, "rev-parse", "--verify", "--quiet", "refs/laneway/test/fixture").exitCode).toBe(1)
@@ -672,11 +655,11 @@ describe("Laneway Engine executable", () => {
     })
 
     test("every journal boundary recovers apply, undo, and redo idempotently", async () => {
-        const phases = ["intent", "recovery-retained", "preconditions-verified", "refs-committed", "history-committed", "finalized"]
-        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
+        let phases = ["intent", "recovery-retained", "preconditions-verified", "refs-committed", "history-committed", "finalized"]
+        let testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
 
-        for (const phase of phases) {
-            const repository = await createRepository()
+        for (let phase of phases) {
+            let repository = await createRepository()
             try {
                 expect(
                     (await runEngineAt(
@@ -714,15 +697,16 @@ describe("Laneway Engine executable", () => {
     }, 60_000)
 
     test("corrupt recovery journal cannot change an ordinary branch", async () => {
-        const repository = await createRepository()
-        const head = runGitAt(repository, "rev-parse", "HEAD").stdout.toString().trim()
+        let repository = await createRepository()
+        let head = runGitAt(repository, "rev-parse", "HEAD").stdout.toString().trim()
 
         try {
-            const lanewayDirectory = resolve(repository, ".git", "laneway")
+            let lanewayDirectory = resolve(repository, ".git", "laneway")
             await mkdir(lanewayDirectory, { recursive: true })
             await writeFile(resolve(lanewayDirectory, "journal.jsonl"), "{not-json\n")
 
-            const recovery = await runEngineAt(repository, ["recover", "--json"])
+            let recovery = await runEngineAt(repository, ["recover", "--json"])
+
             expect(recovery.exitCode).toBe(1)
             expect(parseNdjson(recovery.stdout).at(-1)).toMatchObject({ type: "error", code: "operation.journal-corrupt" })
             expect(runGitAt(repository, "rev-parse", "HEAD").stdout.toString().trim()).toBe(head)
@@ -732,8 +716,8 @@ describe("Laneway Engine executable", () => {
     })
 
     test("recovery refuses to resume when crash preconditions no longer match", async () => {
-        const repository = await createRepository()
-        const testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
+        let repository = await createRepository()
+        let testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
 
         try {
             expect(
@@ -743,9 +727,11 @@ describe("Laneway Engine executable", () => {
                     testEnvironment,
                 )).exitCode,
             ).toBe(86)
+
             await writeFile(resolve(repository, "README.md"), "changed after crash\n")
 
-            const recovery = await runEngineAt(repository, ["recover", "--json"])
+            let recovery = await runEngineAt(repository, ["recover", "--json"])
+
             expect(recovery.exitCode).toBe(1)
             expect(parseNdjson(recovery.stdout).at(-1)).toMatchObject({
                 type: "error",
@@ -758,3 +744,59 @@ describe("Laneway Engine executable", () => {
         }
     })
 })
+
+async function runEngine(...args: string[]) {
+    return runEngineAt(resolve(import.meta.dir, "../.."), args)
+}
+
+async function runEngineAt(
+    cwd: string,
+    args: string[],
+    environment: Record<string, string> = {},
+) {
+    let child = Bun.spawn([enginePath, ...args], {
+        cwd,
+        env: { ...process.env, LANEWAY_SETTINGS_PATH: testSettingsPath, ...environment },
+        stderr: "pipe",
+        stdout: "pipe",
+    })
+
+    let [exitCode, stderr, stdout] = await Promise.all([child.exited, new Response(child.stderr).text(), new Response(child.stdout).text()])
+
+    return { exitCode, stderr, stdout }
+}
+
+async function createRepository(objectFormat: "sha1" | "sha256" = "sha1") {
+    let repository = await mkdtemp(resolve(tmpdir(), "laneway-mutation-"))
+
+    expect(runGitAt(repository, "init", "--quiet", `--object-format=${objectFormat}`).exitCode).toBe(0)
+    expect(runGitAt(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
+    expect(runGitAt(repository, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
+
+    await writeFile(resolve(repository, "README.md"), "initial\n")
+
+    expect(runGitAt(repository, "add", "README.md").exitCode).toBe(0)
+    expect(runGitAt(repository, "commit", "--quiet", "-m", "Initial").exitCode).toBe(0)
+
+    return repository
+}
+
+function runGitAt(cwd: string, ...args: string[]) {
+    return Bun.spawnSync(["git", ...args], { cwd, stderr: "pipe", stdout: "pipe" })
+}
+
+async function waitForFile(path: string) {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+        try {
+            await access(path)
+            return
+        } catch {
+            await Bun.sleep(20)
+        }
+    }
+    throw new Error(`Timed out waiting for ${path}`)
+}
+
+function parseNdjson(output: string): unknown[] {
+    return output.trimEnd().split("\n").map(line => JSON.parse(line))
+}

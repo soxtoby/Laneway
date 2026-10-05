@@ -10,6 +10,117 @@ import { LanewayHeader, Welcome } from "./workspace"
 
 type AppState = Awaited<ReturnType<Window["laneway"]["getState"]>>
 
+let bootstrapState = css({
+    height: "100%",
+    padding: "32px",
+    display: "grid",
+    placeItems: "center",
+    overflow: "auto",
+    textAlign: "center",
+})
+
+let bootstrapStateP = css({
+    color: "var(--muted)",
+})
+
+let shell = css({
+    "&.rail-collapsed": { "--rail": "var(--rail-collapsed)" },
+    width: "100%",
+    height: "100%",
+    display: "grid",
+    gridTemplateRows: "var(--toolbar) minmax(0, 1fr)",
+    overflow: "hidden",
+})
+
+let workspaceRecovery = css({
+    position: "fixed",
+    zIndex: "20",
+    right: "14px",
+    bottom: "12px",
+    left: "14px",
+    padding: "11px 12px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "16px",
+    border: "1px solid var(--warning-edge)",
+    borderRadius: "6px",
+    background: "var(--warning-raised)",
+    boxShadow: "var(--shadow-popover)",
+})
+
+let workspaceRecoveryStrong = css({
+    fontSize: "13px",
+})
+
+let workspaceRecoveryP = css({
+    margin: "4px 0 0",
+    color: "var(--muted)",
+    fontSize: "12px",
+})
+
+let workspaceRecoveryButton = css({
+    minHeight: "28px",
+    padding: "0 14px",
+    borderRadius: "4px",
+    fontSize: "13px",
+    fontWeight: "500",
+    letterSpacing: "0",
+    textTransform: "none",
+    color: "var(--text)",
+    border: "1px solid var(--line-strong)",
+    background: "var(--control)",
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+})
+
+let workspace = css({
+    height: "100%",
+    display: "grid",
+    gridTemplateColumns: "var(--rail) minmax(0, 1fr)",
+})
+
+let missingCopy = css({
+    minWidth: "0",
+    padding: "28px",
+    display: "grid",
+    alignContent: "safe center",
+    justifyItems: "start",
+    overflow: "auto",
+})
+
+let missingRepositoryEyebrow = css({
+    maxWidth: "70ch",
+    overflowWrap: "anywhere",
+    color: "var(--muted)",
+    fontFamily: "var(--mono)",
+    fontSize: "12px",
+    lineHeight: "1.5",
+})
+
+let missingCopyH1 = css({
+    margin: "0 0 10px",
+    fontSize: "18px",
+    fontWeight: "600",
+})
+
+let missingCopyP = css({
+    maxWidth: "70ch",
+    overflowWrap: "anywhere",
+    color: "var(--muted)",
+    fontFamily: "var(--mono)",
+    fontSize: "12px",
+    lineHeight: "1.5",
+})
+
+let dialogActions = css({
+    padding: "0",
+    justifyContent: "flex-start",
+    borderTop: "0",
+    background: "transparent",
+})
+
 export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
     activateSelectionsOnMouseDown(document, handle.signal)
     let initial: AppState | undefined
@@ -39,10 +150,11 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
                 )
         }
 
-        const currentWorkspace = workspace
-        const active = currentWorkspace.repositories.find(repository => repository.id == currentWorkspace.activeRepositoryId)
-        const busy = openingRepository || repositoryEntry.busy
-        const repositoryActions = active?.status == "available" ? branchWorkspace.repositoryActions(active.id, active.info.mainWorktree) : undefined
+        let currentWorkspace = workspace
+        let active = currentWorkspace.repositories.find(repository => repository.id == currentWorkspace.activeRepositoryId)
+        let busy = openingRepository || repositoryEntry.busy
+        let repositoryActions = active?.status == "available" ? branchWorkspace.repositoryActions(active.id, active.info.mainWorktree) : undefined
+
         return (
             <>
                 <main class={`shell ${railCollapsed ? "rail-collapsed" : ""}`} mix={shell}>
@@ -114,12 +226,14 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
     async function bootstrap() {
         fatalError = undefined
         await handle.update()
+
         try {
             initial = await handle.props.api.getState()
             applyAppearance(initial.appearance)
             workspace = initial.workspace
             if (workspace.persistenceError?.code == "workspace.partial")
                 notify({ code: workspace.persistenceError.code, message: workspace.persistenceError.message })
+
             gitSettings = createGitSettings({
                 api: handle.props.api,
                 initial: initial.settings,
@@ -151,19 +265,15 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
                     activateWorkspaceRepository()
                 },
             })
+
             if (workspace.activeRepositoryId)
                 branchWorkspace.activate(workspace.activeRepositoryId)
-            const unsubscribe = handle.props.api.onEntryProgress(updateProgress)
+            let unsubscribe = handle.props.api.onEntryProgress(updateProgress)
             handle.signal.addEventListener("abort", unsubscribe, { once: true })
         } catch (error) {
             fatalError = errorMessage(error)
         }
         await handle.update()
-    }
-
-    function applyAppearance(next: Appearance) {
-        appearance = next
-        document.documentElement.dataset.appearance = next
     }
 
     async function toggleAppearance() {
@@ -177,29 +287,19 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
         }
     }
 
+    function applyAppearance(next: Appearance) {
+        appearance = next
+        document.documentElement.dataset.appearance = next
+    }
+
     function updateProgress(progress: EntryProgress) {
         repositoryEntry?.updateProgress(progress)
-    }
-
-    function notify(nextNotice: NoticeState) {
-        notice = nextNotice
-        // Withdraws this notice only if nothing has replaced it since.
-        return () => {
-            if (notice == nextNotice)
-                notice = undefined
-        }
-    }
-
-    async function setOpeningRepository(value: boolean) {
-        openingRepository = value
-        document.body.classList.toggle("busy", value)
-        await handle.update()
     }
 
     async function openRepository() {
         await setOpeningRepository(true)
         try {
-            const result = await handle.props.api.openRepository()
+            let result = await handle.props.api.openRepository()
             if (result.ok) {
                 workspace = result.workspace
                 activateWorkspaceRepository()
@@ -229,6 +329,12 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
         }
     }
 
+    async function setOpeningRepository(value: boolean) {
+        openingRepository = value
+        document.body.classList.toggle("busy", value)
+        await handle.update()
+    }
+
     async function closeRepository(id: string) {
         workspace = await handle.props.api.closeRepository(id)
         activateWorkspaceRepository()
@@ -236,7 +342,7 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
     }
 
     function activateWorkspaceRepository() {
-        const activeId = workspace?.activeRepositoryId
+        let activeId = workspace?.activeRepositoryId
         if (activeId && workspace!.repositories.find(repository => repository.id == activeId)?.status == "available")
             branchWorkspace?.activate(activeId)
         else
@@ -257,11 +363,12 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
     async function moveRepository(id: string, targetId: string) {
         if (!workspace)
             return
-        const from = workspace.repositories.findIndex(repository => repository.id == id)
-        const to = workspace.repositories.findIndex(repository => repository.id == targetId)
+
+        let from = workspace.repositories.findIndex(repository => repository.id == id)
+        let to = workspace.repositories.findIndex(repository => repository.id == targetId)
         if (from < 0 || to < 0)
             return
-        const [repository] = workspace.repositories.splice(from, 1)
+        let [repository] = workspace.repositories.splice(from, 1)
         workspace.repositories.splice(to, 0, repository)
         // Show the new order immediately; a dropped repository already appears in its slot.
         void handle.update()
@@ -277,6 +384,15 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
             notify({ code: "workspace.reset.failed", message: errorMessage(error) })
         }
         await handle.update()
+    }
+
+    function notify(nextNotice: NoticeState) {
+        notice = nextNotice
+        // Withdraws this notice only if nothing has replaced it since.
+        return () => {
+            if (notice == nextNotice)
+                notice = undefined
+        }
     }
 }
 
@@ -348,114 +464,3 @@ function MissingRepository(
         </section>
     )
 }
-
-const bootstrapState = css({
-    height: "100%",
-    padding: "32px",
-    display: "grid",
-    placeItems: "center",
-    overflow: "auto",
-    textAlign: "center",
-})
-
-const bootstrapStateP = css({
-    color: "var(--muted)",
-})
-
-const shell = css({
-    "&.rail-collapsed": { "--rail": "var(--rail-collapsed)" },
-    width: "100%",
-    height: "100%",
-    display: "grid",
-    gridTemplateRows: "var(--toolbar) minmax(0, 1fr)",
-    overflow: "hidden",
-})
-
-const workspaceRecovery = css({
-    position: "fixed",
-    zIndex: "20",
-    right: "14px",
-    bottom: "12px",
-    left: "14px",
-    padding: "11px 12px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "16px",
-    border: "1px solid var(--warning-edge)",
-    borderRadius: "6px",
-    background: "var(--warning-raised)",
-    boxShadow: "var(--shadow-popover)",
-})
-
-const workspaceRecoveryStrong = css({
-    fontSize: "13px",
-})
-
-const workspaceRecoveryP = css({
-    margin: "4px 0 0",
-    color: "var(--muted)",
-    fontSize: "12px",
-})
-
-const workspaceRecoveryButton = css({
-    minHeight: "28px",
-    padding: "0 14px",
-    borderRadius: "4px",
-    fontSize: "13px",
-    fontWeight: "500",
-    letterSpacing: "0",
-    textTransform: "none",
-    color: "var(--text)",
-    border: "1px solid var(--line-strong)",
-    background: "var(--control)",
-    "&:hover": {
-        background: "var(--control-hover)",
-    },
-})
-
-const workspace = css({
-    height: "100%",
-    display: "grid",
-    gridTemplateColumns: "var(--rail) minmax(0, 1fr)",
-})
-
-const missingCopy = css({
-    minWidth: "0",
-    padding: "28px",
-    display: "grid",
-    alignContent: "safe center",
-    justifyItems: "start",
-    overflow: "auto",
-})
-
-const missingRepositoryEyebrow = css({
-    maxWidth: "70ch",
-    overflowWrap: "anywhere",
-    color: "var(--muted)",
-    fontFamily: "var(--mono)",
-    fontSize: "12px",
-    lineHeight: "1.5",
-})
-
-const missingCopyH1 = css({
-    margin: "0 0 10px",
-    fontSize: "18px",
-    fontWeight: "600",
-})
-
-const missingCopyP = css({
-    maxWidth: "70ch",
-    overflowWrap: "anywhere",
-    color: "var(--muted)",
-    fontFamily: "var(--mono)",
-    fontSize: "12px",
-    lineHeight: "1.5",
-})
-
-const dialogActions = css({
-    padding: "0",
-    justifyContent: "flex-start",
-    borderTop: "0",
-    background: "transparent",
-})

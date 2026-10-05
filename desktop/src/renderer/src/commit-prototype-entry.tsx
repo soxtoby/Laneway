@@ -3,16 +3,16 @@ import { createRoot } from "remix/ui"
 import { inspectionScenario } from "../../../test/renderer-fixtures"
 import { LanewayApp } from "./app"
 
-const { api } = inspectionScenario()
-const getState = api.getState
+let { api } = inspectionScenario()
+let getState = api.getState
 api.getState = async () => {
-    const state = await getState()
-    for (const repository of state.workspace.repositories) {
-        for (const column of repository.columns)
+    let state = await getState()
+    for (let repository of state.workspace.repositories) {
+        for (let column of repository.columns)
             column.width = 530
     }
     return state
 }
-const root = createRoot(document.querySelector<HTMLDivElement>("#app")!)
+let root = createRoot(document.querySelector<HTMLDivElement>("#app")!)
 root.addEventListener("error", event => console.error(event.error))
 root.render(<LanewayApp api={api} />)

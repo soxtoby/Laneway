@@ -26,42 +26,55 @@ interface Pending {
     error: string
 }
 
-const shortName = (ref: string) => ref.replace(/^refs\/(heads|remotes)\//, "")
-const plural = (count: number, noun: string) => `${count} ${noun}${count == 1 ? "" : "s"}`
+let shortName = (ref: string) => ref.replace(/^refs\/(heads|remotes)\//, "")
+let plural = (count: number, noun: string) => `${count} ${noun}${count == 1 ? "" : "s"}`
 
-/** Only a local line of work with a Base has its own commits to move. */
-export function rebaseable(branch: BranchGraphBranchNode) {
-    return !branch.remoteOnly && !branch.primary && branch.localRefs.length > 0
-}
-
-/**
- * A branch can't be rebased onto itself or onto a branch stacked on it, whose history the rebase rewrites. Branches sharing
- * its tip count as itself: Bases name only one of them.
- */
-export function canRebaseOnto(graph: BranchGraph, source: BranchGraphBranchNode, target: BranchGraphBranchNode) {
-    if (!rebaseable(source) || target.tip == source.tip)
-        return false
-    const seen = new Set<string>()
-    for (let node: BranchGraphBranchNode | undefined = target; node?.base.status == "known" && !seen.has(node.id);) {
-        seen.add(node.id)
-        if (node.base.tip == source.tip)
-            return false
-        const baseId: string = node.base.branchId
-        node = graph.branches.find(branch => branch.id == baseId)
-    }
-    return true
-}
-
-function destinations(target: BranchGraphBranchNode): Destination[] {
-    const local = { branch: target.preferredRef, tip: target.tip, name: target.name, detail: "" }
-    // A node draws its local tip but combines it with its upstream; when the upstream holds commits the local tip lacks,
-    // "onto this branch" could mean either.
-    if (target.remoteOnly || !target.upstreamRef || !target.upstreamTip || target.upstreamTip == target.tip || target.behind == 0)
-        return [local]
-    const upstream = shortName(target.upstreamRef)
-    local.detail = `Local tip, ${plural(target.behind, "commit")} behind ${upstream}${target.ahead ? ` and ${target.ahead} ahead` : ""}`
-    return [local, { branch: target.upstreamRef, tip: target.upstreamTip, name: upstream, detail: "Upstream tip" }]
-}
+let dialogStyle = css({
+    width: "min(520px, calc(100vw - 32px))",
+    maxHeight: "80vh",
+    overflow: "auto",
+    margin: "auto",
+    padding: "18px",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "6px",
+    background: "var(--panel)",
+    color: "var(--text)",
+    boxShadow: "var(--shadow-dialog)",
+    "&::backdrop": { background: "var(--scrim)" },
+    "& h2": { margin: "0 0 12px", fontSize: "16px" },
+    "& p": { margin: "6px 0", overflowWrap: "anywhere", fontSize: "13px", lineHeight: 1.5 },
+    "& footer": { display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "14px" },
+    "& footer button": {
+        padding: "5px 9px",
+        background: "var(--control)",
+        color: "var(--text)",
+        border: "1px solid var(--line-strong)",
+        borderRadius: "4px",
+        "&.primary": { color: "#fff", borderColor: "var(--focus)", background: "var(--focus)" },
+        "&:disabled": { opacity: ".55" },
+    },
+})
+let choiceStyle = css({
+    margin: "0 0 10px",
+    padding: "0",
+    border: "0",
+    display: "grid",
+    gap: "6px",
+    "& legend": { padding: "0 0 6px", fontSize: "12px", fontWeight: 600, color: "var(--muted)" },
+    "& label": { display: "flex", alignItems: "flex-start", gap: "8px", fontSize: "13px", cursor: "pointer" },
+    "& label span": { display: "grid" },
+    "& small": { color: "var(--muted)", fontSize: "12px" },
+})
+let commitsStyle = css({
+    margin: "8px 0",
+    "& ol": { margin: "4px 0", padding: "0 0 0 4px", listStyle: "none", display: "grid", gap: "2px", fontSize: "12px" },
+    "& li": { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+    "& code": { color: "var(--muted)", fontFamily: "var(--mono)" },
+})
+let checkboxStyle = css({ display: "flex", alignItems: "baseline", gap: "6px", margin: "8px 0", fontSize: "13px", overflowWrap: "anywhere" })
+let warningStyle = css({ color: "var(--warning)", fontWeight: 600 })
+let errorStyle = css({ color: "var(--danger)" })
+let mutedStyle = css({ color: "var(--muted)" })
 
 export function createBranchRebase(options: {
     api: Pick<Window["laneway"], "localOperation">
@@ -76,12 +89,12 @@ export function createBranchRebase(options: {
     let pending: Pending | undefined, busy = false, executing = false, generation = 0
     let choosing: { repositoryId: string; sourceId: string } | undefined
     let returnFocus: HTMLElement | null = null, dismissNotice = () => {}
-    const update = () => void options.update()
-    const setBusy = (value: boolean) => {
+    let update = () => void options.update()
+    let setBusy = (value: boolean) => {
         busy = value
         options.busyChanged(value)
     }
-    const request = (current: Pending): CompositionRequest => ({
+    let request = (current: Pending): CompositionRequest => ({
         action: "compose",
         source: { kind: "branch", branch: current.source.preferredRef, tip: current.source.tip },
         target: { kind: "branch", branch: current.destination.branch, tip: current.destination.tip },
@@ -92,116 +105,6 @@ export function createBranchRebase(options: {
         descendants: current.descendants,
         allowConflicts: false,
     })
-    function notify(notice: NoticeState) {
-        dismissNotice()
-        dismissNotice = options.notify(notice)
-    }
-    function finish() {
-        pending = undefined
-        update()
-        returnFocus?.focus()
-    }
-    function cancel() {
-        if (executing)
-            return
-        generation++
-        finish()
-    }
-    function fail(current: Pending, error: unknown) {
-        const message = error instanceof Error ? error.message : String(error)
-        if (current.dialog) {
-            current.error = message
-            // A failed or changed rebase is reviewed again before it can run.
-            current.preview = undefined
-        } else {
-            notify({ code: "rebase.failed", message: `Couldn't rebase ${current.source.name}: ${message}` })
-            pending = undefined
-        }
-    }
-
-    async function prepare() {
-        const current = pending
-        if (!current || busy)
-            return
-        const version = ++generation
-        current.preview = undefined
-        current.error = ""
-        if (!current.dialog)
-            notify({ code: "rebase.progress", message: `Rebasing ${current.source.name} onto ${current.destination.name}…` })
-        setBusy(true)
-        update()
-        try {
-            const response = await options.api.localOperation(current.repositoryId, request(current))
-            if (version != generation || pending != current)
-                return
-            if (!response.ok)
-                throw new Error(response.error.message)
-            if (response.result.status == "failed" || !response.result.preview?.composition)
-                throw new Error(response.result.message ?? "The rebase couldn't be reviewed.")
-            current.preview = response.result.preview
-            if (current.descendants)
-                current.dependents = current.preview.composition!.branches.filter(name => name != shortName(current.source.preferredRef))
-        } catch (error) {
-            if (version == generation && pending == current)
-                fail(current, error)
-        } finally {
-            setBusy(false)
-        }
-        const p = pending == current ? current.preview?.composition : undefined
-        if (p && !current.dialog) {
-            if (p.noop) {
-                notify({ code: "rebase.current", message: `${current.source.name} is already on top of ${current.destination.name}.`, transient: true })
-                return finish()
-            }
-            // Conflicts, rewritten published history and emptied commits each need the user's decision first.
-            current.dialog = p.conflicts.length > 0 || p.published.length > 0 || p.removed.length > 0
-            if (current.dialog)
-                dismissNotice()
-            else
-                return execute(false)
-        }
-        update()
-    }
-
-    async function execute(resolveNow: boolean) {
-        const current = pending, p = current?.preview?.composition
-        if (!current?.preview || !p || busy)
-            return
-        executing = true
-        setBusy(true)
-        update()
-        try {
-            const response = await options.api.localOperation(
-                current.repositoryId,
-                { ...request(current), allowConflicts: p.conflicts.length > 0 },
-                current.preview.token,
-            )
-            if (!response.ok)
-                throw new Error(response.error.message)
-            if (response.result.status == "failed")
-                throw new Error(response.result.message)
-            const moved = current.descendants ? current.dependents : []
-            notify({
-                code: "rebase.completed",
-                message: `Rebased ${current.source.name}${moved.length ? ` and ${moved.join(", ")}` : ""} onto ${current.destination.name}${
-                    p.conflicts.length ? ", with conflicts to resolve before publishing." : "."
-                }`,
-                transient: !p.conflicts.length,
-            })
-            pending = undefined
-            await options.completed(current.repositoryId)
-            if (resolveNow)
-                options.resolve(current.repositoryId, [shortName(current.source.preferredRef), ...moved])
-            else
-                returnFocus?.focus()
-        } catch (error) {
-            fail(current, error)
-        } finally {
-            executing = false
-            setBusy(false)
-            update()
-        }
-    }
 
     return {
         busy: () => busy,
@@ -211,6 +114,7 @@ export function createBranchRebase(options: {
         choose(repositoryId: string, source: BranchGraphBranchNode) {
             if (busy || pending || !rebaseable(source))
                 return
+
             choosing = { repositoryId, sourceId: source.id }
             notify({ code: "rebase.choose", message: `Rebase ${source.name} · Choose a destination branch, then Enter. Escape cancels.` })
             update()
@@ -218,16 +122,17 @@ export function createBranchRebase(options: {
         stopChoosing() {
             if (!choosing)
                 return
+
             choosing = undefined
             dismissNotice()
             update()
         },
         async start(repositoryId: string, graph: BranchGraph, sourceId: string, targetId: string) {
-            const source = graph.branches.find(branch => branch.id == sourceId), target = graph.branches.find(branch => branch.id == targetId)
+            let source = graph.branches.find(branch => branch.id == sourceId), target = graph.branches.find(branch => branch.id == targetId)
             if (busy || pending || !source || !target || !canRebaseOnto(graph, source, target))
                 return
             choosing = undefined
-            const choices = destinations(target)
+            let choices = destinations(target)
             returnFocus = document.activeElement as HTMLElement | null
             pending = {
                 repositoryId,
@@ -245,13 +150,14 @@ export function createBranchRebase(options: {
             await prepare()
         },
         render() {
-            const current = pending
+            let current = pending
             if (!current?.dialog)
                 return null
-            const p = current.preview?.composition
-            const base = current.source.base
-            const baseName = base.status == "known" ? base.name : base.candidates.map(candidate => candidate.name).join(" / ")
-            const commits = p?.commits ?? []
+            let p = current.preview?.composition
+            let base = current.source.base
+            let baseName = base.status == "known" ? base.name : base.candidates.map(candidate => candidate.name).join(" / ")
+            let commits = p?.commits ?? []
+
             return (
                 <dialog
                     class="branch-rebase"
@@ -378,51 +284,157 @@ export function createBranchRebase(options: {
             )
         },
     }
+
+    function cancel() {
+        if (executing)
+            return
+        generation++
+        finish()
+    }
+
+    async function prepare() {
+        let current = pending
+        if (!current || busy)
+            return
+        let version = ++generation
+        current.preview = undefined
+        current.error = ""
+        if (!current.dialog)
+            notify({ code: "rebase.progress", message: `Rebasing ${current.source.name} onto ${current.destination.name}…` })
+        setBusy(true)
+        update()
+
+        try {
+            let response = await options.api.localOperation(current.repositoryId, request(current))
+            if (version != generation || pending != current)
+                return
+            if (!response.ok)
+                throw new Error(response.error.message)
+            if (response.result.status == "failed" || !response.result.preview?.composition)
+                throw new Error(response.result.message ?? "The rebase couldn't be reviewed.")
+            current.preview = response.result.preview
+            if (current.descendants)
+                current.dependents = current.preview.composition!.branches.filter(name => name != shortName(current.source.preferredRef))
+        } catch (error) {
+            if (version == generation && pending == current)
+                fail(current, error)
+        } finally {
+            setBusy(false)
+        }
+        let p = pending == current ? current.preview?.composition : undefined
+        if (p && !current.dialog) {
+            if (p.noop) {
+                notify({ code: "rebase.current", message: `${current.source.name} is already on top of ${current.destination.name}.`, transient: true })
+                return finish()
+            }
+            // Conflicts, rewritten published history and emptied commits each need the user's decision first.
+            current.dialog = p.conflicts.length > 0 || p.published.length > 0 || p.removed.length > 0
+            if (current.dialog)
+                dismissNotice()
+            else
+                return execute(false)
+        }
+        update()
+    }
+
+    function finish() {
+        pending = undefined
+        update()
+        returnFocus?.focus()
+    }
+
+    async function execute(resolveNow: boolean) {
+        let current = pending, p = current?.preview?.composition
+        if (!current?.preview || !p || busy)
+            return
+        executing = true
+        setBusy(true)
+        update()
+
+        try {
+            let response = await options.api.localOperation(
+                current.repositoryId,
+                { ...request(current), allowConflicts: p.conflicts.length > 0 },
+                current.preview.token,
+            )
+            if (!response.ok)
+                throw new Error(response.error.message)
+            if (response.result.status == "failed")
+                throw new Error(response.result.message)
+            let moved = current.descendants ? current.dependents : []
+            notify({
+                code: "rebase.completed",
+                message: `Rebased ${current.source.name}${moved.length ? ` and ${moved.join(", ")}` : ""} onto ${current.destination.name}${
+                    p.conflicts.length ? ", with conflicts to resolve before publishing." : "."
+                }`,
+                transient: !p.conflicts.length,
+            })
+            pending = undefined
+            await options.completed(current.repositoryId)
+            if (resolveNow)
+                options.resolve(current.repositoryId, [shortName(current.source.preferredRef), ...moved])
+            else
+                returnFocus?.focus()
+        } catch (error) {
+            fail(current, error)
+        } finally {
+            executing = false
+            setBusy(false)
+            update()
+        }
+    }
+
+    function fail(current: Pending, error: unknown) {
+        let message = error instanceof Error ? error.message : String(error)
+        if (current.dialog) {
+            current.error = message
+            // A failed or changed rebase is reviewed again before it can run.
+            current.preview = undefined
+        } else {
+            notify({ code: "rebase.failed", message: `Couldn't rebase ${current.source.name}: ${message}` })
+            pending = undefined
+        }
+    }
+
+    function notify(notice: NoticeState) {
+        dismissNotice()
+        dismissNotice = options.notify(notice)
+    }
 }
 
-const dialogStyle = css({
-    width: "min(520px, calc(100vw - 32px))",
-    maxHeight: "80vh",
-    overflow: "auto",
-    margin: "auto",
-    padding: "18px",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "6px",
-    background: "var(--panel)",
-    color: "var(--text)",
-    boxShadow: "var(--shadow-dialog)",
-    "&::backdrop": { background: "var(--scrim)" },
-    "& h2": { margin: "0 0 12px", fontSize: "16px" },
-    "& p": { margin: "6px 0", overflowWrap: "anywhere", fontSize: "13px", lineHeight: 1.5 },
-    "& footer": { display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "14px" },
-    "& footer button": {
-        padding: "5px 9px",
-        background: "var(--control)",
-        color: "var(--text)",
-        border: "1px solid var(--line-strong)",
-        borderRadius: "4px",
-        "&.primary": { color: "#fff", borderColor: "var(--focus)", background: "var(--focus)" },
-        "&:disabled": { opacity: ".55" },
-    },
-})
-const choiceStyle = css({
-    margin: "0 0 10px",
-    padding: "0",
-    border: "0",
-    display: "grid",
-    gap: "6px",
-    "& legend": { padding: "0 0 6px", fontSize: "12px", fontWeight: 600, color: "var(--muted)" },
-    "& label": { display: "flex", alignItems: "flex-start", gap: "8px", fontSize: "13px", cursor: "pointer" },
-    "& label span": { display: "grid" },
-    "& small": { color: "var(--muted)", fontSize: "12px" },
-})
-const commitsStyle = css({
-    margin: "8px 0",
-    "& ol": { margin: "4px 0", padding: "0 0 0 4px", listStyle: "none", display: "grid", gap: "2px", fontSize: "12px" },
-    "& li": { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-    "& code": { color: "var(--muted)", fontFamily: "var(--mono)" },
-})
-const checkboxStyle = css({ display: "flex", alignItems: "baseline", gap: "6px", margin: "8px 0", fontSize: "13px", overflowWrap: "anywhere" })
-const warningStyle = css({ color: "var(--warning)", fontWeight: 600 })
-const errorStyle = css({ color: "var(--danger)" })
-const mutedStyle = css({ color: "var(--muted)" })
+/**
+ * A branch can't be rebased onto itself or onto a branch stacked on it, whose history the rebase rewrites. Branches sharing
+ * its tip count as itself: Bases name only one of them.
+ */
+export function canRebaseOnto(graph: BranchGraph, source: BranchGraphBranchNode, target: BranchGraphBranchNode) {
+    if (!rebaseable(source) || target.tip == source.tip)
+        return false
+
+    let seen = new Set<string>()
+    for (let node: BranchGraphBranchNode | undefined = target; node?.base.status == "known" && !seen.has(node.id);) {
+        seen.add(node.id)
+        if (node.base.tip == source.tip)
+            return false
+        let baseId: string = node.base.branchId
+        node = graph.branches.find(branch => branch.id == baseId)
+    }
+
+    return true
+}
+
+/** Only a local line of work with a Base has its own commits to move. */
+export function rebaseable(branch: BranchGraphBranchNode) {
+    return !branch.remoteOnly && !branch.primary && branch.localRefs.length > 0
+}
+
+function destinations(target: BranchGraphBranchNode): Destination[] {
+    let local = { branch: target.preferredRef, tip: target.tip, name: target.name, detail: "" }
+    // A node draws its local tip but combines it with its upstream; when the upstream holds commits the local tip lacks,
+    // "onto this branch" could mean either.
+    if (target.remoteOnly || !target.upstreamRef || !target.upstreamTip || target.upstreamTip == target.tip || target.behind == 0)
+        return [local]
+    let upstream = shortName(target.upstreamRef)
+    local.detail = `Local tip, ${plural(target.behind, "commit")} behind ${upstream}${target.ahead ? ` and ${target.ahead} ahead` : ""}`
+
+    return [local, { branch: target.upstreamRef, tip: target.upstreamTip, name: upstream, detail: "Upstream tip" }]
+}

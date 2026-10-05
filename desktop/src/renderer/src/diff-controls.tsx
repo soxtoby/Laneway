@@ -2,6 +2,13 @@ import type { DiffLayout } from "@laneway/shared"
 import { css, type Handle, on } from "remix/ui"
 import { fileActionButton } from "./file-list"
 
+let diffToolbarDiv = css({
+    marginLeft: "auto",
+    display: "flex",
+    gap: "4px",
+    flex: "0 0 auto",
+})
+
 export function DiffControls(
     handle: Handle<{
         layout: DiffLayout
@@ -14,7 +21,7 @@ export function DiffControls(
     }>,
 ) {
     return () => {
-        const props = handle.props
+        let props = handle.props
         return (
             <div class="diff-controls" mix={diffToolbarDiv}>
                 {(["unified", "split"] as const).map(layout => (
@@ -74,10 +81,3 @@ function diffIcon(kind: "unified" | "split" | "breakout") {
         </svg>
     )
 }
-
-const diffToolbarDiv = css({
-    marginLeft: "auto",
-    display: "flex",
-    gap: "4px",
-    flex: "0 0 auto",
-})

@@ -20,6 +20,21 @@ export interface FileHistoryState {
     readKey?: string
     blame?: { entry: FileHistoryEntry; page?: FileHistoryPage; error?: string; loading: boolean }
 }
+let historyColumn = css({
+    ...auxiliaryColumnFrame,
+    minWidth: 0,
+    "& > header": { ...auxiliaryColumnHeader, position: "sticky", top: 0, zIndex: 10 },
+    "& > header strong": { flex: 1, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" },
+    "& > header > button": auxiliaryCloseButton,
+    "& .history-commit": { width: "100%", textAlign: "left", padding: "8px", border: 0, borderBottom: "1px solid var(--line)" },
+    "& .change-file": { top: "46px" },
+    "& .history-subject": { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 },
+    "& small": { color: "var(--muted)", display: "block", padding: "4px 8px" },
+    "& button": { color: "var(--text)", background: "var(--control)", cursor: "pointer", font: "inherit" },
+    "& p": { margin: "8px", fontSize: "12px" },
+    "& .blame-line": { display: "flex", gap: "8px", whiteSpace: "pre", fontSize: "12px" },
+    "& .blame-context": { overflow: "auto" },
+})
 export function createFileHistories(
     options: {
         api: Window["laneway"]
@@ -29,122 +44,15 @@ export function createFileHistories(
         composition?(state: FileHistoryState): { tip: string; primaryTip: string } | undefined
     },
 ) {
-    const states = new Set<FileHistoryState>()
+    let states = new Set<FileHistoryState>()
     let sequence = 0
-    const update = () => {
+    let update = () => {
         if (!options.signal.aborted)
             void options.update()
     }
-    function cancel(state: FileHistoryState) {
-        state.generation++
-        state.loading = false
-        if (state.blame)
-            state.blame.loading = false
-        for (const id of state.requests)
-            void options.api.cancelInspection(state.repositoryId, id)
-    }
-    async function read(state: FileHistoryState, more = false) {
-        if (!state.alive || state.loading || more && !state.page?.cursor)
-            return
-        const generation = state.generation
-        const composition = options.composition?.(state)
-        const readKey = JSON.stringify([composition, state.choices])
-        const id = `history:${++sequence}`
-        state.requests.add(id)
-        state.loading = true
-        state.error = undefined
-        update()
-        const target = (more ? state.page!.entries.length : 0) + 40
-        let append = more
-        try {
-            while (state.alive && generation == state.generation && !options.signal.aborted) {
-                const result = await options.api.readFileHistory(state.repositoryId, id, {
-                    source: state.source,
-                    path: state.path,
-                    choices: state.choices,
-                    composition,
-                    limit: Math.min(40, target - (append ? state.page!.entries.length : 0)),
-                    ...(append ? { cursor: state.page?.cursor } : {}),
-                })
-                if (!state.alive || generation != state.generation)
-                    return
-                if (!result.ok)
-                    throw new Error(result.error.message)
-                const changed = !!state.page && (state.page.tip != result.page.tip || state.readKey != readKey)
-                // A moving source invalidates the continuation. Restart at its new tip
-                // instead of combining pages from different histories.
-                if (append && changed) {
-                    append = false
-                    continue
-                }
-                if (append)
-                    result.page.entries = [...state.page!.entries, ...result.page.entries]
-                // Empty scan windows still advance the cursor. A first-page refresh
-                // must not rewind that progress just because no matching rows were added.
-                if (!append && !changed && state.page && state.page.entries.length >= result.page.entries.length) {
-                    if (!state.page.cursor || state.page.entries.length >= target)
-                        return
-                    append = true
-                    continue
-                }
-                state.readKey = readKey
-                state.page = result.page
-                if (changed)
-                    options.changed?.(state)
-                for (const oid of state.expanded) {
-                    if (oid != "working" && !state.page.entries.some(entry => entry.objectId == oid))
-                        state.expanded.delete(oid)
-                }
-                update()
-                if (!state.page.cursor || state.page.entries.length >= target)
-                    return
-                append = true
-            }
-        } catch (error) {
-            if (state.alive && generation == state.generation)
-                state.error = String(error)
-        } finally {
-            state.requests.delete(id)
-            if (state.alive && generation == state.generation) {
-                state.loading = false
-                update()
-            }
-        }
-    }
-    async function blame(state: FileHistoryState, entry: FileHistoryEntry, more = false) {
-        const view = more ? state.blame! : { entry, loading: false }
-        state.blame = view
-        view.loading = true
-        const generation = state.generation
-        const id = `blame:${++sequence}`
-        state.requests.add(id)
-        update()
-        try {
-            const objectId = entry.status == "D" ? entry.followedParent ?? entry.objectId : entry.objectId
-            const result = await options.api.readFileHistory(state.repositoryId, id, {
-                source: { kind: "commit", objectId },
-                path: state.path,
-                blame: { objectId, path: entry.path, offset: more ? view.page?.nextBlameOffset : undefined },
-            })
-            if (!state.alive || generation != state.generation || state.blame != view)
-                return
-            if (!result.ok)
-                throw new Error(result.error.message)
-            view.page = { ...result.page, blame: [...(more ? view.page?.blame ?? [] : []), ...result.page.blame ?? []] }
-        } catch (error) {
-            if (state.alive && generation == state.generation)
-                view.error = String(error)
-        } finally {
-            state.requests.delete(id)
-            if (state.alive && generation == state.generation) {
-                view.loading = false
-                update()
-            }
-        }
-    }
     return {
         create(repositoryId: string, source: FileHistorySource, path: string) {
-            const state: FileHistoryState = {
+            let state: FileHistoryState = {
                 kind: "history",
                 repositoryId,
                 source,
@@ -158,10 +66,11 @@ export function createFileHistories(
             }
             states.add(state)
             void Promise.resolve().then(() => read(state))
+
             return state
         },
         refresh(repositoryId: string) {
-            for (const state of states) {
+            for (let state of states) {
                 if (
                     state.repositoryId == repositoryId
                     && (state.source.kind != "commit" || state.readKey != JSON.stringify([options.composition?.(state), state.choices]))
@@ -171,13 +80,13 @@ export function createFileHistories(
             }
         },
         renameBranch(repositoryId: string, oldRef: string, newRef: string) {
-            for (const state of states) {
+            for (let state of states) {
                 if (state.repositoryId == repositoryId && state.source.kind == "branch" && state.source.ref == oldRef)
                     state.source.ref = newRef
             }
         },
         suspend() {
-            for (const state of states)
+            for (let state of states)
                 cancel(state)
         },
         dispose(state: FileHistoryState) {
@@ -194,7 +103,7 @@ export function createFileHistories(
             selection(entry: FileHistoryEntry): { checked: boolean; check(): void } | undefined
             commit(entry: FileHistoryEntry): void
         }): RemixNode {
-            const source = state.source
+            let source = state.source
             return (
                 <aside
                     key={id}
@@ -259,7 +168,7 @@ export function createFileHistories(
                                         aria-label="Follow copy origin"
                                         value={entry.previousPath ?? ""}
                                         mix={on("change", event => {
-                                            const previousPath = event.currentTarget.value
+                                            let previousPath = event.currentTarget.value
                                             state.choices = state.choices.filter(choice => choice.objectId != entry.objectId || choice.path != entry.path)
                                             if (previousPath)
                                                 state.choices.push({ objectId: entry.objectId, path: entry.path, previousPath })
@@ -324,19 +233,117 @@ export function createFileHistories(
             )
         },
     }
+
+    function cancel(state: FileHistoryState) {
+        state.generation++
+        state.loading = false
+        if (state.blame)
+            state.blame.loading = false
+        for (let id of state.requests)
+            void options.api.cancelInspection(state.repositoryId, id)
+    }
+
+    async function read(state: FileHistoryState, more = false) {
+        if (!state.alive || state.loading || more && !state.page?.cursor)
+            return
+
+        let generation = state.generation
+        let composition = options.composition?.(state)
+        let readKey = JSON.stringify([composition, state.choices])
+        let id = `history:${++sequence}`
+        state.requests.add(id)
+        state.loading = true
+        state.error = undefined
+        update()
+        let target = (more ? state.page!.entries.length : 0) + 40
+        let append = more
+
+        try {
+            while (state.alive && generation == state.generation && !options.signal.aborted) {
+                let result = await options.api.readFileHistory(state.repositoryId, id, {
+                    source: state.source,
+                    path: state.path,
+                    choices: state.choices,
+                    composition,
+                    limit: Math.min(40, target - (append ? state.page!.entries.length : 0)),
+                    ...(append ? { cursor: state.page?.cursor } : {}),
+                })
+                if (!state.alive || generation != state.generation)
+                    return
+                if (!result.ok)
+                    throw new Error(result.error.message)
+                let changed = !!state.page && (state.page.tip != result.page.tip || state.readKey != readKey)
+                // A moving source invalidates the continuation. Restart at its new tip
+                // instead of combining pages from different histories.
+                if (append && changed) {
+                    append = false
+                    continue
+                }
+                if (append)
+                    result.page.entries = [...state.page!.entries, ...result.page.entries]
+                // Empty scan windows still advance the cursor. A first-page refresh
+                // must not rewind that progress just because no matching rows were added.
+                if (!append && !changed && state.page && state.page.entries.length >= result.page.entries.length) {
+                    if (!state.page.cursor || state.page.entries.length >= target)
+                        return
+                    append = true
+                    continue
+                }
+                state.readKey = readKey
+                state.page = result.page
+                if (changed)
+                    options.changed?.(state)
+                for (let oid of state.expanded) {
+                    if (oid != "working" && !state.page.entries.some(entry => entry.objectId == oid))
+                        state.expanded.delete(oid)
+                }
+                update()
+                if (!state.page.cursor || state.page.entries.length >= target)
+                    return
+                append = true
+            }
+        } catch (error) {
+            if (state.alive && generation == state.generation)
+                state.error = String(error)
+        } finally {
+            state.requests.delete(id)
+            if (state.alive && generation == state.generation) {
+                state.loading = false
+                update()
+            }
+        }
+    }
+
+    async function blame(state: FileHistoryState, entry: FileHistoryEntry, more = false) {
+        let view = more ? state.blame! : { entry, loading: false }
+        state.blame = view
+        view.loading = true
+        let generation = state.generation
+        let id = `blame:${++sequence}`
+        state.requests.add(id)
+        update()
+
+        try {
+            let objectId = entry.status == "D" ? entry.followedParent ?? entry.objectId : entry.objectId
+            let result = await options.api.readFileHistory(state.repositoryId, id, {
+                source: { kind: "commit", objectId },
+                path: state.path,
+                blame: { objectId, path: entry.path, offset: more ? view.page?.nextBlameOffset : undefined },
+            })
+            if (!state.alive || generation != state.generation || state.blame != view)
+                return
+            if (!result.ok)
+                throw new Error(result.error.message)
+            view.page = { ...result.page, blame: [...(more ? view.page?.blame ?? [] : []), ...result.page.blame ?? []] }
+        } catch (error) {
+            if (state.alive && generation == state.generation)
+                view.error = String(error)
+        } finally {
+            state.requests.delete(id)
+            if (state.alive && generation == state.generation) {
+                view.loading = false
+                update()
+            }
+        }
+    }
 }
-const historyColumn = css({
-    ...auxiliaryColumnFrame,
-    minWidth: 0,
-    "& > header": { ...auxiliaryColumnHeader, position: "sticky", top: 0, zIndex: 10 },
-    "& > header strong": { flex: 1, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" },
-    "& > header > button": auxiliaryCloseButton,
-    "& .history-commit": { width: "100%", textAlign: "left", padding: "8px", border: 0, borderBottom: "1px solid var(--line)" },
-    "& .change-file": { top: "46px" },
-    "& .history-subject": { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 },
-    "& small": { color: "var(--muted)", display: "block", padding: "4px 8px" },
-    "& button": { color: "var(--text)", background: "var(--control)", cursor: "pointer", font: "inherit" },
-    "& p": { margin: "8px", fontSize: "12px" },
-    "& .blame-line": { display: "flex", gap: "8px", whiteSpace: "pre", fontSize: "12px" },
-    "& .blame-context": { overflow: "auto" },
-})

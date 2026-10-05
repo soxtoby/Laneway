@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-export const WorktreeRequestSchema = z.discriminatedUnion("action", [
+export let WorktreeRequestSchema = z.discriminatedUnion("action", [
     z.object({
         action: z.literal("create"),
         branch: z.string().min(1).optional(),

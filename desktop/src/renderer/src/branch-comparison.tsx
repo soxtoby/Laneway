@@ -26,131 +26,46 @@ export interface BranchComparisonState {
     alive: boolean
 }
 
+let comparison = css({
+    ...auxiliaryColumnFrame,
+    minWidth: "380px",
+    "& > header": { ...auxiliaryColumnHeader, position: "sticky", top: 0, zIndex: 10 },
+    "& > header strong": { flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+    "& > header > button": auxiliaryCloseButton,
+    "& .change-file": { top: "46px" },
+    "& > p button, & .comparison-patch button:not(.diff-lines button), & > button": {
+        font: "inherit",
+        color: "var(--text)",
+        background: "var(--control)",
+        border: "1px solid var(--line)",
+        padding: "4px 7px",
+        cursor: "pointer",
+    },
+    "& button:disabled": { opacity: 0.5, cursor: "default" },
+    "& p": { margin: "8px 10px", fontSize: "12px" },
+    "& small, & .auxiliary-source": { color: "var(--muted)" },
+    "& .comparison-patch": { minWidth: 0, overflow: "hidden" },
+})
+import type { FileHistorySource } from "@laneway/shared"
+
 export function createBranchComparisons(options: { api: Window["laneway"]; update(): Promise<AbortSignal>; signal: AbortSignal }) {
-    const states = new Set<BranchComparisonState>()
+    let states = new Set<BranchComparisonState>()
     let sequence = 0
     let activeRepositoryId: string | undefined
-    const update = () => {
+    let update = () => {
         if (!options.signal.aborted)
             void options.update()
     }
-    const current = (state: BranchComparisonState, generation: number) => state.alive && state.generation == generation
-    const fingerprint = (graph: BranchGraph, from: string, to: string) =>
+    let current = (state: BranchComparisonState, generation: number) => state.alive && state.generation == generation
+    let fingerprint = (graph: BranchGraph, from: string, to: string) =>
         JSON.stringify([from, to].map(ref => {
-            const branch = graph.branches.find(branch => branch.refs.includes(ref))
+            let branch = graph.branches.find(branch => branch.refs.includes(ref))
             return branch ? ref == branch.upstreamRef ? branch.upstreamTip : branch.tip : null
         }))
 
-    function cancel(state: BranchComparisonState) {
-        state.generation++
-        state.loading = false
-        for (const request of state.requests)
-            void options.api.cancelInspection(state.repositoryId, request)
-        for (const patch of state.patches.values())
-            patch.loading = false
-    }
-
-    async function inventory(state: BranchComparisonState, more = false) {
-        if (!state.alive || state.loading || more && state.inventory?.nextOffset == undefined)
-            return
-        if (!more)
-            cancel(state)
-        const generation = state.generation
-        const requestId = `${state.requestPrefix}:inventory:${generation}`
-        state.requests.add(requestId)
-        state.loading = true
-        state.error = undefined
-        update()
-        try {
-            const result = await options.api.readChanges(
-                state.repositoryId,
-                requestId,
-                more
-                    ? { source: state.inventory!.source, offset: state.inventory!.nextOffset }
-                    : { source: { kind: "branches", fromRef: state.fromRef, toRef: state.toRef } },
-            )
-            if (!current(state, generation))
-                return
-            if (!result.ok)
-                throw new Error(result.error.message)
-            const previous = state.inventory
-            if (more && previous?.version != result.inventory.version)
-                throw new Error("Comparison inputs changed. Refresh before loading more files.")
-            state.inventory = { ...result.inventory, files: more ? [...previous!.files, ...result.inventory.files] : result.inventory.files }
-            if (!more) {
-                for (const path of state.patches.keys()) {
-                    if (!state.inventory.files.some(file => file.path == path))
-                        state.patches.delete(path)
-                    else
-                        void readPatch(state, path)
-                }
-            }
-        } catch (error) {
-            if (current(state, generation))
-                state.error = error instanceof Error ? error.message : String(error)
-        } finally {
-            state.requests.delete(requestId)
-            if (current(state, generation)) {
-                state.loading = false
-                update()
-            }
-        }
-    }
-
-    async function readPatch(state: BranchComparisonState, path: string, more = false) {
-        if (!state.inventory || !state.alive)
-            return
-        const patch = state.patches.get(path)
-        if (!patch || patch.loading)
-            return
-        const generation = state.generation
-        const requestId = `${state.requestPrefix}:file:${generation}:${++sequence}`
-        patch.requestId = requestId
-        state.requests.add(requestId)
-        patch.loading = true
-        patch.error = undefined
-        update()
-        try {
-            const result = await options.api.readFileDiff(state.repositoryId, requestId, {
-                source: state.inventory.source,
-                inventoryVersion: state.inventory.version,
-                path,
-                entireFile: state.showEntireFiles,
-                ...(more ? { offset: patch.page?.nextOffset, expectedVersion: patch.page?.version } : {}),
-            })
-            if (!current(state, generation) || state.patches.get(path) != patch || patch.requestId != requestId)
-                return
-            if (!result.ok)
-                throw new Error(result.error.message)
-            patch.page = { ...result.page, selectable: false, lines: more ? [...patch.page!.lines, ...result.page.lines] : result.page.lines }
-        } catch (error) {
-            if (current(state, generation) && state.patches.get(path) == patch && patch.requestId == requestId)
-                patch.error = error instanceof Error ? error.message : String(error)
-        } finally {
-            state.requests.delete(requestId)
-            if (current(state, generation) && state.patches.get(path) == patch && patch.requestId == requestId) {
-                patch.loading = false
-                update()
-            }
-        }
-    }
-
-    function toggle(state: BranchComparisonState, path: string) {
-        if (state.patches.has(path)) {
-            const requestId = state.patches.get(path)?.requestId
-            state.patches.delete(path)
-            if (requestId)
-                void options.api.cancelInspection(state.repositoryId, requestId)
-        } else {
-            state.patches.set(path, { loading: false })
-            void readPatch(state, path)
-        }
-        update()
-    }
-
     return {
         create(repositoryId: string, from: BranchGraphBranchNode, to: BranchGraphBranchNode, graph: BranchGraph) {
-            const state: BranchComparisonState = {
+            let state: BranchComparisonState = {
                 kind: "comparison",
                 repositoryId,
                 fromRef: from.preferredRef,
@@ -168,6 +83,7 @@ export function createBranchComparisons(options: { api: Window["laneway"]; updat
             }
             states.add(state)
             void inventory(state)
+
             return state
         },
         dispose(state: BranchComparisonState) {
@@ -178,7 +94,7 @@ export function createBranchComparisons(options: { api: Window["laneway"]; updat
         activate(repositoryId?: string) {
             if (activeRepositoryId == repositoryId)
                 return
-            for (const state of states) {
+            for (let state of states) {
                 if (state.repositoryId == activeRepositoryId)
                     cancel(state)
                 if (state.repositoryId == repositoryId)
@@ -187,10 +103,8 @@ export function createBranchComparisons(options: { api: Window["laneway"]; updat
             activeRepositoryId = repositoryId
         },
         refresh(repositoryId: string, graph: BranchGraph) {
-            for (const state of states) {
-                if (state.repositoryId != repositoryId)
-                    continue
-                const next = fingerprint(graph, state.fromRef, state.toRef)
+            for (let state of [...states].filter(state => state.repositoryId == repositoryId)) {
+                let next = fingerprint(graph, state.fromRef, state.toRef)
                 if (next != state.fingerprint) {
                     state.fingerprint = next
                     cancel(state)
@@ -200,9 +114,7 @@ export function createBranchComparisons(options: { api: Window["laneway"]; updat
             }
         },
         renameBranch(repositoryId: string, oldRef: string, newRef: string) {
-            for (const state of states) {
-                if (state.repositoryId != repositoryId)
-                    continue
+            for (let state of [...states].filter(state => state.repositoryId == repositoryId)) {
                 if (state.fromRef == oldRef)
                     state.fromRef = newRef
                 if (state.toRef == oldRef)
@@ -258,7 +170,7 @@ export function createBranchComparisons(options: { api: Window["laneway"]; updat
                         files={state.inventory?.files ?? []}
                         expanded={new Set(state.patches.keys())}
                         controls={file => {
-                            const patch = state.patches.get(file.path)
+                            let patch = state.patches.get(file.path)
                             return patch
                                 ? (
                                     <DiffControls
@@ -291,7 +203,7 @@ export function createBranchComparisons(options: { api: Window["laneway"]; updat
                         choose={file => toggle(state, file.path)}
                         hide={() => {}}
                         diff={file => {
-                            const patch = state.patches.get(file.path)
+                            let patch = state.patches.get(file.path)
                             return (
                                 patch
                                     ? (
@@ -345,26 +257,115 @@ export function createBranchComparisons(options: { api: Window["laneway"]; updat
             )
         },
     }
-}
 
-const comparison = css({
-    ...auxiliaryColumnFrame,
-    minWidth: "380px",
-    "& > header": { ...auxiliaryColumnHeader, position: "sticky", top: 0, zIndex: 10 },
-    "& > header strong": { flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-    "& > header > button": auxiliaryCloseButton,
-    "& .change-file": { top: "46px" },
-    "& > p button, & .comparison-patch button:not(.diff-lines button), & > button": {
-        font: "inherit",
-        color: "var(--text)",
-        background: "var(--control)",
-        border: "1px solid var(--line)",
-        padding: "4px 7px",
-        cursor: "pointer",
-    },
-    "& button:disabled": { opacity: 0.5, cursor: "default" },
-    "& p": { margin: "8px 10px", fontSize: "12px" },
-    "& small, & .auxiliary-source": { color: "var(--muted)" },
-    "& .comparison-patch": { minWidth: 0, overflow: "hidden" },
-})
-import type { FileHistorySource } from "@laneway/shared"
+    function toggle(state: BranchComparisonState, path: string) {
+        if (state.patches.has(path)) {
+            let requestId = state.patches.get(path)?.requestId
+            state.patches.delete(path)
+            if (requestId)
+                void options.api.cancelInspection(state.repositoryId, requestId)
+        } else {
+            state.patches.set(path, { loading: false })
+            void readPatch(state, path)
+        }
+        update()
+    }
+
+    function cancel(state: BranchComparisonState) {
+        state.generation++
+        state.loading = false
+        for (let request of state.requests)
+            void options.api.cancelInspection(state.repositoryId, request)
+        for (let patch of state.patches.values())
+            patch.loading = false
+    }
+
+    async function inventory(state: BranchComparisonState, more = false) {
+        if (!state.alive || state.loading || more && state.inventory?.nextOffset == undefined)
+            return
+
+        if (!more)
+            cancel(state)
+        let generation = state.generation
+        let requestId = `${state.requestPrefix}:inventory:${generation}`
+        state.requests.add(requestId)
+        state.loading = true
+        state.error = undefined
+        update()
+
+        try {
+            let result = await options.api.readChanges(
+                state.repositoryId,
+                requestId,
+                more
+                    ? { source: state.inventory!.source, offset: state.inventory!.nextOffset }
+                    : { source: { kind: "branches", fromRef: state.fromRef, toRef: state.toRef } },
+            )
+            if (!current(state, generation))
+                return
+            if (!result.ok)
+                throw new Error(result.error.message)
+            let previous = state.inventory
+            if (more && previous?.version != result.inventory.version)
+                throw new Error("Comparison inputs changed. Refresh before loading more files.")
+            state.inventory = { ...result.inventory, files: more ? [...previous!.files, ...result.inventory.files] : result.inventory.files }
+            if (!more) {
+                for (let path of state.patches.keys()) {
+                    if (!state.inventory.files.some(file => file.path == path))
+                        state.patches.delete(path)
+                    else
+                        void readPatch(state, path)
+                }
+            }
+        } catch (error) {
+            if (current(state, generation))
+                state.error = error instanceof Error ? error.message : String(error)
+        } finally {
+            state.requests.delete(requestId)
+            if (current(state, generation)) {
+                state.loading = false
+                update()
+            }
+        }
+    }
+
+    async function readPatch(state: BranchComparisonState, path: string, more = false) {
+        if (!state.inventory || !state.alive)
+            return
+
+        let patch = state.patches.get(path)
+        if (!patch || patch.loading)
+            return
+        let generation = state.generation
+        let requestId = `${state.requestPrefix}:file:${generation}:${++sequence}`
+        patch.requestId = requestId
+        state.requests.add(requestId)
+        patch.loading = true
+        patch.error = undefined
+        update()
+
+        try {
+            let result = await options.api.readFileDiff(state.repositoryId, requestId, {
+                source: state.inventory.source,
+                inventoryVersion: state.inventory.version,
+                path,
+                entireFile: state.showEntireFiles,
+                ...(more ? { offset: patch.page?.nextOffset, expectedVersion: patch.page?.version } : {}),
+            })
+            if (!current(state, generation) || state.patches.get(path) != patch || patch.requestId != requestId)
+                return
+            if (!result.ok)
+                throw new Error(result.error.message)
+            patch.page = { ...result.page, selectable: false, lines: more ? [...patch.page!.lines, ...result.page.lines] : result.page.lines }
+        } catch (error) {
+            if (current(state, generation) && state.patches.get(path) == patch && patch.requestId == requestId)
+                patch.error = error instanceof Error ? error.message : String(error)
+        } finally {
+            state.requests.delete(requestId)
+            if (current(state, generation) && state.patches.get(path) == patch && patch.requestId == requestId) {
+                patch.loading = false
+                update()
+            }
+        }
+    }
+}

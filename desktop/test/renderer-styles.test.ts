@@ -6,25 +6,27 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
 test("Remix renderer styles and controls work under production CSP in Electron", async () => {
-    const temporaryRoot = await realpath(tmpdir())
-    const directory = await mkdtemp(join(temporaryRoot, "laneway-renderer-"))
+    let temporaryRoot = await realpath(tmpdir())
+    let directory = await mkdtemp(join(temporaryRoot, "laneway-renderer-"))
     try {
-        const build = await Bun.build({
+        let build = await Bun.build({
             entrypoints: [join(import.meta.dir, "fixtures/renderer-styles.tsx")],
             outdir: directory,
             target: "browser",
         })
         expect(build.success).toBe(true)
-        const html = (await readFile(join(import.meta.dir, "../src/renderer/index.html"), "utf8"))
+
+        let html = (await readFile(join(import.meta.dir, "../src/renderer/index.html"), "utf8"))
             .replace("./src/styles.css", "./styles.css")
             .replace("./src/main.tsx", "./renderer-styles.js")
         await writeFile(join(directory, "index.html"), html)
         await writeFile(join(directory, "styles.css"), await readFile(join(import.meta.dir, "../src/renderer/src/styles.css")))
-        const env = { ...process.env }
+
+        let env = { ...process.env }
         delete env.ELECTRON_RUN_AS_NODE
         let errors = ""
-        const exitCode = await new Promise<number | null>((resolve, reject) => {
-            const child = spawn(electron as unknown as string, [join(import.meta.dir, "fixtures/renderer-electron.cjs"), directory], {
+        let exitCode = await new Promise<number | null>((resolve, reject) => {
+            let child = spawn(electron as unknown as string, [join(import.meta.dir, "fixtures/renderer-electron.cjs"), directory], {
                 env,
                 windowsHide: true,
                 stdio: ["ignore", "ignore", "pipe"],
@@ -34,9 +36,9 @@ test("Remix renderer styles and controls work under production CSP in Electron",
             child.on("error", reject)
             child.on("close", resolve)
         })
-        const failure = exitCode == 0 ? "" : await readFile(join(directory, "result.json"), "utf8").catch(() => "")
+        let failure = exitCode == 0 ? "" : await readFile(join(directory, "result.json"), "utf8").catch(() => "")
         expect(exitCode, failure || errors || "Electron exited before completing the renderer checks (60-second timeout).").toBe(0)
-        const result = JSON.parse(await readFile(join(directory, "result.json"), "utf8"))
+        let result = JSON.parse(await readFile(join(directory, "result.json"), "utf8"))
         expect({ exitCode, error: result.error }, errors).toEqual({ exitCode: 0, error: undefined })
         expect(result).toMatchObject({
             worktreePreview: true,

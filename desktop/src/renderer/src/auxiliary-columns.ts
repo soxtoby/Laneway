@@ -22,16 +22,18 @@ export class AuxiliaryColumns<T> {
     open(sourceId: string, identity: string, create: () => { value: T; dispose(): void }, width = 620) {
         if (!this.roots.has(sourceId) && !this.columns.has(sourceId))
             throw new Error("The auxiliary column source is unavailable.")
-        const siblings = this.children.get(sourceId) ?? []
-        const existing = siblings.map(id => this.columns.get(id)!).find(column => column.identity == identity)
+
+        let siblings = this.children.get(sourceId) ?? []
+        let existing = siblings.map(id => this.columns.get(id)!).find(column => column.identity == identity)
         if (existing) {
             this.focusedId = existing.id
             return existing
         }
-        const column = { ...create(), id: `auxiliary:${++this.nextId}`, sourceId, identity, width }
+        let column = { ...create(), id: `auxiliary:${++this.nextId}`, sourceId, identity, width }
         this.columns.set(column.id, column)
         this.children.set(sourceId, [column.id, ...siblings])
         this.focusedId = column.id
+
         return column
     }
 
@@ -40,12 +42,12 @@ export class AuxiliaryColumns<T> {
     }
 
     close(id: string) {
-        const column = this.columns.get(id)
-        const focused = this.focusedId == id || this.descendants(id).some(child => child.id == this.focusedId)
+        let column = this.columns.get(id)
+        let focused = this.focusedId == id || this.descendants(id).some(child => child.id == this.focusedId)
         // Detach before disposal so cleanup may safely close related resources.
-        const descendants = this.descendants(id).reverse()
-        const removed = column ? [...descendants, column] : descendants
-        for (const child of removed) {
+        let descendants = this.descendants(id).reverse()
+        let removed = column ? [...descendants, column] : descendants
+        for (let child of removed) {
             this.columns.delete(child.id)
             this.children.delete(child.id)
         }
@@ -55,7 +57,7 @@ export class AuxiliaryColumns<T> {
             this.children.set(column.sourceId, (this.children.get(column.sourceId) ?? []).filter(child => child != id))
         if (focused)
             this.focusedId = column?.sourceId
-        for (const child of removed)
+        for (let child of removed)
             child.dispose()
     }
 }
@@ -64,7 +66,7 @@ export class AuxiliaryColumns<T> {
  * Auxiliary columns extend their source column's card: square where they join it, rounded at the card's far end.
  * They keep a fixed width, except beside a maximized column, where they share the space it leaves.
  */
-export const auxiliaryColumnFrame = {
+export let auxiliaryColumnFrame = {
     flex: "0 0 620px",
     overflow: "auto",
     background: "var(--panel)",
@@ -80,7 +82,7 @@ export const auxiliaryColumnFrame = {
 }
 
 /** Matches the branch column header, so the header band runs on across the join. */
-export const auxiliaryColumnHeader = {
+export let auxiliaryColumnHeader = {
     height: "46px",
     boxSizing: "border-box",
     display: "flex",
@@ -92,7 +94,7 @@ export const auxiliaryColumnHeader = {
 }
 
 /** Matches the branch column header's buttons. */
-export const auxiliaryCloseButton = {
+export let auxiliaryCloseButton = {
     flex: "0 0 auto",
     width: "28px",
     height: "28px",

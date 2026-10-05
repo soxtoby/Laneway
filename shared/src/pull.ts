@@ -1,8 +1,8 @@
 import { z } from "zod"
 
-const oid = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)
+let oid = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)
 // Mirrors OperationSummarySchema; index.ts re-exports this module, so it cannot import from it.
-const operationSummary = z.object({
+let operationSummary = z.object({
     id: z.string(),
     timestamp: z.string(),
     kind: z.string(),
@@ -11,24 +11,24 @@ const operationSummary = z.object({
     affectedWorktrees: z.array(z.string()),
 })
 
-export const PullRequestSchema = z.object({
+export let PullRequestSchema = z.object({
     // Open Workspace Column branches whose Active Stacks are in scope, frozen at activation.
     branches: z.array(z.string().regex(/^refs\/heads\/.+/)),
     remote: z.string().min(1).optional(),
 })
 export type PullRequest = z.infer<typeof PullRequestSchema>
 
-export const PullFetchSchema = z.object({
+export let PullFetchSchema = z.object({
     remote: z.string(),
     status: z.enum(["fetched", "failed"]),
     message: z.string().optional(),
 })
 export type PullFetch = z.infer<typeof PullFetchSchema>
 
-export const PullStackStatusSchema = z.enum(["updated", "current", "needs-resolution", "skipped", "failed", "cancelled"])
+export let PullStackStatusSchema = z.enum(["updated", "current", "needs-resolution", "skipped", "failed", "cancelled"])
 export type PullStackStatus = z.infer<typeof PullStackStatusSchema>
 
-export const PullStackOutcomeSchema = z.object({
+export let PullStackOutcomeSchema = z.object({
     id: z.string(),
     // Stack order: the Base Branch first, the column's branch last.
     branches: z.array(z.string()),
@@ -40,7 +40,7 @@ export const PullStackOutcomeSchema = z.object({
 })
 export type PullStackOutcome = z.infer<typeof PullStackOutcomeSchema>
 
-export const PullResultSchema = z.object({
+export let PullResultSchema = z.object({
     type: z.literal("result"),
     command: z.literal("pull"),
     status: z.enum(["no-remotes", "fetched", "updated", "cancelled"]),

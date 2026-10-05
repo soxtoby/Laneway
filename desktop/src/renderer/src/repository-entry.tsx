@@ -38,6 +38,148 @@ export interface RepositoryEntry {
     render(): RemixNode
 }
 
+let addDialog = css({
+    width: "min(420px, calc(100vw - 48px))",
+})
+
+let addDialogHeader = css({
+    padding: "10px 14px",
+    borderBottom: "1px solid var(--line)",
+    background: "var(--panel-deep)",
+})
+
+let addHeading = css({
+    margin: "0",
+    fontSize: "14px",
+    fontWeight: "600",
+})
+
+let dialogActions = css({
+    marginTop: "0",
+})
+
+let entryForm = css({
+    padding: "0 14px",
+})
+
+let entryFormHeader = css({
+    padding: "10px 14px",
+    borderBottom: "1px solid var(--line)",
+    background: "var(--panel-deep)",
+    marginLeft: "-14px",
+    marginRight: "-14px",
+})
+
+let cloneHeading = css({
+    margin: "0",
+    fontSize: "14px",
+    fontWeight: "600",
+})
+
+let entryFormLabel = css({
+    display: "block",
+    margin: "14px 0 5px",
+})
+
+let fieldWithAction = css({
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) auto",
+})
+
+let cloneParent = css({
+    borderRadius: "4px 0 0 4px",
+})
+
+let fieldWithActionButton = css({
+    padding: "0 11px",
+    color: "var(--text)",
+    border: "1px solid var(--line-strong)",
+    borderLeft: "0",
+    borderRadius: "0 4px 4px 0",
+    background: "var(--control)",
+    fontSize: "12px",
+    "&:hover:not(:disabled)": {
+        background: "var(--control-hover)",
+    },
+})
+
+let progressBlock = css({
+    position: "relative",
+    marginTop: "16px",
+    padding: "10px 12px 10px 30px",
+    overflow: "hidden",
+    border: "1px solid var(--line)",
+    borderRadius: "4px",
+    background: "var(--canvas)",
+    "&::before": {
+        position: "absolute",
+        top: "14px",
+        left: "13px",
+        width: "6px",
+        height: "6px",
+        content: '""',
+        borderRadius: "50%",
+        background: "var(--accent)",
+    },
+})
+
+let progressBlockSpan = css({
+    position: "absolute",
+    top: "0",
+    left: "0",
+    width: "26%",
+    height: "2px",
+    background: "var(--accent)",
+    animation: "progress-sweep 1.3s ease-in-out infinite alternate",
+    "@media (forced-colors: active)": {
+        background: "Highlight",
+    },
+})
+
+let progressBlockP = css({
+    margin: "0",
+    overflow: "hidden",
+    fontFamily: "var(--mono)",
+    fontSize: "12px",
+    lineHeight: "1.35",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+})
+
+let formError = css({
+    marginTop: "14px",
+    padding: "10px 12px",
+    color: "var(--danger)",
+    border: "1px solid var(--danger-edge)",
+    borderRadius: "4px",
+    background: "var(--danger-wash)",
+    fontSize: "12px",
+    lineHeight: "1.5",
+    "&[hidden]": {
+        display: "none",
+    },
+})
+
+let cloneDialogDialogActions = css({
+    marginLeft: "-14px",
+    marginRight: "-14px",
+})
+
+let initHeading = css({
+    margin: "0",
+    fontSize: "14px",
+    fontWeight: "600",
+})
+
+let initParent = css({
+    borderRadius: "4px 0 0 4px",
+})
+
+let entryFormSpan = css({
+    color: "var(--faint)",
+    fontWeight: "400",
+})
+
 export function createRepositoryEntry(options: RepositoryEntryOptions): RepositoryEntry {
     let operation: Operation = "idle"
     let clone: CloneState = emptyClone()
@@ -49,171 +191,6 @@ export function createRepositoryEntry(options: RepositoryEntryOptions): Reposito
     let initDialog: HTMLDialogElement
     let initName: HTMLInputElement
     let initError: HTMLElement
-
-    async function setOperation(value: Operation) {
-        operation = value
-        document.body.classList.toggle("busy", value != "idle")
-        await options.update()
-    }
-
-    function showFailure(action: string, error: unknown) {
-        options.notify({ code: `${action}.failed`, message: errorMessage(error) })
-    }
-
-    function chooseEntry(action: () => void) {
-        addDialog.close()
-        action()
-    }
-
-    async function loadDefaults(form: "clone" | "init"): Promise<EntryDefaults | undefined> {
-        try {
-            return await options.api.entryDefaults(form)
-        } catch (error) {
-            showFailure("entry.defaults", error)
-            return undefined
-        }
-    }
-
-    async function openClone() {
-        const defaults = await loadDefaults("clone")
-        clone = emptyClone()
-        clone.parent = defaults?.parent ?? ""
-        if (defaults?.source) {
-            clone.source = defaults.source
-            void suggestCloneName()
-        }
-        await options.update()
-        cloneDialog.showModal()
-        cloneSource.focus()
-    }
-
-    async function openInitialize() {
-        const defaults = await loadDefaults("init")
-        initialize = emptyInit()
-        initialize.parent = defaults?.parent ?? ""
-        await options.update()
-        initDialog.showModal()
-        initName.focus()
-    }
-
-    async function browseCloneParent() {
-        try {
-            const selected = await options.api.chooseDirectory(clone.parent || undefined)
-            if (selected) {
-                clone.parent = selected
-                await options.update()
-            }
-        } catch (error) {
-            showFailure("clone.browse", error)
-            await options.update()
-        }
-    }
-
-    async function suggestCloneName() {
-        if (clone.nameEdited)
-            return
-        const source = clone.source
-        try {
-            const name = await options.api.suggestCloneDirectoryName(source)
-            if (!clone.nameEdited && clone.source == source) {
-                clone.name = name
-                await options.update()
-            }
-        } catch (error) {
-            showFailure("clone.suggest-name", error)
-            await options.update()
-        }
-    }
-
-    async function browseInitParent() {
-        try {
-            const selected = await options.api.chooseDirectory(initialize.parent || undefined)
-            if (selected) {
-                initialize.parent = selected
-                await options.update()
-            }
-        } catch (error) {
-            showFailure("initialize.browse", error)
-            await options.update()
-        }
-    }
-
-    async function submitClone() {
-        clone.error = undefined
-        clone.progress = "Starting Git"
-        await setOperation("cloning")
-        try {
-            await finishEntry(await options.api.cloneRepository(clone.source, clone.parent, clone.name), "clone")
-        } catch (error) {
-            clone.progress = undefined
-            showFailure("repository.clone", error)
-        } finally {
-            await setOperation("idle")
-        }
-    }
-
-    async function submitInitialize() {
-        initialize.error = undefined
-        await setOperation("initializing")
-        try {
-            await finishEntry(await options.api.initializeRepository(initialize.parent, initialize.name, initialize.branch || undefined), "init")
-        } catch (error) {
-            showFailure("repository.initialize", error)
-        } finally {
-            await setOperation("idle")
-        }
-    }
-
-    async function finishEntry(result: EntryResult, form: "clone" | "init") {
-        if (result.ok) {
-            options.workspaceOpened(result.workspace)
-            if (form == "clone") {
-                cloneDialog.close()
-                clone = emptyClone()
-            } else {
-                initDialog.close()
-                initialize = emptyInit()
-            }
-            options.notify({
-                code: `repository.${form == "clone" ? "cloned" : "initialized"}`,
-                message: `Repository ${form == "clone" ? "cloned" : "initialized"} and opened.`,
-                transient: true,
-            })
-            return
-        }
-        if (result.error.code == "git.cancelled") {
-            clone.progress = undefined
-            return
-        }
-        if (form == "clone")
-            clone.error = result.error
-        else
-            initialize.error = result.error
-        clone.progress = undefined
-        if (result.error.destination)
-            options.notify({ code: result.error.code, message: entryErrorMessage(result.error) })
-        await options.update()
-        const error = form == "clone" ? cloneError : initError
-        queueMicrotask(() => error.focus())
-    }
-
-    async function cancelClone() {
-        if (operation == "cloning" || operation == "cancelling") {
-            if (operation == "cloning") {
-                await setOperation("cancelling")
-                clone.progress = "Stopping Git"
-                try {
-                    await options.api.cancelEntry()
-                } catch (error) {
-                    showFailure("repository.cancel", error)
-                    await setOperation("idle")
-                }
-                await options.update()
-            }
-            return
-        }
-        cloneDialog.close()
-    }
 
     return {
         get busy() {
@@ -291,6 +268,172 @@ export function createRepositoryEntry(options: RepositoryEntryOptions): Reposito
             )
         },
     }
+
+    function chooseEntry(action: () => void) {
+        addDialog.close()
+        action()
+    }
+
+    async function openClone() {
+        let defaults = await loadDefaults("clone")
+        clone = emptyClone()
+        clone.parent = defaults?.parent ?? ""
+        if (defaults?.source) {
+            clone.source = defaults.source
+            void suggestCloneName()
+        }
+        await options.update()
+        cloneDialog.showModal()
+        cloneSource.focus()
+    }
+
+    async function openInitialize() {
+        let defaults = await loadDefaults("init")
+        initialize = emptyInit()
+        initialize.parent = defaults?.parent ?? ""
+        await options.update()
+        initDialog.showModal()
+        initName.focus()
+    }
+
+    async function loadDefaults(form: "clone" | "init"): Promise<EntryDefaults | undefined> {
+        try {
+            return await options.api.entryDefaults(form)
+        } catch (error) {
+            showFailure("entry.defaults", error)
+            return undefined
+        }
+    }
+
+    async function browseCloneParent() {
+        try {
+            let selected = await options.api.chooseDirectory(clone.parent || undefined)
+            if (selected) {
+                clone.parent = selected
+                await options.update()
+            }
+        } catch (error) {
+            showFailure("clone.browse", error)
+            await options.update()
+        }
+    }
+
+    async function suggestCloneName() {
+        if (clone.nameEdited)
+            return
+        let source = clone.source
+        try {
+            let name = await options.api.suggestCloneDirectoryName(source)
+            if (!clone.nameEdited && clone.source == source) {
+                clone.name = name
+                await options.update()
+            }
+        } catch (error) {
+            showFailure("clone.suggest-name", error)
+            await options.update()
+        }
+    }
+
+    async function browseInitParent() {
+        try {
+            let selected = await options.api.chooseDirectory(initialize.parent || undefined)
+            if (selected) {
+                initialize.parent = selected
+                await options.update()
+            }
+        } catch (error) {
+            showFailure("initialize.browse", error)
+            await options.update()
+        }
+    }
+
+    async function submitClone() {
+        clone.error = undefined
+        clone.progress = "Starting Git"
+        await setOperation("cloning")
+
+        try {
+            await finishEntry(await options.api.cloneRepository(clone.source, clone.parent, clone.name), "clone")
+        } catch (error) {
+            clone.progress = undefined
+            showFailure("repository.clone", error)
+        } finally {
+            await setOperation("idle")
+        }
+    }
+
+    async function submitInitialize() {
+        initialize.error = undefined
+        await setOperation("initializing")
+        try {
+            await finishEntry(await options.api.initializeRepository(initialize.parent, initialize.name, initialize.branch || undefined), "init")
+        } catch (error) {
+            showFailure("repository.initialize", error)
+        } finally {
+            await setOperation("idle")
+        }
+    }
+
+    async function finishEntry(result: EntryResult, form: "clone" | "init") {
+        if (result.ok) {
+            options.workspaceOpened(result.workspace)
+            if (form == "clone") {
+                cloneDialog.close()
+                clone = emptyClone()
+            } else {
+                initDialog.close()
+                initialize = emptyInit()
+            }
+            options.notify({
+                code: `repository.${form == "clone" ? "cloned" : "initialized"}`,
+                message: `Repository ${form == "clone" ? "cloned" : "initialized"} and opened.`,
+                transient: true,
+            })
+            return
+        }
+        if (result.error.code == "git.cancelled") {
+            clone.progress = undefined
+            return
+        }
+        if (form == "clone")
+            clone.error = result.error
+        else
+            initialize.error = result.error
+        clone.progress = undefined
+        if (result.error.destination)
+            options.notify({ code: result.error.code, message: entryErrorMessage(result.error) })
+        await options.update()
+        let error = form == "clone" ? cloneError : initError
+        queueMicrotask(() => error.focus())
+    }
+
+    async function cancelClone() {
+        if (operation == "cloning" || operation == "cancelling") {
+            if (operation == "cloning") {
+                await setOperation("cancelling")
+                clone.progress = "Stopping Git"
+                try {
+                    await options.api.cancelEntry()
+                } catch (error) {
+                    showFailure("repository.cancel", error)
+                    await setOperation("idle")
+                }
+                await options.update()
+            }
+            return
+        }
+        cloneDialog.close()
+    }
+
+    async function setOperation(value: Operation) {
+        operation = value
+        document.body.classList.toggle("busy", value != "idle")
+        await options.update()
+    }
+
+    function showFailure(action: string, error: unknown) {
+        options.notify({ code: `${action}.failed`, message: errorMessage(error) })
+    }
 }
 
 function AddDialog(handle: Handle<EntryActions & { dialogRef(node: HTMLDialogElement): void; close(): void }>) {
@@ -330,7 +473,7 @@ function CloneDialog(
     }>,
 ) {
     return () => {
-        const busy = handle.props.operation == "cloning" || handle.props.operation == "cancelling"
+        let busy = handle.props.operation == "cloning" || handle.props.operation == "cancelling"
         return (
             <dialog
                 aria-labelledby="clone-heading"
@@ -445,7 +588,7 @@ function InitDialog(
     }>,
 ) {
     return () => {
-        const busy = handle.props.operation == "initializing"
+        let busy = handle.props.operation == "initializing"
         return (
             <dialog
                 aria-labelledby="init-heading"
@@ -544,145 +687,3 @@ function emptyInit(): InitState {
 function entryErrorMessage(error: EntryError) {
     return error.destination ? `${error.message}\nPartial clone preserved at ${error.destination}` : error.message
 }
-
-const addDialog = css({
-    width: "min(420px, calc(100vw - 48px))",
-})
-
-const addDialogHeader = css({
-    padding: "10px 14px",
-    borderBottom: "1px solid var(--line)",
-    background: "var(--panel-deep)",
-})
-
-const addHeading = css({
-    margin: "0",
-    fontSize: "14px",
-    fontWeight: "600",
-})
-
-const dialogActions = css({
-    marginTop: "0",
-})
-
-const entryForm = css({
-    padding: "0 14px",
-})
-
-const entryFormHeader = css({
-    padding: "10px 14px",
-    borderBottom: "1px solid var(--line)",
-    background: "var(--panel-deep)",
-    marginLeft: "-14px",
-    marginRight: "-14px",
-})
-
-const cloneHeading = css({
-    margin: "0",
-    fontSize: "14px",
-    fontWeight: "600",
-})
-
-const entryFormLabel = css({
-    display: "block",
-    margin: "14px 0 5px",
-})
-
-const fieldWithAction = css({
-    display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) auto",
-})
-
-const cloneParent = css({
-    borderRadius: "4px 0 0 4px",
-})
-
-const fieldWithActionButton = css({
-    padding: "0 11px",
-    color: "var(--text)",
-    border: "1px solid var(--line-strong)",
-    borderLeft: "0",
-    borderRadius: "0 4px 4px 0",
-    background: "var(--control)",
-    fontSize: "12px",
-    "&:hover:not(:disabled)": {
-        background: "var(--control-hover)",
-    },
-})
-
-const progressBlock = css({
-    position: "relative",
-    marginTop: "16px",
-    padding: "10px 12px 10px 30px",
-    overflow: "hidden",
-    border: "1px solid var(--line)",
-    borderRadius: "4px",
-    background: "var(--canvas)",
-    "&::before": {
-        position: "absolute",
-        top: "14px",
-        left: "13px",
-        width: "6px",
-        height: "6px",
-        content: '""',
-        borderRadius: "50%",
-        background: "var(--accent)",
-    },
-})
-
-const progressBlockSpan = css({
-    position: "absolute",
-    top: "0",
-    left: "0",
-    width: "26%",
-    height: "2px",
-    background: "var(--accent)",
-    animation: "progress-sweep 1.3s ease-in-out infinite alternate",
-    "@media (forced-colors: active)": {
-        background: "Highlight",
-    },
-})
-
-const progressBlockP = css({
-    margin: "0",
-    overflow: "hidden",
-    fontFamily: "var(--mono)",
-    fontSize: "12px",
-    lineHeight: "1.35",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-})
-
-const formError = css({
-    marginTop: "14px",
-    padding: "10px 12px",
-    color: "var(--danger)",
-    border: "1px solid var(--danger-edge)",
-    borderRadius: "4px",
-    background: "var(--danger-wash)",
-    fontSize: "12px",
-    lineHeight: "1.5",
-    "&[hidden]": {
-        display: "none",
-    },
-})
-
-const cloneDialogDialogActions = css({
-    marginLeft: "-14px",
-    marginRight: "-14px",
-})
-
-const initHeading = css({
-    margin: "0",
-    fontSize: "14px",
-    fontWeight: "600",
-})
-
-const initParent = css({
-    borderRadius: "4px 0 0 4px",
-})
-
-const entryFormSpan = css({
-    color: "var(--faint)",
-    fontWeight: "400",
-})

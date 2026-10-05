@@ -5,62 +5,227 @@ import { lstat, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promise
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 
 type Changes = Map<string, string | null>
-export const conflictMutation = (request: ConflictRequest) =>
+export let conflictMutation = (request: ConflictRequest) =>
     ["rewrite", "accept", "keep-stashed", "restore", "discard", "resume-working"].includes(request.action)
-const candidateRef = (subject: ConflictSubject) => `refs/laneway/conflict-candidates/${subject.id}/${subject.input}`
-const commitParent = (repo: RepositoryGit, commit: string) => gitText(repo, ["rev-parse", `${commit}^`])
-const branchRef = (name: string) => name.startsWith("refs/heads/") ? name : `refs/heads/${name}`
+
+export interface ConflictSession {
+    state: ConflictState
+    before: string | null
+    updateRefs: (updates: Parameters<RepositoryGit["updateRefs"]>[0]) => Promise<void>
+    persist: () => Promise<void>
+}
+
+export interface StackRewritePlan {
+    // Affected branches in stack order, as full refs.
+    refs: string[]
+    base: string
+    path?: string
+    // Explicit replay sources per branch, bottom-up. When omitted, the branches' linear local history is replayed.
+    // For an existing Unresolved Stack these are incoming commits inserted before that branch's retained steps.
+    sources?: string[][]
+}
 
 export async function conflictPaths(repo: RepositoryGit) {
     return (await readRegisteredWorktrees(repo)).filter(w => !w.missing).map(w => w.path)
 }
-async function requireWorktree(repo: RepositoryGit, path: string, clean = false) {
-    const worktree = (await readRegisteredWorktrees(repo)).find(w => normalize(w.path) == normalize(path) && !w.missing)
-    if (!worktree)
-        throw new Error("Choose a registered, available worktree.")
-    if (clean && (await repo.command(path, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])).length)
-        throw new Error("Commit or stash Working Changes before replacing this worktree's tree.")
-    return worktree
-}
-function findSubject(state: ConflictState, id: string) {
-    for (const stack of state.stacks) {
-        const step = stack.steps.find(step => step.conflict?.id == id)
-        if (step?.conflict)
-            return { subject: step.conflict, stack, step }
+
+export async function executeConflict(repo: RepositoryGit, request: ConflictRequest, changes: Changes, cancelled: () => boolean = () => false) {
+    if (request.action == "list" || request.action == "inspect")
+        return conflictResult(repo, request.action == "inspect" ? request.subject : undefined, request.action == "inspect" ? request.files : undefined)
+    if (request.action == "publish-check" && !(await readConflictState(repo).catch(() => undefined)))
+        return conflictResult(repo)
+    let session = await openConflictSession(repo, changes)
+    let { state, updateRefs, persist } = session
+    if (request.action == "publish-check") {
+        let result = await conflictResult(repo)
+        let refs = request.branches.map(branchRef)
+        let blocked = state.stacks.some(s => refs.includes(s.temporaryRef) || s.branches.some(b => refs.includes(b.ref)))
+            || state.working.some(w => w.branch && refs.includes(w.branch))
+        let inherited = false
+        for (let ref of refs) {
+            let tip = await repo.resolveRef(ref)
+            if (!tip)
+                continue
+            for (let retained of state.retainedConflicts) {
+                if (!(await repo.run(repo.descriptor.mainWorktree, ["merge-base", "--is-ancestor", retained.commit, tip])).exitCode)
+                    inherited = true
+            }
+        }
+        result.publishable = !blocked && !inherited && !refs.some(ref => ref.startsWith(temporaryBranchPrefix))
+        return result
     }
-    const working = state.working.find(w => w.conflict.id == id)
-    if (working)
-        return { subject: working.conflict, working }
-    throw new Error("This conflict no longer exists. Refresh the branch.")
-}
-async function readCandidate(repo: RepositoryGit, subject: ConflictSubject): Promise<ResolutionCandidate> {
-    const ref = await repo.resolveRef(candidateRef(subject))
-    if (!ref)
-        return { subject: subject.id, input: subject.input, revision: "", files: {} }
-    const candidate = ResolutionCandidateSchema.parse(JSON.parse((await repo.command(repo.descriptor.mainWorktree, ["show", `${ref}:state.json`])).toString()))
-    return { ...candidate, revision: ref }
+    if (request.action == "rewrite") {
+        await rewriteStack(repo, session, { refs: request.branches, base: request.base, path: request.path }, changes, cancelled)
+        await persist()
+        return conflictResult(repo)
+    }
+    if (request.action == "restore" || request.action == "discard") {
+        let stack = state.stacks.find(s => s.id == request.stack)
+        if (!stack)
+            throw new Error("The Unresolved Stack no longer exists.")
+        if (request.action == "discard") {
+            if (await repo.resolveRef(stack.temporaryRef))
+                throw new Error("Use Operation History to undo a live unresolved update.")
+            state.stacks = state.stacks.filter(s => s != stack)
+        } else {
+            if (request.adopt) {
+                let adopted = branchRef(request.adopt)
+                if (await repo.resolveRef(adopted) != (stack.steps.at(-1)?.current ?? stack.base))
+                    throw new Error("The proposed replacement branch changed.")
+                stack.temporaryRef = adopted
+            } else if (!await repo.resolveRef(stack.temporaryRef)) {
+                await updateRefs([{ ref: stack.temporaryRef, before: null, after: stack.steps.at(-1)?.current ?? stack.base }])
+            }
+            if (request.path) {
+                await requireWorktree(repo, request.path, true)
+                await repo.command(request.path, ["switch", stack.temporaryRef.slice(11)])
+            }
+        }
+        await persist()
+        return conflictResult(repo)
+    }
+
+    let found = findSubject(state, request.subject)
+    let { subject } = found
+    if (request.action == "resume-working") {
+        if (!found.working?.suspended)
+            throw new Error("This Working Changes Conflict is not suspended.")
+        await requireWorktree(repo, request.path, true)
+        if (await gitText(repo, ["rev-parse", `${found.working.suspended}^1`]) != await gitHead(repo, request.path))
+            throw new Error("The restoration base changed. Apply the suspended stash as a new Working Changes Conflict.")
+        await repo.command(request.path, ["stash", "apply", "--index", found.working.suspended])
+        await dropStash(repo, found.working.suspended, changes)
+        found.working.suspended = undefined
+        found.working.path = request.path
+        await persist()
+        return conflictResult(repo, subject.id)
+    }
+
+    let candidate = await checkedCandidate(repo, subject, request)
+
+    if (request.action == "cancel") {
+        await repo.updateRefs([{ ref: candidateRef(subject), before: candidate.revision || null, after: null }])
+        await cleanupResolutionFiles(repo, subject)
+        return conflictResult(repo, subject.id)
+    }
+
+    if (request.action == "accept" || request.action == "keep-stashed") {
+        if (request.action == "accept" && !await candidateReady(repo, subject, candidate))
+            throw new Error("Resolve every recorded conflict before accepting this candidate.")
+        if (found.working) {
+            let working = found.working
+            if (working.suspended)
+                throw new Error("Resume these Working Changes before accepting them.")
+            await requireWorktree(repo, working.path)
+            if (await gitHead(repo, working.path) != working.head)
+                throw new Error("The worktree moved. Resume the Working Changes Conflict on its original base.")
+            let current = await workingTree(repo, working.path)
+            let target = request.action == "accept"
+                ? await replaceTreeFiles(repo, subject.tree, candidate.files)
+                : working.beforeTree ?? await gitText(repo, ["rev-parse", `${working.head}^{tree}`])
+            let restored = await replayTree(repo, subject.tree, current, target, crypto.randomUUID())
+            if (restored.conflict)
+                throw new Error("Later Working Changes overlap this result. Preserve or explicitly include them before accepting or keeping the stash.")
+            await repo.command(working.path, ["read-tree", "--reset", "-u", restored.tree])
+            await repo.command(working.path, ["read-tree", (request.action == "accept" ? working.afterIndex : working.beforeIndex) ?? working.head])
+            if (request.action == "accept")
+                await dropStash(repo, working.stash, changes)
+            state.working = state.working.filter(w => w != working)
+        } else {
+            if (request.action == "keep-stashed")
+                throw new Error("Only Working Changes Conflicts can be kept stashed.")
+            let stack = found.stack!
+            await followTemporaryBranch(repo, stack)
+            if (!stack.steps.includes(found.step!))
+                throw new Error("The temporary branch no longer contains this commit. Update the stack to follow its current history.")
+            found.step!.accepted = { input: subject.input, tree: await replaceTreeFiles(repo, subject.tree, candidate.files) }
+            await rebaseStack(repo, stack, cancelled)
+            await carryNewBranchCommits(repo, stack)
+            await rebaseDependents(repo, state, stack, cancelled)
+            if (cancelled())
+                throw new Error("Acceptance cancelled before changing refs or files.")
+            let affectedStacks = [...state.stacks].filter(s => s.id == stack.id || dependsOn(state, s, stack.id))
+            for (let affected of affectedStacks)
+                await publishProvisional(repo, state, affected, updateRefs, changes)
+        }
+        await persist()
+        await cleanupResolutionFiles(repo, subject)
+        return conflictResult(repo)
+    }
+
+    let file = subject.files.find(file => file.path == request.file)
+    if (!file)
+        throw new Error("Choose a recorded conflict file.")
+    if (request.action == "choose") {
+        if (request.hunk !== undefined) {
+            if (request.side != "left" && request.side != "right")
+                throw new Error("Choose a named side for this hunk.")
+            let content = (await blob(repo, file.path in candidate.files ? candidate.files[file.path] : file.provisional))?.toString() ?? ""
+            let hunk = conflictHunks(content, subject)[request.hunk]
+            if (!hunk)
+                throw new Error("The conflict hunk changed. Refresh the candidate.")
+            let result = content.slice(0, hunk.start) + hunk[request.side] + content.slice(hunk.end)
+            candidate.files[file.path] = { mode: file.provisional!.mode, object: await gitText(repo, ["hash-object", "-w", "--stdin"], result) }
+        } else if (request.side == "suggestion") {
+            if (!subject.suggestion)
+                throw new Error("There is no previous result to use.")
+            candidate.files[file.path] = (await treeEntries(repo, subject.suggestion)).get(file.path) ?? null
+        } else {
+            candidate.files[file.path] = request.side == "delete" ? null : file[request.side]
+        }
+    } else if (request.action == "edit") {
+        let entry = candidate.files[file.path] ?? file.provisional ?? file.left ?? file.right
+        if (!entry || !["100644", "100755"].includes(entry.mode) || !isText(Buffer.from(request.content)))
+            throw new Error("Use a named side or an external tool for binary and structural conflicts.")
+        candidate.files[file.path] = {
+            mode: entry.mode,
+            object: await gitText(repo, ["hash-object", "-w", "--stdin"], request.content),
+        }
+    } else if (request.action == "use-file") {
+        await requireWorktree(repo, request.path)
+        let absolute = resolve(request.path, file.path)
+        let parent = await realpath(dirname(absolute))
+        let root = await realpath(request.path)
+        if (isAbsolute(relative(root, parent)) || relative(root, parent).startsWith(".."))
+            throw new Error("Resolution files must stay inside the worktree.")
+        let stat = await lstat(absolute)
+        if (!stat.isFile() || stat.isSymbolicLink())
+            throw new Error("Use a named side for symbolic links and structural conflicts.")
+        candidate.files[file.path] = {
+            mode: file.provisional?.mode ?? "100644",
+            object: (await repo.command(request.path, ["hash-object", "-w", `--path=${file.path}`, "--stdin"], await readFile(absolute))).toString().trim(),
+        }
+    } else if (request.action == "tool") {
+        await runMergeTool(repo, subject, file, candidate)
+    }
+
+    await saveCandidate(repo, subject, candidate)
+    if (request.action != "tool")
+        await cleanupResolutionFiles(repo, subject, file.path)
+    return conflictResult(repo, subject.id)
 }
 async function saveCandidate(repo: RepositoryGit, subject: ConflictSubject, candidate: ResolutionCandidate) {
-    const objects = new Map<string, string>()
-    for (const entry of Object.values(candidate.files)) {
+    let objects = new Map<string, string>()
+    for (let entry of Object.values(candidate.files)) {
         if (entry && entry.mode != "160000")
             objects.set(entry.object, "blob")
     }
-    const after = await retainedDocument(repo, candidate, objects)
+
+    let after = await retainedDocument(repo, candidate, objects)
     await repo.updateRefs([{ ref: candidateRef(subject), before: candidate.revision || null, after }])
 }
 async function checkedCandidate(repo: RepositoryGit, subject: ConflictSubject, request: { input: string; revision: string }) {
     if (subject.input != request.input)
         throw new Error("Conflict inputs changed. The previous result remains a suggestion; refresh before accepting.")
-    const candidate = await readCandidate(repo, subject)
+    let candidate = await readCandidate(repo, subject)
     if (candidate.revision != request.revision)
         throw new Error("Resolution progress changed. Reload the candidate before continuing.")
     return candidate
 }
 
 export async function conflictResult(repo: RepositoryGit, subjectId?: string, requestedFiles?: string[]): Promise<ConflictResult> {
-    const result: ConflictResult = { type: "result", command: "conflict", conflicts: [], recovery: [] }
-    const state = await readConflictState(repo).catch(() => undefined)
+    let result: ConflictResult = { type: "result", command: "conflict", conflicts: [], recovery: [] }
+    let state = await readConflictState(repo).catch(() => undefined)
     if (!state) {
         result.recovery.push({
             stack: "untracked",
@@ -71,22 +236,23 @@ export async function conflictResult(repo: RepositoryGit, subjectId?: string, re
         result.publishable = false
         return result
     }
-    const inspectedCandidate = subjectId && requestedFiles ? readCandidate(repo, findSubject(state, subjectId).subject) : undefined
-    for (const stack of state.stacks) {
+
+    let inspectedCandidate = subjectId && requestedFiles ? readCandidate(repo, findSubject(state, subjectId).subject) : undefined
+    for (let stack of state.stacks) {
         if (subjectId && requestedFiles && !stack.steps.some(step => step.conflict?.id == subjectId))
             continue
-        const tip = subjectId && requestedFiles ? stack.temporaryRef : await repo.resolveRef(stack.temporaryRef)
-        const branch = stack.branches.at(-1)!.ref.slice(11)
+        let tip = subjectId && requestedFiles ? stack.temporaryRef : await repo.resolveRef(stack.temporaryRef)
+        let branch = stack.branches.at(-1)!.ref.slice(11)
         if (!tip) {
-            const refs = await repo.listRefs("refs/heads/")
-            const candidates: string[] = []
-            for (const ref of refs) {
+            let refs = await repo.listRefs("refs/heads/")
+            let candidates: string[] = []
+            for (let ref of refs) {
                 if (await repo.resolveRef(ref) == (stack.steps.at(-1)?.current ?? stack.base))
                     candidates.push(ref.slice(11))
             }
             result.recovery.push({ stack: stack.id, branch, message: "The unresolved branch is missing.", candidates })
         }
-        for (const step of stack.steps) {
+        for (let step of stack.steps) {
             if (step.conflict && (!subjectId || !requestedFiles || step.conflict.id == subjectId)) {
                 result.conflicts.push({
                     id: step.conflict.id,
@@ -100,7 +266,8 @@ export async function conflictResult(repo: RepositoryGit, subjectId?: string, re
             }
         }
     }
-    for (const working of state.working) {
+
+    for (let working of state.working) {
         result.conflicts.push({
             id: working.conflict.id,
             kind: "working",
@@ -110,7 +277,8 @@ export async function conflictResult(repo: RepositoryGit, subjectId?: string, re
             suspended: Boolean(working.suspended),
         })
     }
-    for (const ref of requestedFiles ? [] : await repo.listRefs(temporaryBranchPrefix)) {
+
+    for (let ref of requestedFiles ? [] : await repo.listRefs(temporaryBranchPrefix)) {
         if (!state.stacks.some(stack => stack.temporaryRef == ref)) {
             result.recovery.push({
                 stack: "untracked",
@@ -120,19 +288,21 @@ export async function conflictResult(repo: RepositoryGit, subjectId?: string, re
             })
         }
     }
+
     if (subjectId) {
-        const { subject, step, working } = findSubject(state, subjectId)
-        const candidate = await (inspectedCandidate ?? readCandidate(repo, subject))
-        const suggestion = subject.suggestion && requestedFiles?.length != 0 ? await treeEntries(repo, subject.suggestion) : undefined
-        const needsReview = requestedFiles == undefined || requestedFiles.some(path => path in candidate.files)
-        const [candidateTree, reviewTree] = needsReview
+        let { subject, step, working } = findSubject(state, subjectId)
+        let candidate = await (inspectedCandidate ?? readCandidate(repo, subject))
+        let suggestion = subject.suggestion && requestedFiles?.length != 0 ? await treeEntries(repo, subject.suggestion) : undefined
+        let needsReview = requestedFiles == undefined || requestedFiles.some(path => path in candidate.files)
+        let [candidateTree, reviewTree] = needsReview
             ? await Promise.all([
                 replaceTreeFiles(repo, subject.tree, candidate.files),
                 replaceTreeFiles(repo, subject.tree, Object.fromEntries(subject.files.map(file => [file.path, file.left]))),
             ])
             : [subject.tree, subject.tree]
-        const blobs = new Map<string, Promise<Buffer | null>>()
-        const readBlob = (entry: ConflictFile["base"]) => {
+
+        let blobs = new Map<string, Promise<Buffer | null>>()
+        let readBlob = (entry: ConflictFile["base"]) => {
             if (!entry || entry.mode == "160000")
                 return Promise.resolve(null)
             let pending = blobs.get(entry.object)
@@ -142,10 +312,11 @@ export async function conflictResult(repo: RepositoryGit, subjectId?: string, re
             }
             return pending
         }
-        const files: NonNullable<ConflictResult["view"]>["files"] = []
-        for (const file of subject.files) {
+
+        let files: NonNullable<ConflictResult["view"]>["files"] = []
+        for (let file of subject.files) {
             if (requestedFiles && !requestedFiles.includes(file.path)) {
-                const bytes = file.path in candidate.files ? await readBlob(candidate.files[file.path]) : null
+                let bytes = file.path in candidate.files ? await readBlob(candidate.files[file.path]) : null
                 files.push({
                     ...file,
                     loaded: false,
@@ -160,18 +331,18 @@ export async function conflictResult(repo: RepositoryGit, subjectId?: string, re
                 })
                 continue
             }
-            const entries = [
+            let entries = [
                 file.base,
                 file.left,
                 file.right,
                 file.path in candidate.files ? candidate.files[file.path] : file.provisional,
                 suggestion?.get(file.path) ?? null,
             ]
-            const texts = await Promise.all(entries.map(async entry => {
-                const bytes = await readBlob(entry)
+            let texts = await Promise.all(entries.map(async entry => {
+                let bytes = await readBlob(entry)
                 return isText(bytes) && bytes!.length <= 2_000_000 ? bytes!.toString() : null
             }))
-            const diff = !needsReview
+            let diff = !needsReview
                 ? ""
                 : (await repo.command(repo.descriptor.mainWorktree, ["diff", "--no-ext-diff", "--no-textconv", reviewTree, candidateTree, "--", file.path]))
                     .toString()
@@ -187,6 +358,7 @@ export async function conflictResult(repo: RepositoryGit, subjectId?: string, re
                 hunks: conflictHunks(texts[3] ?? "", subject),
             })
         }
+
         result.view = {
             subject,
             sourceCommit: step?.source ?? working!.stash,
@@ -197,63 +369,64 @@ export async function conflictResult(repo: RepositoryGit, subjectId?: string, re
             ready: await candidateReady(repo, subject, candidate),
         }
     }
+
     return result
 }
+function findSubject(state: ConflictState, id: string) {
+    let found = state.stacks.map(stack => ({ stack, step: stack.steps.find(step => step.conflict?.id == id) })).find(item => item.step?.conflict)
+    let working = state.working.find(w => w.conflict.id == id)
 
-export interface ConflictSession {
-    state: ConflictState
-    before: string | null
-    updateRefs: (updates: Parameters<RepositoryGit["updateRefs"]>[0]) => Promise<void>
-    persist: () => Promise<void>
+    if (found?.step?.conflict)
+        return { subject: found.step.conflict, stack: found.stack, step: found.step }
+    else if (working)
+        return { subject: working.conflict, working }
+    else
+        throw new Error("This conflict no longer exists. Refresh the branch.")
 }
 // Reads authoritative conflict state and prepares CAS-guarded ref updates for one mutation.
 export async function openConflictSession(repo: RepositoryGit, changes: Changes): Promise<ConflictSession> {
-    const state = await readConflictState(repo)
-    for (const step of state.stacks.flatMap(s => s.steps)) {
+    let state = await readConflictState(repo)
+    for (let step of state.stacks.flatMap(s => s.steps)) {
         if (step.conflict && !state.retainedConflicts.some(c => c.commit == step.current))
             state.retainedConflicts.push({ commit: step.current, source: step.source, conflict: step.conflict })
     }
-    const before = await repo.resolveRef(conflictStateRef)
-    const observedRefs = new Map<string, string | null>()
-    for (const ref of await repo.listRefs("refs/heads/"))
+
+    let before = await repo.resolveRef(conflictStateRef)
+
+    let observedRefs = new Map<string, string | null>()
+    for (let ref of await repo.listRefs("refs/heads/"))
         observedRefs.set(ref, await repo.resolveRef(ref))
-    const updateRefs = async (updates: Parameters<RepositoryGit["updateRefs"]>[0]) => {
-        for (const update of updates) {
-            const expected = changes.has(update.ref) ? changes.get(update.ref) : observedRefs.get(update.ref) ?? null
+
+    let updateRefs = async (updates: Parameters<RepositoryGit["updateRefs"]>[0]) => {
+        for (let update of updates) {
+            let expected = changes.has(update.ref) ? changes.get(update.ref) : observedRefs.get(update.ref) ?? null
             if (expected !== update.before)
                 throw new Error("A branch changed during replay. Refresh the stack before accepting.")
         }
         await repo.updateRefs(updates)
-        for (const update of updates)
+        for (let update of updates)
             changes.set(update.ref, update.after)
     }
-    const persist = async () => {
+
+    let persist = async () => {
         changes.set(conflictStateRef, await storeConflictState(repo, state, before))
     }
+
     return { state, before, updateRefs, persist }
 }
-
-export interface StackRewritePlan {
-    // Affected branches in stack order, as full refs.
-    refs: string[]
-    base: string
-    path?: string
-    // Explicit replay sources per branch, bottom-up. When omitted, the branches' linear local history is replayed.
-    // For an existing Unresolved Stack these are incoming commits inserted before that branch's retained steps.
-    sources?: string[][]
-}
 export async function rewriteStack(repo: RepositoryGit, session: ConflictSession, plan: StackRewritePlan, changes: Changes, cancelled: () => boolean) {
-    const { state, updateRefs } = session
-    const refs = plan.refs.map(branchRef)
+    let { state, updateRefs } = session
+    let refs = plan.refs.map(branchRef)
     if (new Set(refs).size != refs.length)
         throw new Error("Choose each affected branch once, in stack order.")
     if (plan.sources && plan.sources.length != refs.length)
         throw new Error("Provide replay sources for every affected branch.")
-    for (const ref of refs) {
+    for (let ref of refs) {
         await gitText(repo, ["check-ref-format", ref])
         if (ref.startsWith(temporaryBranchPrefix))
             throw new Error("Choose the intended branch, not its temporary representation.")
     }
+
     await gitText(repo, ["cat-file", "-e", `${plan.base}^{commit}`])
     let stack = state.stacks.find(s => s.branches.at(-1)!.ref == refs.at(-1))
     if (stack) {
@@ -262,12 +435,12 @@ export async function rewriteStack(repo: RepositoryGit, session: ConflictSession
         await followTemporaryBranch(repo, stack)
         stack.base = plan.base
         if (plan.sources) {
-            for (const [index, branch] of stack.branches.entries()) {
-                const incoming = plan.sources[index]!.map(source => ({ id: crypto.randomUUID(), source, current: source }))
+            for (let [index, branch] of stack.branches.entries()) {
+                let incoming = plan.sources[index]!.map(source => ({ id: crypto.randomUUID(), source, current: source }))
                 if (!incoming.length)
                     continue
-                const previous = index == 0 ? "base" : stack.branches[index - 1]!.step
-                const position = previous == "base" ? 0 : stack.steps.findIndex(step => step.id == previous) + 1
+                let previous = index == 0 ? "base" : stack.branches[index - 1]!.step
+                let position = previous == "base" ? 0 : stack.steps.findIndex(step => step.id == previous) + 1
                 stack.steps.splice(position, 0, ...incoming)
                 if (branch.step == previous)
                     branch.step = incoming.at(-1)!.id
@@ -276,18 +449,18 @@ export async function rewriteStack(repo: RepositoryGit, session: ConflictSession
     } else {
         if (state.stacks.some(s => s.branches.some(b => refs.includes(b.ref))))
             throw new Error("These branches already belong to an Unresolved Stack. Update that stack first.")
-        const branchTips = await Promise.all(refs.map(ref => repo.resolveRef(ref)))
+        let branchTips = await Promise.all(refs.map(ref => repo.resolveRef(ref)))
         if (branchTips.some(tip => !tip))
             throw new Error("An affected branch no longer exists.")
-        const upstreamBoundary = state.stacks.flatMap(s => s.branches).find(b => b.current == plan.base || b.before == plan.base)
+        let upstreamBoundary = state.stacks.flatMap(s => s.branches).find(b => b.current == plan.base || b.before == plan.base)
         let steps: UnresolvedStack["steps"]
         let branches: UnresolvedStack["branches"]
         if (plan.sources) {
             steps = []
             branches = []
             let boundary = "base"
-            for (const [index, ref] of refs.entries()) {
-                const added = plan.sources[index]!.map(source => ({
+            for (let [index, ref] of refs.entries()) {
+                let added = plan.sources[index]!.map(source => ({
                     id: crypto.randomUUID(),
                     source: state.retainedConflicts.find(c => c.commit == source)?.source ?? source,
                     current: source,
@@ -297,33 +470,33 @@ export async function rewriteStack(repo: RepositoryGit, session: ConflictSession
                 branches.push({ ref, before: branchTips[index]!, current: branchTips[index]!, step: boundary })
             }
         } else {
-            const fork = upstreamBoundary?.before ?? await gitText(repo, ["merge-base", branchTips[0]!, plan.base])
-            const sources = await linearCommits(repo, fork, branchTips.at(-1)!)
+            let fork = upstreamBoundary?.before ?? await gitText(repo, ["merge-base", branchTips[0]!, plan.base])
+            let sources = await linearCommits(repo, fork, branchTips.at(-1)!)
             steps = sources.map(source => ({
                 id: crypto.randomUUID(),
                 source: state.retainedConflicts.find(c => c.commit == source)?.source ?? source,
                 current: source,
             }))
             branches = refs.map((ref, i) => {
-                const step = steps.find(s => s.current == branchTips[i])
+                let step = steps.find(s => s.current == branchTips[i])
                 if (!step && branchTips[i] != fork)
                     throw new Error("Each affected branch must be a boundary in the replayed linear stack.")
                 return { ref, before: branchTips[i]!, current: branchTips[i]!, step: step?.id ?? "base" }
             })
         }
-        const stackId = crypto.randomUUID()
+        let stackId = crypto.randomUUID()
         stack = { id: stackId, temporaryRef: `${temporaryBranchPrefix}${refs.at(-1)!.slice(11)}/${stackId}`, base: plan.base, branches, steps }
         state.stacks.push(stack)
     }
-    for (const upstream of state.stacks.filter(s => s.id != stack!.id)) {
-        const boundary = upstream.branches.find(b => b.current == plan.base || b.before == plan.base)
+    for (let upstream of state.stacks.filter(s => s.id != stack!.id)) {
+        let boundary = upstream.branches.find(b => b.current == plan.base || b.before == plan.base)
         if (boundary) {
             stack.dependency = { stackId: upstream.id, branch: boundary.ref }
             stack.base = boundary.current
         }
     }
     if (plan.path) {
-        const holder = await requireWorktree(repo, plan.path)
+        let holder = await requireWorktree(repo, plan.path)
         if (holder.branchRef != refs.at(-1) && holder.branchRef != stack.temporaryRef)
             throw new Error("The destination must hold the intended tip branch or its temporary branch.")
     }
@@ -333,192 +506,59 @@ export async function rewriteStack(repo: RepositoryGit, session: ConflictSession
     await publishProvisional(repo, state, stack, updateRefs, changes, plan.path)
     return stack
 }
+async function carryNewBranchCommits(repo: RepositoryGit, stack: UnresolvedStack) {
+    let changed = false
 
-export async function executeConflict(repo: RepositoryGit, request: ConflictRequest, changes: Changes, cancelled: () => boolean = () => false) {
-    if (request.action == "list" || request.action == "inspect")
-        return conflictResult(repo, request.action == "inspect" ? request.subject : undefined, request.action == "inspect" ? request.files : undefined)
-    if (request.action == "publish-check" && !(await readConflictState(repo).catch(() => undefined)))
-        return conflictResult(repo)
-    const session = await openConflictSession(repo, changes)
-    const { state, updateRefs, persist } = session
-    if (request.action == "publish-check") {
-        const result = await conflictResult(repo)
-        const refs = request.branches.map(branchRef)
-        const blocked = state.stacks.some(s => refs.includes(s.temporaryRef) || s.branches.some(b => refs.includes(b.ref)))
-            || state.working.some(w => w.branch && refs.includes(w.branch))
-        let inherited = false
-        for (const ref of refs) {
-            const tip = await repo.resolveRef(ref)
-            if (!tip)
-                continue
-            for (const retained of state.retainedConflicts) {
-                if (!(await repo.run(repo.descriptor.mainWorktree, ["merge-base", "--is-ancestor", retained.commit, tip])).exitCode)
-                    inherited = true
-            }
-        }
-        result.publishable = !blocked && !inherited && !refs.some(ref => ref.startsWith(temporaryBranchPrefix))
-        return result
+    for (let branch of stack.branches) {
+        let actual = await repo.resolveRef(branch.ref)
+        if (actual == branch.before)
+            continue
+        if (!actual || (await repo.run(repo.descriptor.mainWorktree, ["merge-base", "--is-ancestor", branch.before, actual])).exitCode)
+            throw new Error("An intended branch was replaced externally. Review its new history before final acceptance.")
+        let sources = await linearCommits(repo, branch.before, actual)
+        let position = stack.steps.findIndex(step => step.id == branch.step) + 1
+        let added = sources.map(source => ({ id: crypto.randomUUID(), source, current: source }))
+        stack.steps.splice(position, 0, ...added)
+        branch.step = added.at(-1)?.id ?? branch.step
+        branch.before = actual
+        changed = true
     }
-    if (request.action == "rewrite") {
-        await rewriteStack(repo, session, { refs: request.branches, base: request.base, path: request.path }, changes, cancelled)
-        await persist()
-        return conflictResult(repo)
-    }
-    if (request.action == "restore" || request.action == "discard") {
-        const stack = state.stacks.find(s => s.id == request.stack)
-        if (!stack)
-            throw new Error("The Unresolved Stack no longer exists.")
-        if (request.action == "discard") {
-            if (await repo.resolveRef(stack.temporaryRef))
-                throw new Error("Use Operation History to undo a live unresolved update.")
-            state.stacks = state.stacks.filter(s => s != stack)
-        } else {
-            if (request.adopt) {
-                const adopted = branchRef(request.adopt)
-                if (await repo.resolveRef(adopted) != (stack.steps.at(-1)?.current ?? stack.base))
-                    throw new Error("The proposed replacement branch changed.")
-                stack.temporaryRef = adopted
-            } else if (!await repo.resolveRef(stack.temporaryRef)) {
-                await updateRefs([{ ref: stack.temporaryRef, before: null, after: stack.steps.at(-1)?.current ?? stack.base }])
-            }
-            if (request.path) {
-                await requireWorktree(repo, request.path, true)
-                await repo.command(request.path, ["switch", stack.temporaryRef.slice(11)])
-            }
-        }
-        await persist()
-        return conflictResult(repo)
-    }
-    const found = findSubject(state, request.subject)
-    const { subject } = found
-    if (request.action == "resume-working") {
-        if (!found.working?.suspended)
-            throw new Error("This Working Changes Conflict is not suspended.")
-        await requireWorktree(repo, request.path, true)
-        if (await gitText(repo, ["rev-parse", `${found.working.suspended}^1`]) != await gitHead(repo, request.path))
-            throw new Error("The restoration base changed. Apply the suspended stash as a new Working Changes Conflict.")
-        await repo.command(request.path, ["stash", "apply", "--index", found.working.suspended])
-        await dropStash(repo, found.working.suspended, changes)
-        found.working.suspended = undefined
-        found.working.path = request.path
-        await persist()
-        return conflictResult(repo, subject.id)
-    }
-    const candidate = await checkedCandidate(repo, subject, request)
-    if (request.action == "cancel") {
-        await repo.updateRefs([{ ref: candidateRef(subject), before: candidate.revision || null, after: null }])
-        await cleanupResolutionFiles(repo, subject)
-        return conflictResult(repo, subject.id)
-    }
-    if (request.action == "accept" || request.action == "keep-stashed") {
-        if (request.action == "accept" && !await candidateReady(repo, subject, candidate))
-            throw new Error("Resolve every recorded conflict before accepting this candidate.")
-        if (found.working) {
-            const working = found.working
-            if (working.suspended)
-                throw new Error("Resume these Working Changes before accepting them.")
-            await requireWorktree(repo, working.path)
-            if (await gitHead(repo, working.path) != working.head)
-                throw new Error("The worktree moved. Resume the Working Changes Conflict on its original base.")
-            const current = await workingTree(repo, working.path)
-            const target = request.action == "accept"
-                ? await replaceTreeFiles(repo, subject.tree, candidate.files)
-                : working.beforeTree ?? await gitText(repo, ["rev-parse", `${working.head}^{tree}`])
-            const restored = await replayTree(repo, subject.tree, current, target, crypto.randomUUID())
-            if (restored.conflict)
-                throw new Error("Later Working Changes overlap this result. Preserve or explicitly include them before accepting or keeping the stash.")
-            await repo.command(working.path, ["read-tree", "--reset", "-u", restored.tree])
-            await repo.command(working.path, ["read-tree", (request.action == "accept" ? working.afterIndex : working.beforeIndex) ?? working.head])
-            if (request.action == "accept")
-                await dropStash(repo, working.stash, changes)
-            state.working = state.working.filter(w => w != working)
-        } else {
-            if (request.action == "keep-stashed")
-                throw new Error("Only Working Changes Conflicts can be kept stashed.")
-            const stack = found.stack!
-            await followTemporaryBranch(repo, stack)
-            if (!stack.steps.includes(found.step!))
-                throw new Error("The temporary branch no longer contains this commit. Update the stack to follow its current history.")
-            found.step!.accepted = { input: subject.input, tree: await replaceTreeFiles(repo, subject.tree, candidate.files) }
-            await rebaseStack(repo, stack, cancelled)
-            await carryNewBranchCommits(repo, stack)
-            await rebaseDependents(repo, state, stack, cancelled)
-            if (cancelled())
-                throw new Error("Acceptance cancelled before changing refs or files.")
-            const affectedStacks = [...state.stacks].filter(s => s.id == stack.id || dependsOn(state, s, stack.id))
-            for (const affected of affectedStacks)
-                await publishProvisional(repo, state, affected, updateRefs, changes)
-        }
-        await persist()
-        await cleanupResolutionFiles(repo, subject)
-        return conflictResult(repo)
-    }
-    const file = subject.files.find(file => file.path == request.file)
-    if (!file)
-        throw new Error("Choose a recorded conflict file.")
-    if (request.action == "choose") {
-        if (request.hunk !== undefined) {
-            if (request.side != "left" && request.side != "right")
-                throw new Error("Choose a named side for this hunk.")
-            const content = (await blob(repo, file.path in candidate.files ? candidate.files[file.path] : file.provisional))?.toString() ?? ""
-            const hunk = conflictHunks(content, subject)[request.hunk]
-            if (!hunk)
-                throw new Error("The conflict hunk changed. Refresh the candidate.")
-            const result = content.slice(0, hunk.start) + hunk[request.side] + content.slice(hunk.end)
-            candidate.files[file.path] = { mode: file.provisional!.mode, object: await gitText(repo, ["hash-object", "-w", "--stdin"], result) }
-        } else if (request.side == "suggestion") {
-            if (!subject.suggestion)
-                throw new Error("There is no previous result to use.")
-            candidate.files[file.path] = (await treeEntries(repo, subject.suggestion)).get(file.path) ?? null
-        } else {
-            candidate.files[file.path] = request.side == "delete" ? null : file[request.side]
-        }
-    } else if (request.action == "edit") {
-        const entry = candidate.files[file.path] ?? file.provisional ?? file.left ?? file.right
-        if (!entry || !["100644", "100755"].includes(entry.mode) || !isText(Buffer.from(request.content)))
-            throw new Error("Use a named side or an external tool for binary and structural conflicts.")
-        candidate.files[file.path] = {
-            mode: entry.mode,
-            object: await gitText(repo, ["hash-object", "-w", "--stdin"], request.content),
-        }
-    } else if (request.action == "use-file") {
-        await requireWorktree(repo, request.path)
-        const absolute = resolve(request.path, file.path)
-        const parent = await realpath(dirname(absolute))
-        const root = await realpath(request.path)
-        if (isAbsolute(relative(root, parent)) || relative(root, parent).startsWith(".."))
-            throw new Error("Resolution files must stay inside the worktree.")
-        const stat = await lstat(absolute)
-        if (!stat.isFile() || stat.isSymbolicLink())
-            throw new Error("Use a named side for symbolic links and structural conflicts.")
-        candidate.files[file.path] = {
-            mode: file.provisional?.mode ?? "100644",
-            object: (await repo.command(request.path, ["hash-object", "-w", `--path=${file.path}`, "--stdin"], await readFile(absolute))).toString().trim(),
-        }
-    } else if (request.action == "tool") {
-        await runMergeTool(repo, subject, file, candidate)
-    }
-    await saveCandidate(repo, subject, candidate)
-    if (request.action != "tool")
-        await cleanupResolutionFiles(repo, subject, file.path)
-    return conflictResult(repo, subject.id)
+
+    if (changed)
+        await rebaseStack(repo, stack, () => false)
 }
-
-async function linearCommits(repo: RepositoryGit, base: string, tip: string) {
-    const lines = (await gitText(repo, ["rev-list", "--reverse", "--topo-order", "--parents", `${base}..${tip}`])).split("\n").filter(Boolean)
-    if (lines.some(line => line.split(" ").length != 2))
-        throw new Error("This rewrite requires a linear commit range.")
-    return lines.map(line => line.split(" ")[0])
+function dependsOn(state: ConflictState, stack: UnresolvedStack, id: string): boolean {
+    let seen = new Set<string>()
+    while (stack.dependency) {
+        if (stack.dependency.stackId == id)
+            return true
+        if (seen.has(stack.id))
+            throw new Error("Conflict dependencies contain a cycle.")
+        seen.add(stack.id)
+        let parent = state.stacks.find(s => s.id == stack.dependency!.stackId)
+        if (!parent)
+            return false
+        stack = parent
+    }
+    return false
+}
+async function rebaseDependents(repo: RepositoryGit, state: ConflictState, upstream: UnresolvedStack, cancelled: () => boolean) {
+    for (let stack of state.stacks.filter(s => s.dependency?.stackId == upstream.id)) {
+        await followTemporaryBranch(repo, stack)
+        stack.base = upstream.branches.find(b => b.ref == stack.dependency!.branch)!.current
+        await rebaseStack(repo, stack, cancelled)
+        await rebaseDependents(repo, state, stack, cancelled)
+    }
 }
 async function followTemporaryBranch(repo: RepositoryGit, stack: UnresolvedStack) {
-    const actual = await repo.resolveRef(stack.temporaryRef)
+    let actual = await repo.resolveRef(stack.temporaryRef)
     if (!actual)
         throw new Error("The temporary branch is missing. Restore it before continuing.")
-    const retained = stack.steps.at(-1)?.current ?? stack.base
+    let retained = stack.steps.at(-1)?.current ?? stack.base
     if (actual == retained)
         return
     if (!(await repo.run(repo.descriptor.mainWorktree, ["merge-base", "--is-ancestor", retained, actual])).exitCode) {
-        for (const source of await linearCommits(repo, retained, actual))
+        for (let source of await linearCommits(repo, retained, actual))
             stack.steps.push({ id: crypto.randomUUID(), source, current: source })
     } else {
         let index = -1
@@ -534,28 +574,35 @@ async function followTemporaryBranch(repo: RepositoryGit, stack: UnresolvedStack
             )
         }
         stack.steps.splice(index + 1)
-        for (const source of await linearCommits(repo, stack.steps[index].current, actual))
+        for (let source of await linearCommits(repo, stack.steps[index].current, actual))
             stack.steps.push({ id: crypto.randomUUID(), source, current: source })
     }
     stack.branches.at(-1)!.step = stack.steps.at(-1)!.id
     stack.branches.at(-1)!.current = actual
 }
+
+async function linearCommits(repo: RepositoryGit, base: string, tip: string) {
+    let lines = (await gitText(repo, ["rev-list", "--reverse", "--topo-order", "--parents", `${base}..${tip}`])).split("\n").filter(Boolean)
+    if (lines.some(line => line.split(" ").length != 2))
+        throw new Error("This rewrite requires a linear commit range.")
+    return lines.map(line => line.split(" ")[0])
+}
 async function rebaseStack(repo: RepositoryGit, stack: UnresolvedStack, cancelled: () => boolean) {
     let parent = stack.base
-    for (const step of stack.steps) {
+    for (let step of stack.steps) {
         if (cancelled())
             throw new Error("Stack replay cancelled.")
-        const previous = step.conflict
-        const merged = await replayTree(repo, await commitParent(repo, step.source), parent, step.source, step.id, {
+        let previous = step.conflict
+        let merged = await replayTree(repo, await commitParent(repo, step.source), parent, step.source, step.id, {
             left: `Before this commit at ${parent.slice(0, 8)}`,
             right: `This commit ${step.source.slice(0, 8)}`,
         })
         // Composition may retain conflict markers while changing unrelated lines.
         // Those regions remain explicit conflicts even when their replay is clean.
         if (!merged.conflict && previous) {
-            const entries = await treeEntries(repo, merged.tree)
-            const stillPresent = await Promise.all(previous.files.map(async file => {
-                const content = await blob(repo, entries.get(file.path) ?? null)
+            let entries = await treeEntries(repo, merged.tree)
+            let stillPresent = await Promise.all(previous.files.map(async file => {
+                let content = await blob(repo, entries.get(file.path) ?? null)
                 return !file.text || Boolean(content && hasConflictMarkers(content.toString(), previous))
             }))
             if (stillPresent.some(Boolean))
@@ -567,7 +614,7 @@ async function rebaseStack(repo: RepositoryGit, stack: UnresolvedStack, cancelle
         }
         let tree = merged.tree
         if (merged.conflict && step.accepted?.input == merged.conflict.input) {
-            const accepted = await treeEntries(repo, step.accepted.tree)
+            let accepted = await treeEntries(repo, step.accepted.tree)
             tree = await replaceTreeFiles(repo, tree, Object.fromEntries(merged.conflict.files.map(f => [f.path, accepted.get(f.path) ?? null])))
             step.conflict = undefined
         } else {
@@ -576,70 +623,36 @@ async function rebaseStack(repo: RepositoryGit, stack: UnresolvedStack, cancelle
                 if (step.accepted)
                     step.conflict.suggestion = step.accepted.tree
                 else if (previous && previous.input != step.conflict.input) {
-                    const old = await readCandidate(repo, previous)
+                    let old = await readCandidate(repo, previous)
                     step.conflict.suggestion = await replaceTreeFiles(repo, previous.tree, old.files)
                 } else if (previous?.suggestion) {
                     step.conflict.suggestion = previous.suggestion
                 }
             }
         }
-        const currentTree = await gitText(repo, ["rev-parse", `${step.current}^{tree}`])
-        const currentParent = await commitParent(repo, step.current)
+        let currentTree = await gitText(repo, ["rev-parse", `${step.current}^{tree}`])
+        let currentParent = await commitParent(repo, step.current)
         step.current = currentTree == tree && currentParent == parent ? step.current : await rewriteCommit(repo, step.source, parent, tree)
         parent = step.current
     }
-    for (const branch of stack.branches) {
-        if (branch.step == "base") {
+
+    for (let branch of stack.branches) {
+        if (branch.step == "base")
             branch.current = stack.base
-            continue
+        else {
+            let step = stack.steps.find(step => step.id == branch.step)
+            if (!step)
+                throw new Error("External history removed an intermediate branch boundary. Review the branch mapping before continuing.")
+            branch.current = step.current
         }
-        const step = stack.steps.find(step => step.id == branch.step)
-        if (!step)
-            throw new Error("External history removed an intermediate branch boundary. Review the branch mapping before continuing.")
-        branch.current = step.current
     }
 }
-async function carryNewBranchCommits(repo: RepositoryGit, stack: UnresolvedStack) {
-    let changed = false
-    for (const branch of stack.branches) {
-        const actual = await repo.resolveRef(branch.ref)
-        if (actual == branch.before)
-            continue
-        if (!actual || (await repo.run(repo.descriptor.mainWorktree, ["merge-base", "--is-ancestor", branch.before, actual])).exitCode)
-            throw new Error("An intended branch was replaced externally. Review its new history before final acceptance.")
-        const sources = await linearCommits(repo, branch.before, actual)
-        const position = stack.steps.findIndex(step => step.id == branch.step) + 1
-        const added = sources.map(source => ({ id: crypto.randomUUID(), source, current: source }))
-        stack.steps.splice(position, 0, ...added)
-        branch.step = added.at(-1)?.id ?? branch.step
-        branch.before = actual
-        changed = true
-    }
-    if (changed)
-        await rebaseStack(repo, stack, () => false)
-}
-function dependsOn(state: ConflictState, stack: UnresolvedStack, id: string): boolean {
-    const seen = new Set<string>()
-    while (stack.dependency) {
-        if (stack.dependency.stackId == id)
-            return true
-        if (seen.has(stack.id))
-            throw new Error("Conflict dependencies contain a cycle.")
-        seen.add(stack.id)
-        const parent = state.stacks.find(s => s.id == stack.dependency!.stackId)
-        if (!parent)
-            return false
-        stack = parent
-    }
-    return false
-}
-async function rebaseDependents(repo: RepositoryGit, state: ConflictState, upstream: UnresolvedStack, cancelled: () => boolean) {
-    for (const stack of state.stacks.filter(s => s.dependency?.stackId == upstream.id)) {
-        await followTemporaryBranch(repo, stack)
-        stack.base = upstream.branches.find(b => b.ref == stack.dependency!.branch)!.current
-        await rebaseStack(repo, stack, cancelled)
-        await rebaseDependents(repo, state, stack, cancelled)
-    }
+async function readCandidate(repo: RepositoryGit, subject: ConflictSubject): Promise<ResolutionCandidate> {
+    let ref = await repo.resolveRef(candidateRef(subject))
+    if (!ref)
+        return { subject: subject.id, input: subject.input, revision: "", files: {} }
+    let candidate = ResolutionCandidateSchema.parse(JSON.parse((await repo.command(repo.descriptor.mainWorktree, ["show", `${ref}:state.json`])).toString()))
+    return { ...candidate, revision: ref }
 }
 async function publishProvisional(
     repo: RepositoryGit,
@@ -649,35 +662,37 @@ async function publishProvisional(
     changes: Changes,
     path?: string,
 ) {
-    const upstream = stack.dependency && state.stacks.find(s => s.id == stack.dependency!.stackId)
-    const unresolved = stack.steps.some(s => s.conflict) || Boolean(upstream)
-    const worktrees = await readRegisteredWorktrees(repo)
-    const holders = worktrees.filter(w => w.branchRef == stack.temporaryRef || w.path == path || stack.branches.some(b => b.ref == w.branchRef))
-    for (const holder of holders) {
+    let upstream = stack.dependency && state.stacks.find(s => s.id == stack.dependency!.stackId)
+    let unresolved = stack.steps.some(s => s.conflict) || Boolean(upstream)
+    let worktrees = await readRegisteredWorktrees(repo)
+    let holders = worktrees.filter(w => w.branchRef == stack.temporaryRef || w.path == path || stack.branches.some(b => b.ref == w.branchRef))
+    for (let holder of holders) {
         if (holder.missing)
             throw new Error("An affected worktree is unavailable.")
         await requireWorktree(repo, holder.path)
     }
-    const tip = stack.steps.at(-1)?.current ?? stack.base
-    const working = new Map<string, { tree: string; conflict?: ConflictSubject; index: string; oldHead: string; stash?: string }>()
-    const duplicateHolders = holders.filter(w => w.branchRef == stack.branches.at(-1)!.ref && holders.some(other => other.branchRef == stack.temporaryRef))
-    for (const holder of holders) {
+
+    let tip = stack.steps.at(-1)?.current ?? stack.base
+
+    let working = new Map<string, { tree: string; conflict?: ConflictSubject; index: string; oldHead: string; stash?: string }>()
+    let duplicateHolders = holders.filter(w => w.branchRef == stack.branches.at(-1)!.ref && holders.some(other => other.branchRef == stack.temporaryRef))
+    for (let holder of holders) {
         if (duplicateHolders.includes(holder))
             continue
-        const boundary = stack.branches.find(b => b.ref == holder.branchRef)
+        let boundary = stack.branches.find(b => b.ref == holder.branchRef)
         if (unresolved && boundary && boundary != stack.branches.at(-1))
             continue
-        const target = unresolved ? tip : (boundary?.current ?? tip)
-        const oldHead = await gitHead(repo, holder.path)
-        const dirty = Boolean((await repo.command(holder.path, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])).length)
-        const current = dirty ? await workingTree(repo, holder.path) : await gitText(repo, ["rev-parse", `${oldHead}^{tree}`])
-        const merged = dirty
+        let target = unresolved ? tip : (boundary?.current ?? tip)
+        let oldHead = await gitHead(repo, holder.path)
+        let dirty = Boolean((await repo.command(holder.path, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])).length)
+        let current = dirty ? await workingTree(repo, holder.path) : await gitText(repo, ["rev-parse", `${oldHead}^{tree}`])
+        let merged = dirty
             ? await replayTree(repo, oldHead, target, current, crypto.randomUUID())
             : { tree: await gitText(repo, ["rev-parse", `${target}^{tree}`]) }
-        const index = (await repo.command(holder.path, ["write-tree"])).toString().trim()
-        const staged = dirty ? await replayTree(repo, oldHead, target, index, crypto.randomUUID()) : merged
-        const targetFiles = await treeEntries(repo, merged.tree)
-        const ignored = (await repo.command(holder.path, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"])).toString().split("\0").filter(
+        let index = (await repo.command(holder.path, ["write-tree"])).toString().trim()
+        let staged = dirty ? await replayTree(repo, oldHead, target, index, crypto.randomUUID()) : merged
+        let targetFiles = await treeEntries(repo, merged.tree)
+        let ignored = (await repo.command(holder.path, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"])).toString().split("\0").filter(
             Boolean,
         )
         if (ignored.some(name => [...targetFiles.keys()].some(file => file == name || file.startsWith(name + "/") || name.startsWith(file + "/"))))
@@ -686,29 +701,21 @@ async function publishProvisional(
             throw new Error("Working Changes moved while preparing resolution. Refresh and retry.")
         working.set(holder.path, { ...merged, oldHead, index: staged.conflict ? await gitText(repo, ["rev-parse", `${target}^{tree}`]) : staged.tree })
     }
-    for (const holder of duplicateHolders)
+
+    for (let holder of duplicateHolders)
         await repo.command(holder.path, ["checkout", "--detach", holder.head])
-    for (const [path, carry] of working) {
+    for (let [path, carry] of working) {
         if (carry.conflict) {
             await repo.command(path, ["stash", "push", "--include-untracked", "-m", "Working Changes during conflict resolution"])
             carry.stash = (await repo.resolveRef("refs/stash"))!
             changes.set("refs/stash", carry.stash)
         }
     }
-    async function checkout(holder: typeof holders[number], ref: string, target: string) {
-        if (duplicateHolders.includes(holder))
-            return
-        const carry = working.get(holder.path)!
-        await repo.command(holder.path, ["read-tree", "--reset", "-u", carry.tree])
-        await repo.command(holder.path, ["read-tree", carry.index])
-        await repo.command(holder.path, ["symbolic-ref", "HEAD", ref])
-        if (carry.conflict && carry.stash)
-            state.working.push({ id: carry.conflict.id, path: holder.path, branch: ref, head: target, stash: carry.stash, conflict: carry.conflict })
-    }
+
     if (unresolved) {
         await updateRefs([{ ref: stack.temporaryRef, before: await repo.resolveRef(stack.temporaryRef), after: tip }])
-        for (const holder of holders) {
-            const branch = stack.branches.find(b => b.ref == holder.branchRef)
+        for (let holder of holders) {
+            let branch = stack.branches.find(b => b.ref == holder.branchRef)
             if (branch && branch != stack.branches.at(-1)) {
                 // A single branch cannot back two worktrees. Keep intermediate worktrees at their frozen ordinary refs.
                 continue
@@ -717,39 +724,61 @@ async function publishProvisional(
         }
     } else {
         await updateRefs(stack.branches.map(b => ({ ref: b.ref, before: b.before, after: b.current })))
-        for (const holder of holders) {
-            const branch = stack.branches.find(b => b.ref == holder.branchRef) ?? stack.branches.at(-1)!
+        for (let holder of holders) {
+            let branch = stack.branches.find(b => b.ref == holder.branchRef) ?? stack.branches.at(-1)!
             await checkout(holder, branch.ref, branch.current)
         }
-        const temporary = await repo.resolveRef(stack.temporaryRef)
+        let temporary = await repo.resolveRef(stack.temporaryRef)
         if (temporary)
             await updateRefs([{ ref: stack.temporaryRef, before: temporary, after: null }])
         state.stacks = state.stacks.filter(s => s.id != stack.id)
-        for (const child of state.stacks.filter(s => s.dependency?.stackId == stack.id))
+        for (let child of state.stacks.filter(s => s.dependency?.stackId == stack.id))
             child.dependency = undefined
     }
+
+    async function checkout(holder: typeof holders[number], ref: string, target: string) {
+        if (duplicateHolders.includes(holder))
+            return
+        let carry = working.get(holder.path)!
+        await repo.command(holder.path, ["read-tree", "--reset", "-u", carry.tree])
+        await repo.command(holder.path, ["read-tree", carry.index])
+        await repo.command(holder.path, ["symbolic-ref", "HEAD", ref])
+        if (carry.conflict && carry.stash)
+            state.working.push({ id: carry.conflict.id, path: holder.path, branch: ref, head: target, stash: carry.stash, conflict: carry.conflict })
+    }
+}
+async function requireWorktree(repo: RepositoryGit, path: string, clean = false) {
+    let worktree = (await readRegisteredWorktrees(repo)).find(w => normalize(w.path) == normalize(path) && !w.missing)
+    if (!worktree)
+        throw new Error("Choose a registered, available worktree.")
+    if (clean && (await repo.command(path, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])).length)
+        throw new Error("Commit or stash Working Changes before replacing this worktree's tree.")
+    return worktree
 }
 
 export async function applyStashConflict(repo: RepositoryGit, path: string, stash: string, changes: Changes) {
-    const state = await readConflictState(repo)
+    let state = await readConflictState(repo)
     if (state.working.some(w => normalize(w.path) == normalize(path) && !w.suspended))
         throw new Error("This worktree already has a Working Changes Conflict.")
-    const before = await repo.resolveRef(conflictStateRef)
-    const head = await gitHead(repo, path)
+
+    let before = await repo.resolveRef(conflictStateRef)
+    let head = await gitHead(repo, path)
     let stashTree = await gitText(repo, ["rev-parse", `${stash}^{tree}`])
     // Include the stash's untracked parent in the same merge so collisions are deferred too.
-    const untracked = await repo.run(path, ["rev-parse", "--verify", `${stash}^3`])
+    let untracked = await repo.run(path, ["rev-parse", "--verify", `${stash}^3`])
     if (!untracked.exitCode) {
-        const extras = await treeEntries(repo, untracked.stdout.toString().trim())
+        let extras = await treeEntries(repo, untracked.stdout.toString().trim())
         stashTree = await replaceTreeFiles(repo, stashTree, Object.fromEntries(extras))
     }
-    const merged = await replayTree(repo, await commitParent(repo, stash), head, stashTree, crypto.randomUUID(), {
+
+    let merged = await replayTree(repo, await commitParent(repo, stash), head, stashTree, crypto.randomUUID(), {
         left: `Current files before restoring stash at ${head.slice(0, 8)}`,
         right: `Stashed changes ${stash.slice(0, 8)}`,
     })
     if (!merged.conflict)
         throw new Error("The stash failed for a reason other than a content conflict. Its original state is preserved.")
-    const branch = (await repo.run(path, ["symbolic-ref", "--quiet", "HEAD"])).stdout.toString().trim() || null
+
+    let branch = (await repo.run(path, ["symbolic-ref", "--quiet", "HEAD"])).stdout.toString().trim() || null
     state.working.push({ id: merged.conflict.id, path, branch, head, stash, conflict: merged.conflict })
     await repo.command(path, ["read-tree", "--reset", "-u", merged.tree])
     await repo.command(path, ["read-tree", head])
@@ -760,15 +789,15 @@ export async function gitHead(repo: RepositoryGit, path: string) {
 }
 async function workingTree(repo: RepositoryGit, path: string) {
     return withConflictScratch(async scratch => {
-        const env = { GIT_INDEX_FILE: join(scratch, "index") }
+        let env = { GIT_INDEX_FILE: join(scratch, "index") }
         await repo.command(path, ["read-tree", "HEAD"], undefined, env)
         await repo.command(path, ["add", "-A"], undefined, env)
         return (await repo.command(path, ["write-tree"], undefined, env)).toString().trim()
     })
 }
 async function dropStash(repo: RepositoryGit, oid: string, changes: Changes) {
-    const list = (await gitText(repo, ["stash", "list", "--format=%H"])).split("\n")
-    const index = list.indexOf(oid)
+    let list = (await gitText(repo, ["stash", "list", "--format=%H"])).split("\n")
+    let index = list.indexOf(oid)
     if (index < 0)
         throw new Error("The retained stash was removed externally. Restore it before accepting.")
     await gitText(repo, ["stash", "drop", `stash@{${index}}`])
@@ -778,10 +807,11 @@ async function runMergeTool(repo: RepositoryGit, subject: ConflictSubject, file:
     if ([file.base, file.left, file.right].some(entry => entry && !entry.mode.startsWith("100")))
         throw new Error("Use a named version for symbolic-link and submodule conflicts.")
     // Git owns configured tool selection and command expansion. Only temporary copies are exposed.
-    const name = (await repo.run(repo.descriptor.mainWorktree, ["config", "--get", "merge.tool"])).stdout.toString().trim()
+    let name = (await repo.run(repo.descriptor.mainWorktree, ["config", "--get", "merge.tool"])).stdout.toString().trim()
     if (!name)
         throw new Error("Configure Git merge.tool before opening an external merge tool.")
-    const directory = join(
+
+    let directory = join(
         repo.descriptor.commonDirectory,
         "laneway",
         "resolutions",
@@ -791,12 +821,12 @@ async function runMergeTool(repo: RepositoryGit, subject: ConflictSubject, file:
     )
     await mkdir(directory, { recursive: true })
     for (
-        const [name, entry] of [["BASE", file.base], ["LOCAL", file.left], ["REMOTE", file.right], [
+        let [name, entry] of [["BASE", file.base], ["LOCAL", file.left], ["REMOTE", file.right], [
             "MERGED",
             file.path in candidate.files ? candidate.files[file.path] : file.provisional,
         ]] as const
     ) {
-        const target = join(directory, name)
+        let target = join(directory, name)
         // Recover saved external edits after a crash; never truncate an existing result.
         try {
             await writeFile(target, await blob(repo, entry) ?? "", { flag: name == "MERGED" ? "wx" : "w" })
@@ -805,18 +835,20 @@ async function runMergeTool(repo: RepositoryGit, subject: ConflictSubject, file:
                 throw error
         }
     }
-    const gitExec = await gitText(repo, ["--exec-path"])
+
+    let gitExec = await gitText(repo, ["--exec-path"])
     let shell = "sh"
     if (process.platform == "win32") {
         // Git for Windows exposes both cmd/git.exe and mingw64/bin/git.exe.
-        const candidates = ["../bin/bash.exe", "../../bin/bash.exe"].map(path => resolve(dirname(repo.descriptor.git.path), path))
-        const available = await Promise.all(candidates.map(path => lstat(path).then(stat => stat.isFile()).catch(() => false)))
+        let candidates = ["../bin/bash.exe", "../../bin/bash.exe"].map(path => resolve(dirname(repo.descriptor.git.path), path))
+        let available = await Promise.all(candidates.map(path => lstat(path).then(stat => stat.isFile()).catch(() => false)))
         shell = candidates[available.indexOf(true)]
         if (!shell)
             throw new Error("Git Bash was not found beside the selected Git installation.")
     }
-    const script = 'TOOL_MODE=merge; . "$GIT_EXEC_PATH/git-mergetool--lib"; initialize_merge_tool "$WB_TOOL" && run_merge_tool "$WB_TOOL" true'
-    const processTool = Bun.spawn([shell, "-c", script], {
+
+    let script = 'TOOL_MODE=merge; . "$GIT_EXEC_PATH/git-mergetool--lib"; initialize_merge_tool "$WB_TOOL" && run_merge_tool "$WB_TOOL" true'
+    let processTool = Bun.spawn([shell, "-c", script], {
         cwd: repo.descriptor.mainWorktree,
         env: {
             ...process.env,
@@ -833,9 +865,10 @@ async function runMergeTool(repo: RepositoryGit, subject: ConflictSubject, file:
         stderr: "pipe",
         windowsHide: true,
     })
-    const [code, stderr] = await Promise.all([processTool.exited, new Response(processTool.stderr).text(), new Response(processTool.stdout).text()])
+    let [code, stderr] = await Promise.all([processTool.exited, new Response(processTool.stderr).text(), new Response(processTool.stdout).text()])
     if (code)
         throw new Error(`The merge tool did not complete successfully. Saved edits remain recoverable. ${stderr}`)
+
     candidate.files[file.path] = {
         mode: file.provisional?.mode ?? "100644",
         object: await gitText(repo, ["hash-object", "-w", "--stdin"], await readFile(join(directory, "MERGED"))),
@@ -843,29 +876,44 @@ async function runMergeTool(repo: RepositoryGit, subject: ConflictSubject, file:
 }
 
 async function cleanupResolutionFiles(repo: RepositoryGit, subject: ConflictSubject, file?: string) {
-    const root = resolve(repo.descriptor.commonDirectory, "laneway", "resolutions")
-    const path = resolve(root, subject.id, subject.input, ...(file ? [createHash("sha256").update(file).digest("hex")] : []))
+    let root = resolve(repo.descriptor.commonDirectory, "laneway", "resolutions")
+    let path = resolve(root, subject.id, subject.input, ...(file ? [createHash("sha256").update(file).digest("hex")] : []))
     if (isAbsolute(relative(root, path)) || relative(root, path).startsWith(".."))
         throw new Error("Invalid resolution directory")
     await rm(path, { recursive: true, force: true })
 }
 
 export async function suspendWorkingConflicts(repo: RepositoryGit, changes: Changes) {
-    const state = await readConflictState(repo).catch(() => undefined)
+    let state = await readConflictState(repo).catch(() => undefined)
     if (!state)
         return
-    const before = await repo.resolveRef(conflictStateRef)
+
+    let before = await repo.resolveRef(conflictStateRef)
+
     let changed = false
-    for (const working of state.working.filter(w => !w.suspended)) {
-        const ref = (await repo.run(working.path, ["symbolic-ref", "--quiet", "HEAD"])).stdout.toString().trim() || null
+    for (let working of state.working.filter(w => !w.suspended)) {
+        let ref = (await repo.run(working.path, ["symbolic-ref", "--quiet", "HEAD"])).stdout.toString().trim() || null
         if (ref == working.branch)
             continue
-        const stash = await repo.resolveRef("refs/stash")
+        let stash = await repo.resolveRef("refs/stash")
         if (stash) {
             working.suspended = stash
             changed = true
         }
     }
+
     if (changed)
         changes.set(conflictStateRef, await storeConflictState(repo, state, before))
+}
+
+function candidateRef(subject: ConflictSubject) {
+    return `refs/laneway/conflict-candidates/${subject.id}/${subject.input}`
+}
+
+function commitParent(repo: RepositoryGit, commit: string) {
+    return gitText(repo, ["rev-parse", `${commit}^`])
+}
+
+function branchRef(name: string) {
+    return name.startsWith("refs/heads/") ? name : `refs/heads/${name}`
 }

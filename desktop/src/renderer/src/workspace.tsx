@@ -10,6 +10,190 @@ export interface EntryActions {
     openInitialize(): void
 }
 
+let masthead = css({
+    padding: "0 10px 0 14px",
+    display: "grid",
+    alignItems: "center",
+    gridTemplateColumns: "auto minmax(0, 1fr) auto",
+    gap: "16px",
+    borderBottom: "1px solid var(--line-strong)",
+    background: "var(--panel)",
+    // The header doubles as the title bar: leave room for the window controls and let empty space drag the window.
+    paddingRight: "calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 10px)",
+    WebkitAppRegion: "drag",
+    "& button, & input, & select, & [role=tab], & [role=tablist] *": { WebkitAppRegion: "no-drag" },
+})
+
+let brand = css({
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    paddingRight: "4px",
+    whiteSpace: "nowrap",
+})
+
+let brandName = css({
+    fontFamily: '"Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif',
+    fontSize: "17px",
+    fontWeight: "600",
+    letterSpacing: "-0.01em",
+})
+
+let mastheadCenter = css({
+    minWidth: "0",
+    alignSelf: "stretch",
+    display: "flex",
+    alignItems: "stretch",
+})
+
+let headerActions = css({
+    justifySelf: "end",
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+})
+
+let repositoryActions = css({
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    margin: "0 4px 0 4px",
+    padding: "0 8px",
+    borderInline: "1px solid var(--line-strong)",
+})
+
+let pullProgress = css({
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    height: "30px",
+    padding: "0 4px 0 8px",
+    color: "var(--muted)",
+    fontSize: "12px",
+    whiteSpace: "nowrap",
+})
+
+let pullProgressText = css({
+    maxWidth: "260px",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+})
+
+let labeledButton = css({
+    height: "30px",
+    padding: "0 10px 0 8px",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    color: "var(--text)",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "var(--radius)",
+    background: "var(--panel)",
+    font: "inherit",
+    fontSize: "12.5px",
+    fontWeight: "500",
+    whiteSpace: "nowrap",
+    "&:hover:not(:disabled)": { background: "var(--control-hover)" },
+})
+
+let primaryButton = css({
+    color: "var(--accent-ink)",
+    borderColor: "var(--accent)",
+    background: "var(--accent)",
+    fontWeight: "600",
+    "&:hover:not(:disabled)": { background: "var(--accent-hover)", borderColor: "var(--accent-hover)" },
+    "&:disabled": { opacity: 1, color: "var(--muted)", borderColor: "var(--line)", background: "var(--control)", fontWeight: "500" },
+})
+
+let iconButton = css({
+    width: "30px",
+    height: "30px",
+    padding: "0",
+    display: "grid",
+    placeItems: "center",
+    color: "var(--text)",
+    border: "1px solid transparent",
+    borderRadius: "var(--radius)",
+    background: "transparent",
+    "&:hover:not(:disabled)": {
+        borderColor: "var(--line-strong)",
+        background: "var(--control-hover)",
+    },
+    "&:active:not(:disabled)": {
+        background: "var(--control)",
+    },
+})
+
+let workspace = css({
+    padding: "24px",
+    display: "grid",
+    alignContent: "safe center",
+    justifyItems: "center",
+    overflow: "auto",
+})
+
+let entryPanel = css({
+    width: "min(440px, 100%)",
+    overflow: "hidden",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "6px",
+    background: "var(--panel)",
+    boxShadow: "var(--shadow-popover)",
+})
+
+let entryPanelHeader = css({
+    padding: "10px 14px",
+    borderBottom: "1px solid var(--line)",
+    background: "var(--panel-deep)",
+})
+
+let entryPanelH2 = css({
+    margin: "0",
+    fontSize: "14px",
+    fontWeight: "600",
+})
+
+let entryWarning = css({
+    margin: "0",
+    padding: "9px 14px",
+    color: "var(--danger)",
+    borderBottom: "1px solid var(--line)",
+    background: "var(--danger-wash)",
+    fontSize: "12px",
+    lineHeight: "1.45",
+})
+
+let entryGrid = css({
+    display: "grid",
+})
+
+let entryCard = css({
+    width: "100%",
+    padding: "11px 14px",
+    display: "grid",
+    gap: "3px",
+    textAlign: "left",
+    border: "0",
+    borderBottom: "1px solid var(--line)",
+    background: "transparent",
+    "&:last-child": {
+        borderBottom: "0",
+    },
+    "&:hover:not(:disabled)": {
+        background: "var(--hover)",
+    },
+})
+
+let entryCardStrong = css({
+    fontSize: "13px",
+    fontWeight: "600",
+})
+
+let entryCardSpan = css({
+    color: "var(--muted)",
+    fontSize: "12px",
+})
+
 export function LanewayHeader(
     handle: Handle<{
         busy: boolean
@@ -22,8 +206,8 @@ export function LanewayHeader(
     }>,
 ) {
     return () => {
-        const props = handle.props
-        const themeLabel = props.appearance == "dark" ? "Switch to light appearance" : "Switch to dark appearance"
+        let props = handle.props
+        let themeLabel = props.appearance == "dark" ? "Switch to light appearance" : "Switch to dark appearance"
         return (
             <header class="masthead" mix={masthead}>
                 <div class="brand" mix={brand}>
@@ -170,187 +354,3 @@ function EntryCard(handle: Handle<{ title: string; description: string; disabled
         </button>
     )
 }
-
-const masthead = css({
-    padding: "0 10px 0 14px",
-    display: "grid",
-    alignItems: "center",
-    gridTemplateColumns: "auto minmax(0, 1fr) auto",
-    gap: "16px",
-    borderBottom: "1px solid var(--line-strong)",
-    background: "var(--panel)",
-    // The header doubles as the title bar: leave room for the window controls and let empty space drag the window.
-    paddingRight: "calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 10px)",
-    WebkitAppRegion: "drag",
-    "& button, & input, & select, & [role=tab], & [role=tablist] *": { WebkitAppRegion: "no-drag" },
-})
-
-const brand = css({
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-    paddingRight: "4px",
-    whiteSpace: "nowrap",
-})
-
-const brandName = css({
-    fontFamily: '"Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif',
-    fontSize: "17px",
-    fontWeight: "600",
-    letterSpacing: "-0.01em",
-})
-
-const mastheadCenter = css({
-    minWidth: "0",
-    alignSelf: "stretch",
-    display: "flex",
-    alignItems: "stretch",
-})
-
-const headerActions = css({
-    justifySelf: "end",
-    display: "flex",
-    alignItems: "center",
-    gap: "4px",
-})
-
-const repositoryActions = css({
-    display: "flex",
-    alignItems: "center",
-    gap: "4px",
-    margin: "0 4px 0 4px",
-    padding: "0 8px",
-    borderInline: "1px solid var(--line-strong)",
-})
-
-const pullProgress = css({
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    height: "30px",
-    padding: "0 4px 0 8px",
-    color: "var(--muted)",
-    fontSize: "12px",
-    whiteSpace: "nowrap",
-})
-
-const pullProgressText = css({
-    maxWidth: "260px",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-})
-
-const labeledButton = css({
-    height: "30px",
-    padding: "0 10px 0 8px",
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "6px",
-    color: "var(--text)",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "var(--radius)",
-    background: "var(--panel)",
-    font: "inherit",
-    fontSize: "12.5px",
-    fontWeight: "500",
-    whiteSpace: "nowrap",
-    "&:hover:not(:disabled)": { background: "var(--control-hover)" },
-})
-
-const primaryButton = css({
-    color: "var(--accent-ink)",
-    borderColor: "var(--accent)",
-    background: "var(--accent)",
-    fontWeight: "600",
-    "&:hover:not(:disabled)": { background: "var(--accent-hover)", borderColor: "var(--accent-hover)" },
-    "&:disabled": { opacity: 1, color: "var(--muted)", borderColor: "var(--line)", background: "var(--control)", fontWeight: "500" },
-})
-
-const iconButton = css({
-    width: "30px",
-    height: "30px",
-    padding: "0",
-    display: "grid",
-    placeItems: "center",
-    color: "var(--text)",
-    border: "1px solid transparent",
-    borderRadius: "var(--radius)",
-    background: "transparent",
-    "&:hover:not(:disabled)": {
-        borderColor: "var(--line-strong)",
-        background: "var(--control-hover)",
-    },
-    "&:active:not(:disabled)": {
-        background: "var(--control)",
-    },
-})
-
-const workspace = css({
-    padding: "24px",
-    display: "grid",
-    alignContent: "safe center",
-    justifyItems: "center",
-    overflow: "auto",
-})
-
-const entryPanel = css({
-    width: "min(440px, 100%)",
-    overflow: "hidden",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "6px",
-    background: "var(--panel)",
-    boxShadow: "var(--shadow-popover)",
-})
-
-const entryPanelHeader = css({
-    padding: "10px 14px",
-    borderBottom: "1px solid var(--line)",
-    background: "var(--panel-deep)",
-})
-
-const entryPanelH2 = css({
-    margin: "0",
-    fontSize: "14px",
-    fontWeight: "600",
-})
-
-const entryWarning = css({
-    margin: "0",
-    padding: "9px 14px",
-    color: "var(--danger)",
-    borderBottom: "1px solid var(--line)",
-    background: "var(--danger-wash)",
-    fontSize: "12px",
-    lineHeight: "1.45",
-})
-
-const entryGrid = css({
-    display: "grid",
-})
-
-const entryCard = css({
-    width: "100%",
-    padding: "11px 14px",
-    display: "grid",
-    gap: "3px",
-    textAlign: "left",
-    border: "0",
-    borderBottom: "1px solid var(--line)",
-    background: "transparent",
-    "&:last-child": {
-        borderBottom: "0",
-    },
-    "&:hover:not(:disabled)": {
-        background: "var(--hover)",
-    },
-})
-
-const entryCardStrong = css({
-    fontSize: "13px",
-    fontWeight: "600",
-})
-
-const entryCardSpan = css({
-    color: "var(--muted)",
-    fontSize: "12px",
-})

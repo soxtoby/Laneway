@@ -17,48 +17,122 @@ export interface GitSettings {
     render(): RemixNode
 }
 
+let settingsPanel = css({
+    padding: "0 14px",
+})
+
+let settingsPanelHeader = css({
+    padding: "10px 14px",
+    borderBottom: "1px solid var(--line)",
+    background: "var(--panel-deep)",
+    marginLeft: "-14px",
+    marginRight: "-14px",
+})
+
+let settingsHeading = css({
+    margin: "0",
+    fontSize: "14px",
+    fontWeight: "600",
+})
+
+let settingsError = css({
+    marginTop: "14px",
+    padding: "10px 12px",
+    color: "var(--danger)",
+    border: "1px solid var(--danger-edge)",
+    borderRadius: "4px",
+    background: "var(--danger-wash)",
+    fontSize: "12px",
+    lineHeight: "1.5",
+})
+
+let settingsErrorP = css({
+    margin: "6px 0 10px",
+})
+
+let settingsErrorDiv = css({
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "6px",
+})
+
+let settingsErrorButton = css({
+    minHeight: "28px",
+    padding: "0 14px",
+    borderRadius: "4px",
+    fontSize: "13px",
+    fontWeight: "500",
+    letterSpacing: "0",
+    textTransform: "none",
+    color: "var(--text)",
+    border: "1px solid var(--line-strong)",
+    background: "var(--control)",
+    "&:hover:not(:disabled)": {
+        background: "var(--control-hover)",
+    },
+})
+
+let settingsFacts = css({
+    margin: "14px 0 0",
+})
+
+let identitySettings = css({
+    marginTop: "16px",
+    paddingTop: "16px",
+    paddingBottom: "4px",
+    borderTop: "1px solid var(--line)",
+})
+
+let identityHeading = css({
+    margin: "0 0 12px",
+    fontSize: "13px",
+    fontWeight: "600",
+})
+
+let identitySettingsLabel = css({
+    display: "block",
+    margin: "12px 0 5px",
+})
+
+let secondaryButton = css({
+    minHeight: "28px",
+    marginTop: "12px",
+    padding: "0 14px",
+    borderRadius: "4px",
+    fontSize: "13px",
+    fontWeight: "500",
+    textTransform: "none",
+})
+
+let dialogActions = css({
+    marginLeft: "-14px",
+    marginRight: "-14px",
+})
+
+let factDiv = css({
+    padding: "9px 0",
+    display: "grid",
+    gridTemplateColumns: "110px minmax(0, 1fr)",
+    gap: "12px",
+    borderBottom: "1px solid var(--line)",
+    "&:last-child": {
+        borderBottom: 0,
+    },
+})
+
+let factDd = css({
+    overflowWrap: "anywhere",
+    fontFamily: "var(--mono)",
+    fontSize: "12px",
+    lineHeight: "1.45",
+})
+
 export function createGitSettings(options: SettingsOptions): GitSettings {
     let settings = options.initial
     let action: SettingsAction = "idle"
     let dialog: HTMLDialogElement
     let primaryEmail = settings.authorIdentities.primary ?? ""
     let secondaryEmails = settings.authorIdentities.secondary.join(", ")
-
-    function showFailure(code: string, error: unknown) {
-        options.notify({ code, message: errorMessage(error) })
-    }
-
-    async function run(nextAction: SettingsAction, call: () => Promise<GitSettingsState>) {
-        if (action != "idle")
-            return
-        action = nextAction
-        await options.update()
-        try {
-            settings = await call()
-        } catch (error) {
-            showFailure("settings.update.failed", error)
-        } finally {
-            action = "idle"
-            await options.update()
-        }
-    }
-
-    async function openFile() {
-        if (action != "idle")
-            return
-        action = "opening-file"
-        await options.update()
-        try {
-            const error = await options.api.openSettingsFile()
-            if (error)
-                options.notify({ code: "settings.open-failed", message: error })
-        } catch (error) {
-            showFailure("settings.open.failed", error)
-        } finally {
-            action = "idle"
-            await options.update()
-        }
-    }
 
     return {
         get current() {
@@ -99,6 +173,46 @@ export function createGitSettings(options: SettingsOptions): GitSettings {
             )
         },
     }
+
+    async function run(nextAction: SettingsAction, call: () => Promise<GitSettingsState>) {
+        if (action != "idle")
+            return
+
+        action = nextAction
+        await options.update()
+
+        try {
+            settings = await call()
+        } catch (error) {
+            showFailure("settings.update.failed", error)
+        } finally {
+            action = "idle"
+            await options.update()
+        }
+    }
+
+    async function openFile() {
+        if (action != "idle")
+            return
+
+        action = "opening-file"
+        await options.update()
+
+        try {
+            let error = await options.api.openSettingsFile()
+            if (error)
+                options.notify({ code: "settings.open-failed", message: error })
+        } catch (error) {
+            showFailure("settings.open.failed", error)
+        } finally {
+            action = "idle"
+            await options.update()
+        }
+    }
+
+    function showFailure(code: string, error: unknown) {
+        options.notify({ code, message: errorMessage(error) })
+    }
 }
 
 function SettingsDialog(
@@ -119,7 +233,7 @@ function SettingsDialog(
     }>,
 ) {
     return () => {
-        const pending = handle.props.action != "idle"
+        let pending = handle.props.action != "idle"
         return (
             <dialog aria-labelledby="settings-heading" mix={[ref(handle.props.dialogRef)]}>
                 <section class="settings-panel" mix={settingsPanel}>
@@ -204,113 +318,3 @@ function Fact(handle: Handle<{ label: string; value: string }>) {
         </div>
     )
 }
-
-const settingsPanel = css({
-    padding: "0 14px",
-})
-
-const settingsPanelHeader = css({
-    padding: "10px 14px",
-    borderBottom: "1px solid var(--line)",
-    background: "var(--panel-deep)",
-    marginLeft: "-14px",
-    marginRight: "-14px",
-})
-
-const settingsHeading = css({
-    margin: "0",
-    fontSize: "14px",
-    fontWeight: "600",
-})
-
-const settingsError = css({
-    marginTop: "14px",
-    padding: "10px 12px",
-    color: "var(--danger)",
-    border: "1px solid var(--danger-edge)",
-    borderRadius: "4px",
-    background: "var(--danger-wash)",
-    fontSize: "12px",
-    lineHeight: "1.5",
-})
-
-const settingsErrorP = css({
-    margin: "6px 0 10px",
-})
-
-const settingsErrorDiv = css({
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "6px",
-})
-
-const settingsErrorButton = css({
-    minHeight: "28px",
-    padding: "0 14px",
-    borderRadius: "4px",
-    fontSize: "13px",
-    fontWeight: "500",
-    letterSpacing: "0",
-    textTransform: "none",
-    color: "var(--text)",
-    border: "1px solid var(--line-strong)",
-    background: "var(--control)",
-    "&:hover:not(:disabled)": {
-        background: "var(--control-hover)",
-    },
-})
-
-const settingsFacts = css({
-    margin: "14px 0 0",
-})
-
-const identitySettings = css({
-    marginTop: "16px",
-    paddingTop: "16px",
-    paddingBottom: "4px",
-    borderTop: "1px solid var(--line)",
-})
-
-const identityHeading = css({
-    margin: "0 0 12px",
-    fontSize: "13px",
-    fontWeight: "600",
-})
-
-const identitySettingsLabel = css({
-    display: "block",
-    margin: "12px 0 5px",
-})
-
-const secondaryButton = css({
-    minHeight: "28px",
-    marginTop: "12px",
-    padding: "0 14px",
-    borderRadius: "4px",
-    fontSize: "13px",
-    fontWeight: "500",
-    textTransform: "none",
-})
-
-const dialogActions = css({
-    marginLeft: "-14px",
-    marginRight: "-14px",
-})
-
-const factDiv = css({
-    padding: "9px 0",
-    display: "grid",
-    gridTemplateColumns: "110px minmax(0, 1fr)",
-    gap: "12px",
-    borderBottom: "1px solid var(--line)",
-    "&:last-child": {
-        borderBottom: 0,
-    },
-})
-
-const factDd = css({
-    overflowWrap: "anywhere",
-    fontFamily: "var(--mono)",
-    fontSize: "12px",
-    lineHeight: "1.45",
-})

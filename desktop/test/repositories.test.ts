@@ -6,49 +6,42 @@ import { tmpdir } from "node:os"
 import { resolve } from "node:path"
 import { OpenRepositories } from "../src/main/repositories"
 
-const temporaryDirectories: string[] = []
+let temporaryDirectories: string[] = []
 
 afterEach(async () => {
     await Promise.all(temporaryDirectories.splice(0).map(path => rm(path, { recursive: true, force: true })))
 })
 
-async function temporaryDirectory(prefix: string) {
-    const path = await mkdtemp(resolve(tmpdir(), prefix))
-    temporaryDirectories.push(path)
-    return path
-}
-
-function runGit(cwd: string, ...args: string[]) {
-    return Bun.spawnSync(["git", ...args], { cwd, stderr: "pipe", stdout: "pipe" })
-}
-
 describe("open repositories", () => {
     test("isolates inspection cancellation by request and cancels reads on close", async () => {
-        const path = await temporaryDirectory("laneway-inspection-requests-")
+        let path = await temporaryDirectory("laneway-inspection-requests-")
         expect(runGit(path, "init", "--quiet").exitCode).toBe(0)
         await writeFile(resolve(path, "file.txt"), "content\n")
-        const settingsPath = resolve(await temporaryDirectory("laneway-inspection-settings-"), "settings.json")
-        const repositories = new OpenRepositories(settingsPath)
-        const repository = await repositories.open(path)
-        const source = { kind: "working" as const, worktreePath: path }
-        const cancelled = repositories.readChanges(repository.id, "column-one", { source })
-        const independent = repositories.readChanges(repository.id, "column-two", { source })
+        let settingsPath = resolve(await temporaryDirectory("laneway-inspection-settings-"), "settings.json")
+        let repositories = new OpenRepositories(settingsPath)
+        let repository = await repositories.open(path)
+        let source = { kind: "working" as const, worktreePath: path }
+
+        let cancelled = repositories.readChanges(repository.id, "column-one", { source })
+        let independent = repositories.readChanges(repository.id, "column-two", { source })
         repositories.cancelInspection(repository.id, "column-one")
         await expect(cancelled).rejects.toMatchObject({ code: "git.cancelled" })
         expect((await independent).files[0].path).toBe("file.txt")
-        const superseded = repositories.readChanges(repository.id, "same", { source })
-        const latest = repositories.readChanges(repository.id, "same", { source })
+
+        let superseded = repositories.readChanges(repository.id, "same", { source })
+        let latest = repositories.readChanges(repository.id, "same", { source })
         await expect(superseded).rejects.toMatchObject({ code: "git.cancelled" })
         await latest
-        const closing = repositories.readFileDiff(repository.id, "diff", { source, path: "file.txt" })
+
+        let closing = repositories.readFileDiff(repository.id, "diff", { source, path: "file.txt" })
         repositories.close(repository.id)
         await expect(closing).rejects.toMatchObject({ code: "git.cancelled" })
     })
 
     test("deduplicates a repository and focuses the selected worktree", async () => {
-        const repository = await temporaryDirectory("laneway-open-repository-")
-        const linkedParent = await temporaryDirectory("laneway-open-repository-linked-")
-        const linked = resolve(linkedParent, "linked")
+        let repository = await temporaryDirectory("laneway-open-repository-")
+        let linkedParent = await temporaryDirectory("laneway-open-repository-linked-")
+        let linked = resolve(linkedParent, "linked")
         expect(runGit(repository, "init", "--quiet").exitCode).toBe(0)
         expect(runGit(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
         expect(runGit(repository, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
@@ -56,29 +49,29 @@ describe("open repositories", () => {
         expect(runGit(repository, "add", "README.md").exitCode).toBe(0)
         expect(runGit(repository, "commit", "--quiet", "-m", "Initial").exitCode).toBe(0)
         expect(runGit(repository, "worktree", "add", "--detach", linked).exitCode).toBe(0)
-        const settingsPath = resolve(await temporaryDirectory("laneway-open-repository-settings-"), "settings.json")
-        const repositories = new OpenRepositories(settingsPath)
+        let settingsPath = resolve(await temporaryDirectory("laneway-open-repository-settings-"), "settings.json")
+        let repositories = new OpenRepositories(settingsPath)
 
         await repositories.open(repository)
-        const selected = await repositories.open(linked)
+        let selected = await repositories.open(linked)
         expect(repositories.list()).toHaveLength(1)
         expect(selected.selectedWorktree).toBe(linked)
     })
 
     test("keeps its collection in memory only", async () => {
-        const repository = await temporaryDirectory("laneway-open-repository-memory-")
+        let repository = await temporaryDirectory("laneway-open-repository-memory-")
         expect(runGit(repository, "init", "--quiet").exitCode).toBe(0)
-        const settingsPath = resolve(await temporaryDirectory("laneway-open-repository-settings-"), "settings.json")
+        let settingsPath = resolve(await temporaryDirectory("laneway-open-repository-settings-"), "settings.json")
 
         await new OpenRepositories(settingsPath).open(repository)
         expect(new OpenRepositories(settingsPath).list()).toEqual([])
     })
 
     test("caches Git selection until its setting changes", async () => {
-        const settingsPath = resolve(await temporaryDirectory("laneway-open-repository-settings-"), "settings.json")
-        const installation = await selectGit()
+        let settingsPath = resolve(await temporaryDirectory("laneway-open-repository-settings-"), "settings.json")
+        let installation = await selectGit()
         let selections = 0
-        const repositories = new OpenRepositories(settingsPath, async () => {
+        let repositories = new OpenRepositories(settingsPath, async () => {
             selections += 1
             return installation
         })
@@ -96,7 +89,7 @@ describe("open repositories", () => {
     })
 
     test("seeds graph identity and single-remote settings without persisting workspace state", async () => {
-        const repository = await temporaryDirectory("laneway-open-repository-graph-")
+        let repository = await temporaryDirectory("laneway-open-repository-graph-")
         expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)
         expect(runGit(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
         expect(runGit(repository, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
@@ -104,12 +97,12 @@ describe("open repositories", () => {
         expect(runGit(repository, "add", "README.md").exitCode).toBe(0)
         expect(runGit(repository, "commit", "--quiet", "-m", "Initial").exitCode).toBe(0)
         expect(runGit(repository, "remote", "add", "origin", ".").exitCode).toBe(0)
-        const settingsPath = resolve(await temporaryDirectory("laneway-open-repository-settings-"), "settings.json")
-        const repositories = new OpenRepositories(settingsPath)
-        const opened = await repositories.open(repository)
-        const repositoryId = opened.id
+        let settingsPath = resolve(await temporaryDirectory("laneway-open-repository-settings-"), "settings.json")
+        let repositories = new OpenRepositories(settingsPath)
+        let opened = await repositories.open(repository)
+        let repositoryId = opened.id
 
-        const graph = await (await repositories.startBranchGraph(repositoryId)).result
+        let graph = await (await repositories.startBranchGraph(repositoryId)).result
         expect(graph.selectedRemote).toBe("origin")
         expect(await readSettings(settingsPath)).toMatchObject({
             authorIdentities: { primary: "laneway@example.invalid", secondary: [] },
@@ -125,3 +118,13 @@ describe("open repositories", () => {
         expect(new OpenRepositories(settingsPath).list()).toEqual([])
     })
 })
+
+async function temporaryDirectory(prefix: string) {
+    let path = await mkdtemp(resolve(tmpdir(), prefix))
+    temporaryDirectories.push(path)
+    return path
+}
+
+function runGit(cwd: string, ...args: string[]) {
+    return Bun.spawnSync(["git", ...args], { cwd, stderr: "pipe", stdout: "pipe" })
+}

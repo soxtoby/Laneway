@@ -6,16 +6,10 @@ import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
 
 test("production conflict IPC, candidate isolation, column restart and acceptance under Electron CSP", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "laneway-conflict-electron-"))
-    const root = resolve(import.meta.dir, "../..")
-    const repository = join(directory, "repository")
-    const engine = join(root, "cli/bin/lane.exe")
-    function git(...args: string[]) {
-        const result = Bun.spawnSync(["git", ...args], { cwd: repository, stdout: "pipe", stderr: "pipe" })
-        if (result.exitCode)
-            throw new Error(result.stderr.toString())
-        return result.stdout.toString().trim()
-    }
+    let directory = await mkdtemp(join(tmpdir(), "laneway-conflict-electron-"))
+    let root = resolve(import.meta.dir, "../..")
+    let repository = join(directory, "repository")
+    let engine = join(root, "cli/bin/lane.exe")
     try {
         await mkdir(repository)
         git("init", "-q", "-b", "main")
@@ -46,16 +40,16 @@ test("production conflict IPC, candidate isolation, column restart and acceptanc
         await writeFile(join(repository, "payment.txt"), "Payment: bank transfer\n")
         await writeFile(join(repository, "contact.ts"), 'export const support = "phone"\n')
         git("commit", "-qam", "base change")
-        const base = git("rev-parse", "HEAD")
+        let base = git("rev-parse", "HEAD")
         git("switch", "topic")
-        const rewrite = Bun.spawn([
+        let rewrite = Bun.spawn([
             engine,
             "conflict",
             "--json",
             "--request",
             JSON.stringify({ action: "rewrite", branches: ["lower", "topic"], base, path: repository }),
         ], { cwd: repository, stdout: "pipe", stderr: "pipe" })
-        const [output, code] = await Promise.all([new Response(rewrite.stdout).text(), rewrite.exited])
+        let [output, code] = await Promise.all([new Response(rewrite.stdout).text(), rewrite.exited])
         expect(code, output).toBe(0)
         await writeFile(
             join(directory, "workspace.json"),
@@ -65,11 +59,11 @@ test("production conflict IPC, candidate isolation, column restart and acceptanc
                 repositories: [{ id: "fixture", path: repository, name: "repository", anchors: [], open: true, columns: [], layoutInitialized: false }],
             }),
         )
-        const build = Bun.spawn([process.execPath, "run", "--cwd", "desktop", "build"], { cwd: root, stdout: "ignore", stderr: "pipe" })
-        const diagnostics = await new Response(build.stderr).text()
+        let build = Bun.spawn([process.execPath, "run", "--cwd", "desktop", "build"], { cwd: root, stdout: "ignore", stderr: "pipe" })
+        let diagnostics = await new Response(build.stderr).text()
         expect(await build.exited, diagnostics).toBe(0)
-        for (const phase of ["unresolved", "candidate", "accept"]) {
-            const env: NodeJS.ProcessEnv = {
+        for (let phase of ["unresolved", "candidate", "accept"]) {
+            let env: NodeJS.ProcessEnv = {
                 ...process.env,
                 LANEWAY_ENGINE_PATH: engine,
                 LANEWAY_SETTINGS_PATH: join(directory, "settings.json"),
@@ -77,8 +71,8 @@ test("production conflict IPC, candidate isolation, column restart and acceptanc
             }
             delete env.ELECTRON_RUN_AS_NODE
             let errors = ""
-            const exitCode = await new Promise<number | null>((done, reject) => {
-                const child = spawn(electron as unknown as string, [
+            let exitCode = await new Promise<number | null>((done, reject) => {
+                let child = spawn(electron as unknown as string, [
                     join(import.meta.dir, "fixtures/conflict-electron.cjs"),
                     directory,
                     join(root, "desktop/out/main/index.js"),
@@ -88,10 +82,10 @@ test("production conflict IPC, candidate isolation, column restart and acceptanc
                 child.on("error", reject)
                 child.on("close", done)
             })
-            const result = await readFile(join(directory, `${phase}.json`), "utf8").catch(() => errors)
+            let result = await readFile(join(directory, `${phase}.json`), "utf8").catch(() => errors)
             expect(exitCode, result).toBe(0)
             if (phase != "accept") {
-                const marked = await readFile(join(repository, "file.txt"), "utf8")
+                let marked = await readFile(join(repository, "file.txt"), "utf8")
                 expect(marked).toContain("<<<<<<< Before this commit at")
                 expect(marked).toContain(">>>>>>> This commit")
                 await mkdir(join(root, "desktop/out/validation"), { recursive: true })
@@ -108,5 +102,11 @@ test("production conflict IPC, candidate isolation, column restart and acceptanc
         if (!resolve(directory).startsWith(resolve(tmpdir()) + sep))
             throw new Error("Invalid fixture path")
         await rm(directory, { recursive: true, force: true })
+    }
+    function git(...args: string[]) {
+        let result = Bun.spawnSync(["git", ...args], { cwd: repository, stdout: "pipe", stderr: "pipe" })
+        if (result.exitCode)
+            throw new Error(result.stderr.toString())
+        return result.stdout.toString().trim()
     }
 }, 240_000)

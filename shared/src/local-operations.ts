@@ -1,8 +1,9 @@
 import { z } from "zod"
 import { CompositionPreviewSchema, CompositionRequestSchema } from "./composition"
 
-const oid = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)
-export const LocalRequestSchema = z.discriminatedUnion("action", [
+let oid = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)
+
+export let LocalRequestSchema = z.discriminatedUnion("action", [
     CompositionRequestSchema,
     z.object({
         action: z.literal("commit"),
@@ -20,7 +21,8 @@ export const LocalRequestSchema = z.discriminatedUnion("action", [
     z.object({ action: z.literal("stash-drop"), objectId: oid }),
 ])
 export type LocalRequest = z.infer<typeof LocalRequestSchema>
-export const LocalPreviewSchema = z.object({
+
+export let LocalPreviewSchema = z.object({
     composition: CompositionPreviewSchema.optional(),
     token: z.string(),
     affected: z.array(z.string()),
@@ -34,7 +36,8 @@ export const LocalPreviewSchema = z.object({
     worktrees: z.array(z.object({ path: z.string(), name: z.string(), branch: z.string().optional() })),
 })
 export type LocalPreview = z.infer<typeof LocalPreviewSchema>
-export const LocalResultSchema = z.object({
+
+export let LocalResultSchema = z.object({
     type: z.literal("result"),
     command: z.enum(["local", "local-preview"]),
     status: z.enum(["performed", "preview", "hook-review", "failed"]),
@@ -45,9 +48,11 @@ export const LocalResultSchema = z.object({
 })
 export type LocalResult = z.infer<typeof LocalResultSchema>
 export type LocalActionResult = { ok: true; result: LocalResult } | { ok: false; error: { message: string; code?: string } }
+
 export interface CommitDraft {
     title: string
     message: string
     branch: string
 }
-export const CommitDraftSchema = z.object({ title: z.string(), message: z.string(), branch: z.string() })
+
+export let CommitDraftSchema = z.object({ title: z.string(), message: z.string(), branch: z.string() })

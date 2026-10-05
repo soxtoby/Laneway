@@ -3,9 +3,9 @@ import { createRoot, css, type Handle, on } from "remix/ui"
 import { compositionStyles, createComposition } from "../../src/renderer/src/composition"
 import type { NoticeState } from "../../src/renderer/src/feedback"
 
-const requests: Array<{ request: LocalRequest; token?: string }> = []
+let requests: Array<{ request: LocalRequest; token?: string }> = []
 let conflict = false, published = false, immediate = false
-const api = {
+let api = {
     async localOperation(_repository: string, request: LocalRequest, token?: string) {
         requests.push({ request: structuredClone(request), token })
         if (immediate) {
@@ -47,10 +47,19 @@ const api = {
 let resolved = false
 let toast: NoticeState | undefined
 // Read through a call so checks see updates made by the controller, not a narrowed snapshot.
-const shownToast = () => toast
+let shownToast = () => toast
+let root = createRoot(document.getElementById("app")!)
+root.render(<Fixture />)
+let click = async (selector: string) => {
+    document.querySelector<HTMLElement>(selector)!.click()
+    await flush()
+}
+let button = (text: string) => [...document.querySelectorAll("button")].find(b => b.textContent == text)!
+let seamHeight = () => document.querySelector(".composition-seam")!.getBoundingClientRect().height
+Object.assign(window, { compositionChecks: checks, compositionRequests: requests })
 function Fixture(handle: Handle) {
     let selected = false, wholeCommit = false, tip = "2".repeat(40)
-    const controller = createComposition({
+    let controller = createComposition({
         api,
         update: () => handle.update(),
         signal: handle.signal,
@@ -137,42 +146,6 @@ function Fixture(handle: Handle) {
         </main>
     )
 }
-const root = createRoot(document.getElementById("app")!)
-root.render(<Fixture />)
-async function flush() {
-    await root.flush()
-    await new Promise(resolve => setTimeout(resolve, 30))
-    await root.flush()
-}
-const click = async (selector: string) => {
-    document.querySelector<HTMLElement>(selector)!.click()
-    await flush()
-}
-const button = (text: string) => [...document.querySelectorAll("button")].find(b => b.textContent == text)!
-const seamHeight = () => document.querySelector(".composition-seam")!.getBoundingClientRect().height
-// Pointer position within the destination decides between landing on it and inserting at its top edge.
-async function drag(target: string, copy = false, cancel = false, during?: () => void, position: "top" | "middle" = "middle") {
-    const source = document.querySelector("#source button")!, destination = document.querySelector(target)!
-    const rect = destination.getBoundingClientRect()
-    const clientX = rect.left + rect.width / 2, clientY = position == "top" ? rect.top + 1 : rect.top + rect.height / 2
-    const dataTransfer = new DataTransfer()
-    source.dispatchEvent(new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer, ctrlKey: copy, clientX, clientY }))
-    await new Promise(resolve => requestAnimationFrame(resolve))
-    destination.dispatchEvent(new DragEvent("dragenter", { bubbles: true, cancelable: true, dataTransfer, ctrlKey: copy, clientX, clientY }))
-    destination.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer, ctrlKey: copy, clientX, clientY }))
-    if (cancel) {
-        await flush()
-        if (seamHeight() != 0)
-            throw new Error("Starting a drag expanded a seam")
-        if (!destination.classList.contains(position == "top" ? "composition-over-above" : "composition-over"))
-            throw new Error("Cancellation test did not start a drag over a valid target")
-        during?.()
-    } else {
-        destination.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer, ctrlKey: copy, clientX, clientY }))
-    }
-    source.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer }))
-    await flush()
-}
 async function checks() {
     await flush()
     await drag("#commit", false, true)
@@ -188,7 +161,7 @@ async function checks() {
     await drag("#commit", true)
     if (shownToast()?.code != "composition.transferred")
         throw new Error("Completed transfer was not announced as a toast")
-    const copied = requests.at(-1)!
+    let copied = requests.at(-1)!
     if (
         copied.token != "verified" || copied.request.action != "compose" || copied.request.files?.length != 2 || copied.request.mode != "copy"
         || copied.request.target.kind != "commit" || copied.request.target.objectId != "3".repeat(40)
@@ -197,7 +170,7 @@ async function checks() {
     }
     requests.length = 0
     await drag("#commit", false, false, undefined, "top")
-    const seamDrop = requests.at(-1)
+    let seamDrop = requests.at(-1)
     if (seamDrop || !document.querySelector("[aria-label='New commit message']"))
         throw new Error("Successful seam drop lost its message prompt")
     button("Cancel").click()
@@ -215,7 +188,7 @@ async function checks() {
     if (seamLabel != "Move commit here")
         throw new Error(`Seam offered "${seamLabel}" to a whole commit`)
     await drag("#commit", false, false, undefined, "top")
-    const moved = requests.at(-1)?.request as CompositionRequest | undefined
+    let moved = requests.at(-1)?.request as CompositionRequest | undefined
     if (
         requests.length != 2 || moved?.target.kind != "seam" || moved.files || moved.message || !requests.at(-1)!.token
         || document.querySelector("[aria-label='New commit message']") || shownToast()?.code != "composition.transferred"
@@ -227,7 +200,7 @@ async function checks() {
     // Rewriting published history waits for confirmation behind a warning instead of transferring at once.
     published = true
     await drag("#commit")
-    const warning = document.querySelector(".composition-review [role=alert]")?.textContent ?? ""
+    let warning = document.querySelector(".composition-review [role=alert]")?.textContent ?? ""
     if (requests.some(r => r.token) || !warning.includes("published on feature") || !warning.includes("force-with-lease"))
         throw new Error("Published history rewrite did not wait behind a warning: " + warning)
     button("Transfer").click()
@@ -247,7 +220,7 @@ async function checks() {
     conflict = false
     requests.length = 0
     document.querySelector("#source button")!.dispatchEvent(new KeyboardEvent("keydown", { key: "c", bubbles: true }))
-    const target = document.querySelector<HTMLElement>("#commit")!
+    let target = document.querySelector<HTMLElement>("#commit")!
     target.focus()
     target.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
     await flush()
@@ -271,4 +244,31 @@ async function checks() {
         immediateTransfer: true,
     }
 }
-Object.assign(window, { compositionChecks: checks, compositionRequests: requests })
+// Pointer position within the destination decides between landing on it and inserting at its top edge.
+async function drag(target: string, copy = false, cancel = false, during?: () => void, position: "top" | "middle" = "middle") {
+    let source = document.querySelector("#source button")!, destination = document.querySelector(target)!
+    let rect = destination.getBoundingClientRect()
+    let clientX = rect.left + rect.width / 2, clientY = position == "top" ? rect.top + 1 : rect.top + rect.height / 2
+    let dataTransfer = new DataTransfer()
+    source.dispatchEvent(new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer, ctrlKey: copy, clientX, clientY }))
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    destination.dispatchEvent(new DragEvent("dragenter", { bubbles: true, cancelable: true, dataTransfer, ctrlKey: copy, clientX, clientY }))
+    destination.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer, ctrlKey: copy, clientX, clientY }))
+    if (cancel) {
+        await flush()
+        if (seamHeight() != 0)
+            throw new Error("Starting a drag expanded a seam")
+        if (!destination.classList.contains(position == "top" ? "composition-over-above" : "composition-over"))
+            throw new Error("Cancellation test did not start a drag over a valid target")
+        during?.()
+    } else {
+        destination.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer, ctrlKey: copy, clientX, clientY }))
+    }
+    source.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer }))
+    await flush()
+}
+async function flush() {
+    await root.flush()
+    await new Promise(resolve => setTimeout(resolve, 30))
+    await root.flush()
+}

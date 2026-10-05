@@ -6,14 +6,8 @@ import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
 
 test("rebuilt desktop commits through production IPC and restores drafts across process restart", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "laneway-local-electron-"))
-    const root = resolve(import.meta.dir, "../..")
-    function git(...args: string[]) {
-        const result = Bun.spawnSync(["git", ...args], { cwd: join(directory, "repository"), stdout: "pipe", stderr: "pipe" })
-        if (result.exitCode)
-            throw new Error(result.stderr.toString())
-        return result.stdout.toString().trim()
-    }
+    let directory = await mkdtemp(join(tmpdir(), "laneway-local-electron-"))
+    let root = resolve(import.meta.dir, "../..")
     try {
         await mkdir(join(directory, "repository"))
         git("init", "-q", "-b", "main")
@@ -37,13 +31,15 @@ test("rebuilt desktop commits through production IPC and restores drafts across 
                 }],
             }),
         )
-        const build = Bun.spawn([process.execPath, "run", "--cwd", "desktop", "build"], { cwd: root, stdout: "pipe", stderr: "pipe" })
-        const diagnostics = await new Response(build.stderr).text()
+
+        let build = Bun.spawn([process.execPath, "run", "--cwd", "desktop", "build"], { cwd: root, stdout: "pipe", stderr: "pipe" })
+        let diagnostics = await new Response(build.stderr).text()
         expect(await build.exited, diagnostics).toBe(0)
-        for (const phase of ["draft", "commit", "compose"]) {
+
+        for (let phase of ["draft", "commit", "compose"]) {
             if (phase == "compose")
                 await writeFile(join(directory, "repository", "file.txt"), "composed desktop change\n")
-            const env: NodeJS.ProcessEnv = {
+            let env: NodeJS.ProcessEnv = {
                 ...process.env,
                 LANEWAY_ENGINE_PATH: join(root, "cli/bin/lane.exe"),
                 LANEWAY_SETTINGS_PATH: join(directory, "settings.json"),
@@ -51,8 +47,8 @@ test("rebuilt desktop commits through production IPC and restores drafts across 
             }
             delete env.ELECTRON_RUN_AS_NODE
             let errors = ""
-            const exitCode = await new Promise<number | null>((done, reject) => {
-                const child = spawn(electron as unknown as string, [
+            let exitCode = await new Promise<number | null>((done, reject) => {
+                let child = spawn(electron as unknown as string, [
                     join(import.meta.dir, "fixtures/local-electron.cjs"),
                     directory,
                     join(root, "desktop/out/main/index.js"),
@@ -67,7 +63,7 @@ test("rebuilt desktop commits through production IPC and restores drafts across 
                 child.on("error", reject)
                 child.on("close", done)
             })
-            const result = await readFile(join(directory, `${phase}.json`), "utf8").catch(() => errors)
+            let result = await readFile(join(directory, `${phase}.json`), "utf8").catch(() => errors)
             expect(exitCode, result).toBe(0)
             expect(JSON.parse(result)).toEqual(phase == "draft" ? { draft: true } : phase == "compose" ? { composed: true } : { committed: true })
         }
@@ -80,5 +76,11 @@ test("rebuilt desktop commits through production IPC and restores drafts across 
         if (!resolve(directory).startsWith(resolve(tmpdir()) + sep))
             throw new Error("Invalid fixture path")
         await rm(directory, { recursive: true, force: true })
+    }
+    function git(...args: string[]) {
+        let result = Bun.spawnSync(["git", ...args], { cwd: join(directory, "repository"), stdout: "pipe", stderr: "pipe" })
+        if (result.exitCode)
+            throw new Error(result.stderr.toString())
+        return result.stdout.toString().trim()
     }
 }, 180_000)

@@ -7,18 +7,110 @@ export interface NoticeState {
     transient?: boolean
 }
 
-const transientDuration = 5_000
+let transientDuration = 5_000
+
+let notice = css({
+    position: "fixed",
+    zIndex: "30",
+    right: "14px",
+    bottom: "12px",
+    width: "min(460px, calc(100vw - 28px))",
+    padding: "11px 12px",
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) auto",
+    alignItems: "center",
+    gap: "10px",
+    border: "1px solid var(--line-strong)",
+    borderLeft: "3px solid var(--accent)",
+    borderRadius: "6px",
+    background: "var(--raised)",
+    boxShadow: "var(--shadow-popover)",
+    animation: "notice-in 140ms ease-out both",
+    "@media (forced-colors: active)": {
+        boxShadow: "none",
+    },
+    "&[hidden]": {
+        display: "none",
+    },
+})
+
+let noticeSmall = css({
+    color: "var(--accent)",
+    fontSize: "11px",
+    fontWeight: "600",
+    letterSpacing: "0",
+    textTransform: "none",
+})
+
+let noticeP = css({
+    margin: "4px 0 0",
+    fontSize: "13px",
+    lineHeight: "1.45",
+})
+
+let noticeClose = css({
+    fontWeight: "500",
+    letterSpacing: "0",
+    textTransform: "none",
+    width: "24px",
+    minHeight: "24px",
+    padding: "0",
+    display: "grid",
+    placeItems: "center",
+    color: "var(--muted)",
+    border: "0",
+    borderRadius: "4px",
+    background: "transparent",
+    fontSize: "14px",
+    lineHeight: "1",
+    "&:hover": {
+        color: "var(--text)",
+        background: "var(--hover)",
+    },
+})
+
+let bootstrapState = css({
+    height: "100%",
+    padding: "32px",
+    display: "grid",
+    placeItems: "center",
+    overflow: "auto",
+    textAlign: "center",
+})
+
+let bootstrapStateDiv = css({
+    maxWidth: "520px",
+})
+
+let eyebrow = css({
+    color: "var(--muted)",
+})
+
+let bootstrapStateH1 = css({
+    margin: "8px 0",
+    fontSize: "18px",
+    fontWeight: "600",
+})
+
+let bootstrapStateP = css({
+    color: "var(--muted)",
+})
+
+let primaryButton = css({
+    marginTop: "14px",
+})
 
 export function Notice(handle: Handle<{ notice?: NoticeState; dismiss(): void }>) {
     let shown: NoticeState | undefined, timer: number | undefined, hovered = false, focused = false
-    const stop = () => window.clearTimeout(timer)
+    let stop = () => window.clearTimeout(timer)
     // The countdown waits while the pointer or focus is on the notice, so it never closes mid-read.
-    const schedule = () => {
+    let schedule = () => {
         stop()
         if (shown?.transient && !hovered && !focused)
             timer = window.setTimeout(() => handle.props.dismiss(), transientDuration)
     }
     handle.signal.addEventListener("abort", stop, { once: true })
+
     return () => {
         if (handle.props.notice != shown) {
             shown = handle.props.notice
@@ -92,94 +184,3 @@ export function FatalError(handle: Handle<{ message: string; retry(): void }>) {
 export function errorMessage(error: unknown) {
     return error instanceof Error ? error.message : String(error)
 }
-
-const notice = css({
-    position: "fixed",
-    zIndex: "30",
-    right: "14px",
-    bottom: "12px",
-    width: "min(460px, calc(100vw - 28px))",
-    padding: "11px 12px",
-    display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) auto",
-    alignItems: "center",
-    gap: "10px",
-    border: "1px solid var(--line-strong)",
-    borderLeft: "3px solid var(--accent)",
-    borderRadius: "6px",
-    background: "var(--raised)",
-    boxShadow: "var(--shadow-popover)",
-    animation: "notice-in 140ms ease-out both",
-    "@media (forced-colors: active)": {
-        boxShadow: "none",
-    },
-    "&[hidden]": {
-        display: "none",
-    },
-})
-
-const noticeSmall = css({
-    color: "var(--accent)",
-    fontSize: "11px",
-    fontWeight: "600",
-    letterSpacing: "0",
-    textTransform: "none",
-})
-
-const noticeP = css({
-    margin: "4px 0 0",
-    fontSize: "13px",
-    lineHeight: "1.45",
-})
-
-const noticeClose = css({
-    fontWeight: "500",
-    letterSpacing: "0",
-    textTransform: "none",
-    width: "24px",
-    minHeight: "24px",
-    padding: "0",
-    display: "grid",
-    placeItems: "center",
-    color: "var(--muted)",
-    border: "0",
-    borderRadius: "4px",
-    background: "transparent",
-    fontSize: "14px",
-    lineHeight: "1",
-    "&:hover": {
-        color: "var(--text)",
-        background: "var(--hover)",
-    },
-})
-
-const bootstrapState = css({
-    height: "100%",
-    padding: "32px",
-    display: "grid",
-    placeItems: "center",
-    overflow: "auto",
-    textAlign: "center",
-})
-
-const bootstrapStateDiv = css({
-    maxWidth: "520px",
-})
-
-const eyebrow = css({
-    color: "var(--muted)",
-})
-
-const bootstrapStateH1 = css({
-    margin: "8px 0",
-    fontSize: "18px",
-    fontWeight: "600",
-})
-
-const bootstrapStateP = css({
-    color: "var(--muted)",
-})
-
-const primaryButton = css({
-    marginTop: "14px",
-})

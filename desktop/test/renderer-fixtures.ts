@@ -1,9 +1,9 @@
 import type { BranchGraph, ChangedFile, FileDiffPage, Workspace } from "@laneway/shared"
 
 export function inspectionScenario() {
-    const repository = repositoryInfo("D:\\Source\\inspection")
-    const graph: BranchGraph = branchGraph(repository.id)
-    const branch = graph.branches[1]
+    let repository = repositoryInfo("D:\\Source\\inspection")
+    let graph: BranchGraph = branchGraph(repository.id)
+    let branch = graph.branches[1]
     branch.checkedOut = [{ path: repository.root, name: "inspection", head: branch.tip, main: true }]
     let workspace: Workspace = {
         ...openedWorkspace(repository),
@@ -13,7 +13,8 @@ export function inspectionScenario() {
             columns: [{ kind: "branch", id: branch.id, ref: branch.preferredRef, lastSeenObjectId: branch.tip, width: 380, worktreePath: repository.root }],
         }],
     }
-    const files: ChangedFile[] = ["src/file.txt", "other.txt"].map(path => ({
+
+    let files: ChangedFile[] = ["src/file.txt", "other.txt"].map(path => ({
         path,
         status: "modified",
         staged: true,
@@ -22,7 +23,7 @@ export function inspectionScenario() {
         ignored: false,
         conflicted: false,
     }))
-    const page: FileDiffPage = {
+    let page: FileDiffPage = {
         source: { kind: "working", worktreePath: repository.root },
         file: files[0],
         view: "combined",
@@ -37,7 +38,8 @@ export function inspectionScenario() {
             hunk: 0,
         }],
     }
-    const api = fakeLaneway({
+
+    let api = fakeLaneway({
         getState: async () => ({ ...appState(), workspace }),
         updateWorkspace: async next => workspace = structuredClone(next),
         readBranchGraph: async () => ({ ok: true, graph }),
@@ -75,19 +77,6 @@ export function inspectionScenario() {
     return { api, page, graph, saved: () => workspace }
 }
 
-export function appState() {
-    return {
-        workspace: { repositories: [] },
-        settings: {
-            path: "C:\\Users\\developer\\settings.json",
-            git: { path: "C:\\Program Files\\Git\\cmd\\git.exe", version: "2.51.1" },
-            authorIdentities: { secondary: [] },
-        },
-        engine: { state: "ready" as const, path: "D:\\Laneway\\cli\\bin\\lane.exe", name: "lane" as const, version: "0.1.0" },
-        appearance: "light" as const,
-    }
-}
-
 export function repositoryInfo(path: string) {
     return {
         id: `${path}\\.git`,
@@ -112,7 +101,7 @@ export function openedWorkspace(info: ReturnType<typeof repositoryInfo>) {
 }
 
 export function branchGraph(repositoryId: string) {
-    const main = {
+    let main = {
         kind: "branch" as const,
         id: "branch:refs/heads/main",
         name: "main",
@@ -134,7 +123,7 @@ export function branchGraph(repositoryId: string) {
         published: false,
         merged: false,
     }
-    const branch = (name: string, involvement: "involved" | "uninvolved") => ({
+    let branch = (name: string, involvement: "involved" | "uninvolved") => ({
         ...main,
         id: `branch:refs/heads/${name}`,
         name,
@@ -233,5 +222,18 @@ export function fakeLaneway(overrides: Partial<Window["laneway"]> = {}): Window[
         onEntryProgress: () => () => undefined,
         onRepositoryChanged: () => () => undefined,
         ...overrides,
+    }
+}
+
+export function appState() {
+    return {
+        workspace: { repositories: [] },
+        settings: {
+            path: "C:\\Users\\developer\\settings.json",
+            git: { path: "C:\\Program Files\\Git\\cmd\\git.exe", version: "2.51.1" },
+            authorIdentities: { secondary: [] },
+        },
+        engine: { state: "ready" as const, path: "D:\\Laneway\\cli\\bin\\lane.exe", name: "lane" as const, version: "0.1.0" },
+        appearance: "light" as const,
     }
 }

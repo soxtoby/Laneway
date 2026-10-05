@@ -6,19 +6,21 @@ import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
 
 test("Pragmatic drag bindings, conflict approval and keyboard transfers under production CSP", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "laneway-composition-browser-"))
+    let directory = await mkdtemp(join(tmpdir(), "laneway-composition-browser-"))
     try {
-        const build = await Bun.build({ entrypoints: [join(import.meta.dir, "fixtures/composition.tsx")], outdir: directory, target: "browser" })
+        let build = await Bun.build({ entrypoints: [join(import.meta.dir, "fixtures/composition.tsx")], outdir: directory, target: "browser" })
         expect(build.success, build.logs.join("\n")).toBe(true)
-        const html = (await readFile(join(import.meta.dir, "../src/renderer/index.html"), "utf8"))
+
+        let html = (await readFile(join(import.meta.dir, "../src/renderer/index.html"), "utf8"))
             .replace("./src/styles.css", "./styles.css").replace("./src/main.tsx", "./composition.js")
         await writeFile(join(directory, "index.html"), html)
         await writeFile(join(directory, "styles.css"), await readFile(join(import.meta.dir, "../src/renderer/src/styles.css")))
-        const env = { ...process.env }
+
+        let env = { ...process.env }
         delete env.ELECTRON_RUN_AS_NODE
         let errors = ""
-        const code = await new Promise<number | null>((done, reject) => {
-            const child = spawn(electron as unknown as string, [join(import.meta.dir, "fixtures/composition-electron.cjs"), directory], {
+        let code = await new Promise<number | null>((done, reject) => {
+            let child = spawn(electron as unknown as string, [join(import.meta.dir, "fixtures/composition-electron.cjs"), directory], {
                 env,
                 windowsHide: true,
                 stdio: ["ignore", "ignore", "pipe"],
@@ -28,7 +30,8 @@ test("Pragmatic drag bindings, conflict approval and keyboard transfers under pr
             child.on("error", reject)
             child.on("close", done)
         })
-        const result = await readFile(join(directory, "result.json"), "utf8").catch(() => errors)
+        let result = await readFile(join(directory, "result.json"), "utf8").catch(() => errors)
+
         expect(code, result).toBe(0)
         expect(JSON.parse(result), errors).toEqual({
             cancellation: true,

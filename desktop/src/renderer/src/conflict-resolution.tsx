@@ -9,8 +9,127 @@ interface Options {
     changed(repositoryId: string): Promise<void>
     update(): Promise<AbortSignal>
 }
+
+type ResolutionAction =
+    | Omit<Extract<ConflictRequest, { action: "choose" }>, "subject" | "input" | "revision" | "hunk">
+    | { action: "accept" | "cancel" | "keep-stashed" }
+    | { action: "use-file"; file: string; path: string }
+    | { action: "tool"; file: string }
+    | { action: "edit"; file: string; content: string }
+
+type ConflictView = NonNullable<ConflictResult["view"]>
+let conflictFileCache = new Map<string, ConflictView>()
+let control = {
+    minHeight: "26px",
+    padding: "3px 8px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "6px",
+    color: "var(--text)",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "4px",
+    background: "var(--control)",
+    font: "inherit",
+    fontSize: "12px",
+    cursor: "pointer",
+    "&:hover:not(:disabled)": { background: "var(--control-hover)" },
+    "&:disabled": { opacity: "0.45", cursor: "default" },
+}
+let controlsStyle = css({
+    padding: "8px",
+    borderBottom: "1px solid var(--line)",
+    color: "var(--text)",
+    fontSize: "12px",
+    "& > div > button, & > div > details button": { ...control, margin: "2px" },
+    "& > strong": { color: "var(--warning)" },
+})
+let resolutionStyle = css({
+    minWidth: "0",
+    color: "var(--text)",
+    fontSize: "12px",
+    "& :where(.resolution-footer, .resolution-error) > button": control,
+    "& svg": { flexShrink: "0" },
+    "& .conflict-file-list": { listStyle: "none", padding: "0", margin: "0" },
+    "& .resolved-mark": { color: "var(--accent)", display: "inline-flex", flex: "0 0 14px" },
+    "& .pending-mark": { color: "var(--warning)", display: "inline-flex", flex: "0 0 14px" },
+    "& .conflict-file-actions": { display: "flex", alignItems: "center", gap: "4px", marginLeft: "auto", flex: "0 0 auto" },
+    "& .conflict-file:has(.resolution-menu[open])": { position: "relative", zIndex: "7" },
+    "& .resolution-menu": {
+        position: "relative",
+        "& summary": { listStyle: "none" },
+        "&[open] summary": { background: "var(--control-hover)" },
+    },
+    "& .resolution-menu-items": {
+        position: "absolute",
+        right: "0",
+        top: "30px",
+        width: "180px",
+        zIndex: "5",
+        padding: "4px",
+        border: "1px solid var(--line-strong)",
+        borderRadius: "5px",
+        background: "var(--panel)",
+        boxShadow: "var(--shadow-popover)",
+        "& button": {
+            width: "100%",
+            textAlign: "left",
+            border: "0",
+            background: "transparent",
+            minHeight: "26px",
+            padding: "4px 8px",
+            color: "var(--text)",
+            font: "inherit",
+            cursor: "pointer",
+            "&:hover": { background: "var(--control-hover)" },
+        },
+    },
+    "& .file-review": { borderTop: "1px solid var(--line)" },
+    "& .review-heading": { padding: "6px 12px", color: "var(--muted)", fontSize: "11px", background: "var(--accent-wash)" },
+    "& .resolution-footer": {
+        display: "flex",
+        flex: "0 0 auto",
+        gap: "8px",
+        flexWrap: "wrap",
+        alignItems: "center",
+        minHeight: "44px",
+        padding: "8px 12px",
+        boxSizing: "border-box",
+        borderTop: "1px solid var(--line-strong)",
+        background: "var(--raised)",
+        "& > button": { flexShrink: "0", whiteSpace: "nowrap" },
+    },
+    "& .resolution-progress": {
+        flex: "0 0 100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        flexWrap: "wrap",
+        gap: "4px 12px",
+        whiteSpace: "nowrap",
+        "& strong": { fontSize: "12px", fontWeight: "500" },
+        "& span": { fontSize: "11px", color: "var(--muted)" },
+    },
+    "& .accept-resolution": {
+        marginLeft: "auto",
+        minHeight: "30px",
+        background: "var(--accent)",
+        color: "var(--accent-ink)",
+        borderColor: "var(--accent)",
+        "&:hover:not(:disabled)": { background: "var(--accent-hover)" },
+    },
+    "& .resolution-error": {
+        display: "flex",
+        alignItems: "center",
+        gap: "10px",
+        padding: "8px 12px",
+        color: "var(--danger)",
+        borderBottom: "1px solid var(--line)",
+        "& span": { flex: "1" },
+    },
+})
 export function createConflictResolution(options: Options) {
-    const requested = new Map<string, { subject: string; nonce: number }>()
+    let requested = new Map<string, { subject: string; nonce: number }>()
     return {
         open(repository: string, subject: string) {
             requested.set(repository, { subject, nonce: (requested.get(repository)?.nonce ?? 0) + 1 })
@@ -49,40 +168,23 @@ function ConflictControls(
     let result: ConflictResult | undefined
     let error = "", busy = false, requested = "", selected: string | undefined
     let opened = 0
-    async function run(request: ConflictRequest) {
-        busy = true
-        error = ""
-        await handle.update()
-        try {
-            const response = await handle.props.api.conflictOperation(handle.props.repository, request)
-            if (!response.ok)
-                throw new Error(response.error.message)
-            result = response.result
-            if (request.action != "list")
-                await handle.props.changed()
-        } catch (e) {
-            error = e instanceof Error ? e.message : String(e)
-        } finally {
-            busy = false
-            void handle.update()
-        }
-    }
     return () => {
-        const props = handle.props
-        const ids = props.branch.unresolved?.subjects ?? []
+        let props = handle.props
+        let ids = props.branch.unresolved?.subjects ?? []
         if (props.open && opened != props.open.nonce && ids.includes(props.open.subject)) {
             opened = props.open.nonce
             selected = props.open.subject
         }
-        const next = JSON.stringify(props.branch.unresolved)
+        let next = JSON.stringify(props.branch.unresolved)
         if (requested != next) {
             requested = next
             handle.queueTask(() => run({ action: "list" }))
         }
-        const conflicts = result?.conflicts.filter(c => ids.includes(c.id) && c.kind == "working") ?? []
-        const recovery = result?.recovery.find(r => r.stack == props.branch.unresolved?.stackId || r.branch == props.branch.name || !r.branch)
+        let conflicts = result?.conflicts.filter(c => ids.includes(c.id) && c.kind == "working") ?? []
+        let recovery = result?.recovery.find(r => r.stack == props.branch.unresolved?.stackId || r.branch == props.branch.name || !r.branch)
         if (!conflicts.length && !recovery && !props.branch.unresolved?.recovery && !error)
             return null
+
         return (
             <section aria-label="Unresolved conflicts" mix={controlsStyle}>
                 <strong>{props.branch.unresolved?.recovery ? "Recovery required" : "Unresolved"}</strong>
@@ -150,17 +252,27 @@ function ConflictControls(
             </section>
         )
     }
+
+    async function run(request: ConflictRequest) {
+        busy = true
+        error = ""
+        await handle.update()
+
+        try {
+            let response = await handle.props.api.conflictOperation(handle.props.repository, request)
+            if (!response.ok)
+                throw new Error(response.error.message)
+            result = response.result
+            if (request.action != "list")
+                await handle.props.changed()
+        } catch (e) {
+            error = e instanceof Error ? e.message : String(e)
+        } finally {
+            busy = false
+            void handle.update()
+        }
+    }
 }
-
-type ResolutionAction =
-    | Omit<Extract<ConflictRequest, { action: "choose" }>, "subject" | "input" | "revision" | "hunk">
-    | { action: "accept" | "cancel" | "keep-stashed" }
-    | { action: "use-file"; file: string; path: string }
-    | { action: "tool"; file: string }
-    | { action: "edit"; file: string; content: string }
-
-type ConflictView = NonNullable<ConflictResult["view"]>
-const conflictFileCache = new Map<string, ConflictView>()
 
 export function ConflictResolution(
     handle: Handle<{
@@ -175,72 +287,16 @@ export function ConflictResolution(
     let view: ConflictResult["view"], summary: ConflictResult["conflicts"][number] | undefined
     let error = "", busy = false, loaded = false
     let element: HTMLElement
-    async function run(request: ConflictRequest) {
-        if (busy)
-            return false
-        busy = true
-        error = ""
-        await handle.update()
-        try {
-            const response = await handle.props.api.conflictOperation(handle.props.repository, request)
-            if (!response.ok)
-                throw new Error(response.error.message)
-            view = response.result.view
-            summary = response.result.conflicts.find(c => c.id == handle.props.subject) ?? summary
-            if (request.action == "accept" || request.action == "keep-stashed")
-                await handle.props.changed()
-            return true
-        } catch (e) {
-            error = e instanceof Error ? e.message : String(e)
-            return false
-        } finally {
-            busy = false
-            void handle.update()
-        }
-    }
-    async function loadFile(file: string) {
-        const current = view!
-        const key = JSON.stringify([handle.props.repository, current.subject.id, current.subject.input, current.candidate.revision, file])
-        const cached = conflictFileCache.get(key)
-        if (cached)
-            return cached
-        const item = current.files.find(item => item.path == file)!
-        if (!item.resolved) {
-            const entry = file in current.candidate.files ? current.candidate.files[file] : item.provisional
-            const resultText = entry && entry.mode != "160000" ? await handle.props.api.readConflictContent(handle.props.repository, entry.object) : null
-            const loaded = { ...current, files: current.files.map(item => item.path == file ? { ...item, loaded: true, resultText } : item) }
-            conflictFileCache.set(key, loaded)
-            if (conflictFileCache.size > 16)
-                conflictFileCache.delete(conflictFileCache.keys().next().value!)
-            return loaded
-        }
-        const response = await handle.props.api.conflictOperation(handle.props.repository, { action: "inspect", subject: current.subject.id, files: [file] })
-        if (!response.ok)
-            throw new Error(response.error.message)
-        const loaded = response.result.view!
-        if (loaded.subject.input != current.subject.input || loaded.candidate.revision != current.candidate.revision)
-            throw new Error("Resolution progress changed. Reload the conflict before continuing.")
-        conflictFileCache.set(key, loaded)
-        if (conflictFileCache.size > 16)
-            conflictFileCache.delete(conflictFileCache.keys().next().value!)
-        return loaded
-    }
-    async function action(request: ResolutionAction) {
-        element.querySelectorAll<HTMLDetailsElement>("details[open]").forEach(menu => menu.open = false)
-        if (view)
-            return run({ ...request, subject: view.subject.id, input: view.subject.input, revision: view.candidate.revision } as ConflictRequest)
-        return false
-    }
     return () => {
-        const props = handle.props
+        let props = handle.props
         if (!loaded) {
             loaded = true
             handle.queueTask(() => run({ action: "inspect", subject: props.subject, files: [] }))
         }
-        const resolved = view?.files.filter(f => f.resolved).length ?? 0
-        const remaining = (view?.files.length ?? 0) - resolved
-        const working = summary?.kind == "working"
-        const sides: ConflictSides = {
+        let resolved = view?.files.filter(f => f.resolved).length ?? 0
+        let remaining = (view?.files.length ?? 0) - resolved
+        let working = summary?.kind == "working"
+        let sides: ConflictSides = {
             left: {
                 label: working ? "Current files" : "Before this commit",
                 action: working ? "Use pre-stash version" : "Use version before this commit",
@@ -252,6 +308,7 @@ export function ConflictResolution(
                 description: working ? `Stash ${view?.sourceCommit.slice(0, 8) ?? ""}` : `${view?.sourceCommit.slice(0, 8) ?? ""} · ${summary?.title ?? ""}`,
             },
         }
+
         return (
             <article
                 class="inline-conflict-resolution"
@@ -280,7 +337,7 @@ export function ConflictResolution(
                                     ignored: false,
                                 })),
                                 file => {
-                                    const conflict = view!.files.find(candidate => candidate.path == file.path)
+                                    let conflict = view!.files.find(candidate => candidate.path == file.path)
                                     return conflict
                                         ? (
                                             <ConflictFileRow
@@ -345,6 +402,68 @@ export function ConflictResolution(
             </article>
         )
     }
+
+    async function loadFile(file: string) {
+        let current = view!
+        let key = JSON.stringify([handle.props.repository, current.subject.id, current.subject.input, current.candidate.revision, file])
+        let cached = conflictFileCache.get(key)
+        if (cached)
+            return cached
+        let item = current.files.find(item => item.path == file)!
+        if (!item.resolved) {
+            let entry = file in current.candidate.files ? current.candidate.files[file] : item.provisional
+            let resultText = entry && entry.mode != "160000" ? await handle.props.api.readConflictContent(handle.props.repository, entry.object) : null
+            let loaded = { ...current, files: current.files.map(item => item.path == file ? { ...item, loaded: true, resultText } : item) }
+            conflictFileCache.set(key, loaded)
+            if (conflictFileCache.size > 16)
+                conflictFileCache.delete(conflictFileCache.keys().next().value!)
+            return loaded
+        }
+        let response = await handle.props.api.conflictOperation(handle.props.repository, { action: "inspect", subject: current.subject.id, files: [file] })
+        if (!response.ok)
+            throw new Error(response.error.message)
+        let loaded = response.result.view!
+        if (loaded.subject.input != current.subject.input || loaded.candidate.revision != current.candidate.revision)
+            throw new Error("Resolution progress changed. Reload the conflict before continuing.")
+        conflictFileCache.set(key, loaded)
+        if (conflictFileCache.size > 16)
+            conflictFileCache.delete(conflictFileCache.keys().next().value!)
+
+        return loaded
+    }
+
+    async function run(request: ConflictRequest) {
+        if (busy)
+            return false
+
+        busy = true
+        error = ""
+        await handle.update()
+
+        try {
+            let response = await handle.props.api.conflictOperation(handle.props.repository, request)
+            if (!response.ok)
+                throw new Error(response.error.message)
+            view = response.result.view
+            summary = response.result.conflicts.find(c => c.id == handle.props.subject) ?? summary
+            if (request.action == "accept" || request.action == "keep-stashed")
+                await handle.props.changed()
+            return true
+        } catch (e) {
+            error = e instanceof Error ? e.message : String(e)
+            return false
+        } finally {
+            busy = false
+            void handle.update()
+        }
+    }
+
+    async function action(request: ResolutionAction) {
+        element.querySelectorAll<HTMLDetailsElement>("details[open]").forEach(menu => menu.open = false)
+        if (view)
+            return run({ ...request, subject: view.subject.id, input: view.subject.input, revision: view.candidate.revision } as ConflictRequest)
+        return false
+    }
 }
 
 function ConflictFileRow(
@@ -362,10 +481,11 @@ function ConflictFileRow(
     let detail: ConflictView | undefined, loading = false, loadError = "", attempted = ""
     let review: ReturnType<typeof resolutionReview> | undefined
     let contents = handle.props.file.resultText, reset = 0
+
     return () => {
         let { view, file } = handle.props
-        const { path, sides, action, busy } = handle.props
-        const versionKey = JSON.stringify([view.subject.input, view.candidate.revision])
+        let { path, sides, action, busy } = handle.props
+        let versionKey = JSON.stringify([view.subject.input, view.candidate.revision])
         if (detail && (detail.subject.input != view.subject.input || detail.candidate.revision != view.candidate.revision))
             detail = undefined
         if (expanded && file.loaded === false && !detail && !loading && attempted != versionKey) {
@@ -387,18 +507,19 @@ function ConflictFileRow(
             view = detail
             file = detail.files.find(item => item.path == file.path)!
         }
-        const leftLabel = sides.left.label.toLowerCase(), rightLabel = sides.right.label.toLowerCase()
+        let leftLabel = sides.left.label.toLowerCase(), rightLabel = sides.right.label.toLowerCase()
         if (contents != file.resultText) {
             contents = file.resultText
             reset++
         }
-        const entry = view.candidate.files[file.path] ?? file.provisional
-        const readable = file.resultText != null && !!entry && ["100644", "100755"].includes(entry.mode)
-        const version = view.candidate.revision
+        let entry = view.candidate.files[file.path] ?? file.provisional
+        let readable = file.resultText != null && !!entry && ["100644", "100755"].includes(entry.mode)
+        let version = view.candidate.revision
         if (expanded && file.loaded !== false && file.resolved && version != reviewVersion) {
             review = resolutionReview(view, file)
             reviewVersion = version
         }
+
         return (
             <div class="conflict-file" data-file={file.path} data-resolved={file.resolved}>
                 <InspectionItem
@@ -522,7 +643,7 @@ function ConflictFileRow(
     }
 }
 function resolutionIcon(kind: "check" | "conflict" | "tool" | "more" | "take-left" | "take-right") {
-    const paths = {
+    let paths = {
         check: "m3 8 3 3 7-7",
         conflict: "M8 2 15 14H1ZM8 6v4m0 1.5v1",
         tool: "M2 3h4v10H2ZM10 3h4v10h-4M6 8h4m-2-2 2 2-2 2",
@@ -546,112 +667,3 @@ function resolutionIcon(kind: "check" | "conflict" | "tool" | "more" | "take-lef
         </svg>
     )
 }
-const control = {
-    minHeight: "26px",
-    padding: "3px 8px",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "6px",
-    color: "var(--text)",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "4px",
-    background: "var(--control)",
-    font: "inherit",
-    fontSize: "12px",
-    cursor: "pointer",
-    "&:hover:not(:disabled)": { background: "var(--control-hover)" },
-    "&:disabled": { opacity: "0.45", cursor: "default" },
-}
-const controlsStyle = css({
-    padding: "8px",
-    borderBottom: "1px solid var(--line)",
-    color: "var(--text)",
-    fontSize: "12px",
-    "& > div > button, & > div > details button": { ...control, margin: "2px" },
-    "& > strong": { color: "var(--warning)" },
-})
-const resolutionStyle = css({
-    minWidth: "0",
-    color: "var(--text)",
-    fontSize: "12px",
-    "& :where(.resolution-footer, .resolution-error) > button": control,
-    "& svg": { flexShrink: "0" },
-    "& .conflict-file-list": { listStyle: "none", padding: "0", margin: "0" },
-    "& .resolved-mark": { color: "var(--accent)", display: "inline-flex", flex: "0 0 14px" },
-    "& .pending-mark": { color: "var(--warning)", display: "inline-flex", flex: "0 0 14px" },
-    "& .conflict-file-actions": { display: "flex", alignItems: "center", gap: "4px", marginLeft: "auto", flex: "0 0 auto" },
-    "& .conflict-file:has(.resolution-menu[open])": { position: "relative", zIndex: "7" },
-    "& .resolution-menu": {
-        position: "relative",
-        "& summary": { listStyle: "none" },
-        "&[open] summary": { background: "var(--control-hover)" },
-    },
-    "& .resolution-menu-items": {
-        position: "absolute",
-        right: "0",
-        top: "30px",
-        width: "180px",
-        zIndex: "5",
-        padding: "4px",
-        border: "1px solid var(--line-strong)",
-        borderRadius: "5px",
-        background: "var(--panel)",
-        boxShadow: "var(--shadow-popover)",
-        "& button": {
-            width: "100%",
-            textAlign: "left",
-            border: "0",
-            background: "transparent",
-            minHeight: "26px",
-            padding: "4px 8px",
-            color: "var(--text)",
-            font: "inherit",
-            cursor: "pointer",
-            "&:hover": { background: "var(--control-hover)" },
-        },
-    },
-    "& .file-review": { borderTop: "1px solid var(--line)" },
-    "& .review-heading": { padding: "6px 12px", color: "var(--muted)", fontSize: "11px", background: "var(--accent-wash)" },
-    "& .resolution-footer": {
-        display: "flex",
-        flex: "0 0 auto",
-        gap: "8px",
-        flexWrap: "wrap",
-        alignItems: "center",
-        minHeight: "44px",
-        padding: "8px 12px",
-        boxSizing: "border-box",
-        borderTop: "1px solid var(--line-strong)",
-        background: "var(--raised)",
-        "& > button": { flexShrink: "0", whiteSpace: "nowrap" },
-    },
-    "& .resolution-progress": {
-        flex: "0 0 100%",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        flexWrap: "wrap",
-        gap: "4px 12px",
-        whiteSpace: "nowrap",
-        "& strong": { fontSize: "12px", fontWeight: "500" },
-        "& span": { fontSize: "11px", color: "var(--muted)" },
-    },
-    "& .accept-resolution": {
-        marginLeft: "auto",
-        minHeight: "30px",
-        background: "var(--accent)",
-        color: "var(--accent-ink)",
-        borderColor: "var(--accent)",
-        "&:hover:not(:disabled)": { background: "var(--accent-hover)" },
-    },
-    "& .resolution-error": {
-        display: "flex",
-        alignItems: "center",
-        gap: "10px",
-        padding: "8px 12px",
-        color: "var(--danger)",
-        borderBottom: "1px solid var(--line)",
-        "& span": { flex: "1" },
-    },
-})

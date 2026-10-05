@@ -14,7 +14,7 @@ interface Selection {
     label: string
 }
 
-export const compositionStyles = css({
+export let compositionStyles = css({
     // The handle is a quiet grip, always the leftmost thing in a row; the whole row drags.
     "& .composition-handle": {
         order: "-1",
@@ -99,7 +99,7 @@ export function createComposition(options: {
     busyChanged?(busy: boolean): void
     resolve?(repositoryId: string): void
 }) {
-    const token = `composition-${crypto.randomUUID()}`
+    let token = `composition-${crypto.randomUUID()}`
     let active: Selection | undefined, mode: "move" | "copy" = "move"
     let pending: { selection: Selection; request: CompositionRequest; key: string; preview?: LocalPreview } | undefined
     // Outcomes and guidance use the app toast; progress and errors stay in the review panel at the destination.
@@ -108,182 +108,27 @@ export function createComposition(options: {
     // Staging lists take working files from the other list; the composer applies the change.
     type Staging = { repositoryId: string; worktreePath: string; view: "staged" | "unstaged"; apply(paths: string[]): void }
     type Landing = { kind: "compose"; value: Destination } | { kind: "stage"; value: Staging }
-    const targets = new Map<HTMLElement, () => Landing>()
-    const update = () => void options.update()
-    const key = (repositoryId: string, target: CompositionTarget) => JSON.stringify([repositoryId, target])
+    let targets = new Map<HTMLElement, () => Landing>()
+    let update = () => void options.update()
+    let key = (repositoryId: string, target: CompositionTarget) => JSON.stringify([repositoryId, target])
     /** A commit dragged by its row rather than a file selection: it moves or squashes as a unit, carrying its own message. */
-    const wholeCommit = (selection: Selection) => selection.source.kind == "commit" && !selection.files
-    function compatible(selection: Selection | undefined, repositoryId: string, target: CompositionTarget) {
-        if (!selection || selection.repositoryId != repositoryId)
-            return false
-        const source = selection.source
-        if (source.kind == "branch")
-            return target.kind == "branch"
-        if (target.kind == "branch")
-            return wholeCommit(selection)
-        if (source.kind != "commit")
-            return true
-        if (target.kind == "commit")
-            return target.objectId != source.objectId
-        // The seams either side of a commit in its own branch would only put it back where it is.
-        return target.kind != "seam" || !wholeCommit(selection) || target.branch != source.branch
-            || target.parentId != source.objectId && target.parentId != source.parentId
-    }
-    function stageable(selection: Selection | undefined, staging: Staging) {
-        return !!selection && selection.repositoryId == staging.repositoryId
-            && selection.source.kind == "working" && selection.source.worktreePath == staging.worktreePath
-            && !!selection.files?.length && (selection.view == "staged" || selection.view == "unstaged") && selection.view != staging.view
-    }
-    function accepts(selection: Selection | undefined, landing: Landing) {
-        return landing.kind == "compose"
-            ? compatible(selection, landing.value.repositoryId, landing.value.target)
-            : stageable(selection, landing.value)
-    }
-    function land(selection: Selection, landing: Landing, copy: boolean) {
-        if (landing.kind == "compose")
-            void drop(selection, landing.value.repositoryId, landing.value.target, copy)
-        else if (!busy && stageable(selection, landing.value)) {
-            cancel()
-            landing.value.apply(selection.files!.map(file => file.path))
-        }
-    }
-    function choose(selection: Selection, value: "move" | "copy") {
-        if (busy)
-            return
-        active = selection
-        mode = selection.source.kind == "branch" ? "move" : value
-        pending = undefined
-        notice = ""
-        dismissGuidance()
-        dismissGuidance = options.notify({
-            code: "composition.choose",
-            message: `${value == "move" ? "Move" : "Copy"} ${selection.label} · Choose a destination, then Enter. Escape cancels.`,
-        })
-        update()
-    }
-    function cancel() {
-        generation++
-        active = undefined
-        pending = undefined
-        notice = ""
-        dismissGuidance()
-        update()
-    }
-    async function drop(selection: Selection, repositoryId: string, target: CompositionTarget, copy: boolean) {
-        if (busy || !compatible(selection, repositoryId, target))
-            return
-        active = selection
-        mode = copy && selection.source.kind != "branch" ? "copy" : "move"
-        pending = {
-            selection,
-            key: key(repositoryId, target),
-            request: {
-                action: "compose",
-                source: selection.source,
-                target,
-                mode,
-                files: selection.files,
-                inventoryVersion: selection.inventoryVersion,
-                selectedRemote: selection.selectedRemote,
-                view: selection.view ?? "combined",
-                message: "",
-                descendants: true,
-                allowConflicts: false,
-            },
-        }
-        notice = ""
-        dismissGuidance()
-        update()
-        // Only composed file selections need a message for a new commit; a whole commit brings its own.
-        if (target.kind != "seam" || wholeCommit(selection))
-            await prepare()
-    }
-    async function prepare() {
-        const current = pending
-        if (!current || busy)
-            return
-        const version = ++generation
-        busy = true
-        options.busyChanged?.(true)
-        notice = "Transferring…"
-        update()
-        try {
-            const response = await options.api.localOperation(current.selection.repositoryId, current.request)
-            if (version != generation || pending != current)
-                return
-            if (!response.ok)
-                throw new Error(response.error.message)
-            if (response.result.status == "failed")
-                throw new Error(response.result.message)
-            if (response.result.command == "local" && response.result.status == "performed")
-                await completed(current.selection.repositoryId, response.result.message)
-            else {
-                current.preview = response.result.preview
-                notice = ""
-            }
-        } catch (error) {
-            notice = error instanceof Error ? error.message : String(error)
-        } finally {
-            busy = false
-            options.busyChanged?.(false)
-            update()
-        }
-        const p = current.preview?.composition
-        if (pending == current && p && current.request.source.kind != "branch" && !p.conflicts.length && !p.removed.length && !p.published.length)
-            await execute(false)
-    }
-    async function execute(resolveNow: boolean) {
-        const current = pending
-        if (!current?.preview || busy)
-            return
-        busy = true
-        options.busyChanged?.(true)
-        notice = "Transferring…"
-        update()
-        try {
-            const result = await options.api.localOperation(current.selection.repositoryId, {
-                ...current.request,
-                allowConflicts: !!current.preview.composition?.conflicts.length,
-            }, current.preview.token)
-            if (!result.ok)
-                throw new Error(result.error.message)
-            if (result.result.status == "failed")
-                throw new Error(result.result.message)
-            await completed(current.selection.repositoryId, result.result.message)
-            if (resolveNow)
-                options.resolve?.(current.selection.repositoryId)
-        } catch (error) {
-            notice = error instanceof Error ? error.message : String(error)
-            current.preview = undefined
-        } finally {
-            busy = false
-            options.busyChanged?.(false)
-            update()
-        }
-    }
-    async function completed(repositoryId: string, message?: string) {
-        notice = ""
-        options.notify({ code: "composition.transferred", message: message ?? "Changes transferred.", transient: true })
-        active = undefined
-        pending = undefined
-        await options.changed?.(repositoryId)
-    }
-    const keyboard = (event: KeyboardEvent) => {
+    let wholeCommit = (selection: Selection) => selection.source.kind == "commit" && !selection.files
+    let keyboard = (event: KeyboardEvent) => {
         if (!active || busy || (event.target instanceof HTMLElement && event.target.closest("input,textarea,select,[contenteditable=true]")))
             return
         if (event.key == "Escape") {
             event.preventDefault()
             cancel()
         } else if (["ArrowDown", "ArrowUp"].includes(event.key)) {
-            const available = [...targets].filter(([element, value]) => element.isConnected && element.getClientRects().length && accepts(active, value()))
-            const index = available.findIndex(([element]) => element == document.activeElement)
-            const next = available[(index + (event.key == "ArrowDown" ? 1 : -1) + available.length) % available.length]
+            let available = [...targets].filter(([element, value]) => element.isConnected && element.getClientRects().length && accepts(active, value()))
+            let index = available.findIndex(([element]) => element == document.activeElement)
+            let next = available[(index + (event.key == "ArrowDown" ? 1 : -1) + available.length) % available.length]
             if (next) {
                 event.preventDefault()
                 next[0].focus()
             }
         } else if (event.key == "Enter" && event.target instanceof HTMLElement) {
-            const landing = targets.get(event.target)?.()
+            let landing = targets.get(event.target)?.()
             if (landing && accepts(active, landing)) {
                 event.preventDefault()
                 event.stopPropagation()
@@ -291,7 +136,7 @@ export function createComposition(options: {
             }
         }
     }
-    const stopMonitoring = monitorForElements({
+    let stopMonitoring = monitorForElements({
         canMonitor: ({ source }) => !!source.data[token],
         onDrop: ({ location }) => {
             // Cancellation reports no targets, even when cancelled over a valid one.
@@ -304,25 +149,26 @@ export function createComposition(options: {
         document.removeEventListener("keydown", keyboard, true)
         stopMonitoring()
     }, { once: true })
-    const sourceBinding = createMixin<HTMLElement, [Selection]>(handle => {
+    let sourceBinding = createMixin<HTMLElement, [Selection]>(handle => {
         let selection: Selection, cleanup = () => {}
         handle.addEventListener("insert", ({ node }) => {
             // The whole row is the drag surface (mouse activation waits for a click inside it); the handle stays
             // as the visible affordance and keyboard entry point.
-            const row = node.closest<HTMLElement>(".change-file, .disclosure-heading, .composition-branch-target") ?? node
+            let row = node.closest<HTMLElement>(".change-file, .disclosure-heading, .composition-branch-target") ?? node
             cleanup = draggable({
                 element: row,
                 getInitialData: () => ({ [token]: selection }),
                 canDrag: ({ input }) => {
                     if (busy)
                         return false
-                    const target = document.elementFromPoint(input.clientX, input.clientY)
+                    let target = document.elementFromPoint(input.clientX, input.clientY)
                     return !target?.closest("input, textarea, select, [contenteditable], a[href]")
                 },
                 onDragStart: ({ location }) => choose(selection, location.current.input.ctrlKey ? "copy" : "move"),
             })
         })
         handle.addEventListener("remove", () => cleanup())
+
         return (value: Selection) => {
             selection = value
             return <handle.element />
@@ -331,34 +177,23 @@ export function createComposition(options: {
     /** Seams a commit row stands in for: pointer drops near its top or bottom edge land there instead of on the commit. */
     type Edges = { above?: CompositionTarget; below?: CompositionTarget }
     type Placement = { landing: Landing; edge: "above" | "on" | "below" }
-    const overClasses = { above: "composition-over-above", on: "composition-over", below: "composition-over-below" }
-    const targetBinding = createMixin<HTMLElement, [Landing, Edges?]>(handle => {
+    let overClasses = { above: "composition-over-above", on: "composition-over", below: "composition-over-below" }
+    let targetBinding = createMixin<HTMLElement, [Landing, Edges?]>(handle => {
         let value: Landing, edges: Edges = {}, cleanup = () => {}
         handle.addEventListener("insert", ({ node: element }) => {
             targets.set(element, () => value)
-            const selectionOf = (source: { data: Record<string, unknown> }) => source.data[token] as Selection | undefined
-            const seam = (target: CompositionTarget | undefined, selection: Selection | undefined): Landing | undefined =>
+            let selectionOf = (source: { data: Record<string, unknown> }) => source.data[token] as Selection | undefined
+            let seam = (target: CompositionTarget | undefined, selection: Selection | undefined): Landing | undefined =>
                 value.kind == "compose" && target && compatible(selection, value.value.repositoryId, target)
                     ? { kind: "compose", value: { repositoryId: value.value.repositoryId, target } }
                     : undefined
-            // Edges take a quarter of the row beside a usable centre, or half of it otherwise; a lone edge takes the whole row.
-            function place(selection: Selection | undefined, clientY: number): Placement | undefined {
-                const on = accepts(selection, value) ? value : undefined
-                const above = seam(edges.above, selection), below = seam(edges.below, selection)
-                const rect = element.getBoundingClientRect(), offset = clientY - rect.top, band = rect.height / (on ? 4 : 2)
-                if (above && offset < band)
-                    return { landing: above, edge: "above" }
-                if (below && offset > rect.height - band)
-                    return { landing: below, edge: "below" }
-                return on ? { landing: on, edge: "on" } : above ? { landing: above, edge: "above" } : below ? { landing: below, edge: "below" } : undefined
-            }
-            const clear = () => element.classList.remove(...Object.values(overClasses))
-            const show = (placement: Placement | undefined) => {
+            let clear = () => element.classList.remove(...Object.values(overClasses))
+            let show = (placement: Placement | undefined) => {
                 clear()
                 if (placement)
                     element.classList.add(overClasses[placement.edge])
             }
-            const unregister = dropTargetForElements({
+            let unregister = dropTargetForElements({
                 element,
                 canDrop: ({ source, input }) => !busy && !!place(selectionOf(source), input.clientY),
                 getDropEffect: ({ input, source }) =>
@@ -368,7 +203,7 @@ export function createComposition(options: {
                 onDragLeave: clear,
                 onDrop: ({ source, location, self }) => {
                     clear()
-                    const placement = place(selectionOf(source), location.current.input.clientY)
+                    let placement = place(selectionOf(source), location.current.input.clientY)
                     if (placement && location.current.dropTargets[0]?.element == self.element)
                         land(selectionOf(source)!, placement.landing, location.current.input.ctrlKey)
                 },
@@ -377,8 +212,22 @@ export function createComposition(options: {
                 unregister()
                 targets.delete(element)
             }
+
+            // Edges take a quarter of the row beside a usable centre, or half of it otherwise; a lone edge takes the whole row.
+            function place(selection: Selection | undefined, clientY: number): Placement | undefined {
+                let on = accepts(selection, value) ? value : undefined
+                let above = seam(edges.above, selection), below = seam(edges.below, selection)
+                let rect = element.getBoundingClientRect(), offset = clientY - rect.top, band = rect.height / (on ? 4 : 2)
+                if (above && offset < band)
+                    return { landing: above, edge: "above" }
+                if (below && offset > rect.height - band)
+                    return { landing: below, edge: "below" }
+
+                return on ? { landing: on, edge: "on" } : above ? { landing: above, edge: "above" } : below ? { landing: below, edge: "below" } : undefined
+            }
         })
         handle.addEventListener("remove", () => cleanup())
+
         return (next: Landing, nextEdges: Edges = {}) => {
             value = next
             edges = nextEdges
@@ -428,8 +277,8 @@ export function createComposition(options: {
             return targetBinding({ kind: "compose", value: { repositoryId, target } }, edges)
         },
         seam(repositoryId: string, target: Extract<CompositionTarget, { kind: "seam" }>): RemixNode {
-            const branch = target.branch.replace(/^refs\/heads\//, "")
-            const label = active && wholeCommit(active) ? `${mode == "copy" ? "Copy" : "Move"} commit here` : "New commit"
+            let branch = target.branch.replace(/^refs\/heads\//, "")
+            let label = active && wholeCommit(active) ? `${mode == "copy" ? "Copy" : "Move"} commit here` : "New commit"
             return (
                 <>
                     <div
@@ -448,8 +297,10 @@ export function createComposition(options: {
         panel(repositoryId: string, target: CompositionTarget): RemixNode {
             if (!pending || pending.key != key(repositoryId, target))
                 return null
-            const current = pending, p = current.preview?.composition
-            const needsMessage = target.kind == "seam" && !wholeCommit(current.selection)
+
+            let current = pending, p = current.preview?.composition
+            let needsMessage = target.kind == "seam" && !wholeCommit(current.selection)
+
             return (
                 <section class="composition-review" aria-label="Review transfer">
                     <strong>{current.request.mode == "move" ? "Move" : "Copy"} {current.selection.label}</strong>
@@ -513,5 +364,180 @@ export function createComposition(options: {
                 </section>
             )
         },
+    }
+
+    function accepts(selection: Selection | undefined, landing: Landing) {
+        return landing.kind == "compose"
+            ? compatible(selection, landing.value.repositoryId, landing.value.target)
+            : stageable(selection, landing.value)
+    }
+
+    function land(selection: Selection, landing: Landing, copy: boolean) {
+        if (landing.kind == "compose")
+            void drop(selection, landing.value.repositoryId, landing.value.target, copy)
+        else if (!busy && stageable(selection, landing.value)) {
+            cancel()
+            landing.value.apply(selection.files!.map(file => file.path))
+        }
+    }
+
+    function stageable(selection: Selection | undefined, staging: Staging) {
+        return !!selection && selection.repositoryId == staging.repositoryId
+            && selection.source.kind == "working" && selection.source.worktreePath == staging.worktreePath
+            && !!selection.files?.length && (selection.view == "staged" || selection.view == "unstaged") && selection.view != staging.view
+    }
+
+    function choose(selection: Selection, value: "move" | "copy") {
+        if (busy)
+            return
+
+        active = selection
+        mode = selection.source.kind == "branch" ? "move" : value
+        pending = undefined
+        notice = ""
+        dismissGuidance()
+        dismissGuidance = options.notify({
+            code: "composition.choose",
+            message: `${value == "move" ? "Move" : "Copy"} ${selection.label} · Choose a destination, then Enter. Escape cancels.`,
+        })
+        update()
+    }
+
+    function cancel() {
+        generation++
+        active = undefined
+        pending = undefined
+        notice = ""
+        dismissGuidance()
+        update()
+    }
+
+    async function drop(selection: Selection, repositoryId: string, target: CompositionTarget, copy: boolean) {
+        if (busy || !compatible(selection, repositoryId, target))
+            return
+
+        active = selection
+        mode = copy && selection.source.kind != "branch" ? "copy" : "move"
+        pending = {
+            selection,
+            key: key(repositoryId, target),
+            request: {
+                action: "compose",
+                source: selection.source,
+                target,
+                mode,
+                files: selection.files,
+                inventoryVersion: selection.inventoryVersion,
+                selectedRemote: selection.selectedRemote,
+                view: selection.view ?? "combined",
+                message: "",
+                descendants: true,
+                allowConflicts: false,
+            },
+        }
+        notice = ""
+        dismissGuidance()
+        update()
+        // Only composed file selections need a message for a new commit; a whole commit brings its own.
+        if (target.kind != "seam" || wholeCommit(selection))
+            await prepare()
+    }
+
+    function compatible(selection: Selection | undefined, repositoryId: string, target: CompositionTarget) {
+        if (!selection || selection.repositoryId != repositoryId)
+            return false
+
+        let source = selection.source
+        if (source.kind == "branch")
+            return target.kind == "branch"
+        else if (target.kind == "branch")
+            return wholeCommit(selection)
+        else if (source.kind != "commit")
+            return true
+        else if (target.kind == "commit")
+            return target.objectId != source.objectId
+        else {
+            // The seams either side of a commit in its own branch would only put it back where it is.
+            return target.kind != "seam" || !wholeCommit(selection) || target.branch != source.branch
+                || target.parentId != source.objectId && target.parentId != source.parentId
+        }
+    }
+
+    async function prepare() {
+        let current = pending
+        if (!current || busy)
+            return
+
+        let version = ++generation
+        busy = true
+        options.busyChanged?.(true)
+        notice = "Transferring…"
+        update()
+
+        try {
+            let response = await options.api.localOperation(current.selection.repositoryId, current.request)
+            if (version != generation || pending != current)
+                return
+            if (!response.ok)
+                throw new Error(response.error.message)
+            if (response.result.status == "failed")
+                throw new Error(response.result.message)
+            if (response.result.command == "local" && response.result.status == "performed")
+                await completed(current.selection.repositoryId, response.result.message)
+            else {
+                current.preview = response.result.preview
+                notice = ""
+            }
+        } catch (error) {
+            notice = error instanceof Error ? error.message : String(error)
+        } finally {
+            busy = false
+            options.busyChanged?.(false)
+            update()
+        }
+
+        let p = current.preview?.composition
+        if (pending == current && p && current.request.source.kind != "branch" && !p.conflicts.length && !p.removed.length && !p.published.length)
+            await execute(false)
+    }
+
+    async function execute(resolveNow: boolean) {
+        let current = pending
+        if (!current?.preview || busy)
+            return
+
+        busy = true
+        options.busyChanged?.(true)
+        notice = "Transferring…"
+        update()
+
+        try {
+            let result = await options.api.localOperation(current.selection.repositoryId, {
+                ...current.request,
+                allowConflicts: !!current.preview.composition?.conflicts.length,
+            }, current.preview.token)
+            if (!result.ok)
+                throw new Error(result.error.message)
+            if (result.result.status == "failed")
+                throw new Error(result.result.message)
+            await completed(current.selection.repositoryId, result.result.message)
+            if (resolveNow)
+                options.resolve?.(current.selection.repositoryId)
+        } catch (error) {
+            notice = error instanceof Error ? error.message : String(error)
+            current.preview = undefined
+        } finally {
+            busy = false
+            options.busyChanged?.(false)
+            update()
+        }
+    }
+
+    async function completed(repositoryId: string, message?: string) {
+        notice = ""
+        options.notify({ code: "composition.transferred", message: message ?? "Changes transferred.", transient: true })
+        active = undefined
+        pending = undefined
+        await options.changed?.(repositoryId)
     }
 }

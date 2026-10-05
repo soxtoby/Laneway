@@ -111,48 +111,670 @@ interface ColumnState {
     compositionKey?: string
 }
 
+let changeFileList = css({
+    position: "relative",
+    ".file-tree details &": {
+        paddingLeft: "14px",
+    },
+})
+
+// An empty staging list still needs somewhere to drop while the commit form is open.
+let stagingHint = css({
+    margin: "4px 10px 6px",
+    padding: "8px",
+    border: "1px dashed var(--line-strong)",
+    borderRadius: "var(--radius)",
+    color: "var(--muted)",
+    fontSize: "12px",
+    textAlign: "center",
+    pointerEvents: "none",
+})
+
+let changeFileListP = css({
+    margin: 0,
+    padding: "8px 10px",
+    color: "var(--muted)",
+    fontSize: "12px",
+    overflowWrap: "anywhere",
+})
+
+let changeFileListButton = css({
+    border: "1px solid var(--line)",
+    background: "var(--control)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "3px 6px",
+    font: "inherit",
+    cursor: "pointer",
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+})
+
+let inspectionProgressContainer = css({
+    position: "relative",
+})
+
+let inspectionProgress = css({
+    position: "absolute",
+    top: "0",
+    right: "0",
+    zIndex: 1,
+    margin: "0",
+    padding: "4px 8px",
+    maxWidth: "100%",
+    boxSizing: "border-box",
+    border: "1px solid var(--line)",
+    borderRadius: "3px",
+    background: "var(--panel)",
+    color: "var(--muted)",
+    fontSize: "12px",
+    overflowWrap: "anywhere",
+    pointerEvents: "none",
+    "& button": {
+        pointerEvents: "auto",
+    },
+})
+
+let inspectionMuted = css({
+    margin: "0",
+    padding: "8px 10px",
+    color: "var(--muted)",
+    fontSize: "12px",
+    overflowWrap: "anywhere",
+})
+
+let diffInspector = css({
+    position: "relative",
+    borderBlock: "1px solid var(--line-strong)",
+    background: "var(--panel)",
+    minWidth: "0",
+})
+
+let diffToolbar = css({
+    "& .diff-file-menu": { flex: 1, minWidth: 0 },
+    // Only broken-out diffs show this toolbar, sticking under their diff column's sticky header.
+    position: "sticky",
+    top: "46px",
+    zIndex: 5,
+    background: "var(--panel-deep)",
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "4px var(--scrollbar-clearance) 4px 6px",
+    borderBottom: "1px solid var(--line)",
+})
+
+let diffToolbarStrong = css({
+    display: "flex",
+    minWidth: "0",
+    flex: "1",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    font: "12px var(--mono)",
+})
+
+let diffFileToggle = css({
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    width: "100%",
+    padding: "4px 0",
+    border: 0,
+    background: "transparent",
+    color: "var(--text)",
+    textAlign: "left",
+    cursor: "pointer",
+    "& > svg": { flex: "0 0 auto", color: "var(--muted)" },
+    "&:hover": { background: "var(--control-hover)" },
+})
+
+let diffViews = css({
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "4px",
+    padding: "6px 8px",
+})
+
+let diffViewsButton = css({
+    border: "1px solid var(--line)",
+    background: "var(--control)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "3px 6px",
+    font: "inherit",
+    cursor: "pointer",
+    fontSize: "11px",
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+})
+
+let inspectionNotice = css({
+    margin: "0",
+    padding: "8px 10px",
+    color: "var(--warning)",
+    fontSize: "12px",
+    overflowWrap: "anywhere",
+    background: "var(--warning-wash)",
+})
+
+let diffInspectorP = css({
+    margin: 0,
+    padding: "8px 10px",
+    color: "var(--muted)",
+    fontSize: "12px",
+    overflowWrap: "anywhere",
+})
+
+let diffInspectorButton = css({
+    border: "1px solid var(--line)",
+    background: "var(--control)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "3px 6px",
+    font: "inherit",
+    cursor: "pointer",
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+})
+
+let diffSummary = css({
+    margin: "0",
+    padding: "4px 10px",
+    color: "var(--muted)",
+    fontSize: "11px",
+    lineHeight: "16px",
+    overflowWrap: "anywhere",
+})
+
+let renameSelection = css({
+    display: "flex",
+    alignItems: "center",
+    gap: "5px",
+    color: "var(--muted)",
+    fontSize: "11px",
+    padding: "5px 8px",
+})
+
+let diffInspectorInput = css({
+    '&[type="checkbox"]': {
+        width: "14px",
+        height: "14px",
+        minHeight: "0",
+        padding: "0",
+        margin: "0 3px 0 0",
+        flex: "0 0 14px",
+    },
+    width: "14px",
+    height: "14px",
+    minHeight: 0,
+    padding: 0,
+    margin: "0 3px 0 0",
+    flex: "0 0 14px",
+})
+
+let selectionSummary = css({
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "6px 8px",
+    fontSize: "11px",
+    color: "var(--accent)",
+    borderTop: "1px solid var(--line)",
+})
+
+let selectionSummaryButton = css({
+    border: "1px solid var(--line)",
+    background: "var(--control)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "3px 6px",
+    font: "inherit",
+    cursor: "pointer",
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+})
+
+let loadDiff = css({
+    border: "1px solid var(--line)",
+    background: "var(--control)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "3px 6px",
+    font: "inherit",
+    cursor: "pointer",
+    margin: "8px",
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+})
+
+let inspectionMutedButton = css({
+    border: "1px solid var(--line)",
+    background: "var(--control)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "3px 6px",
+    font: "inherit",
+    cursor: "pointer",
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+})
+
+let columnInspection = css({
+    "--filter-height": "0px",
+    "&.filter-open": { "--filter-height": "52px" },
+    overflow: "auto",
+    flex: "1",
+    minHeight: "0",
+})
+
+let inspectionFilters = css({
+    position: "sticky",
+    top: "6px",
+    zIndex: 8,
+    height: "40px",
+    margin: "6px 8px",
+    boxSizing: "border-box",
+    background: "var(--panel)",
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    padding: "4px 8px",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "6px",
+    boxShadow: "var(--shadow-popover)",
+})
+
+let filterToggleButton = css({
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flex: "0 0 auto",
+    width: "26px",
+    height: "26px",
+    padding: "0",
+    border: "0",
+    borderRadius: "3px",
+    background: "transparent",
+    color: "var(--muted)",
+    cursor: "pointer",
+    "&:hover": { background: "var(--control-hover)", color: "var(--text)" },
+    '&[aria-expanded="true"]': { background: "var(--accent-wash)", color: "var(--accent)" },
+})
+
+let filterChangedFilesInput = css({
+    height: "28px",
+    minHeight: "28px",
+    boxSizing: "border-box",
+    font: "inherit",
+    width: "100%",
+    minWidth: "40px",
+    color: "var(--text)",
+    background: "var(--field)",
+    border: "1px solid var(--line)",
+    padding: "0 7px",
+    borderRadius: "3px",
+})
+
+let filterChangeStatusSelect = css({
+    height: "28px",
+    minHeight: "28px",
+    boxSizing: "border-box",
+    font: "inherit",
+    color: "var(--text)",
+    background: "var(--field)",
+    border: "1px solid var(--line)",
+    padding: "0 7px",
+    borderRadius: "3px",
+})
+
+let workingChanges = css({
+    background: "var(--panel)",
+})
+
+let workingChangesH3 = css({
+    fontSize: "12px",
+    margin: "0",
+})
+
+// Each branch in the stack is a card; its heading carries the branch tint and icon.
+let stackBranch = css({
+    margin: "8px 8px 0",
+    overflow: "clip",
+    border: "1px solid var(--focus-edge)",
+    borderRadius: "var(--radius)",
+    background: "var(--panel)",
+    "&:last-child": { marginBottom: "8px" },
+    // Rows draw their own bottom rules; the card's edge replaces the last one. A trailing -1px pulls the
+    // card's bottom up over that rule, whichever row is last, and the clip hides it.
+    "&::after": { content: '""', display: "block", marginTop: "-1px" },
+    // Branches whose tip their remote already has take the remote teal instead of the local branch blue.
+    "&.remote": { borderColor: "var(--remote-edge)" },
+    "&.remote :is(.composition-branch-target, .composition-branch-heading)": { background: "var(--remote-wash)" },
+    "&.remote .composition-branch-heading:hover": { background: "color-mix(in srgb, var(--remote) 18%, var(--panel))" },
+    "&.remote .composition-branch-target > svg": { color: "var(--remote)" },
+})
+
+let disclosureHeading = css({
+    margin: 0,
+    font: "inherit",
+})
+
+// The whole sticky row owns the graph line, the node, the hover and the expanded tint, so the
+// line meets the file rows below and the highlight runs under the grip too.
+let commitStickyHeading = css({
+    position: "sticky",
+    top: "var(--filter-height, 0px)",
+    zIndex: 7,
+    height: "34px",
+    display: "flex",
+    alignItems: "center",
+    paddingLeft: "22px",
+    background: "var(--panel)",
+    borderBottom: "1px solid var(--line)",
+    borderRadius: "0",
+    "&::before": {
+        position: "absolute",
+        top: "-1px",
+        bottom: "-1px",
+        left: "12px",
+        width: "2px",
+        content: '""',
+        background: "var(--line-strong)",
+        pointerEvents: "none",
+    },
+    // Sticky rows must stay opaque, so hover and expanded tints are mixed into the panel colour.
+    "&:hover": {
+        backgroundColor: "color-mix(in srgb, var(--text) 5%, var(--panel))",
+    },
+    '&:has(> .commit-heading[aria-expanded="true"])': {
+        backgroundColor: "color-mix(in srgb, var(--focus) 12%, var(--panel))",
+    },
+    '&:has(> .commit-heading[aria-expanded="true"]):hover': {
+        backgroundColor: "color-mix(in srgb, var(--focus) 18%, var(--panel))",
+    },
+})
+
+// The surrounding branch row owns the tint, edges and hover so they run under the grip too. Each css()
+// class sits in its own cascade layer, so an override from the row's styles cannot reliably win here.
+let stackHeading = css({
+    flex: "1",
+    minWidth: "0",
+    border: "0",
+    background: "transparent",
+    color: "var(--text)",
+    borderRadius: "0",
+    minHeight: "34px",
+    padding: "0 12px",
+    font: "inherit",
+    fontSize: "13px",
+    fontWeight: "600",
+    cursor: "pointer",
+    scrollMarginTop: "var(--filter-height, 0px)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    textAlign: "left",
+})
+let conflictIndicator = css({
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: "0",
+    minWidth: "26px",
+    height: "26px",
+    padding: "3px",
+    color: "var(--warning)",
+    background: "transparent",
+    border: "1px solid transparent",
+    borderRadius: "4px",
+    cursor: "pointer",
+    "&[aria-pressed=true]": { background: "var(--warning-wash)", borderColor: "var(--warning-edge)" },
+    "&:hover": { background: "var(--warning-wash)" },
+    ".inspect-commit &": { height: "100%", width: "32px", alignSelf: "stretch", borderRadius: "0", padding: "0", border: "0" },
+})
+// Tool buttons sit flush in the sticky commit row and stay transparent so the row's hover and
+// expanded tints run under them; only the hovered button darkens.
+let commitToolButton = css({
+    width: "32px",
+    alignSelf: "stretch",
+    flex: "0 0 32px",
+    display: "grid",
+    placeItems: "center",
+    padding: 0,
+    border: "0",
+    borderRadius: "0",
+    background: "transparent",
+    color: "var(--muted)",
+    cursor: "pointer",
+    "&:hover, &[aria-expanded=true]": {
+        background: "color-mix(in srgb, var(--text) 8%, transparent)",
+        color: "var(--text)",
+    },
+})
+
+let stackHeadingName = css({
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    minWidth: "0",
+    "& svg": { color: "var(--faint)", flex: "0 0 auto" },
+    "& svg + svg": { color: "var(--focus)" },
+    ".stack-branch.remote & svg + svg": { color: "var(--remote)" },
+})
+
+let stackHeadingStatus = css({ display: "inline-flex", alignItems: "center", gap: "8px" })
+let stackConflictIndicator = css({ display: "inline-flex", alignItems: "center", flexShrink: "0", color: "var(--warning)" })
+
+let stackBranchButton = css({
+    border: "1px solid var(--line)",
+    background: "var(--control)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "3px 6px",
+    font: "inherit",
+    cursor: "pointer",
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+})
+
+// An expanded commit's files sit in a recessed tray under its heading.
+let inspectCommit = css({
+    position: "relative",
+    '&[data-expanded="true"] > :not(.disclosure-heading)': {
+        background: "var(--panel-deep)",
+    },
+})
+
+let commitHeading = css({
+    height: "100%",
+    border: "0",
+    background: "transparent",
+    color: "var(--text)",
+    borderRadius: "0",
+    padding: "0 10px 0 4px",
+    font: "inherit",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    flex: "1 1 auto",
+    minWidth: 0,
+    gap: "8px",
+    width: "100%",
+    textAlign: "left",
+    // Keyboard focus scrolls the heading clear of the sticky filter bar.
+    scrollMarginTop: "var(--filter-height, 0px)",
+    '&[aria-expanded="true"] > span:first-child': {
+        background: "var(--graph)",
+    },
+    '.inspect-commit[data-remote="true"] &[aria-expanded="true"] > span:first-child': {
+        background: "var(--remote)",
+    },
+})
+
+// Commits their remote already has take the remote teal, so a partly published branch changes colour along its history.
+let commitNode = css({
+    position: "absolute",
+    zIndex: 2,
+    left: "8px",
+    top: "12px",
+    width: "10px",
+    height: "10px",
+    margin: "0",
+    flex: "0 0 auto",
+    border: "2px solid var(--graph)",
+    borderRadius: "50%",
+    background: "var(--panel)",
+    '.inspect-commit[data-remote="true"] &': { borderColor: "var(--remote)" },
+})
+
+let commitHeadingSpan = css({
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+})
+
+let mergeParent = css({
+    position: "relative",
+    display: "flex",
+    gap: "8px",
+    alignItems: "center",
+    padding: "6px 6px 6px 28px",
+    fontSize: "11px",
+    "&::before": {
+        position: "absolute",
+        top: "-1px",
+        bottom: "-1px",
+        left: "12px",
+        width: "2px",
+        content: '""',
+        background: "var(--line-strong)",
+        pointerEvents: "none",
+    },
+})
+
+let parentForSelect = css({
+    color: "var(--text)",
+    background: "var(--field)",
+    border: "1px solid var(--line)",
+    padding: "5px",
+    borderRadius: "3px",
+})
+
+let bodySelectionSummaryButton = css({
+    border: "1px solid var(--line)",
+    background: "var(--control)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    padding: "3px 6px",
+    font: "inherit",
+    cursor: "pointer",
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
+    '&[aria-pressed="true"]': {
+        background: "var(--accent-wash-strong)",
+        borderColor: "var(--accent-edge)",
+    },
+})
+
+let inspectionBreakout = css({
+    ...auxiliaryColumnFrame,
+    minWidth: "380px",
+    "& .auxiliary-source": { display: "block", fontSize: "10px", color: "var(--muted)" },
+})
+
+let inspectionBreakoutHeader = css({
+    ...auxiliaryColumnHeader,
+    position: "sticky",
+    top: 0,
+    zIndex: 10,
+    "& > span": { flex: "1 1 auto", minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" },
+})
+
+let closeDiffColumnButton = css(auxiliaryCloseButton)
+import type { FileHistorySource } from "@laneway/shared"
+import type { FileHistoryEntry } from "@laneway/shared"
+import { createFileHistories, type FileHistoryState } from "./file-history"
+import { createTrailCommits, type TrailCommitState } from "./trail-commit"
+
 export function createInspection(options: Options) {
     let navigationHighlight: Animation | undefined
-    const columns = new Map<string, ColumnState>()
-    const auxiliary = new AuxiliaryColumns<BreakoutState | BranchComparisonState | FileHistoryState | TrailCommitState>()
-    const trailCommits = createTrailCommits(options)
-    const comparisons = createBranchComparisons(options)
-    const histories = createFileHistories({
+    let columns = new Map<string, ColumnState>()
+    let auxiliary = new AuxiliaryColumns<BreakoutState | BranchComparisonState | FileHistoryState | TrailCommitState>()
+    let trailCommits = createTrailCommits(options)
+    let comparisons = createBranchComparisons(options)
+    let histories = createFileHistories({
         ...options,
         composition(history) {
             return compositionFor(historyHosts.get(history))
         },
         changed(history) {
-            const host = historyHosts.get(history)
+            let host = historyHosts.get(history)
             if (!host)
                 return
             host.compositionKey = JSON.stringify(compositionFor(host))
-            for (const group of host.files.keys()) {
+            for (let group of host.files.keys()) {
                 if (group != "working" && !history.page?.entries.some(entry => entry.objectId == group)) {
                     clearGroup(host, group)
                     host.files.delete(group)
                 }
             }
             host.wholeFiles.clear()
-            for (const diff of host.diffs.values())
+            for (let diff of host.diffs.values())
                 diff.selection = undefined
         },
     })
-    const historyHosts = new Map<FileHistoryState | TrailCommitState, ColumnState>()
+    let historyHosts = new Map<FileHistoryState | TrailCommitState, ColumnState>()
     let activeRepositoryId: string | undefined
-    const key = (repositoryId: string, id: string) => JSON.stringify([repositoryId, id])
-    const update = () => {
+    let key = (repositoryId: string, id: string) => JSON.stringify([repositoryId, id])
+    let update = () => {
         if (!options.signal.aborted)
             void options.update()
     }
-    const composition = createComposition({
+    let composition = createComposition({
         ...options,
         busyChanged: options.localBusyChanged,
         async changed(repositoryId) {
-            for (const state of [...columns.values(), ...historyHosts.values()]) {
+            for (let state of [...columns.values(), ...historyHosts.values()]) {
                 if (state.repositoryId == repositoryId) {
                     state.wholeFiles.clear()
-                    for (const diff of state.diffs.values())
+                    for (let diff of state.diffs.values())
                         diff.selection = undefined
                 }
             }
@@ -160,19 +782,19 @@ export function createInspection(options: Options) {
             refresh()
         },
         async resolve(repositoryId) {
-            const result = await options.api.conflictOperation(repositoryId, { action: "list" })
-            const first = result.ok ? result.result.conflicts.find(c => !c.suspended) : undefined
+            let result = await options.api.conflictOperation(repositoryId, { action: "list" })
+            let first = result.ok ? result.result.conflicts.find(c => !c.suspended) : undefined
             if (first?.kind == "working") {
                 options.resolveWorkingConflict?.(repositoryId, first.id)
                 return
             }
-            const state = [...columns.values()].find(s => s.repositoryId == repositoryId && s.column.kind == "branch" && s.column.unresolved)
+            let state = [...columns.values()].find(s => s.repositoryId == repositoryId && s.column.kind == "branch" && s.column.unresolved)
             if (state) {
                 state.conflictsOnly = true
                 if (state.column.kind == "branch") {
-                    const branch = state.graph.branches.find(b => first && b.unresolved?.subjects.includes(first.id)) ?? state.column
+                    let branch = state.graph.branches.find(b => first && b.unresolved?.subjects.includes(first.id)) ?? state.column
                     await history(state, branch)
-                    const commit = [...state.history.values()].flatMap(h => h.page?.commits ?? []).find(c => first ? c.conflictId == first.id : c.conflictId)
+                    let commit = [...state.history.values()].flatMap(h => h.page?.commits ?? []).find(c => first ? c.conflictId == first.id : c.conflictId)
                     if (commit)
                         await readFiles(state, commit.objectId, { kind: "commit", objectId: commit.objectId })
                 }
@@ -180,57 +802,33 @@ export function createInspection(options: Options) {
             }
         },
     })
-    function transferSource(state: ColumnState, source: DiffSource): CompositionSource | undefined {
-        if (source.kind == "working")
-            return source
-        if (source.kind == "commit")
-            return { ...source, branch: state.column.kind == "branch" ? state.column.preferredRef : undefined }
-    }
-    function fileTransfer(state: ColumnState, group: string, file: ChangedFile) {
-        const inventory = state.files.get(group)?.inventory
-        const source = inventory && transferSource(state, inventory.source)
-        if (!source || !inventory)
-            return null
-        const chosen = state.wholeFiles.has(`${group}:${file.path}`)
-            ? [...state.wholeFiles].filter(([id]) => id.startsWith(group + ":")).map(([, f]) => ({ path: f.path }))
-            : [{ path: file.path }]
-        return composition.source({
-            repositoryId: state.repositoryId,
-            selectedRemote: state.graph.selectedRemote,
-            source,
-            files: chosen,
-            inventoryVersion: inventory.version,
-            view: group == "working-staged" ? "staged" : group == "working-unstaged" ? "unstaged" : "combined",
-            label: chosen.length > 1 ? `${chosen.length} files` : file.path,
-        })
-    }
-    const refresh = () => {
+    let refresh = () => {
         if (activeRepositoryId)
             histories.refresh(activeRepositoryId)
-        for (const host of historyHosts.values()) {
+        for (let host of historyHosts.values()) {
             if (host.repositoryId == activeRepositoryId && host.worktreePath)
                 void readFiles(host, "working", { kind: "working", worktreePath: host.worktreePath }, true)
         }
-        for (const state of columns.values()) {
+        for (let state of columns.values()) {
             if (state.repositoryId == activeRepositoryId && state.worktreePath && !state.unavailable)
                 void readFiles(state, "working", { kind: "working", worktreePath: state.worktreePath }, true)
         }
     }
     // The Branch Graph owner polls on one timer and calls `refreshWorking` alongside its own read, so a poll costs one burst of updates.
     window.addEventListener("focus", refresh)
-    const visibility = () => {
+    let visibility = () => {
         if (document.visibilityState != "visible") {
             comparisons.activate()
             histories.suspend()
             trailCommits.suspend()
-            for (const host of historyHosts.values())
+            for (let host of historyHosts.values())
                 suspend(host)
-            for (const state of columns.values())
+            for (let state of columns.values())
                 suspend(state)
         } else {
             comparisons.activate(activeRepositoryId)
             refresh()
-            for (const state of columns.values()) {
+            for (let state of columns.values()) {
                 if (state.repositoryId == activeRepositoryId)
                     resume(state)
             }
@@ -241,1017 +839,9 @@ export function createInspection(options: Options) {
         navigationHighlight?.cancel()
         window.removeEventListener("focus", refresh)
         document.removeEventListener("visibilitychange", visibility)
-        for (const state of columns.values())
+        for (let state of columns.values())
             dispose(state)
     }, { once: true })
-
-    function cancel(state: ColumnState, id: string) {
-        void options.api.cancelInspection(state.repositoryId, id)
-    }
-    function compositionFor(host?: ColumnState) {
-        const root = host?.selectionRoot
-        const primary = root?.graph.branches.find(branch => branch.primary)
-        const branch = root?.graph.branches.find(branch => branch.id == root.column.id)
-        return branch && !branch.remoteOnly && primary ? { tip: branch.tip, primaryTip: primary.tip } : undefined
-    }
-    function selectable(state: ColumnState, group: string) {
-        return !state.auxiliaryId || group == "working"
-            || state.compositionKey == JSON.stringify(compositionFor(state)) && !!state.composable?.has(group)
-    }
-    function openHistory(owner: ColumnState, sourceId: string, source: FileHistorySource, path: string) {
-        const node = auxiliary.open(sourceId, JSON.stringify(["history", source, path]), () => {
-            const value = histories.create(owner.repositoryId, source, path)
-            const host: ColumnState = {
-                ...owner,
-                id: `history:${crypto.randomUUID()}`,
-                auxiliaryId: undefined,
-                breakout: undefined,
-                worktreePath: source.kind == "worktree" ? source.worktreePath : undefined,
-                files: new Map(),
-                diffs: new Map(),
-                cachedDiffs: new Map(),
-                requestIds: new Set(),
-                wholeFiles: new Map(),
-                history: new Map(),
-                filter: "",
-                filterOpen: false,
-                transientLayout: "unified",
-                selectionRoot: owner.selectionRoot ?? owner,
-                composable: new Set(),
-            }
-            historyHosts.set(value, host)
-            host.compositionKey = JSON.stringify(compositionFor(host))
-            return {
-                value,
-                dispose() {
-                    histories.dispose(value)
-                    host.alive = false
-                    suspend(host)
-                    historyHosts.delete(value)
-                },
-            }
-        })
-        if (node.value.kind == "history")
-            historyHosts.get(node.value)!.auxiliaryId = node.id
-        void options.update().then(signal => {
-            if (!signal.aborted)
-                document.querySelector<HTMLElement>(`[data-auxiliary-id="${node.id}"]`)?.focus()
-        })
-    }
-    function openTrailCommit(owner: ColumnState, sourceId: string, entry: FileHistoryEntry) {
-        const node = auxiliary.open(sourceId, JSON.stringify(["trail-commit", entry.objectId, entry.followedParent]), () => {
-            const value = trailCommits.create(owner.repositoryId, entry)
-            const host: ColumnState = {
-                ...owner,
-                id: `trail:${crypto.randomUUID()}`,
-                auxiliaryId: undefined,
-                breakout: undefined,
-                worktreePath: undefined,
-                files: new Map(),
-                diffs: new Map(),
-                requestIds: new Set(),
-                wholeFiles: new Map(),
-                cachedDiffs: new Map(),
-                history: new Map(),
-                transientLayout: "unified",
-                filter: "",
-                filterOpen: false,
-                selectionRoot: owner.selectionRoot ?? owner,
-                composable: new Set(entry.composable ? [entry.objectId] : []),
-            }
-            historyHosts.set(value, host)
-            host.compositionKey = JSON.stringify(compositionFor(host))
-            void readFiles(host, entry.objectId, { kind: "commit", objectId: entry.objectId, parentId: entry.followedParent })
-            return {
-                value,
-                dispose() {
-                    trailCommits.dispose(value)
-                    host.alive = false
-                    suspend(host)
-                    historyHosts.delete(value)
-                },
-            }
-        })
-        if (node.value.kind == "trail-commit")
-            historyHosts.get(node.value)!.auxiliaryId = node.id
-        void options.update().then(signal => {
-            if (!signal.aborted)
-                document.querySelector<HTMLElement>(`[data-auxiliary-id="${node.id}"]`)?.focus()
-        })
-    }
-    function suspend(state: ColumnState) {
-        for (const diff of state.diffs.values()) {
-            diff.selection = undefined
-            diff.generation++
-            diff.loading = false
-            diff.refreshing = false
-        }
-        for (const file of state.files.values()) {
-            file.generation++
-            file.loading = false
-            file.refreshing = false
-        }
-        for (const item of state.history.values()) {
-            item.generation++
-            item.loading = false
-        }
-        for (const id of state.requestIds)
-            cancel(state, id)
-    }
-    function dispose(state: ColumnState) {
-        state.alive = false
-        auxiliary.close(key(state.repositoryId, state.id))
-        suspend(state)
-    }
-    function resume(state: ColumnState) {
-        if (state.unavailable)
-            return
-        for (const [group, files] of state.files) {
-            if (files.open && !files.inventory)
-                void readFiles(state, group, files.source)
-        }
-        for (const [id, current] of state.history) {
-            const branch = state.graph.branches.find(branch => branch.id == id)
-            if (branch && current.open && !current.page)
-                void history(state, branch)
-        }
-        for (const diff of state.diffs.values()) {
-            if (!diff.page)
-                void readDiff(state, diff)
-        }
-    }
-    function requestId(state: ColumnState, suffix: string) {
-        const id = `${state.id}:${suffix}`
-        state.requestIds.add(id)
-        return id
-    }
-    function stateFor(repositoryId: string, column: Column, graph: BranchGraph, worktreePath?: string) {
-        const id = key(repositoryId, column.id)
-        let state = columns.get(id)
-        if (!state || state.worktreePath != worktreePath) {
-            if (state)
-                dispose(state)
-            auxiliary.addRoot(id)
-            state = {
-                repositoryId,
-                id: column.id,
-                column,
-                graph,
-                worktreePath,
-                files: new Map(),
-                history: new Map(),
-                baseSelections: new Map(),
-                requestIds: new Set(),
-                diffs: new Map(),
-                cachedDiffs: new Map(),
-                showIgnored: false,
-                filter: "",
-                filterOpen: false,
-                status: "all",
-                wholeFiles: new Map(),
-                alive: true,
-                get breakout() {
-                    const value = auxiliary.descendants(id).find(column => column.sourceId == id && column.value.kind == "diff")?.value
-                    return value?.kind == "diff" ? value : undefined
-                },
-                set breakout(value: BreakoutState | undefined) {
-                    const previous = auxiliary.descendants(id).find(column => column.sourceId == id && column.value.kind == "diff")
-                    if (previous?.value == value)
-                        return
-                    if (previous)
-                        auxiliary.close(previous.id)
-                    if (value) {
-                        auxiliary.open(id, value.group, () => ({
-                            value,
-                            dispose() {
-                                for (const diffId of value.created) {
-                                    const diff = created.diffs.get(diffId)
-                                    if (diff)
-                                        clearDiff(created, diff)
-                                }
-                            },
-                        }), previous?.width)
-                    }
-                },
-            }
-            columns.set(id, state)
-            const created = state
-            if (column.kind == "branch") {
-                queueMicrotask(() => {
-                    if (created.alive)
-                        void history(created, column)
-                })
-            }
-            if (worktreePath) {
-                queueMicrotask(() => {
-                    if (created.alive)
-                        void readFiles(created, "working", { kind: "working", worktreePath })
-                })
-            }
-        }
-        state.column = column
-        state.graph = graph
-        state.unavailable = false
-        for (const [id, current] of state.history) {
-            const branch = graph.branches.find(branch => branch.id == id)
-            if (!branch || current.key == branchHistoryKey(state, branch))
-                continue
-            current.generation++
-            current.key = branchHistoryKey(state, branch)
-            current.page = undefined
-            current.error = undefined
-            current.loading = false
-            const owner = state
-            if (current.open) {
-                queueMicrotask(() => {
-                    if (owner.alive && owner.history.get(id) == current && current.key == branchHistoryKey(owner, branch))
-                        void history(owner, branch)
-                })
-            }
-        }
-        return state
-    }
-    /**
-     * Reads a group's changed files. With `refreshDiff`, an inventory already on screen is re-read quietly: nothing
-     * renders unless the result differs, and only then are the group's open diffs re-read, quietly too.
-     */
-    async function readFiles(state: ColumnState, group: string, source: DiffSource, refreshDiff = false, open = true) {
-        let files = state.files.get(group)
-        if (!files) {
-            files = { source, loading: false, open, generation: 0 }
-            state.files.set(group, files)
-        }
-        const sameRequest = JSON.stringify(files.source) == JSON.stringify(source) && files.includeIgnored == state.showIgnored
-        if (!state.alive || (files.loading || files.refreshing) && sameRequest)
-            return
-        const quiet = refreshDiff && sameRequest && !!files.inventory
-        let changed = !quiet
-        files.source = source
-        files.includeIgnored = state.showIgnored
-        if (quiet)
-            files.refreshing = true
-        else {
-            files.loading = true
-            files.error = undefined
-            update()
-        }
-        const generation = ++files.generation
-        try {
-            const result = await options.api.readChanges(state.repositoryId, requestId(state, `files:${group}`), { source, includeIgnored: state.showIgnored })
-            if (!state.alive || generation != files.generation)
-                return
-            if (!result.ok)
-                throw new Error(result.error.message)
-            const previous = files.inventory?.version
-            if (quiet && previous == result.inventory.version && !files.error)
-                return
-            changed = true
-            files.error = undefined
-            files.inventory = result.inventory
-            files.source = result.inventory.source
-            if (group == "working") {
-                for (const view of ["staged", "unstaged"] as const) {
-                    state.files.set(`working-${view}`, {
-                        ...files,
-                        inventory: {
-                            ...result.inventory,
-                            files: result.inventory.files.filter(file => view == "staged" ? file.staged : file.unstaged || file.untracked),
-                        },
-                    })
-                }
-            }
-            if (state.breakout && (state.breakout.group == group || group == "working" && state.breakout.group.startsWith("working-")))
-                populateBreakout(state, state.breakout)
-            if (previous && previous != result.inventory.version) {
-                for (const id of state.wholeFiles.keys()) {
-                    if (id.startsWith(`${group}:`))
-                        state.wholeFiles.delete(id)
-                }
-            }
-            for (const diff of state.diffs.values()) {
-                if (diff.group != group && !(group == "working" && diff.group.startsWith("working-")))
-                    continue
-                if (!result.inventory.files.some(file => file.path == diff.path && !file.ignored))
-                    clearDiff(state, diff)
-                else if (refreshDiff)
-                    void readDiff(state, diff, false, true)
-            }
-        } catch (error) {
-            if (state.alive && generation == files.generation) {
-                changed = true
-                files.error = message(error)
-                for (const diff of state.diffs.values()) {
-                    if (diff.group == group) {
-                        diff.selection = undefined
-                        diff.page = undefined
-                    }
-                }
-            }
-        } finally {
-            if (generation == files.generation) {
-                files.loading = false
-                files.refreshing = false
-                if (changed)
-                    update()
-            }
-        }
-    }
-    function diffKey(group: string, path: string) {
-        return JSON.stringify([group, path])
-    }
-    function diffRequestId(state: ColumnState, diff: FileDiffState) {
-        return requestId(state, `diff:${diffKey(diff.group, diff.path)}`)
-    }
-    function clearDiff(state: ColumnState, diff: FileDiffState) {
-        diff.generation++
-        cancel(state, diffRequestId(state, diff))
-        const id = diffKey(diff.group, diff.path)
-        state.diffs.delete(id)
-        if (state.breakout?.group == diff.group)
-            state.breakout.created.delete(id)
-    }
-    function clearGroup(state: ColumnState, group: string, prefix = "") {
-        for (const diff of state.diffs.values()) {
-            if (diff.group == group && diff.path.startsWith(prefix))
-                clearDiff(state, diff)
-        }
-        if (state.breakout?.group == group)
-            state.breakout = undefined
-    }
-    function createDiff(state: ColumnState, group: string, path: string) {
-        const files = state.files.get(group)
-        const view = group == "working-staged" ? "staged" : group == "working-unstaged" ? "unstaged" : "combined"
-        const diff: FileDiffState = {
-            group,
-            path,
-            view,
-            page: files?.error
-                ? undefined
-                : state.cachedDiffs.get(JSON.stringify([files?.source, files?.inventory?.version, path, view, !!state.showEntireFiles])),
-            loading: false,
-            generation: 0,
-            showWhitespace: false,
-        }
-        state.diffs.set(diffKey(group, path), diff)
-        return diff
-    }
-    function closeBreakout(state: ColumnState) {
-        state.breakout = undefined
-    }
-    function breakoutColumn(state: ColumnState, breakout: BreakoutState) {
-        return auxiliary.descendants(key(state.repositoryId, state.id)).find(column => column.value == breakout)
-    }
-    function focusBreakout(state: ColumnState) {
-        const column = state.breakout && breakoutColumn(state, state.breakout)
-        if (!column)
-            return
-        auxiliary.focusedId = column.id
-        void options.update().then(signal => {
-            if (signal.aborted || auxiliary.focusedId != column.id)
-                return
-            let element = document.querySelector<HTMLElement>(`[data-auxiliary-id="${column.id}"]`)
-            element?.focus({ preventScroll: true })
-            element?.scrollIntoView({ behavior: "instant", block: "nearest", inline: "nearest" })
-        })
-    }
-    /** Scrolls the diff column so its focused file's toolbar sits under the column header. */
-    function scrollBreakout(state: ColumnState, breakout: BreakoutState) {
-        if (!breakout.focus)
-            return
-        breakout.scrolling = true
-        void options.update().then(signal => {
-            if (signal.aborted || state.breakout != breakout || !breakout.scrolling || !breakout.focus)
-                return
-            const column = breakoutColumn(state, breakout)
-            const aside = column && document.querySelector<HTMLElement>(`[data-auxiliary-id="${column.id}"]`)
-            const columnHeader = aside?.querySelector("header")
-            const target = aside
-                && Array.from(aside.querySelectorAll<HTMLElement>("[data-diff-path]")).find(element => element.dataset.diffPath == breakout.focus)
-            if (!aside || !columnHeader || !target)
-                return
-            aside.scrollTo({
-                top: aside.scrollTop + target.getBoundingClientRect().top - columnHeader.getBoundingClientRect().bottom,
-                behavior: scrollBehavior(),
-            })
-            let header = target.querySelector<HTMLElement>(".diff-toolbar")
-            navigationHighlight?.cancel()
-            navigationHighlight = header?.animate?.([
-                { backgroundColor: "color-mix(in srgb, var(--accent) 28%, var(--panel-deep))", boxShadow: "inset 3px 0 var(--accent)", offset: 0 },
-                { backgroundColor: "color-mix(in srgb, var(--accent) 28%, var(--panel-deep))", boxShadow: "inset 3px 0 var(--accent)", offset: 0.6 },
-                { backgroundColor: "var(--panel-deep)", boxShadow: "inset 3px 0 transparent", offset: 1 },
-            ], { duration: 1500, easing: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "steps(1, end)" : "ease-out" })
-            // Diffs above the target push it down as they arrive, so keep aiming until they have all loaded.
-            const files = state.files.get(breakout.group)?.inventory?.files ?? []
-            const above = files.slice(0, files.findIndex(file => file.path == breakout.focus) + 1)
-            if (above.every(file => !state.diffs.get(diffKey(breakout.group, file.path))?.loading))
-                breakout.scrolling = false
-        })
-    }
-    function commitSubject(state: ColumnState, objectId: string) {
-        for (const history of state.history.values()) {
-            const commit = history.page?.commits.find(commit => commit.objectId == objectId)
-            if (commit)
-                return commit.subject
-        }
-        return undefined
-    }
-    /**
-     * Shows one group's whole diff in the column's diff column, scrolled to `path` when given.
-     * Opening it moves focus there; choosing files from the source column leaves focus where it is.
-     */
-    async function showBreakout(state: ColumnState, group: string, path?: string, subject?: string, focus = true) {
-        const current = state.breakout
-        if (current?.group == group) {
-            current.focus = path
-            if (path)
-                current.collapsed.delete(path)
-            if (focus)
-                focusBreakout(state)
-            scrollBreakout(state, current)
-            return
-        }
-        closeBreakout(state)
-        const breakout: BreakoutState = {
-            kind: "diff",
-            group,
-            subject: subject ?? commitSubject(state, group),
-            created: new Set(),
-            collapsed: new Set(),
-            focus: path,
-        }
-        state.breakout = breakout
-        if (focus)
-            focusBreakout(state)
-        if (!state.files.get(group)?.inventory && !group.startsWith("working"))
-            await readFiles(state, group, { kind: "commit", objectId: group }, false, false)
-        if (!state.alive || state.breakout != breakout)
-            return
-        populateBreakout(state, breakout)
-        update()
-        scrollBreakout(state, breakout)
-    }
-    function populateBreakout(state: ColumnState, breakout: BreakoutState) {
-        if (!state.alive || state.breakout != breakout)
-            return
-        const files = state.files.get(breakout.group)
-        for (const file of files?.inventory?.files ?? []) {
-            if (file.ignored)
-                continue
-            const id = diffKey(breakout.group, file.path)
-            let diff = state.diffs.get(id)
-            if (!diff) {
-                diff = createDiff(state, breakout.group, file.path)
-                breakout.created.add(id)
-            }
-            if (!diff.page && !diff.loading)
-                void readDiff(state, diff)
-        }
-    }
-    function choose(state: ColumnState, group: string, file: ChangedFile) {
-        // With a diff column open, choosing a file shows its group there and scrolls to it, keeping focus in this column.
-        if (state.breakout) {
-            void showBreakout(state, group, file.path, undefined, false)
-            return
-        }
-        const selected = state.diffs.get(diffKey(group, file.path))
-        if (selected) {
-            clearDiff(state, selected)
-            update()
-            return
-        }
-        const diff = createDiff(state, group, file.path)
-        if (diff.page)
-            update()
-        else
-            void readDiff(state, diff)
-    }
-    /** Reads a file's diff. With `refresh`, a page already on screen stays put until a different version arrives. */
-    async function readDiff(state: ColumnState, diff: FileDiffState, more = false, refresh = false) {
-        const files = state.files.get(diff.group)
-        const source = files?.source
-        const inventoryVersion = files?.inventory?.version
-        if (!source || !state.alive || refresh && (diff.loading || diff.refreshing))
-            return
-        const previous = diff.page
-        const generation = ++diff.generation
-        const quiet = refresh && !!previous
-        if (quiet)
-            diff.refreshing = true
-        else {
-            diff.loading = true
-            diff.error = undefined
-            update()
-        }
-        try {
-            const result = await options.api.readFileDiff(state.repositoryId, diffRequestId(state, diff), {
-                source,
-                path: diff.path,
-                view: diff.view,
-                entireFile: state.showEntireFiles,
-                inventoryVersion,
-                ...(more && previous ? { offset: previous.nextOffset, expectedVersion: previous.version } : {}),
-            })
-            if (!state.alive || generation != diff.generation)
-                return
-            if (!result.ok)
-                throw new Error(result.error.message)
-            const page = result.page
-            if (!more && page.lines.reduce((length, line) => length + line.text.length, 0) <= 128_000) {
-                const id = JSON.stringify([source, inventoryVersion, diff.path, diff.view, !!state.showEntireFiles])
-                state.cachedDiffs.delete(id)
-                state.cachedDiffs.set(id, page)
-                if (state.cachedDiffs.size > 16)
-                    state.cachedDiffs.delete(state.cachedDiffs.keys().next().value!)
-            }
-            if (previous && previous.version != page.version) {
-                diff.selection = undefined
-                diff.notice = "File changed. Change Selection cleared."
-            }
-            diff.page = more && previous
-                ? { ...page, lines: [...previous.lines, ...page.lines] }
-                : refresh && previous?.version == page.version
-                ? previous
-                : page
-            if (quiet && diff.page == previous)
-                return
-        } catch (error) {
-            if (state.alive && generation == diff.generation) {
-                diff.error = message(error)
-                diff.selection = undefined
-                if (!more)
-                    diff.page = undefined
-            }
-        } finally {
-            if (generation == diff.generation) {
-                diff.loading = false
-                diff.refreshing = false
-                // A quiet re-read that found the same version leaves the screen alone.
-                if (!quiet || diff.page != previous || diff.error)
-                    update()
-                if (state.breakout?.scrolling && state.breakout.group == diff.group)
-                    scrollBreakout(state, state.breakout)
-            }
-        }
-    }
-    // Any remote branch can publish this branch's commits, so moving any of them refreshes its history.
-    function branchHistoryKey(state: ColumnState, branch: BranchGraphBranchNode) {
-        const baseTips = branch.base.status == "known" ? [branch.base.tip] : branch.base.candidates.map(candidate => candidate.tip)
-        return JSON.stringify([branch.tip, baseTips, state.graph.remoteTips, branch.unresolved])
-    }
-    async function history(state: ColumnState, branch: BranchGraphBranchNode, more = false) {
-        const baseTips = branch.base.status == "known" ? [branch.base.tip] : branch.base.candidates.map(candidate => candidate.tip)
-        const historyKey = branchHistoryKey(state, branch)
-        let current = state.history.get(branch.id)
-        if (!current || current.key != historyKey) {
-            current = { key: historyKey, loading: false, open: true, generation: 0 }
-            state.history.set(branch.id, current)
-        }
-        if (current.loading)
-            return
-        current.loading = true
-        current.error = undefined
-        update()
-        const generation = ++current.generation
-        try {
-            const result = await options.api.readBranchHistory(state.repositoryId, {
-                requestId: requestId(state, `history:${branch.id}`),
-                branchRef: branch.preferredRef,
-                tip: branch.tip,
-                baseTips,
-                remoteTips: state.graph.remoteTips,
-                limit: 50,
-                ...(more ? { offset: current.page?.nextOffset } : {}),
-            })
-            if (!state.alive || state.history.get(branch.id) != current || current.generation != generation)
-                return
-            if (!result.ok)
-                throw new Error(result.error.message)
-            current.page = more && current.page ? { ...result.page, commits: [...current.page.commits, ...result.page.commits] } : result.page
-        } catch (error) {
-            if (generation == current.generation)
-                current.error = message(error)
-        } finally {
-            if (generation == current.generation) {
-                current.loading = false
-                update()
-                if (state.alive && state.conflictsOnly && !current.error && current.page?.nextOffset != undefined)
-                    void history(state, branch, true)
-            }
-        }
-    }
-    function toggleHistory(state: ColumnState, branch: BranchGraphBranchNode) {
-        const current = state.history.get(branch.id)
-        if (!current || current.key != branchHistoryKey(state, branch))
-            void history(state, branch)
-        else {
-            current.open = !current.open
-            if (!current.open) {
-                for (const commit of current.page?.commits ?? [])
-                    clearGroup(state, commit.objectId)
-            }
-            if (current.open && !current.page)
-                void history(state, branch)
-            update()
-        }
-    }
-    function changeView(state: ColumnState, diff: FileDiffState, view: DiffView) {
-        diff.view = view
-        diff.page = undefined
-        diff.selection = undefined
-        void readDiff(state, diff)
-    }
-    function selectLines(diff: FileDiffState, ids: number[]) {
-        const page = diff.page
-        if (!page?.selectable)
-            return
-        const selection = diff.selection ?? { source: page.source, path: page.file.path, version: page.version, lineIds: [], rename: false }
-        const current = new Set(selection.lineIds)
-        const remove = ids.every(id => current.has(id))
-        for (const id of ids) {
-            if (remove)
-                current.delete(id)
-            else
-                current.add(id)
-        }
-        diff.selection = { ...selection, lineIds: [...current].sort((a, b) => a - b) }
-        update()
-    }
-    function filterChanged(state: ColumnState) {
-        for (const diff of state.diffs.values()) {
-            const file = state.files.get(diff.group)?.inventory?.files.find(file => file.path == diff.path)
-            if (file && !matchesFilter(state, file))
-                clearDiff(state, diff)
-        }
-        update()
-    }
-    function matchesFilter(state: ColumnState, file: ChangedFile) {
-        return `${file.oldPath ?? ""} ${file.path}`.toLowerCase().includes(state.filter.toLowerCase()) && (state.status == "all" || file.status == state.status)
-    }
-    function fileList(
-        state: ColumnState,
-        group: string,
-        files: FileState | undefined,
-        stage?: (paths: string[], unstage: boolean) => void,
-        resolution?: { files: ChangedFile[]; renderFile(file: ChangedFile): RemixNode },
-    ): RemixNode {
-        if (!files)
-            return null
-        const inventory = files.inventory?.files ?? []
-        const replacements = new Map(resolution?.files.map(file => [file.path, file]))
-        const all = [
-            ...inventory.map(file => replacements.has(file.path) ? { ...file, ...replacements.get(file.path) } : file),
-            ...(resolution?.files.filter(file => !inventory.some(existing => existing.path == file.path)) ?? []),
-        ]
-        const visible = all.filter(file => !file.ignored && matchesFilter(state, file))
-        const expanded = state.breakout
-            ? new Set(state.breakout.group == group && state.breakout.focus ? [state.breakout.focus] : [])
-            : new Set([...state.diffs.values()].filter(diff => diff.group == group).map(diff => diff.path))
-        // Renamed files stage as their old and new paths together.
-        const withOldPaths = (paths: string[]) =>
-            paths.flatMap(path => {
-                const file = all.find(candidate => candidate.path == path)
-                return file?.oldPath ? [file.oldPath, path] : [path]
-            })
-        const staging = stage && files.source.kind == "working"
-            ? composition.staging({
-                repositoryId: state.repositoryId,
-                worktreePath: files.source.worktreePath,
-                view: group == "working-staged" ? "staged" : "unstaged",
-                apply: paths => stage(withOldPaths(paths), group != "working-staged"),
-            })
-            : undefined
-        return (
-            <section
-                class="change-file-list"
-                aria-label={group == "working-staged" ? "Staged files" : group.startsWith("working") ? "Working Changes files" : "Commit files"}
-                mix={[changeFileList, staging]}
-            >
-                {staging && group == "working-staged" && !visible.length && (
-                    <p class="staging-hint" mix={stagingHint}>
-                        Drop files here to stage them
-                    </p>
-                )}
-                {!!resolution?.files.length && (
-                    <button
-                        type="button"
-                        mix={[
-                            changeFileListButton,
-                            on("click", () => {
-                                state.selectingConflicts = !state.selectingConflicts
-                                update()
-                            }),
-                        ]}
-                    >
-                        {state.selectingConflicts ? "Back to conflict resolution" : "Select changes outside conflicted lines"}
-                    </button>
-                )}
-                {files.error && (
-                    <p role="alert" mix={changeFileListP}>
-                        {files.error}{" "}
-                        <button type="button" mix={[changeFileListButton, on("click", () => readFiles(state, group, files.source))]}>
-                            Retry
-                        </button>
-                    </p>
-                )}
-                {files.inventory && !group.startsWith("working-") && !all.some(file => !file.ignored) && (
-                    <p class="inspection-muted" mix={inspectionMuted}>
-                        {group == "working" ? "No Working Changes" : "No changes against this parent"}
-                    </p>
-                )}
-                <FileTree
-                    renderFile={state.selectingConflicts ? undefined : resolution?.renderFile}
-                    hideStagedBadge={group.startsWith("working-")}
-                    actions={file => [{
-                        label: "File history",
-                        run: () =>
-                            openHistory(
-                                state,
-                                state.auxiliaryId ?? key(state.repositoryId, state.id),
-                                files.source.kind == "working"
-                                    ? { kind: "worktree", worktreePath: files.source.worktreePath }
-                                    : files.source.kind == "commit"
-                                    ? { kind: "commit", objectId: files.source.objectId }
-                                    : { kind: "branch", ref: state.column.kind == "branch" ? state.column.preferredRef : "" },
-                                file.path,
-                            ),
-                    }]}
-                    flat
-                    filter={state.filter}
-                    files={visible}
-                    expanded={expanded}
-                    leading={file => fileTransfer(state, group, file)}
-                    controls={file => {
-                        const diff = state.diffs.get(diffKey(group, file.path))
-                        return diff && !state.breakout ? renderDiffControls(state, diff) : null
-                    }}
-                    diff={file => {
-                        const diff = state.diffs.get(diffKey(group, file.path))
-                        return diff && !state.breakout ? renderDiff(state, diff) : null
-                    }}
-                    checked={new Set(state.wholeFiles.keys())}
-                    prefix={group}
-                    choose={file => choose(state, group, file)}
-                    hide={path => {
-                        clearGroup(state, group, path)
-                        update()
-                    }}
-                    check={selectable(state, group)
-                        ? file => {
-                            const id = `${group}:${file.path}`
-                            if (state.wholeFiles.has(id))
-                                state.wholeFiles.delete(id)
-                            else if (files.inventory) {
-                                for (const id of state.wholeFiles.keys()) {
-                                    if (!id.startsWith(group + ":"))
-                                        state.wholeFiles.delete(id)
-                                }
-                                state.wholeFiles.set(id, { source: files.inventory.source, path: file.path, version: files.inventory.version })
-                            }
-                            update()
-                        }
-                        : undefined}
-                />
-                {state.auxiliaryId && state.wholeFiles.size > 0 && (
-                    <p role="status">
-                        {state.wholeFiles.size} files selected
-                        <button
-                            type="button"
-                            mix={on("click", () => {
-                                state.wholeFiles.clear()
-                                update()
-                            })}
-                        >
-                            Clear files
-                        </button>
-                    </p>
-                )}
-                {group == "working" && state.showIgnored && (
-                    <details>
-                        <summary>Ignored files · {all.filter(file => file.ignored).length}</summary>
-                        {all.filter(file => file.ignored).map(file => (
-                            <div class="inspection-muted" mix={inspectionMuted}>
-                                {file.path}
-                            </div>
-                        ))}
-                    </details>
-                )}
-            </section>
-        )
-    }
-    function renderDiffControls(state: ColumnState, diff: FileDiffState): RemixNode {
-        return (
-            <DiffControls
-                layout={state.transientLayout ?? options.layout(state.repositoryId, state.id)}
-                showWhitespace={diff.showWhitespace}
-                showEntireFiles={state.showEntireFiles ?? false}
-                toggleEntireFiles={() => {
-                    state.showEntireFiles = !state.showEntireFiles
-                    for (let open of state.diffs.values()) {
-                        open.notice = open.selection ? "Diff view changed. Change Selection cleared." : undefined
-                        open.selection = undefined
-                        open.page = undefined
-                        void readDiff(state, open)
-                    }
-                    update()
-                }}
-                setLayout={layout => {
-                    if (state.auxiliaryId) {
-                        state.transientLayout = layout
-                        update()
-                    } else {
-                        options.saveLayout(state.repositoryId, state.id, layout)
-                    }
-                }}
-                toggleWhitespace={() => {
-                    diff.showWhitespace = !diff.showWhitespace
-                    update()
-                }}
-                breakout={!state.breakout && !state.auxiliaryId
-                    ? () => void showBreakout(state, diff.group, diff.path)
-                    : undefined}
-            />
-        )
-    }
-    function renderDiff(state: ColumnState, diff: FileDiffState): RemixNode {
-        let page = diff.page
-        let breakout = state.breakout?.group == diff.group ? state.breakout : undefined
-        let collapsed = breakout?.collapsed.has(diff.path) ?? false
-        return (
-            <section class="diff-inspector" aria-label={`Diff for ${diff.path}`} mix={diffInspector}>
-                {breakout && (
-                    <header class="diff-toolbar" mix={diffToolbar}>
-                        <FileMenu
-                            class="diff-file-menu"
-                            actions={page
-                                ? [{
-                                    label: "File history",
-                                    run: () => {
-                                        const sourceId = auxiliary.descendants(key(state.repositoryId, state.id)).find(node => node.value == state.breakout)?.id
-                                            ?? key(state.repositoryId, state.id)
-                                        if (page.source.kind == "working")
-                                            openHistory(state, sourceId, { kind: "worktree", worktreePath: page.source.worktreePath }, diff.path)
-                                        else if (page.source.kind == "commit")
-                                            openHistory(state, sourceId, { kind: "commit", objectId: page.source.objectId }, diff.path)
-                                    },
-                                }]
-                                : []}
-                        >
-                            <button
-                                type="button"
-                                title={diff.path}
-                                aria-label={`${collapsed ? "Expand" : "Collapse"} ${diff.path}`}
-                                aria-expanded={!collapsed}
-                                mix={[
-                                    diffFileToggle,
-                                    on("click", () => {
-                                        if (collapsed)
-                                            breakout.collapsed.delete(diff.path)
-                                        else
-                                            breakout.collapsed.add(diff.path)
-                                        breakout.scrolling = false
-                                        update()
-                                    }),
-                                ]}
-                            >
-                                <Icon name={collapsed ? "chevron-right" : "chevron-down"} size={12} />
-                                <strong mix={diffToolbarStrong}>{fileLabel(diff.path)}</strong>
-                            </button>
-                        </FileMenu>
-                        {renderDiffControls(state, diff)}
-                    </header>
-                )}
-                {!collapsed && renderDiffContents(state, diff)}
-            </section>
-        )
-    }
-    function renderDiffContents(state: ColumnState, diff: FileDiffState): RemixNode {
-        let eligible = selectable(state, diff.group)
-        let page = diff.page && !eligible ? { ...diff.page, selectable: false } : diff.page
-        let layout = state.transientLayout ?? options.layout(state.repositoryId, state.id)
-        return (
-            <>
-                {page?.source.kind == "working" && diffViewChoices(diff, page.file).length > 1 && (
-                    <div class="diff-views" role="group" aria-label="Comparison" mix={diffViews}>
-                        {diffViewChoices(diff, page.file).map(view => (
-                            <button
-                                type="button"
-                                aria-pressed={diff.view == view}
-                                mix={[diffViewsButton, on("click", () => changeView(state, diff, view))]}
-                            >
-                                {view == "combined" ? "Working Changes" : view[0].toUpperCase() + view.slice(1)}
-                            </button>
-                        ))}
-                    </div>
-                )}
-                {diff.notice && (
-                    <p class="inspection-notice" role="status" mix={inspectionNotice}>
-                        {diff.notice}
-                    </p>
-                )}
-                {diff.error && (
-                    <p role="alert" mix={diffInspectorP}>
-                        {diff.error}{" "}
-                        <button type="button" mix={[diffInspectorButton, on("click", () => readDiff(state, diff))]}>
-                            Retry diff
-                        </button>
-                    </p>
-                )}
-                {page && (
-                    <>
-                        {page.summary.map(text => (
-                            <p class="diff-summary" mix={diffSummary}>
-                                {text}
-                            </p>
-                        ))}
-                        {page.lines.length == 0 && page.summary.length == 0 && (
-                            <p class="inspection-muted" mix={inspectionMuted}>
-                                No net content difference in this view.
-                            </p>
-                        )}
-                        <DiffLines
-                            page={page}
-                            layout={layout}
-                            showWhitespace={diff.showWhitespace}
-                            selected={eligible ? diff.selection?.lineIds ?? [] : []}
-                            select={ids => {
-                                if (eligible)
-                                    selectLines(diff, ids)
-                            }}
-                        />
-                        {eligible && diff.selection && (
-                            <div class="selection-summary" role="status" mix={selectionSummary}>
-                                {transferSource(state, page.source) && composition.source({
-                                    repositoryId: state.repositoryId,
-                                    selectedRemote: state.graph.selectedRemote,
-                                    source: transferSource(state, page.source)!,
-                                    files: [{ path: diff.path, version: page.version, entireFile: page.entireFile, lineIds: diff.selection.lineIds }],
-                                    view: diff.view == "staged" || diff.view == "unstaged" ? diff.view : "combined",
-                                    label: `${diff.selection.lineIds.length} lines in ${diff.path}`,
-                                })}
-                                {diff.selection.lineIds.length} lines selected{diff.selection.rename ? " · rename selected" : ""}
-                                <button
-                                    type="button"
-                                    data-mousedown-activate
-                                    mix={[
-                                        selectionSummaryButton,
-                                        on("click", () => {
-                                            diff.selection = undefined
-                                            update()
-                                        }),
-                                    ]}
-                                >
-                                    Clear selection
-                                </button>
-                            </div>
-                        )}
-                        {page.nextOffset != undefined && (
-                            <button
-                                type="button"
-                                class="load-diff"
-                                disabled={diff.loading}
-                                mix={[loadDiff, on("click", () => readDiff(state, diff, true))]}
-                            >
-                                Load more
-                            </button>
-                        )}
-                    </>
-                )}
-                {diff.loading && (
-                    <p class="inspection-progress" role="status" mix={inspectionProgress}>
-                        Reading diff…{" "}
-                        <button
-                            type="button"
-                            mix={[
-                                inspectionMutedButton,
-                                on("click", () => {
-                                    diff.generation++
-                                    diff.loading = false
-                                    diff.error = "Diff read cancelled."
-                                    cancel(state, diffRequestId(state, diff))
-                                    update()
-                                }),
-                            ]}
-                        >
-                            Cancel
-                        </button>
-                    </p>
-                )}
-            </>
-        )
-    }
-    async function openFilter(state: ColumnState, render: Options["update"]) {
-        state.filterOpen = true
-        await render()
-        if (state.alive && state.filterOpen)
-            state.filterInput?.focus({ preventScroll: true })
-    }
-    function closeFilter(state: ColumnState) {
-        state.filterOpen = false
-        state.filter = ""
-        state.status = "all"
-        filterChanged(state)
-        state.filterButton?.focus({ preventScroll: true })
-    }
     return {
         /** Re-reads every open worktree's Working Changes, for repository changes noticed outside Laneway. */
         refreshWorking() {
@@ -1264,16 +854,18 @@ export function createInspection(options: Options) {
         workingSummary(repositoryId: string, column: Column, graph: BranchGraph, worktreePath?: string) {
             if (!worktreePath)
                 return "Branch"
-            const files = stateFor(repositoryId, column, graph, worktreePath).files.get("working")
+
+            let files = stateFor(repositoryId, column, graph, worktreePath).files.get("working")
             if (files?.error)
                 return "Working Changes unavailable"
             if (!files?.inventory)
                 return "Reading Working Changes…"
-            const count = files.inventory.files.filter(file => !file.ignored).length
+            let count = files.inventory.files.filter(file => !file.ignored).length
+
             return count ? `${count} changed ${count == 1 ? "file" : "files"}` : "Clean"
         },
         filterKeydown(repositoryId: string, columnId: string, event: KeyboardEvent, render: Options["update"]) {
-            const state = columns.get(key(repositoryId, columnId))
+            let state = columns.get(key(repositoryId, columnId))
             if (!state)
                 return
             if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() == "f") {
@@ -1292,9 +884,9 @@ export function createInspection(options: Options) {
          * the commit accordion's own arrow keys.
          */
         navigationKeydown(repositoryId: string, columnId: string, event: KeyboardEvent) {
-            const state = columns.get(key(repositoryId, columnId))
-            const column = event.currentTarget
-            const target = event.target
+            let state = columns.get(key(repositoryId, columnId))
+            let column = event.currentTarget
+            let target = event.target
             if (
                 !state || !(column instanceof HTMLElement) || !(target instanceof HTMLElement) || event.defaultPrevented
                 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey
@@ -1306,7 +898,7 @@ export function createInspection(options: Options) {
             if (event.key == "ArrowUp" || event.key == "ArrowDown") {
                 event.preventDefault()
                 event.stopPropagation()
-                const next = stepItem(column, target, event.key == "ArrowDown" ? 1 : -1)
+                let next = stepItem(column, target, event.key == "ArrowDown" ? 1 : -1)
                 if (!next)
                     return
                 focusItem(next)
@@ -1314,12 +906,12 @@ export function createInspection(options: Options) {
                     next.click()
                 return
             }
-            const item = columnItem(target)
+            let item = columnItem(target)
             if (!item)
                 return
             event.preventDefault()
             event.stopPropagation()
-            const expanded = item.getAttribute("aria-expanded") == "true"
+            let expanded = item.getAttribute("aria-expanded") == "true"
             if (event.key == "ArrowRight") {
                 if (!expanded)
                     item.click()
@@ -1329,13 +921,13 @@ export function createInspection(options: Options) {
             if (expanded && !(state.breakout && isFileItem(item)))
                 item.click()
             else {
-                const parent = parentItem(item)
+                let parent = parentItem(item)
                 if (parent)
                     focusItem(parent)
             }
         },
         conflictFilter(repositoryId: string, column: Column, graph: BranchGraph, worktreePath?: string): RemixNode {
-            const state = stateFor(repositoryId, column, graph, worktreePath)
+            let state = stateFor(repositoryId, column, graph, worktreePath)
             if (column.kind != "branch" || !column.unresolved && !state.conflictsOnly)
                 return null
             return (
@@ -1350,17 +942,17 @@ export function createInspection(options: Options) {
                             state.conflictsOnly = !state.conflictsOnly
                             if (state.conflictsOnly) {
                                 let branch: BranchGraphBranchNode | undefined = column
-                                const seen = new Set<string>()
+                                let seen = new Set<string>()
                                 while (branch && !seen.has(branch.id)) {
                                     seen.add(branch.id)
                                     if (branch.unresolved) {
-                                        const current = state.history.get(branch.id)
+                                        let current = state.history.get(branch.id)
                                         if (current)
                                             current.open = true
                                         if (!current?.page || current.page.nextOffset != undefined)
                                             void history(state, branch, Boolean(current?.page))
                                     }
-                                    const nextId: string | undefined = branch.base.status == "known"
+                                    let nextId: string | undefined = branch.base.status == "known"
                                         ? branch.base.branchId
                                         : state.baseSelections.get(branch.id)
                                     branch = graph.branches.find(b => b.id == nextId)
@@ -1375,7 +967,7 @@ export function createInspection(options: Options) {
             )
         },
         filterControl(repositoryId: string, column: Column, graph: BranchGraph, render: Options["update"], worktreePath?: string): RemixNode {
-            const state = stateFor(repositoryId, column, graph, worktreePath)
+            let state = stateFor(repositoryId, column, graph, worktreePath)
             return (
                 <button
                     type="button"
@@ -1398,7 +990,7 @@ export function createInspection(options: Options) {
             )
         },
         retainRepositories(ids: string[]) {
-            for (const [id, state] of columns) {
+            for (let [id, state] of columns) {
                 if (!ids.includes(state.repositoryId)) {
                     dispose(state)
                     columns.delete(id)
@@ -1410,22 +1002,22 @@ export function createInspection(options: Options) {
             if (activeRepositoryId != repositoryId) {
                 histories.suspend()
                 trailCommits.suspend()
-                for (const host of historyHosts.values())
+                for (let host of historyHosts.values())
                     suspend(host)
-                for (const state of columns.values()) {
+                for (let state of columns.values()) {
                     if (state.repositoryId == activeRepositoryId)
                         suspend(state)
                 }
                 activeRepositoryId = repositoryId
                 refresh()
-                for (const state of columns.values()) {
+                for (let state of columns.values()) {
                     if (state.repositoryId == activeRepositoryId)
                         resume(state)
                 }
             }
         },
         retain(repositoryId: string, ids: string[], graph?: BranchGraph) {
-            for (const [id, state] of columns) {
+            for (let [id, state] of columns) {
                 if (state.repositoryId == repositoryId && !ids.includes(state.id)) {
                     if (
                         graph && ![...graph.branches, ...graph.virtualBranches].some(branch => branch.id == state.id)
@@ -1444,20 +1036,21 @@ export function createInspection(options: Options) {
             }
         },
         body(repositoryId: string, column: Column, graph: BranchGraph, worktreePath?: string, conflictControls?: RemixNode): RemixNode {
-            const state = stateFor(repositoryId, column, graph, worktreePath)
-            const stack: BranchGraphBranchNode[] = []
+            let state = stateFor(repositoryId, column, graph, worktreePath)
+            let stack: BranchGraphBranchNode[] = []
             let branch = column.kind == "branch" ? column : undefined
             while (branch && !stack.some(item => item.id == branch!.id)) {
                 stack.push(branch)
-                const last = stack.at(-1)!
-                const selection = state.baseSelections.get(last.id)
-                const nextId = last.base.status == "known"
+                let last = stack.at(-1)!
+                let selection = state.baseSelections.get(last.id)
+                let nextId = last.base.status == "known"
                     ? last.base.branchId
                     : last.base.candidates.some(candidate => candidate.branchId == selection)
                     ? selection
                     : undefined
                 branch = graph.branches.find(item => item.id == nextId)
             }
+
             return (
                 <div class={`column-inspection ${state.filterOpen ? "filter-open" : ""}`} mix={[columnInspection, compositionStyles]}>
                     {conflictControls}
@@ -1522,23 +1115,24 @@ export function createInspection(options: Options) {
                                 stashes={column.kind == "branch" ? column.markers : []}
                                 stashOpen={stash => state.files.get(stash.objectId)?.open ?? false}
                                 toggleStash={stash => {
-                                    const files = state.files.get(stash.objectId)
+                                    let files = state.files.get(stash.objectId)
                                     if (files) {
                                         files.open = !files.open
                                         return void options.update()
                                     }
                                     // Untracked files live on the stash's third parent, so read them alongside tracked ones.
                                     void readFiles(state, stash.objectId, { kind: "commit", objectId: stash.objectId }).then(() => {
-                                        const untracked = state.files.get(stash.objectId)?.inventory?.parents[2]
+                                        let untracked = state.files.get(stash.objectId)?.inventory?.parents[2]
                                         if (untracked)
                                             return readFiles(state, untracked, { kind: "commit", objectId: untracked })
                                     })
                                 }}
                                 renderStash={stash => {
-                                    const files = state.files.get(stash.objectId)
-                                    const untracked = files?.inventory?.parents[2]
-                                    const untrackedFiles = untracked ? state.files.get(untracked) : undefined
-                                    const tracked = files?.inventory?.files.length
+                                    let files = state.files.get(stash.objectId)
+                                    let untracked = files?.inventory?.parents[2]
+                                    let untrackedFiles = untracked ? state.files.get(untracked) : undefined
+                                    let tracked = files?.inventory?.files.length
+
                                     return (
                                         <>
                                             {(tracked || !untrackedFiles?.inventory?.files.length) && fileList(state, stash.objectId, files)}
@@ -1573,8 +1167,8 @@ export function createInspection(options: Options) {
                         <section aria-label="Stashed Working Changes" mix={workingChanges}>
                             <h3 mix={workingChangesH3}>Stashed Working Changes</h3>
                             {column.markers.map(marker => {
-                                const files = state.files.get(marker.objectId)
-                                const untracked = files?.inventory?.parents[2]
+                                let files = state.files.get(marker.objectId)
+                                let untracked = files?.inventory?.parents[2]
                                 return (
                                     <div>
                                         <button
@@ -1605,7 +1199,7 @@ export function createInspection(options: Options) {
                         type="multiple"
                         value={stack.filter(branch => state.history.get(branch.id)?.open).map(branch => branch.id)}
                         onValueChange={values => {
-                            for (const branch of stack) {
+                            for (let branch of stack) {
                                 if (branch.id != column.id && values.includes(branch.id) != (state.history.get(branch.id)?.open ?? false))
                                     toggleHistory(state, branch)
                             }
@@ -1613,8 +1207,8 @@ export function createInspection(options: Options) {
                     >
                         <div class="stack-inspection" mix={accordion.root()}>
                             {stack.map((branch, branchIndex) => {
-                                const current = state.history.get(branch.id)
-                                const columnBranch = branch.id == column.id
+                                let current = state.history.get(branch.id)
+                                let columnBranch = branch.id == column.id
                                 return (
                                     <accordion.ItemContext key={branch.id} value={branch.id}>
                                         <section class={branch.published ? "stack-branch remote" : "stack-branch"} mix={[stackBranch, accordion.item()]}>
@@ -1702,8 +1296,8 @@ export function createInspection(options: Options) {
                                                             commit => commit.objectId,
                                                         )}
                                                         onValueChange={values => {
-                                                            for (const commit of current.page?.commits ?? []) {
-                                                                const files = state.files.get(commit.objectId)
+                                                            for (let commit of current.page?.commits ?? []) {
+                                                                let files = state.files.get(commit.objectId)
                                                                 if (values.includes(commit.objectId) == (files?.open ?? false))
                                                                     continue
                                                                 if (files) {
@@ -1732,7 +1326,7 @@ export function createInspection(options: Options) {
                                                                 </p>
                                                             )}
                                                             {current.page?.commits.filter(commit => !state.conflictsOnly || commit.conflictId).map(commit => {
-                                                                const files = state.files.get(commit.objectId)
+                                                                let files = state.files.get(commit.objectId)
                                                                 return (
                                                                     <accordion.ItemContext key={commit.objectId} value={commit.objectId}>
                                                                         <div
@@ -1941,7 +1535,7 @@ export function createInspection(options: Options) {
                                                                         mix={[
                                                                             parentForSelect,
                                                                             on("change", event => {
-                                                                                const selection = event.currentTarget.value
+                                                                                let selection = event.currentTarget.value
                                                                                 if (selection)
                                                                                     state.baseSelections.set(branch.id, selection)
                                                                                 else
@@ -2010,9 +1604,9 @@ export function createInspection(options: Options) {
             worktreePath?: string,
         ) {
             stateFor(repositoryId, from, graph, worktreePath)
-            const sourceId = key(repositoryId, from.id)
-            const column = auxiliary.open(sourceId, JSON.stringify(["comparison", from.preferredRef, to.preferredRef]), () => {
-                const value = comparisons.create(repositoryId, from, to, graph)
+            let sourceId = key(repositoryId, from.id)
+            let column = auxiliary.open(sourceId, JSON.stringify(["comparison", from.preferredRef, to.preferredRef]), () => {
+                let value = comparisons.create(repositoryId, from, to, graph)
                 return { value, dispose: () => comparisons.dispose(value) }
             })
             if (replaceId && replaceId != column.id)
@@ -2024,13 +1618,13 @@ export function createInspection(options: Options) {
             })
         },
         breakout(repositoryId: string, columnId: string): RemixNode {
-            const state = columns.get(key(repositoryId, columnId))
+            let state = columns.get(key(repositoryId, columnId))
             if (!state)
                 return null
             return auxiliary.descendants(key(repositoryId, columnId)).map(auxiliaryColumn => {
                 if (auxiliaryColumn.value.kind == "trail-commit") {
-                    const commit = auxiliaryColumn.value
-                    const host = historyHosts.get(commit)!
+                    let commit = auxiliaryColumn.value
+                    let host = historyHosts.get(commit)!
                     host.graph = state.graph
                     return trailCommits.render(commit, auxiliaryColumn.id, auxiliaryColumn.sourceId, {
                         close() {
@@ -2041,7 +1635,7 @@ export function createInspection(options: Options) {
                             return fileList(host, commit.entry.objectId, host.files.get(commit.entry.objectId))
                         },
                         parent(parentId) {
-                            for (const child of auxiliary.descendants(auxiliaryColumn.id).filter(child => child.sourceId == auxiliaryColumn.id))
+                            for (let child of auxiliary.descendants(auxiliaryColumn.id).filter(child => child.sourceId == auxiliaryColumn.id))
                                 auxiliary.close(child.id)
                             clearGroup(host, commit.entry.objectId)
                             host.wholeFiles.clear()
@@ -2053,8 +1647,8 @@ export function createInspection(options: Options) {
                     })
                 }
                 if (auxiliaryColumn.value.kind == "history") {
-                    const history = auxiliaryColumn.value
-                    const host = historyHosts.get(history)!
+                    let history = auxiliaryColumn.value
+                    let host = historyHosts.get(history)!
                     host.composable = new Set(history.error ? [] : history.page?.entries.filter(entry => entry.composable).map(entry => entry.objectId))
                     host.graph = state.graph
                     return histories.render(history, auxiliaryColumn.id, auxiliaryColumn.sourceId, {
@@ -2069,19 +1663,19 @@ export function createInspection(options: Options) {
                             openHistory(host, auxiliaryColumn.id, source, path)
                         },
                         toggle(entry) {
-                            const group = entry?.objectId ?? "working"
+                            let group = entry?.objectId ?? "working"
                             if (history.expanded.has(group)) {
                                 history.expanded.delete(group)
                                 clearGroup(host, group)
                             } else {
                                 history.expanded.add(group)
-                                const source: DiffSource = entry
+                                let source: DiffSource = entry
                                     ? { kind: "commit", objectId: entry.objectId, parentId: entry.followedParent }
                                     : { kind: "working", worktreePath: host.worktreePath! }
                                 void readFiles(host, group, source).then(() => {
                                     if (!entry || !host.alive || !history.expanded.has(group))
                                         return
-                                    const file = host.files.get(group)?.inventory?.files.find(file => file.path == entry.path)
+                                    let file = host.files.get(group)?.inventory?.files.find(file => file.path == entry.path)
                                     if (file && !host.diffs.has(diffKey(group, file.path)))
                                         choose(host, group, file)
                                 })
@@ -2089,16 +1683,17 @@ export function createInspection(options: Options) {
                             update()
                         },
                         files(entry) {
-                            const group = entry?.objectId ?? "working"
-                            const files = host.files.get(group)
+                            let group = entry?.objectId ?? "working"
+                            let files = host.files.get(group)
                             if (entry) {
-                                const diff = host.diffs.get(diffKey(group, entry.path))
+                                let diff = host.diffs.get(diffKey(group, entry.path))
                                 return diff ? renderDiff(host, diff) : files?.error
                                     ? <p role="alert">{files.error}</p>
                                     : files?.loading
                                     ? <p role="status">Reading diff…</p>
                                     : null
                             }
+
                             return fileList(
                                 host,
                                 group,
@@ -2114,14 +1709,15 @@ export function createInspection(options: Options) {
                             )
                         },
                         controls(entry) {
-                            const diff = host.diffs.get(diffKey(entry.objectId, entry.path))
+                            let diff = host.diffs.get(diffKey(entry.objectId, entry.path))
                             return diff ? renderDiffControls(host, diff) : null
                         },
                         selection(entry) {
-                            const inventory = host.files.get(entry.objectId)?.inventory
+                            let inventory = host.files.get(entry.objectId)?.inventory
                             if (!inventory || !selectable(host, entry.objectId))
                                 return undefined
-                            const id = `${entry.objectId}:${entry.path}`
+                            let id = `${entry.objectId}:${entry.path}`
+
                             return {
                                 checked: host.wholeFiles.has(id),
                                 check() {
@@ -2136,7 +1732,7 @@ export function createInspection(options: Options) {
                     })
                 }
                 if (auxiliaryColumn.value.kind == "comparison") {
-                    const comparison = auxiliaryColumn.value
+                    let comparison = auxiliaryColumn.value
                     return comparisons.render(
                         comparison,
                         auxiliaryColumn.id,
@@ -2154,10 +1750,11 @@ export function createInspection(options: Options) {
                         (source, path) => openHistory(state, auxiliaryColumn.id, source, path),
                     )
                 }
-                const breakout = auxiliaryColumn.value
-                const files = state.files.get(breakout.group)
+                let breakout = auxiliaryColumn.value
+                let files = state.files.get(breakout.group)
                 // Maximizing a diff column maximizes its source column, which keeps the diff column beside it.
-                const maximized = options.maximized(repositoryId) == columnId
+                let maximized = options.maximized(repositoryId) == columnId
+
                 return (
                     <aside
                         key={auxiliaryColumn.id}
@@ -2242,7 +1839,7 @@ export function createInspection(options: Options) {
                             {files?.error && <p role="alert" mix={changeFileListP}>{files.error}</p>}
                             {files?.loading && !files.inventory && <p role="status" mix={changeFileListP}>Reading changes…</p>}
                             {files?.inventory?.files.filter(file => !file.ignored).map(file => {
-                                const diff = state.diffs.get(diffKey(breakout.group, file.path))
+                                let diff = state.diffs.get(diffKey(breakout.group, file.path))
                                 return diff
                                     ? (
                                         <div class="commit-diff-file" data-diff-path={file.path}>
@@ -2257,12 +1854,1106 @@ export function createInspection(options: Options) {
             })
         },
     }
+
+    function openTrailCommit(owner: ColumnState, sourceId: string, entry: FileHistoryEntry) {
+        let node = auxiliary.open(sourceId, JSON.stringify(["trail-commit", entry.objectId, entry.followedParent]), () => {
+            let value = trailCommits.create(owner.repositoryId, entry)
+            let host: ColumnState = {
+                ...owner,
+                id: `trail:${crypto.randomUUID()}`,
+                auxiliaryId: undefined,
+                breakout: undefined,
+                worktreePath: undefined,
+                files: new Map(),
+                diffs: new Map(),
+                requestIds: new Set(),
+                wholeFiles: new Map(),
+                cachedDiffs: new Map(),
+                history: new Map(),
+                transientLayout: "unified",
+                filter: "",
+                filterOpen: false,
+                selectionRoot: owner.selectionRoot ?? owner,
+                composable: new Set(entry.composable ? [entry.objectId] : []),
+            }
+            historyHosts.set(value, host)
+            host.compositionKey = JSON.stringify(compositionFor(host))
+            void readFiles(host, entry.objectId, { kind: "commit", objectId: entry.objectId, parentId: entry.followedParent })
+
+            return {
+                value,
+                dispose() {
+                    trailCommits.dispose(value)
+                    host.alive = false
+                    suspend(host)
+                    historyHosts.delete(value)
+                },
+            }
+        })
+        if (node.value.kind == "trail-commit")
+            historyHosts.get(node.value)!.auxiliaryId = node.id
+        void options.update().then(signal => {
+            if (!signal.aborted)
+                document.querySelector<HTMLElement>(`[data-auxiliary-id="${node.id}"]`)?.focus()
+        })
+    }
+
+    function resume(state: ColumnState) {
+        if (state.unavailable)
+            return
+
+        for (let [group, files] of state.files) {
+            if (files.open && !files.inventory)
+                void readFiles(state, group, files.source)
+        }
+        for (let [id, current] of state.history) {
+            let branch = state.graph.branches.find(branch => branch.id == id)
+            if (branch && current.open && !current.page)
+                void history(state, branch)
+        }
+        for (let diff of state.diffs.values()) {
+            if (!diff.page)
+                void readDiff(state, diff)
+        }
+    }
+
+    function stateFor(repositoryId: string, column: Column, graph: BranchGraph, worktreePath?: string) {
+        let id = key(repositoryId, column.id)
+        let state = columns.get(id)
+        if (!state || state.worktreePath != worktreePath) {
+            if (state)
+                dispose(state)
+            auxiliary.addRoot(id)
+            state = {
+                repositoryId,
+                id: column.id,
+                column,
+                graph,
+                worktreePath,
+                files: new Map(),
+                history: new Map(),
+                baseSelections: new Map(),
+                requestIds: new Set(),
+                diffs: new Map(),
+                cachedDiffs: new Map(),
+                showIgnored: false,
+                filter: "",
+                filterOpen: false,
+                status: "all",
+                wholeFiles: new Map(),
+                alive: true,
+                get breakout() {
+                    let value = auxiliary.descendants(id).find(column => column.sourceId == id && column.value.kind == "diff")?.value
+                    return value?.kind == "diff" ? value : undefined
+                },
+                set breakout(value: BreakoutState | undefined) {
+                    let previous = auxiliary.descendants(id).find(column => column.sourceId == id && column.value.kind == "diff")
+                    if (previous?.value == value)
+                        return
+                    if (previous)
+                        auxiliary.close(previous.id)
+                    if (value) {
+                        auxiliary.open(id, value.group, () => ({
+                            value,
+                            dispose() {
+                                for (let diffId of value.created) {
+                                    let diff = created.diffs.get(diffId)
+                                    if (diff)
+                                        clearDiff(created, diff)
+                                }
+                            },
+                        }), previous?.width)
+                    }
+                },
+            }
+            columns.set(id, state)
+            let created = state
+            if (column.kind == "branch") {
+                queueMicrotask(() => {
+                    if (created.alive)
+                        void history(created, column)
+                })
+            }
+            if (worktreePath) {
+                queueMicrotask(() => {
+                    if (created.alive)
+                        void readFiles(created, "working", { kind: "working", worktreePath })
+                })
+            }
+        }
+        state.column = column
+        state.graph = graph
+        state.unavailable = false
+        for (let [id, current] of state.history) {
+            let branch = graph.branches.find(branch => branch.id == id)
+            if (!branch || current.key == branchHistoryKey(state, branch))
+                continue
+            current.generation++
+            current.key = branchHistoryKey(state, branch)
+            current.page = undefined
+            current.error = undefined
+            current.loading = false
+            let owner = state
+            if (current.open) {
+                queueMicrotask(() => {
+                    if (owner.alive && owner.history.get(id) == current && current.key == branchHistoryKey(owner, branch))
+                        void history(owner, branch)
+                })
+            }
+        }
+
+        return state
+    }
+
+    function toggleHistory(state: ColumnState, branch: BranchGraphBranchNode) {
+        let current = state.history.get(branch.id)
+        if (!current || current.key != branchHistoryKey(state, branch))
+            void history(state, branch)
+        else {
+            current.open = !current.open
+            if (!current.open) {
+                for (let commit of current.page?.commits ?? [])
+                    clearGroup(state, commit.objectId)
+            }
+            if (current.open && !current.page)
+                void history(state, branch)
+            update()
+        }
+    }
+
+    function fileList(
+        state: ColumnState,
+        group: string,
+        files: FileState | undefined,
+        stage?: (paths: string[], unstage: boolean) => void,
+        resolution?: { files: ChangedFile[]; renderFile(file: ChangedFile): RemixNode },
+    ): RemixNode {
+        if (!files)
+            return null
+
+        let inventory = files.inventory?.files ?? []
+        let replacements = new Map(resolution?.files.map(file => [file.path, file]))
+        let all = [
+            ...inventory.map(file => replacements.has(file.path) ? { ...file, ...replacements.get(file.path) } : file),
+            ...(resolution?.files.filter(file => !inventory.some(existing => existing.path == file.path)) ?? []),
+        ]
+        let visible = all.filter(file => !file.ignored && matchesFilter(state, file))
+        let expanded = state.breakout
+            ? new Set(state.breakout.group == group && state.breakout.focus ? [state.breakout.focus] : [])
+            : new Set([...state.diffs.values()].filter(diff => diff.group == group).map(diff => diff.path))
+        // Renamed files stage as their old and new paths together.
+        let withOldPaths = (paths: string[]) =>
+            paths.flatMap(path => {
+                let file = all.find(candidate => candidate.path == path)
+                return file?.oldPath ? [file.oldPath, path] : [path]
+            })
+        let staging = stage && files.source.kind == "working"
+            ? composition.staging({
+                repositoryId: state.repositoryId,
+                worktreePath: files.source.worktreePath,
+                view: group == "working-staged" ? "staged" : "unstaged",
+                apply: paths => stage(withOldPaths(paths), group != "working-staged"),
+            })
+            : undefined
+
+        return (
+            <section
+                class="change-file-list"
+                aria-label={group == "working-staged" ? "Staged files" : group.startsWith("working") ? "Working Changes files" : "Commit files"}
+                mix={[changeFileList, staging]}
+            >
+                {staging && group == "working-staged" && !visible.length && (
+                    <p class="staging-hint" mix={stagingHint}>
+                        Drop files here to stage them
+                    </p>
+                )}
+                {!!resolution?.files.length && (
+                    <button
+                        type="button"
+                        mix={[
+                            changeFileListButton,
+                            on("click", () => {
+                                state.selectingConflicts = !state.selectingConflicts
+                                update()
+                            }),
+                        ]}
+                    >
+                        {state.selectingConflicts ? "Back to conflict resolution" : "Select changes outside conflicted lines"}
+                    </button>
+                )}
+                {files.error && (
+                    <p role="alert" mix={changeFileListP}>
+                        {files.error}{" "}
+                        <button type="button" mix={[changeFileListButton, on("click", () => readFiles(state, group, files.source))]}>
+                            Retry
+                        </button>
+                    </p>
+                )}
+                {files.inventory && !group.startsWith("working-") && !all.some(file => !file.ignored) && (
+                    <p class="inspection-muted" mix={inspectionMuted}>
+                        {group == "working" ? "No Working Changes" : "No changes against this parent"}
+                    </p>
+                )}
+                <FileTree
+                    renderFile={state.selectingConflicts ? undefined : resolution?.renderFile}
+                    hideStagedBadge={group.startsWith("working-")}
+                    actions={file => [{
+                        label: "File history",
+                        run: () =>
+                            openHistory(
+                                state,
+                                state.auxiliaryId ?? key(state.repositoryId, state.id),
+                                files.source.kind == "working"
+                                    ? { kind: "worktree", worktreePath: files.source.worktreePath }
+                                    : files.source.kind == "commit"
+                                    ? { kind: "commit", objectId: files.source.objectId }
+                                    : { kind: "branch", ref: state.column.kind == "branch" ? state.column.preferredRef : "" },
+                                file.path,
+                            ),
+                    }]}
+                    flat
+                    filter={state.filter}
+                    files={visible}
+                    expanded={expanded}
+                    leading={file => fileTransfer(state, group, file)}
+                    controls={file => {
+                        let diff = state.diffs.get(diffKey(group, file.path))
+                        return diff && !state.breakout ? renderDiffControls(state, diff) : null
+                    }}
+                    diff={file => {
+                        let diff = state.diffs.get(diffKey(group, file.path))
+                        return diff && !state.breakout ? renderDiff(state, diff) : null
+                    }}
+                    checked={new Set(state.wholeFiles.keys())}
+                    prefix={group}
+                    choose={file => choose(state, group, file)}
+                    hide={path => {
+                        clearGroup(state, group, path)
+                        update()
+                    }}
+                    check={selectable(state, group)
+                        ? file => {
+                            let id = `${group}:${file.path}`
+                            if (state.wholeFiles.has(id))
+                                state.wholeFiles.delete(id)
+                            else if (files.inventory) {
+                                for (let id of state.wholeFiles.keys()) {
+                                    if (!id.startsWith(group + ":"))
+                                        state.wholeFiles.delete(id)
+                                }
+                                state.wholeFiles.set(id, { source: files.inventory.source, path: file.path, version: files.inventory.version })
+                            }
+                            update()
+                        }
+                        : undefined}
+                />
+                {state.auxiliaryId && state.wholeFiles.size > 0 && (
+                    <p role="status">
+                        {state.wholeFiles.size} files selected
+                        <button
+                            type="button"
+                            mix={on("click", () => {
+                                state.wholeFiles.clear()
+                                update()
+                            })}
+                        >
+                            Clear files
+                        </button>
+                    </p>
+                )}
+                {group == "working" && state.showIgnored && (
+                    <details>
+                        <summary>Ignored files · {all.filter(file => file.ignored).length}</summary>
+                        {all.filter(file => file.ignored).map(file => (
+                            <div class="inspection-muted" mix={inspectionMuted}>
+                                {file.path}
+                            </div>
+                        ))}
+                    </details>
+                )}
+            </section>
+        )
+    }
+
+    function fileTransfer(state: ColumnState, group: string, file: ChangedFile) {
+        let inventory = state.files.get(group)?.inventory
+        let source = inventory && transferSource(state, inventory.source)
+        if (!source || !inventory)
+            return null
+        let chosen = state.wholeFiles.has(`${group}:${file.path}`)
+            ? [...state.wholeFiles].filter(([id]) => id.startsWith(group + ":")).map(([, f]) => ({ path: f.path }))
+            : [{ path: file.path }]
+
+        return composition.source({
+            repositoryId: state.repositoryId,
+            selectedRemote: state.graph.selectedRemote,
+            source,
+            files: chosen,
+            inventoryVersion: inventory.version,
+            view: group == "working-staged" ? "staged" : group == "working-unstaged" ? "unstaged" : "combined",
+            label: chosen.length > 1 ? `${chosen.length} files` : file.path,
+        })
+    }
+
+    function clearGroup(state: ColumnState, group: string, prefix = "") {
+        for (let diff of state.diffs.values()) {
+            if (diff.group == group && diff.path.startsWith(prefix))
+                clearDiff(state, diff)
+        }
+        if (state.breakout?.group == group)
+            state.breakout = undefined
+    }
+
+    function choose(state: ColumnState, group: string, file: ChangedFile) {
+        // With a diff column open, choosing a file shows its group there and scrolls to it, keeping focus in this column.
+        if (state.breakout) {
+            void showBreakout(state, group, file.path, undefined, false)
+            return
+        }
+        let selected = state.diffs.get(diffKey(group, file.path))
+        if (selected) {
+            clearDiff(state, selected)
+            update()
+            return
+        }
+        let diff = createDiff(state, group, file.path)
+        if (diff.page)
+            update()
+        else
+            void readDiff(state, diff)
+    }
+
+    function renderDiff(state: ColumnState, diff: FileDiffState): RemixNode {
+        let page = diff.page
+        let breakout = state.breakout?.group == diff.group ? state.breakout : undefined
+        let collapsed = breakout?.collapsed.has(diff.path) ?? false
+
+        return (
+            <section class="diff-inspector" aria-label={`Diff for ${diff.path}`} mix={diffInspector}>
+                {breakout && (
+                    <header class="diff-toolbar" mix={diffToolbar}>
+                        <FileMenu
+                            class="diff-file-menu"
+                            actions={page
+                                ? [{
+                                    label: "File history",
+                                    run: () => {
+                                        let sourceId = auxiliary.descendants(key(state.repositoryId, state.id)).find(node => node.value == state.breakout)?.id
+                                            ?? key(state.repositoryId, state.id)
+                                        if (page.source.kind == "working")
+                                            openHistory(state, sourceId, { kind: "worktree", worktreePath: page.source.worktreePath }, diff.path)
+                                        else if (page.source.kind == "commit")
+                                            openHistory(state, sourceId, { kind: "commit", objectId: page.source.objectId }, diff.path)
+                                    },
+                                }]
+                                : []}
+                        >
+                            <button
+                                type="button"
+                                title={diff.path}
+                                aria-label={`${collapsed ? "Expand" : "Collapse"} ${diff.path}`}
+                                aria-expanded={!collapsed}
+                                mix={[
+                                    diffFileToggle,
+                                    on("click", () => {
+                                        if (collapsed)
+                                            breakout.collapsed.delete(diff.path)
+                                        else
+                                            breakout.collapsed.add(diff.path)
+                                        breakout.scrolling = false
+                                        update()
+                                    }),
+                                ]}
+                            >
+                                <Icon name={collapsed ? "chevron-right" : "chevron-down"} size={12} />
+                                <strong mix={diffToolbarStrong}>{fileLabel(diff.path)}</strong>
+                            </button>
+                        </FileMenu>
+                        {renderDiffControls(state, diff)}
+                    </header>
+                )}
+                {!collapsed && renderDiffContents(state, diff)}
+            </section>
+        )
+    }
+
+    function openHistory(owner: ColumnState, sourceId: string, source: FileHistorySource, path: string) {
+        let node = auxiliary.open(sourceId, JSON.stringify(["history", source, path]), () => {
+            let value = histories.create(owner.repositoryId, source, path)
+            let host: ColumnState = {
+                ...owner,
+                id: `history:${crypto.randomUUID()}`,
+                auxiliaryId: undefined,
+                breakout: undefined,
+                worktreePath: source.kind == "worktree" ? source.worktreePath : undefined,
+                files: new Map(),
+                diffs: new Map(),
+                cachedDiffs: new Map(),
+                requestIds: new Set(),
+                wholeFiles: new Map(),
+                history: new Map(),
+                filter: "",
+                filterOpen: false,
+                transientLayout: "unified",
+                selectionRoot: owner.selectionRoot ?? owner,
+                composable: new Set(),
+            }
+            historyHosts.set(value, host)
+            host.compositionKey = JSON.stringify(compositionFor(host))
+
+            return {
+                value,
+                dispose() {
+                    histories.dispose(value)
+                    host.alive = false
+                    suspend(host)
+                    historyHosts.delete(value)
+                },
+            }
+        })
+        if (node.value.kind == "history")
+            historyHosts.get(node.value)!.auxiliaryId = node.id
+        void options.update().then(signal => {
+            if (!signal.aborted)
+                document.querySelector<HTMLElement>(`[data-auxiliary-id="${node.id}"]`)?.focus()
+        })
+    }
+
+    function dispose(state: ColumnState) {
+        state.alive = false
+        auxiliary.close(key(state.repositoryId, state.id))
+        suspend(state)
+    }
+
+    function suspend(state: ColumnState) {
+        for (let diff of state.diffs.values()) {
+            diff.selection = undefined
+            diff.generation++
+            diff.loading = false
+            diff.refreshing = false
+        }
+        for (let file of state.files.values()) {
+            file.generation++
+            file.loading = false
+            file.refreshing = false
+        }
+        for (let item of state.history.values()) {
+            item.generation++
+            item.loading = false
+        }
+        for (let id of state.requestIds)
+            cancel(state, id)
+    }
+
+    function renderDiffControls(state: ColumnState, diff: FileDiffState): RemixNode {
+        return (
+            <DiffControls
+                layout={state.transientLayout ?? options.layout(state.repositoryId, state.id)}
+                showWhitespace={diff.showWhitespace}
+                showEntireFiles={state.showEntireFiles ?? false}
+                toggleEntireFiles={() => {
+                    state.showEntireFiles = !state.showEntireFiles
+                    for (let open of state.diffs.values()) {
+                        open.notice = open.selection ? "Diff view changed. Change Selection cleared." : undefined
+                        open.selection = undefined
+                        open.page = undefined
+                        void readDiff(state, open)
+                    }
+                    update()
+                }}
+                setLayout={layout => {
+                    if (state.auxiliaryId) {
+                        state.transientLayout = layout
+                        update()
+                    } else {
+                        options.saveLayout(state.repositoryId, state.id, layout)
+                    }
+                }}
+                toggleWhitespace={() => {
+                    diff.showWhitespace = !diff.showWhitespace
+                    update()
+                }}
+                breakout={!state.breakout && !state.auxiliaryId
+                    ? () => void showBreakout(state, diff.group, diff.path)
+                    : undefined}
+            />
+        )
+    }
+
+    /**
+     * Shows one group's whole diff in the column's diff column, scrolled to `path` when given.
+     * Opening it moves focus there; choosing files from the source column leaves focus where it is.
+     */
+    async function showBreakout(state: ColumnState, group: string, path?: string, subject?: string, focus = true) {
+        let current = state.breakout
+        if (current?.group == group) {
+            current.focus = path
+            if (path)
+                current.collapsed.delete(path)
+            if (focus)
+                focusBreakout(state)
+            scrollBreakout(state, current)
+            return
+        }
+        closeBreakout(state)
+        let breakout: BreakoutState = {
+            kind: "diff",
+            group,
+            subject: subject ?? commitSubject(state, group),
+            created: new Set(),
+            collapsed: new Set(),
+            focus: path,
+        }
+        state.breakout = breakout
+        if (focus)
+            focusBreakout(state)
+        if (!state.files.get(group)?.inventory && !group.startsWith("working"))
+            await readFiles(state, group, { kind: "commit", objectId: group }, false, false)
+        if (!state.alive || state.breakout != breakout)
+            return
+        populateBreakout(state, breakout)
+        update()
+        scrollBreakout(state, breakout)
+    }
+
+    /**
+     * Reads a group's changed files. With `refreshDiff`, an inventory already on screen is re-read quietly: nothing
+     * renders unless the result differs, and only then are the group's open diffs re-read, quietly too.
+     */
+    async function readFiles(state: ColumnState, group: string, source: DiffSource, refreshDiff = false, open = true) {
+        let files = state.files.get(group)
+        if (!files) {
+            files = { source, loading: false, open, generation: 0 }
+            state.files.set(group, files)
+        }
+
+        let sameRequest = JSON.stringify(files.source) == JSON.stringify(source) && files.includeIgnored == state.showIgnored
+        if (!state.alive || (files.loading || files.refreshing) && sameRequest)
+            return
+
+        let quiet = refreshDiff && sameRequest && !!files.inventory
+        let changed = !quiet
+        files.source = source
+        files.includeIgnored = state.showIgnored
+        if (quiet)
+            files.refreshing = true
+        else {
+            files.loading = true
+            files.error = undefined
+            update()
+        }
+        let generation = ++files.generation
+
+        try {
+            let result = await options.api.readChanges(state.repositoryId, requestId(state, `files:${group}`), { source, includeIgnored: state.showIgnored })
+
+            if (!state.alive || generation != files.generation)
+                return
+            if (!result.ok)
+                throw new Error(result.error.message)
+
+            let previous = files.inventory?.version
+            if (quiet && previous == result.inventory.version && !files.error)
+                return
+
+            changed = true
+            files.error = undefined
+            files.inventory = result.inventory
+            files.source = result.inventory.source
+            if (group == "working") {
+                for (let view of ["staged", "unstaged"] as const) {
+                    state.files.set(`working-${view}`, {
+                        ...files,
+                        inventory: {
+                            ...result.inventory,
+                            files: result.inventory.files.filter(file => view == "staged" ? file.staged : file.unstaged || file.untracked),
+                        },
+                    })
+                }
+            }
+            if (state.breakout && (state.breakout.group == group || group == "working" && state.breakout.group.startsWith("working-")))
+                populateBreakout(state, state.breakout)
+
+            if (previous && previous != result.inventory.version) {
+                for (let id of state.wholeFiles.keys()) {
+                    if (id.startsWith(`${group}:`))
+                        state.wholeFiles.delete(id)
+                }
+            }
+
+            for (let diff of state.diffs.values()) {
+                if (diff.group != group && !(group == "working" && diff.group.startsWith("working-")))
+                    continue
+                if (!result.inventory.files.some(file => file.path == diff.path && !file.ignored))
+                    clearDiff(state, diff)
+                else if (refreshDiff)
+                    void readDiff(state, diff, false, true)
+            }
+        } catch (error) {
+            if (state.alive && generation == files.generation) {
+                changed = true
+                files.error = message(error)
+                for (let diff of state.diffs.values()) {
+                    if (diff.group == group) {
+                        diff.selection = undefined
+                        diff.page = undefined
+                    }
+                }
+            }
+        } finally {
+            if (generation == files.generation) {
+                files.loading = false
+                files.refreshing = false
+                if (changed)
+                    update()
+            }
+        }
+    }
+
+    function closeBreakout(state: ColumnState) {
+        state.breakout = undefined
+    }
+
+    function focusBreakout(state: ColumnState) {
+        let column = state.breakout && breakoutColumn(state, state.breakout)
+        if (!column)
+            return
+        auxiliary.focusedId = column.id
+        void options.update().then(signal => {
+            if (signal.aborted || auxiliary.focusedId != column.id)
+                return
+
+            let element = document.querySelector<HTMLElement>(`[data-auxiliary-id="${column.id}"]`)
+            element?.focus({ preventScroll: true })
+            element?.scrollIntoView({ behavior: "instant", block: "nearest", inline: "nearest" })
+        })
+    }
+
+    function commitSubject(state: ColumnState, objectId: string) {
+        for (let history of state.history.values()) {
+            let commit = history.page?.commits.find(commit => commit.objectId == objectId)
+            if (commit)
+                return commit.subject
+        }
+        return undefined
+    }
+
+    function populateBreakout(state: ColumnState, breakout: BreakoutState) {
+        if (!state.alive || state.breakout != breakout)
+            return
+        let files = state.files.get(breakout.group)
+        for (let file of files?.inventory?.files ?? []) {
+            if (file.ignored)
+                continue
+            let id = diffKey(breakout.group, file.path)
+            let diff = state.diffs.get(id)
+            if (!diff) {
+                diff = createDiff(state, breakout.group, file.path)
+                breakout.created.add(id)
+            }
+            if (!diff.page && !diff.loading)
+                void readDiff(state, diff)
+        }
+    }
+
+    function createDiff(state: ColumnState, group: string, path: string) {
+        let files = state.files.get(group)
+        let view: FileDiffState["view"] = group == "working-staged" ? "staged" : group == "working-unstaged" ? "unstaged" : "combined"
+        let diff: FileDiffState = {
+            group,
+            path,
+            view,
+            page: files?.error
+                ? undefined
+                : state.cachedDiffs.get(JSON.stringify([files?.source, files?.inventory?.version, path, view, !!state.showEntireFiles])),
+            loading: false,
+            generation: 0,
+            showWhitespace: false,
+        }
+        state.diffs.set(diffKey(group, path), diff)
+
+        return diff
+    }
+
+    async function history(state: ColumnState, branch: BranchGraphBranchNode, more = false) {
+        let baseTips = branch.base.status == "known" ? [branch.base.tip] : branch.base.candidates.map(candidate => candidate.tip)
+        let historyKey = branchHistoryKey(state, branch)
+        let current = state.history.get(branch.id)
+        if (!current || current.key != historyKey) {
+            current = { key: historyKey, loading: false, open: true, generation: 0 }
+            state.history.set(branch.id, current)
+        }
+        if (current.loading)
+            return
+        current.loading = true
+        current.error = undefined
+        update()
+        let generation = ++current.generation
+
+        try {
+            let result = await options.api.readBranchHistory(state.repositoryId, {
+                requestId: requestId(state, `history:${branch.id}`),
+                branchRef: branch.preferredRef,
+                tip: branch.tip,
+                baseTips,
+                remoteTips: state.graph.remoteTips,
+                limit: 50,
+                ...(more ? { offset: current.page?.nextOffset } : {}),
+            })
+            if (!state.alive || state.history.get(branch.id) != current || current.generation != generation)
+                return
+            if (!result.ok)
+                throw new Error(result.error.message)
+            current.page = more && current.page ? { ...result.page, commits: [...current.page.commits, ...result.page.commits] } : result.page
+        } catch (error) {
+            if (generation == current.generation)
+                current.error = message(error)
+        } finally {
+            if (generation == current.generation) {
+                current.loading = false
+                update()
+                if (state.alive && state.conflictsOnly && !current.error && current.page?.nextOffset != undefined)
+                    void history(state, branch, true)
+            }
+        }
+    }
+
+    // Any remote branch can publish this branch's commits, so moving any of them refreshes its history.
+    function branchHistoryKey(state: ColumnState, branch: BranchGraphBranchNode) {
+        let baseTips = branch.base.status == "known" ? [branch.base.tip] : branch.base.candidates.map(candidate => candidate.tip)
+        return JSON.stringify([branch.tip, baseTips, state.graph.remoteTips, branch.unresolved])
+    }
+
+    function renderDiffContents(state: ColumnState, diff: FileDiffState): RemixNode {
+        let eligible = selectable(state, diff.group)
+        let page = diff.page && !eligible ? { ...diff.page, selectable: false } : diff.page
+        let layout = state.transientLayout ?? options.layout(state.repositoryId, state.id)
+
+        return (
+            <>
+                {page?.source.kind == "working" && diffViewChoices(diff, page.file).length > 1 && (
+                    <div class="diff-views" role="group" aria-label="Comparison" mix={diffViews}>
+                        {diffViewChoices(diff, page.file).map(view => (
+                            <button
+                                type="button"
+                                aria-pressed={diff.view == view}
+                                mix={[diffViewsButton, on("click", () => changeView(state, diff, view))]}
+                            >
+                                {view == "combined" ? "Working Changes" : view[0].toUpperCase() + view.slice(1)}
+                            </button>
+                        ))}
+                    </div>
+                )}
+                {diff.notice && (
+                    <p class="inspection-notice" role="status" mix={inspectionNotice}>
+                        {diff.notice}
+                    </p>
+                )}
+                {diff.error && (
+                    <p role="alert" mix={diffInspectorP}>
+                        {diff.error}{" "}
+                        <button type="button" mix={[diffInspectorButton, on("click", () => readDiff(state, diff))]}>
+                            Retry diff
+                        </button>
+                    </p>
+                )}
+                {page && (
+                    <>
+                        {page.summary.map(text => (
+                            <p class="diff-summary" mix={diffSummary}>
+                                {text}
+                            </p>
+                        ))}
+                        {page.lines.length == 0 && page.summary.length == 0 && (
+                            <p class="inspection-muted" mix={inspectionMuted}>
+                                No net content difference in this view.
+                            </p>
+                        )}
+                        <DiffLines
+                            page={page}
+                            layout={layout}
+                            showWhitespace={diff.showWhitespace}
+                            selected={eligible ? diff.selection?.lineIds ?? [] : []}
+                            select={ids => {
+                                if (eligible)
+                                    selectLines(diff, ids)
+                            }}
+                        />
+                        {eligible && diff.selection && (
+                            <div class="selection-summary" role="status" mix={selectionSummary}>
+                                {transferSource(state, page.source) && composition.source({
+                                    repositoryId: state.repositoryId,
+                                    selectedRemote: state.graph.selectedRemote,
+                                    source: transferSource(state, page.source)!,
+                                    files: [{ path: diff.path, version: page.version, entireFile: page.entireFile, lineIds: diff.selection.lineIds }],
+                                    view: diff.view == "staged" || diff.view == "unstaged" ? diff.view : "combined",
+                                    label: `${diff.selection.lineIds.length} lines in ${diff.path}`,
+                                })}
+                                {diff.selection.lineIds.length} lines selected{diff.selection.rename ? " · rename selected" : ""}
+                                <button
+                                    type="button"
+                                    data-mousedown-activate
+                                    mix={[
+                                        selectionSummaryButton,
+                                        on("click", () => {
+                                            diff.selection = undefined
+                                            update()
+                                        }),
+                                    ]}
+                                >
+                                    Clear selection
+                                </button>
+                            </div>
+                        )}
+                        {page.nextOffset != undefined && (
+                            <button
+                                type="button"
+                                class="load-diff"
+                                disabled={diff.loading}
+                                mix={[loadDiff, on("click", () => readDiff(state, diff, true))]}
+                            >
+                                Load more
+                            </button>
+                        )}
+                    </>
+                )}
+                {diff.loading && (
+                    <p class="inspection-progress" role="status" mix={inspectionProgress}>
+                        Reading diff…{" "}
+                        <button
+                            type="button"
+                            mix={[
+                                inspectionMutedButton,
+                                on("click", () => {
+                                    diff.generation++
+                                    diff.loading = false
+                                    diff.error = "Diff read cancelled."
+                                    cancel(state, diffRequestId(state, diff))
+                                    update()
+                                }),
+                            ]}
+                        >
+                            Cancel
+                        </button>
+                    </p>
+                )}
+            </>
+        )
+    }
+
+    function transferSource(state: ColumnState, source: DiffSource): CompositionSource | undefined {
+        if (source.kind == "working")
+            return source
+        if (source.kind == "commit")
+            return { ...source, branch: state.column.kind == "branch" ? state.column.preferredRef : undefined }
+    }
+
+    function changeView(state: ColumnState, diff: FileDiffState, view: DiffView) {
+        diff.view = view
+        diff.page = undefined
+        diff.selection = undefined
+        void readDiff(state, diff)
+    }
+
+    /** Reads a file's diff. With `refresh`, a page already on screen stays put until a different version arrives. */
+    async function readDiff(state: ColumnState, diff: FileDiffState, more = false, refresh = false) {
+        let files = state.files.get(diff.group)
+        let source = files?.source
+        let inventoryVersion = files?.inventory?.version
+        if (!source || !state.alive || refresh && (diff.loading || diff.refreshing))
+            return
+        let previous = diff.page
+        let generation = ++diff.generation
+        let quiet = refresh && !!previous
+        if (quiet)
+            diff.refreshing = true
+        else {
+            diff.loading = true
+            diff.error = undefined
+            update()
+        }
+
+        try {
+            let result = await options.api.readFileDiff(state.repositoryId, diffRequestId(state, diff), {
+                source,
+                path: diff.path,
+                view: diff.view,
+                entireFile: state.showEntireFiles,
+                inventoryVersion,
+                ...(more && previous ? { offset: previous.nextOffset, expectedVersion: previous.version } : {}),
+            })
+            if (!state.alive || generation != diff.generation)
+                return
+            if (!result.ok)
+                throw new Error(result.error.message)
+            let page = result.page
+            if (!more && diffTextLength(page) <= 128_000) {
+                let id = JSON.stringify([source, inventoryVersion, diff.path, diff.view, !!state.showEntireFiles])
+                state.cachedDiffs.delete(id)
+                state.cachedDiffs.set(id, page)
+                if (state.cachedDiffs.size > 16)
+                    state.cachedDiffs.delete(state.cachedDiffs.keys().next().value!)
+            }
+            if (previous && previous.version != page.version) {
+                diff.selection = undefined
+                diff.notice = "File changed. Change Selection cleared."
+            }
+            diff.page = more && previous
+                ? { ...page, lines: [...previous.lines, ...page.lines] }
+                : refresh && previous?.version == page.version
+                ? previous
+                : page
+            if (quiet && diff.page == previous)
+                return
+        } catch (error) {
+            if (state.alive && generation == diff.generation) {
+                diff.error = message(error)
+                diff.selection = undefined
+                if (!more)
+                    diff.page = undefined
+            }
+        } finally {
+            if (generation == diff.generation) {
+                diff.loading = false
+                diff.refreshing = false
+                // A quiet re-read that found the same version leaves the screen alone.
+                if (!quiet || diff.page != previous || diff.error)
+                    update()
+                if (state.breakout?.scrolling && state.breakout.group == diff.group)
+                    scrollBreakout(state, state.breakout)
+            }
+        }
+    }
+
+    /** Scrolls the diff column so its focused file's toolbar sits under the column header. */
+    function scrollBreakout(state: ColumnState, breakout: BreakoutState) {
+        if (!breakout.focus)
+            return
+        breakout.scrolling = true
+        void options.update().then(signal => {
+            if (signal.aborted || state.breakout != breakout || !breakout.scrolling || !breakout.focus)
+                return
+
+            let column = breakoutColumn(state, breakout)
+            let aside = column && document.querySelector<HTMLElement>(`[data-auxiliary-id="${column.id}"]`)
+            let columnHeader = aside?.querySelector("header")
+            let target = aside
+                && Array.from(aside.querySelectorAll<HTMLElement>("[data-diff-path]")).find(element => element.dataset.diffPath == breakout.focus)
+            if (!aside || !columnHeader || !target)
+                return
+            aside.scrollTo({
+                top: aside.scrollTop + target.getBoundingClientRect().top - columnHeader.getBoundingClientRect().bottom,
+                behavior: scrollBehavior(),
+            })
+            let header = target.querySelector<HTMLElement>(".diff-toolbar")
+            navigationHighlight?.cancel()
+            navigationHighlight = header?.animate?.([
+                { backgroundColor: "color-mix(in srgb, var(--accent) 28%, var(--panel-deep))", boxShadow: "inset 3px 0 var(--accent)", offset: 0 },
+                { backgroundColor: "color-mix(in srgb, var(--accent) 28%, var(--panel-deep))", boxShadow: "inset 3px 0 var(--accent)", offset: 0.6 },
+                { backgroundColor: "var(--panel-deep)", boxShadow: "inset 3px 0 transparent", offset: 1 },
+            ], { duration: 1500, easing: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "steps(1, end)" : "ease-out" })
+            // Diffs above the target push it down as they arrive, so keep aiming until they have all loaded.
+            let files = state.files.get(breakout.group)?.inventory?.files ?? []
+            let above = files.slice(0, files.findIndex(file => file.path == breakout.focus) + 1)
+            if (above.every(file => !state.diffs.get(diffKey(breakout.group, file.path))?.loading))
+                breakout.scrolling = false
+        })
+    }
+
+    function breakoutColumn(state: ColumnState, breakout: BreakoutState) {
+        return auxiliary.descendants(key(state.repositoryId, state.id)).find(column => column.value == breakout)
+    }
+
+    function selectLines(diff: FileDiffState, ids: number[]) {
+        let page = diff.page
+        if (!page?.selectable)
+            return
+        let selection = diff.selection ?? { source: page.source, path: page.file.path, version: page.version, lineIds: [], rename: false }
+        let current = new Set(selection.lineIds)
+        let remove = ids.every(id => current.has(id))
+        for (let id of ids) {
+            if (remove)
+                current.delete(id)
+            else
+                current.add(id)
+        }
+        diff.selection = { ...selection, lineIds: [...current].sort((a, b) => a - b) }
+        update()
+    }
+
+    function selectable(state: ColumnState, group: string) {
+        return !state.auxiliaryId || group == "working"
+            || state.compositionKey == JSON.stringify(compositionFor(state)) && !!state.composable?.has(group)
+    }
+
+    function compositionFor(host?: ColumnState) {
+        let root = host?.selectionRoot
+        let primary = root?.graph.branches.find(branch => branch.primary)
+        let branch = root?.graph.branches.find(branch => branch.id == root.column.id)
+
+        return branch && !branch.remoteOnly && primary ? { tip: branch.tip, primaryTip: primary.tip } : undefined
+    }
+
+    async function openFilter(state: ColumnState, render: Options["update"]) {
+        state.filterOpen = true
+        await render()
+        if (state.alive && state.filterOpen)
+            state.filterInput?.focus({ preventScroll: true })
+    }
+
+    function closeFilter(state: ColumnState) {
+        state.filterOpen = false
+        state.filter = ""
+        state.status = "all"
+        filterChanged(state)
+        state.filterButton?.focus({ preventScroll: true })
+    }
+
+    function filterChanged(state: ColumnState) {
+        for (let diff of state.diffs.values()) {
+            let file = state.files.get(diff.group)?.inventory?.files.find(file => file.path == diff.path)
+            if (file && !matchesFilter(state, file))
+                clearDiff(state, diff)
+        }
+        update()
+    }
+
+    function clearDiff(state: ColumnState, diff: FileDiffState) {
+        diff.generation++
+        cancel(state, diffRequestId(state, diff))
+        let id = diffKey(diff.group, diff.path)
+        state.diffs.delete(id)
+        if (state.breakout?.group == diff.group)
+            state.breakout.created.delete(id)
+    }
+
+    function cancel(state: ColumnState, id: string) {
+        void options.api.cancelInspection(state.repositoryId, id)
+    }
+
+    function diffRequestId(state: ColumnState, diff: FileDiffState) {
+        return requestId(state, `diff:${diffKey(diff.group, diff.path)}`)
+    }
+
+    function requestId(state: ColumnState, suffix: string) {
+        let id = `${state.id}:${suffix}`
+        state.requestIds.add(id)
+        return id
+    }
+
+    function diffKey(group: string, path: string) {
+        return JSON.stringify([group, path])
+    }
+
+    function matchesFilter(state: ColumnState, file: ChangedFile) {
+        return `${file.oldPath ?? ""} ${file.path}`.toLowerCase().includes(state.filter.toLowerCase()) && (state.status == "all" || file.status == state.status)
+    }
 }
 
 // The staged and unstaged lists each show their own side of a file, so only conflict views remain
 // selectable there; the combined Working Changes view keeps its staged and unstaged toggles.
 function diffViewChoices(diff: FileDiffState, file: ChangedFile): DiffView[] {
-    const fixed = diff.group.startsWith("working-")
+    let fixed = diff.group.startsWith("working-")
     return [
         ...(fixed ? [diff.view] : ["combined", ...(file.staged ? ["staged", "unstaged"] : [])]),
         ...(file.conflicted ? ["base", "ours", "theirs"] : []),
@@ -2286,442 +2977,6 @@ function breakoutTitle(state: ColumnState, breakout: BreakoutState) {
     }
 }
 
-const changeFileList = css({
-    position: "relative",
-    ".file-tree details &": {
-        paddingLeft: "14px",
-    },
-})
-
-// An empty staging list still needs somewhere to drop while the commit form is open.
-const stagingHint = css({
-    margin: "4px 10px 6px",
-    padding: "8px",
-    border: "1px dashed var(--line-strong)",
-    borderRadius: "var(--radius)",
-    color: "var(--muted)",
-    fontSize: "12px",
-    textAlign: "center",
-    pointerEvents: "none",
-})
-
-const changeFileListP = css({
-    margin: 0,
-    padding: "8px 10px",
-    color: "var(--muted)",
-    fontSize: "12px",
-    overflowWrap: "anywhere",
-})
-
-const changeFileListButton = css({
-    border: "1px solid var(--line)",
-    background: "var(--control)",
-    color: "var(--text)",
-    borderRadius: "3px",
-    padding: "3px 6px",
-    font: "inherit",
-    cursor: "pointer",
-    "&:hover": {
-        background: "var(--control-hover)",
-    },
-    '&[aria-pressed="true"]': {
-        background: "var(--accent-wash-strong)",
-        borderColor: "var(--accent-edge)",
-    },
-})
-
-const inspectionProgressContainer = css({
-    position: "relative",
-})
-
-const inspectionProgress = css({
-    position: "absolute",
-    top: "0",
-    right: "0",
-    zIndex: 1,
-    margin: "0",
-    padding: "4px 8px",
-    maxWidth: "100%",
-    boxSizing: "border-box",
-    border: "1px solid var(--line)",
-    borderRadius: "3px",
-    background: "var(--panel)",
-    color: "var(--muted)",
-    fontSize: "12px",
-    overflowWrap: "anywhere",
-    pointerEvents: "none",
-    "& button": {
-        pointerEvents: "auto",
-    },
-})
-
-const inspectionMuted = css({
-    margin: "0",
-    padding: "8px 10px",
-    color: "var(--muted)",
-    fontSize: "12px",
-    overflowWrap: "anywhere",
-})
-
-const diffInspector = css({
-    position: "relative",
-    borderBlock: "1px solid var(--line-strong)",
-    background: "var(--panel)",
-    minWidth: "0",
-})
-
-const diffToolbar = css({
-    "& .diff-file-menu": { flex: 1, minWidth: 0 },
-    // Only broken-out diffs show this toolbar, sticking under their diff column's sticky header.
-    position: "sticky",
-    top: "46px",
-    zIndex: 5,
-    background: "var(--panel-deep)",
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    padding: "4px var(--scrollbar-clearance) 4px 6px",
-    borderBottom: "1px solid var(--line)",
-})
-
-const diffToolbarStrong = css({
-    display: "flex",
-    minWidth: "0",
-    flex: "1",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-    font: "12px var(--mono)",
-})
-
-const diffFileToggle = css({
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    width: "100%",
-    padding: "4px 0",
-    border: 0,
-    background: "transparent",
-    color: "var(--text)",
-    textAlign: "left",
-    cursor: "pointer",
-    "& > svg": { flex: "0 0 auto", color: "var(--muted)" },
-    "&:hover": { background: "var(--control-hover)" },
-})
-
-const diffViews = css({
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "4px",
-    padding: "6px 8px",
-})
-
-const diffViewsButton = css({
-    border: "1px solid var(--line)",
-    background: "var(--control)",
-    color: "var(--text)",
-    borderRadius: "3px",
-    padding: "3px 6px",
-    font: "inherit",
-    cursor: "pointer",
-    fontSize: "11px",
-    '&[aria-pressed="true"]': {
-        background: "var(--accent-wash-strong)",
-        borderColor: "var(--accent-edge)",
-    },
-    "&:hover": {
-        background: "var(--control-hover)",
-    },
-})
-
-const inspectionNotice = css({
-    margin: "0",
-    padding: "8px 10px",
-    color: "var(--warning)",
-    fontSize: "12px",
-    overflowWrap: "anywhere",
-    background: "var(--warning-wash)",
-})
-
-const diffInspectorP = css({
-    margin: 0,
-    padding: "8px 10px",
-    color: "var(--muted)",
-    fontSize: "12px",
-    overflowWrap: "anywhere",
-})
-
-const diffInspectorButton = css({
-    border: "1px solid var(--line)",
-    background: "var(--control)",
-    color: "var(--text)",
-    borderRadius: "3px",
-    padding: "3px 6px",
-    font: "inherit",
-    cursor: "pointer",
-    '&[aria-pressed="true"]': {
-        background: "var(--accent-wash-strong)",
-        borderColor: "var(--accent-edge)",
-    },
-    "&:hover": {
-        background: "var(--control-hover)",
-    },
-})
-
-const diffSummary = css({
-    margin: "0",
-    padding: "4px 10px",
-    color: "var(--muted)",
-    fontSize: "11px",
-    lineHeight: "16px",
-    overflowWrap: "anywhere",
-})
-
-const renameSelection = css({
-    display: "flex",
-    alignItems: "center",
-    gap: "5px",
-    color: "var(--muted)",
-    fontSize: "11px",
-    padding: "5px 8px",
-})
-
-const diffInspectorInput = css({
-    '&[type="checkbox"]': {
-        width: "14px",
-        height: "14px",
-        minHeight: "0",
-        padding: "0",
-        margin: "0 3px 0 0",
-        flex: "0 0 14px",
-    },
-    width: "14px",
-    height: "14px",
-    minHeight: 0,
-    padding: 0,
-    margin: "0 3px 0 0",
-    flex: "0 0 14px",
-})
-
-const selectionSummary = css({
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "6px 8px",
-    fontSize: "11px",
-    color: "var(--accent)",
-    borderTop: "1px solid var(--line)",
-})
-
-const selectionSummaryButton = css({
-    border: "1px solid var(--line)",
-    background: "var(--control)",
-    color: "var(--text)",
-    borderRadius: "3px",
-    padding: "3px 6px",
-    font: "inherit",
-    cursor: "pointer",
-    '&[aria-pressed="true"]': {
-        background: "var(--accent-wash-strong)",
-        borderColor: "var(--accent-edge)",
-    },
-    "&:hover": {
-        background: "var(--control-hover)",
-    },
-})
-
-const loadDiff = css({
-    border: "1px solid var(--line)",
-    background: "var(--control)",
-    color: "var(--text)",
-    borderRadius: "3px",
-    padding: "3px 6px",
-    font: "inherit",
-    cursor: "pointer",
-    margin: "8px",
-    '&[aria-pressed="true"]': {
-        background: "var(--accent-wash-strong)",
-        borderColor: "var(--accent-edge)",
-    },
-    "&:hover": {
-        background: "var(--control-hover)",
-    },
-})
-
-const inspectionMutedButton = css({
-    border: "1px solid var(--line)",
-    background: "var(--control)",
-    color: "var(--text)",
-    borderRadius: "3px",
-    padding: "3px 6px",
-    font: "inherit",
-    cursor: "pointer",
-    '&[aria-pressed="true"]': {
-        background: "var(--accent-wash-strong)",
-        borderColor: "var(--accent-edge)",
-    },
-    "&:hover": {
-        background: "var(--control-hover)",
-    },
-})
-
-const columnInspection = css({
-    "--filter-height": "0px",
-    "&.filter-open": { "--filter-height": "52px" },
-    overflow: "auto",
-    flex: "1",
-    minHeight: "0",
-})
-
-const inspectionFilters = css({
-    position: "sticky",
-    top: "6px",
-    zIndex: 8,
-    height: "40px",
-    margin: "6px 8px",
-    boxSizing: "border-box",
-    background: "var(--panel)",
-    display: "flex",
-    alignItems: "center",
-    gap: "4px",
-    padding: "4px 8px",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "6px",
-    boxShadow: "var(--shadow-popover)",
-})
-
-const filterToggleButton = css({
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    flex: "0 0 auto",
-    width: "26px",
-    height: "26px",
-    padding: "0",
-    border: "0",
-    borderRadius: "3px",
-    background: "transparent",
-    color: "var(--muted)",
-    cursor: "pointer",
-    "&:hover": { background: "var(--control-hover)", color: "var(--text)" },
-    '&[aria-expanded="true"]': { background: "var(--accent-wash)", color: "var(--accent)" },
-})
-
-const filterChangedFilesInput = css({
-    height: "28px",
-    minHeight: "28px",
-    boxSizing: "border-box",
-    font: "inherit",
-    width: "100%",
-    minWidth: "40px",
-    color: "var(--text)",
-    background: "var(--field)",
-    border: "1px solid var(--line)",
-    padding: "0 7px",
-    borderRadius: "3px",
-})
-
-const filterChangeStatusSelect = css({
-    height: "28px",
-    minHeight: "28px",
-    boxSizing: "border-box",
-    font: "inherit",
-    color: "var(--text)",
-    background: "var(--field)",
-    border: "1px solid var(--line)",
-    padding: "0 7px",
-    borderRadius: "3px",
-})
-
-const workingChanges = css({
-    background: "var(--panel)",
-})
-
-const workingChangesH3 = css({
-    fontSize: "12px",
-    margin: "0",
-})
-
-// Each branch in the stack is a card; its heading carries the branch tint and icon.
-const stackBranch = css({
-    margin: "8px 8px 0",
-    overflow: "clip",
-    border: "1px solid var(--focus-edge)",
-    borderRadius: "var(--radius)",
-    background: "var(--panel)",
-    "&:last-child": { marginBottom: "8px" },
-    // Rows draw their own bottom rules; the card's edge replaces the last one. A trailing -1px pulls the
-    // card's bottom up over that rule, whichever row is last, and the clip hides it.
-    "&::after": { content: '""', display: "block", marginTop: "-1px" },
-    // Branches whose tip their remote already has take the remote teal instead of the local branch blue.
-    "&.remote": { borderColor: "var(--remote-edge)" },
-    "&.remote :is(.composition-branch-target, .composition-branch-heading)": { background: "var(--remote-wash)" },
-    "&.remote .composition-branch-heading:hover": { background: "color-mix(in srgb, var(--remote) 18%, var(--panel))" },
-    "&.remote .composition-branch-target > svg": { color: "var(--remote)" },
-})
-
-const disclosureHeading = css({
-    margin: 0,
-    font: "inherit",
-})
-
-// The whole sticky row owns the graph line, the node, the hover and the expanded tint, so the
-// line meets the file rows below and the highlight runs under the grip too.
-const commitStickyHeading = css({
-    position: "sticky",
-    top: "var(--filter-height, 0px)",
-    zIndex: 7,
-    height: "34px",
-    display: "flex",
-    alignItems: "center",
-    paddingLeft: "22px",
-    background: "var(--panel)",
-    borderBottom: "1px solid var(--line)",
-    borderRadius: "0",
-    "&::before": {
-        position: "absolute",
-        top: "-1px",
-        bottom: "-1px",
-        left: "12px",
-        width: "2px",
-        content: '""',
-        background: "var(--line-strong)",
-        pointerEvents: "none",
-    },
-    // Sticky rows must stay opaque, so hover and expanded tints are mixed into the panel colour.
-    "&:hover": {
-        backgroundColor: "color-mix(in srgb, var(--text) 5%, var(--panel))",
-    },
-    '&:has(> .commit-heading[aria-expanded="true"])': {
-        backgroundColor: "color-mix(in srgb, var(--focus) 12%, var(--panel))",
-    },
-    '&:has(> .commit-heading[aria-expanded="true"]):hover': {
-        backgroundColor: "color-mix(in srgb, var(--focus) 18%, var(--panel))",
-    },
-})
-
-// The surrounding branch row owns the tint, edges and hover so they run under the grip too. Each css()
-// class sits in its own cascade layer, so an override from the row's styles cannot reliably win here.
-const stackHeading = css({
-    flex: "1",
-    minWidth: "0",
-    border: "0",
-    background: "transparent",
-    color: "var(--text)",
-    borderRadius: "0",
-    minHeight: "34px",
-    padding: "0 12px",
-    font: "inherit",
-    fontSize: "13px",
-    fontWeight: "600",
-    cursor: "pointer",
-    scrollMarginTop: "var(--filter-height, 0px)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    textAlign: "left",
-})
-
 function conflictIcon() {
     return (
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
@@ -2730,189 +2985,10 @@ function conflictIcon() {
         </svg>
     )
 }
-const conflictIndicator = css({
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: "0",
-    minWidth: "26px",
-    height: "26px",
-    padding: "3px",
-    color: "var(--warning)",
-    background: "transparent",
-    border: "1px solid transparent",
-    borderRadius: "4px",
-    cursor: "pointer",
-    "&[aria-pressed=true]": { background: "var(--warning-wash)", borderColor: "var(--warning-edge)" },
-    "&:hover": { background: "var(--warning-wash)" },
-    ".inspect-commit &": { height: "100%", width: "32px", alignSelf: "stretch", borderRadius: "0", padding: "0", border: "0" },
-})
-// Tool buttons sit flush in the sticky commit row and stay transparent so the row's hover and
-// expanded tints run under them; only the hovered button darkens.
-const commitToolButton = css({
-    width: "32px",
-    alignSelf: "stretch",
-    flex: "0 0 32px",
-    display: "grid",
-    placeItems: "center",
-    padding: 0,
-    border: "0",
-    borderRadius: "0",
-    background: "transparent",
-    color: "var(--muted)",
-    cursor: "pointer",
-    "&:hover, &[aria-expanded=true]": {
-        background: "color-mix(in srgb, var(--text) 8%, transparent)",
-        color: "var(--text)",
-    },
-})
 
-const stackHeadingName = css({
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "6px",
-    minWidth: "0",
-    "& svg": { color: "var(--faint)", flex: "0 0 auto" },
-    "& svg + svg": { color: "var(--focus)" },
-    ".stack-branch.remote & svg + svg": { color: "var(--remote)" },
-})
-
-const stackHeadingStatus = css({ display: "inline-flex", alignItems: "center", gap: "8px" })
-const stackConflictIndicator = css({ display: "inline-flex", alignItems: "center", flexShrink: "0", color: "var(--warning)" })
-
-const stackBranchButton = css({
-    border: "1px solid var(--line)",
-    background: "var(--control)",
-    color: "var(--text)",
-    borderRadius: "3px",
-    padding: "3px 6px",
-    font: "inherit",
-    cursor: "pointer",
-    "&:hover": {
-        background: "var(--control-hover)",
-    },
-    '&[aria-pressed="true"]': {
-        background: "var(--accent-wash-strong)",
-        borderColor: "var(--accent-edge)",
-    },
-})
-
-// An expanded commit's files sit in a recessed tray under its heading.
-const inspectCommit = css({
-    position: "relative",
-    '&[data-expanded="true"] > :not(.disclosure-heading)': {
-        background: "var(--panel-deep)",
-    },
-})
-
-const commitHeading = css({
-    height: "100%",
-    border: "0",
-    background: "transparent",
-    color: "var(--text)",
-    borderRadius: "0",
-    padding: "0 10px 0 4px",
-    font: "inherit",
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    flex: "1 1 auto",
-    minWidth: 0,
-    gap: "8px",
-    width: "100%",
-    textAlign: "left",
-    // Keyboard focus scrolls the heading clear of the sticky filter bar.
-    scrollMarginTop: "var(--filter-height, 0px)",
-    '&[aria-expanded="true"] > span:first-child': {
-        background: "var(--graph)",
-    },
-    '.inspect-commit[data-remote="true"] &[aria-expanded="true"] > span:first-child': {
-        background: "var(--remote)",
-    },
-})
-
-// Commits their remote already has take the remote teal, so a partly published branch changes colour along its history.
-const commitNode = css({
-    position: "absolute",
-    zIndex: 2,
-    left: "8px",
-    top: "12px",
-    width: "10px",
-    height: "10px",
-    margin: "0",
-    flex: "0 0 auto",
-    border: "2px solid var(--graph)",
-    borderRadius: "50%",
-    background: "var(--panel)",
-    '.inspect-commit[data-remote="true"] &': { borderColor: "var(--remote)" },
-})
-
-const commitHeadingSpan = css({
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-})
-
-const mergeParent = css({
-    position: "relative",
-    display: "flex",
-    gap: "8px",
-    alignItems: "center",
-    padding: "6px 6px 6px 28px",
-    fontSize: "11px",
-    "&::before": {
-        position: "absolute",
-        top: "-1px",
-        bottom: "-1px",
-        left: "12px",
-        width: "2px",
-        content: '""',
-        background: "var(--line-strong)",
-        pointerEvents: "none",
-    },
-})
-
-const parentForSelect = css({
-    color: "var(--text)",
-    background: "var(--field)",
-    border: "1px solid var(--line)",
-    padding: "5px",
-    borderRadius: "3px",
-})
-
-const bodySelectionSummaryButton = css({
-    border: "1px solid var(--line)",
-    background: "var(--control)",
-    color: "var(--text)",
-    borderRadius: "3px",
-    padding: "3px 6px",
-    font: "inherit",
-    cursor: "pointer",
-    "&:hover": {
-        background: "var(--control-hover)",
-    },
-    '&[aria-pressed="true"]': {
-        background: "var(--accent-wash-strong)",
-        borderColor: "var(--accent-edge)",
-    },
-})
-
-const inspectionBreakout = css({
-    ...auxiliaryColumnFrame,
-    minWidth: "380px",
-    "& .auxiliary-source": { display: "block", fontSize: "10px", color: "var(--muted)" },
-})
-
-const inspectionBreakoutHeader = css({
-    ...auxiliaryColumnHeader,
-    position: "sticky",
-    top: 0,
-    zIndex: 10,
-    "& > span": { flex: "1 1 auto", minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" },
-})
-
-const closeDiffColumnButton = css(auxiliaryCloseButton)
-import type { FileHistorySource } from "@laneway/shared"
-import type { FileHistoryEntry } from "@laneway/shared"
-import { createFileHistories, type FileHistoryState } from "./file-history"
-import { createTrailCommits, type TrailCommitState } from "./trail-commit"
+function diffTextLength(page: FileDiffPage) {
+    let length = 0
+    for (let line of page.lines)
+        length += line.text.length
+    return length
+}

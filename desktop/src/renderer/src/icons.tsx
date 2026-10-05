@@ -1,7 +1,7 @@
 import { type Handle } from "remix/ui"
 
 // 16-unit stroke icons shared across the renderer. Inline SVG keeps the strict CSP intact.
-const paths = {
+let paths = {
     search: "M2.5 7a4.5 4.5 0 1 0 9 0a4.5 4.5 0 1 0-9 0M10.3 10.3 14 14",
     pull: "M8 2v9M4.5 7.5 8 11l3.5-3.5M3 14h10",
     stash: "M2 5.5h12V14H2zM2 5.5 3.5 2h9L14 5.5M6 9h4",
@@ -44,6 +44,10 @@ const paths = {
 
 export type IconName = keyof typeof paths
 
+// The Hidden L mark from assets/brand/laneway.svg, drawn on its 64-unit canvas.
+let brandPath =
+    "M20 8H24V48H44A4 4 0 0 0 44 40H34A2 2 0 0 1 32 38V12A4 4 0 0 1 36 8H44A12 12 0 0 1 56 20V44A12 12 0 0 1 44 56H20A12 12 0 0 1 8 44V20A12 12 0 0 1 20 8Z"
+
 export function Icon(handle: Handle<{ name: IconName; size?: number }>) {
     return () => (
         <svg
@@ -63,10 +67,6 @@ export function Icon(handle: Handle<{ name: IconName; size?: number }>) {
         </svg>
     )
 }
-
-// The Hidden L mark from assets/brand/laneway.svg, drawn on its 64-unit canvas.
-const brandPath =
-    "M20 8H24V48H44A4 4 0 0 0 44 40H34A2 2 0 0 1 32 38V12A4 4 0 0 1 36 8H44A12 12 0 0 1 56 20V44A12 12 0 0 1 44 56H20A12 12 0 0 1 8 44V20A12 12 0 0 1 20 8Z"
 
 // `plain` drops the app-icon block so the mark sits directly on light or dark chrome.
 export function BrandMark(handle: Handle<{ size: number; plain?: boolean }>) {

@@ -10,88 +10,201 @@ interface Options {
     completed(repositoryId: string, request: WorktreeRequest, columnId?: string): Promise<void>
 }
 
+// Lives inside the column header: `display: contents` lets the name sit beside the kind icon
+// while the overflow button lands at the far right of the header's action group.
+let controlStyle = css({
+    display: "contents",
+    color: "var(--text)",
+    "& > [aria-haspopup='menu']": { order: "2" },
+})
+// The worktree's name sits over its path so the column says both what it is and where it lives.
+let titleStyle = css({
+    flex: "1 1 auto",
+    minWidth: 0,
+    display: "grid",
+    alignContent: "center",
+})
+let titleRowStyle = css({
+    minWidth: 0,
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+})
+// Too truncated to select usefully; left unselectable, a double-click on it maximizes the column like the rest of the header.
+let pathStyle = css({
+    userSelect: "none",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    color: "var(--muted)",
+    fontSize: "11px",
+    lineHeight: "14px",
+})
+// The name and its rename input size to their text, leaving the rest of the header free to drag and click.
+let nameStyle = css({
+    flex: "0 1 auto",
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    padding: "2px 4px",
+    margin: "0 0 0 -4px",
+    textAlign: "left",
+    border: "1px solid transparent",
+    borderRadius: "var(--radius)",
+    color: "var(--text)",
+    background: "transparent",
+    fontFamily: '"Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif',
+    fontSize: "15px",
+    fontWeight: 600,
+    letterSpacing: "-0.01em",
+    cursor: "text",
+    "&:hover:not(:disabled)": { borderColor: "var(--line-strong)", background: "var(--panel-deep)" },
+    "&:disabled": { opacity: 1, cursor: "default" },
+})
+let nameInputStyle = css({
+    flex: "0 1 auto",
+    minWidth: "4ch",
+    width: "auto",
+    fieldSizing: "content",
+    height: "26px",
+    padding: "0 4px",
+    margin: "0 0 0 -4px",
+    border: "1px solid var(--focus)",
+    borderRadius: "var(--radius)",
+    font: "inherit",
+    fontSize: "14px",
+    fontWeight: 600,
+    color: "var(--text)",
+    background: "var(--panel)",
+})
+let stateChip = css({
+    flex: "0 0 auto",
+    padding: "1px 6px",
+    color: "var(--warning)",
+    border: "1px solid var(--warning-edge)",
+    borderRadius: "4px",
+    background: "var(--warning-wash)",
+    fontSize: "10.5px",
+    fontWeight: 600,
+})
+let iconStyle = css({
+    flexShrink: 0,
+    width: "28px",
+    height: "28px",
+    padding: 0,
+    display: "grid",
+    placeItems: "center",
+    border: "1px solid transparent",
+    borderRadius: "var(--radius)",
+    color: "var(--muted)",
+    background: "transparent",
+    cursor: "pointer",
+    "&:hover:not(:disabled)": { color: "var(--text)", borderColor: "var(--line)", background: "var(--control-hover)" },
+    "&:disabled": { opacity: 0.5, cursor: "default" },
+})
+let menuStyle = css({
+    position: "absolute",
+    zIndex: 20,
+    top: "100%",
+    right: "6px",
+    minWidth: "220px",
+    maxWidth: "calc(100% - 8px)",
+    maxHeight: "320px",
+    overflow: "auto",
+    padding: "4px",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "var(--radius)",
+    background: "var(--raised)",
+    boxShadow: "var(--shadow-popover)",
+    whiteSpace: "normal",
+})
+let menuItemStyle = css({
+    display: "block",
+    width: "100%",
+    padding: "6px 8px",
+    border: 0,
+    borderRadius: "3px",
+    textAlign: "left",
+    color: "var(--text)",
+    background: "transparent",
+    fontSize: "12px",
+    cursor: "pointer",
+    "&:hover:not(:disabled), &:focus-visible:not(:disabled)": { background: "var(--hover)" },
+    "&:disabled": { opacity: 0.5, cursor: "default" },
+})
+let menuPathStyle = css({ display: "block", overflowWrap: "anywhere", color: "var(--muted)", fontSize: "10px" })
+let dialogStyle = css({
+    width: "460px",
+    maxWidth: "calc(100vw - 32px)",
+    maxHeight: "80vh",
+    overflow: "auto",
+    color: "var(--text)",
+    background: "var(--panel)",
+    border: "1px solid var(--line)",
+    boxShadow: "var(--shadow-dialog)",
+    "&::backdrop": { background: "var(--scrim)" },
+    borderRadius: "8px",
+    padding: "20px",
+    "& h2": { margin: "0 0 16px", fontSize: "17px", fontWeight: 600 },
+    "& p, & li": { overflowWrap: "anywhere", fontSize: "13px", lineHeight: 1.5 },
+    "& label": { display: "flex", alignItems: "flex-start", gap: "8px", fontSize: "13px", lineHeight: 1.5, marginBlock: "12px" },
+    "& [role='alert']": { color: "var(--danger)", background: "var(--danger-wash)", padding: "10px", borderRadius: "4px" },
+})
+let affectedPathsStyle = css({ display: "grid", gap: "8px", marginBottom: "16px" })
+let workingChangesStyle = css({
+    marginTop: "14px",
+    padding: "10px 12px",
+    border: "1px solid var(--warning-edge)",
+    borderRadius: "5px",
+    background: "var(--warning-wash)",
+    color: "var(--text)",
+    "& > strong": { fontSize: "13px", fontWeight: 600 },
+    "& p": { margin: "4px 0 0", color: "var(--muted)" },
+    "& label": { margin: "10px 0 0" },
+})
+let affectedPathStyle = css({
+    display: "grid",
+    gap: "4px",
+    padding: "10px 12px",
+    border: "1px solid var(--line)",
+    borderRadius: "5px",
+    background: "var(--canvas)",
+    "& strong": { fontSize: "13px", fontWeight: 600, overflowWrap: "anywhere" },
+    "& span": { fontFamily: "var(--mono)", fontSize: "11px", lineHeight: 1.5, color: "var(--muted)", overflowWrap: "anywhere" },
+})
+let dialogFooterStyle = css({
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: "8px",
+    margin: "20px -20px -20px",
+    padding: "12px 20px",
+    borderTop: "1px solid var(--line)",
+    background: "var(--canvas)",
+})
+let dialogButtonStyle = css({
+    minHeight: "32px",
+    padding: "0 14px",
+    borderRadius: "4px",
+    fontFamily: "inherit",
+    fontSize: "13px",
+    fontWeight: 600,
+    cursor: "pointer",
+    "&:disabled": { opacity: 0.5, cursor: "default" },
+})
+let removeButtonStyle = css({
+    color: "var(--danger)",
+    background: "var(--danger-wash)",
+    border: "1px solid var(--danger-edge)",
+    "&:hover:not(:disabled)": { background: "var(--danger)", color: "var(--panel)" },
+})
+
 export function createWorktreeActions(options: Options) {
     let preview: WorktreePreview | undefined
     let repositoryId = "", columnId: string | undefined
     let error = "", busy = false, preserve = true
     let returnFocus: HTMLElement | null = null
     let undoRepository: string | undefined, restoredName = ""
-    async function prepare(id: string, request: WorktreeRequest, sourceColumn?: string) {
-        if (busy)
-            return
-        repositoryId = id
-        columnId = sourceColumn
-        returnFocus = document.activeElement as HTMLElement | null
-        busy = true
-        error = ""
-        undoRepository = undefined
-        preserve = true
-        await options.update()
-        try {
-            const result = await options.api.previewWorktree(id, request)
-            if (result.ok)
-                preview = result.preview
-            else
-                error = result.error.message
-        } catch (reason) {
-            error = String(reason)
-        }
-        busy = false
-        await options.update()
-    }
-    function close() {
-        if (busy)
-            return
-        preview = undefined
-        error = ""
-        void options.update().then(() => returnFocus?.focus())
-    }
-    async function execute() {
-        if (!preview || busy)
-            return
-        busy = true
-        error = ""
-        await options.update()
-        try {
-            const request = preview.request.action == "remove" ? { ...preview.request, preserve, allowIgnoredLoss: true } : preview.request
-            // Changed preservation choices need a matching preview token, while retaining
-            // the original evidence check for changes made while the dialog was open.
-            const original = await options.api.previewWorktree(repositoryId, preview.request)
-            if (!original.ok || original.preview.token != preview.token)
-                throw new Error("Worktree state changed. Cancel and review the operation again.")
-            const fresh = await options.api.previewWorktree(repositoryId, request)
-            if (!fresh.ok)
-                throw new Error(fresh.error.message)
-            const result = await options.api.executeWorktree(repositoryId, request, fresh.preview.token)
-            if (!result.ok)
-                throw new Error(result.error.message)
-            preview = undefined
-            await options.completed(repositoryId, request, columnId)
-        } catch (reason) {
-            error = reason instanceof Error ? reason.message : String(reason)
-        }
-        busy = false
-        await options.update()
-    }
-    async function transition(id: string, action: "undo" | "redo", basename?: string) {
-        if (busy)
-            return
-        busy = true
-        error = ""
-        await options.update()
-        try {
-            const result = await options.api.transitionOperation(id, action, basename)
-            if (!result.ok)
-                throw new Error(result.error.message)
-            undoRepository = undefined
-            await options.completed(id, { action: "unlock", path: "" })
-        } catch (reason) {
-            error = reason instanceof Error ? reason.message : String(reason)
-            undoRepository = action == "undo" && /occupied/.test(error) ? id : undefined
-        }
-        busy = false
-        await options.update()
-    }
     return {
         busy: () => busy,
         prepare,
@@ -111,7 +224,7 @@ export function createWorktreeActions(options: Options) {
         dialog() {
             if (!preview && !error)
                 return null
-            const request = preview?.request
+            let request = preview?.request
             return (
                 <dialog
                     aria-label="Worktree operation"
@@ -222,6 +335,93 @@ export function createWorktreeActions(options: Options) {
             )
         },
     }
+
+    async function prepare(id: string, request: WorktreeRequest, sourceColumn?: string) {
+        if (busy)
+            return
+
+        repositoryId = id
+        columnId = sourceColumn
+        returnFocus = document.activeElement as HTMLElement | null
+        busy = true
+        error = ""
+        undoRepository = undefined
+        preserve = true
+        await options.update()
+
+        try {
+            let result = await options.api.previewWorktree(id, request)
+            if (result.ok)
+                preview = result.preview
+            else
+                error = result.error.message
+        } catch (reason) {
+            error = String(reason)
+        }
+        busy = false
+        await options.update()
+    }
+
+    function close() {
+        if (busy)
+            return
+
+        preview = undefined
+        error = ""
+        void options.update().then(() => returnFocus?.focus())
+    }
+
+    async function execute() {
+        if (!preview || busy)
+            return
+
+        busy = true
+        error = ""
+        await options.update()
+
+        try {
+            let request = preview.request.action == "remove" ? { ...preview.request, preserve, allowIgnoredLoss: true } : preview.request
+            // Changed preservation choices need a matching preview token, while retaining
+            // the original evidence check for changes made while the dialog was open.
+            let original = await options.api.previewWorktree(repositoryId, preview.request)
+            if (!original.ok || original.preview.token != preview.token)
+                throw new Error("Worktree state changed. Cancel and review the operation again.")
+            let fresh = await options.api.previewWorktree(repositoryId, request)
+            if (!fresh.ok)
+                throw new Error(fresh.error.message)
+            let result = await options.api.executeWorktree(repositoryId, request, fresh.preview.token)
+            if (!result.ok)
+                throw new Error(result.error.message)
+            preview = undefined
+            await options.completed(repositoryId, request, columnId)
+        } catch (reason) {
+            error = reason instanceof Error ? reason.message : String(reason)
+        }
+        busy = false
+        await options.update()
+    }
+
+    async function transition(id: string, action: "undo" | "redo", basename?: string) {
+        if (busy)
+            return
+
+        busy = true
+        error = ""
+        await options.update()
+
+        try {
+            let result = await options.api.transitionOperation(id, action, basename)
+            if (!result.ok)
+                throw new Error(result.error.message)
+            undoRepository = undefined
+            await options.completed(id, { action: "unlock", path: "" })
+        } catch (reason) {
+            error = reason instanceof Error ? reason.message : String(reason)
+            undoRepository = action == "undo" && /occupied/.test(error) ? id : undefined
+        }
+        busy = false
+        await options.update()
+    }
 }
 
 function WorktreeControls(
@@ -236,37 +436,23 @@ function WorktreeControls(
 ) {
     let editing = false, name = "", menuOpen = false, choosingBranch = false, query = ""
     let menuButton: HTMLButtonElement, nameButton: HTMLButtonElement
-    const menuId = `${handle.id}-worktree-menu`
-    function closeMenu(focus = false) {
-        menuOpen = false
-        void handle.update().then(() => {
-            if (focus)
-                menuButton.focus()
-        })
-    }
-    async function prepare(request: WorktreeRequest) {
-        closeMenu(true)
-        await handle.update()
-        await handle.props.prepare(request)
-    }
-    function closeBranches() {
-        choosingBranch = false
-        void handle.update().then(() => menuButton.focus())
-    }
+    let menuId = `${handle.id}-worktree-menu`
     return () => {
-        const props = handle.props
-        const worktrees = [...props.graph.branches.flatMap(branch => branch.checkedOut), ...props.graph.virtualBranches.map(branch => branch.worktree)]
+        let props = handle.props
+        let worktrees = [...props.graph.branches.flatMap(branch => branch.checkedOut), ...props.graph.virtualBranches.map(branch => branch.worktree)]
             .filter((item, index, items) => items.findIndex(other => other.path == item.path) == index)
-        const worktree = worktrees.find(item => item.path == props.path)
-        const rename = async () => {
+        let worktree = worktrees.find(item => item.path == props.path)
+        let rename = async () => {
             if (!editing || !worktree)
                 return
+
             editing = false
             await handle.update()
             nameButton.focus()
             if (name && name != worktree.name)
                 await props.prepare({ action: "rename", path: worktree.path, basename: name })
         }
+
         return (
             <div class="column-worktree" mix={controlStyle}>
                 {worktree
@@ -389,9 +575,9 @@ function WorktreeControls(
                                     closeMenu(true)
                                 } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
                                     event.preventDefault()
-                                    const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")]
-                                    const index = items.indexOf(document.activeElement as HTMLButtonElement)
-                                    const next = event.key == "Home" ? 0 : event.key == "End"
+                                    let items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")]
+                                    let index = items.indexOf(document.activeElement as HTMLButtonElement)
+                                    let next = event.key == "Home" ? 0 : event.key == "End"
                                         ? items.length - 1
                                         : (index + (event.key == "ArrowDown" ? 1 : -1) + items.length) % items.length
                                     items[next]?.focus()
@@ -482,7 +668,7 @@ function WorktreeControls(
                                             menuItemStyle,
                                             on("click", async () => {
                                                 closeMenu(true)
-                                                const destination = await props.chooseDirectory(worktree.path)
+                                                let destination = await props.chooseDirectory(worktree.path)
                                                 if (destination)
                                                     await prepare({ action: "repair", path: worktree.path, destination })
                                             }),
@@ -530,7 +716,7 @@ function WorktreeControls(
                         }}
                         close={closeBranches}
                         activate={async result => {
-                            const branch = props.graph.branches.find(item => item.id == result.nodeId)?.localRefs[0]
+                            let branch = props.graph.branches.find(item => item.id == result.nodeId)?.localRefs[0]
                             if (!branch)
                                 return
                             closeBranches()
@@ -542,193 +728,23 @@ function WorktreeControls(
             </div>
         )
     }
-}
 
-// Lives inside the column header: `display: contents` lets the name sit beside the kind icon
-// while the overflow button lands at the far right of the header's action group.
-const controlStyle = css({
-    display: "contents",
-    color: "var(--text)",
-    "& > [aria-haspopup='menu']": { order: "2" },
-})
-// The worktree's name sits over its path so the column says both what it is and where it lives.
-const titleStyle = css({
-    flex: "1 1 auto",
-    minWidth: 0,
-    display: "grid",
-    alignContent: "center",
-})
-const titleRowStyle = css({
-    minWidth: 0,
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-})
-// Too truncated to select usefully; left unselectable, a double-click on it maximizes the column like the rest of the header.
-const pathStyle = css({
-    userSelect: "none",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-    color: "var(--muted)",
-    fontSize: "11px",
-    lineHeight: "14px",
-})
-// The name and its rename input size to their text, leaving the rest of the header free to drag and click.
-const nameStyle = css({
-    flex: "0 1 auto",
-    minWidth: 0,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-    padding: "2px 4px",
-    margin: "0 0 0 -4px",
-    textAlign: "left",
-    border: "1px solid transparent",
-    borderRadius: "var(--radius)",
-    color: "var(--text)",
-    background: "transparent",
-    fontFamily: '"Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif',
-    fontSize: "15px",
-    fontWeight: 600,
-    letterSpacing: "-0.01em",
-    cursor: "text",
-    "&:hover:not(:disabled)": { borderColor: "var(--line-strong)", background: "var(--panel-deep)" },
-    "&:disabled": { opacity: 1, cursor: "default" },
-})
-const nameInputStyle = css({
-    flex: "0 1 auto",
-    minWidth: "4ch",
-    width: "auto",
-    fieldSizing: "content",
-    height: "26px",
-    padding: "0 4px",
-    margin: "0 0 0 -4px",
-    border: "1px solid var(--focus)",
-    borderRadius: "var(--radius)",
-    font: "inherit",
-    fontSize: "14px",
-    fontWeight: 600,
-    color: "var(--text)",
-    background: "var(--panel)",
-})
-const stateChip = css({
-    flex: "0 0 auto",
-    padding: "1px 6px",
-    color: "var(--warning)",
-    border: "1px solid var(--warning-edge)",
-    borderRadius: "4px",
-    background: "var(--warning-wash)",
-    fontSize: "10.5px",
-    fontWeight: 600,
-})
-const iconStyle = css({
-    flexShrink: 0,
-    width: "28px",
-    height: "28px",
-    padding: 0,
-    display: "grid",
-    placeItems: "center",
-    border: "1px solid transparent",
-    borderRadius: "var(--radius)",
-    color: "var(--muted)",
-    background: "transparent",
-    cursor: "pointer",
-    "&:hover:not(:disabled)": { color: "var(--text)", borderColor: "var(--line)", background: "var(--control-hover)" },
-    "&:disabled": { opacity: 0.5, cursor: "default" },
-})
-const menuStyle = css({
-    position: "absolute",
-    zIndex: 20,
-    top: "100%",
-    right: "6px",
-    minWidth: "220px",
-    maxWidth: "calc(100% - 8px)",
-    maxHeight: "320px",
-    overflow: "auto",
-    padding: "4px",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "var(--radius)",
-    background: "var(--raised)",
-    boxShadow: "var(--shadow-popover)",
-    whiteSpace: "normal",
-})
-const menuItemStyle = css({
-    display: "block",
-    width: "100%",
-    padding: "6px 8px",
-    border: 0,
-    borderRadius: "3px",
-    textAlign: "left",
-    color: "var(--text)",
-    background: "transparent",
-    fontSize: "12px",
-    cursor: "pointer",
-    "&:hover:not(:disabled), &:focus-visible:not(:disabled)": { background: "var(--hover)" },
-    "&:disabled": { opacity: 0.5, cursor: "default" },
-})
-const menuPathStyle = css({ display: "block", overflowWrap: "anywhere", color: "var(--muted)", fontSize: "10px" })
-const dialogStyle = css({
-    width: "460px",
-    maxWidth: "calc(100vw - 32px)",
-    maxHeight: "80vh",
-    overflow: "auto",
-    color: "var(--text)",
-    background: "var(--panel)",
-    border: "1px solid var(--line)",
-    boxShadow: "var(--shadow-dialog)",
-    "&::backdrop": { background: "var(--scrim)" },
-    borderRadius: "8px",
-    padding: "20px",
-    "& h2": { margin: "0 0 16px", fontSize: "17px", fontWeight: 600 },
-    "& p, & li": { overflowWrap: "anywhere", fontSize: "13px", lineHeight: 1.5 },
-    "& label": { display: "flex", alignItems: "flex-start", gap: "8px", fontSize: "13px", lineHeight: 1.5, marginBlock: "12px" },
-    "& [role='alert']": { color: "var(--danger)", background: "var(--danger-wash)", padding: "10px", borderRadius: "4px" },
-})
-const affectedPathsStyle = css({ display: "grid", gap: "8px", marginBottom: "16px" })
-const workingChangesStyle = css({
-    marginTop: "14px",
-    padding: "10px 12px",
-    border: "1px solid var(--warning-edge)",
-    borderRadius: "5px",
-    background: "var(--warning-wash)",
-    color: "var(--text)",
-    "& > strong": { fontSize: "13px", fontWeight: 600 },
-    "& p": { margin: "4px 0 0", color: "var(--muted)" },
-    "& label": { margin: "10px 0 0" },
-})
-const affectedPathStyle = css({
-    display: "grid",
-    gap: "4px",
-    padding: "10px 12px",
-    border: "1px solid var(--line)",
-    borderRadius: "5px",
-    background: "var(--canvas)",
-    "& strong": { fontSize: "13px", fontWeight: 600, overflowWrap: "anywhere" },
-    "& span": { fontFamily: "var(--mono)", fontSize: "11px", lineHeight: 1.5, color: "var(--muted)", overflowWrap: "anywhere" },
-})
-const dialogFooterStyle = css({
-    display: "flex",
-    justifyContent: "flex-end",
-    gap: "8px",
-    margin: "20px -20px -20px",
-    padding: "12px 20px",
-    borderTop: "1px solid var(--line)",
-    background: "var(--canvas)",
-})
-const dialogButtonStyle = css({
-    minHeight: "32px",
-    padding: "0 14px",
-    borderRadius: "4px",
-    fontFamily: "inherit",
-    fontSize: "13px",
-    fontWeight: 600,
-    cursor: "pointer",
-    "&:disabled": { opacity: 0.5, cursor: "default" },
-})
-const removeButtonStyle = css({
-    color: "var(--danger)",
-    background: "var(--danger-wash)",
-    border: "1px solid var(--danger-edge)",
-    "&:hover:not(:disabled)": { background: "var(--danger)", color: "var(--panel)" },
-})
+    async function prepare(request: WorktreeRequest) {
+        closeMenu(true)
+        await handle.update()
+        await handle.props.prepare(request)
+    }
+
+    function closeMenu(focus = false) {
+        menuOpen = false
+        void handle.update().then(() => {
+            if (focus)
+                menuButton.focus()
+        })
+    }
+
+    function closeBranches() {
+        choosingBranch = false
+        void handle.update().then(() => menuButton.focus())
+    }
+}

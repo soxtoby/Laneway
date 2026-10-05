@@ -1,15 +1,15 @@
-const { app } = require("electron")
-const { writeFileSync } = require("node:fs")
-const { join } = require("node:path")
-const { pathToFileURL } = require("node:url")
+let { app } = require("electron")
+let { writeFileSync } = require("node:fs")
+let { join } = require("node:path")
+let { pathToFileURL } = require("node:url")
 
-const [directory, productionMain, phase] = process.argv.slice(2)
+let [directory, productionMain, phase] = process.argv.slice(2)
 app.setPath("userData", join(directory, "profile"))
 app.on("browser-window-created", (_event, window) => {
     window.hide()
     window.webContents.once("did-finish-load", async () => {
         try {
-            const result = await window.webContents.executeJavaScript(`(async () => {
+            let result = await window.webContents.executeJavaScript(`(async () => {
                 const wait = async predicate => {
                     for (let i = 0; i < 600; i++) {
                         const result = predicate();

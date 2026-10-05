@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test"
 import { join } from "node:path"
 import { inspectEngine, parseEngineIdentity, parseEngineMessage, resolveEnginePath, runEngineCommand } from "../src/main/engine"
 
-const enginePath = join(import.meta.dir, "../../cli/bin/lane.exe")
+let enginePath = join(import.meta.dir, "../../cli/bin/lane.exe")
 
 describe("Laneway Engine client", () => {
     test("accepts the shipped Engine identity", () => {
@@ -23,8 +23,8 @@ describe("Laneway Engine client", () => {
     })
 
     test("resolves override, packaged, and development Engine paths", () => {
-        const applicationPath = join("D:\\Apps", "Laneway.exe")
-        const workspacePath = join("D:\\src", "Laneway")
+        let applicationPath = join("D:\\Apps", "Laneway.exe")
+        let workspacePath = join("D:\\src", "Laneway")
 
         expect(resolveEnginePath({
             override: join("D:\\tools", "custom-engine.exe"),
@@ -53,15 +53,15 @@ describe("Laneway Engine client", () => {
     })
 
     test("runs one Engine process and streams validated messages", async () => {
-        const received: EngineMessage[] = []
-        const run = runEngineCommand({
+        let received: EngineMessage[] = []
+        let run = runEngineCommand({
             enginePath,
             cwd: join(import.meta.dir, "../.."),
             args: ["echo", "From desktop", "--delay-ms", "0"],
             onMessage: message => received.push(message),
         })
 
-        const result = await run.result
+        let result = await run.result
 
         expect(result.exitCode).toBe(0)
         expect(result.diagnostics).toBe("")
@@ -84,10 +84,10 @@ describe("Laneway Engine client", () => {
 
     test("cancels the active Engine process cooperatively", async () => {
         let progressReceived: () => void
-        const firstProgress = new Promise<void>(resolveProgress => {
+        let firstProgress = new Promise<void>(resolveProgress => {
             progressReceived = resolveProgress
         })
-        const run = runEngineCommand({
+        let run = runEngineCommand({
             enginePath,
             cwd: join(import.meta.dir, "../.."),
             args: ["echo", "Cancelled", "--delay-ms", "1000"],
@@ -99,7 +99,7 @@ describe("Laneway Engine client", () => {
 
         await firstProgress
         run.cancel()
-        const result = await run.result
+        let result = await run.result
 
         expect(result.exitCode).toBe(3)
         expect(result.messages.at(-1)).toEqual({

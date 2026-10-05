@@ -22,13 +22,76 @@ interface Options {
     openBranch(repositoryId: string, branchName: string): void
 }
 
+let statusLabels: Record<PullStackStatus, string> = {
+    updated: "Updated",
+    current: "Already current",
+    "needs-resolution": "Needs resolution",
+    skipped: "Skipped",
+    failed: "Failed",
+    cancelled: "Not started",
+}
+
+let dialogStyle = css({
+    width: "520px",
+    maxWidth: "calc(100vw - 32px)",
+    maxHeight: "80vh",
+    overflow: "auto",
+    color: "var(--text)",
+    background: "var(--panel)",
+    border: "1px solid var(--line)",
+    boxShadow: "var(--shadow-dialog)",
+    "&::backdrop": { background: "var(--scrim)" },
+    borderRadius: "8px",
+    padding: "20px",
+    "& h2": { margin: "0 0 12px", fontSize: "17px", fontWeight: 600 },
+    "& p": { margin: "6px 0", overflowWrap: "anywhere", fontSize: "13px", lineHeight: 1.5 },
+})
+let errorStyle = css({ color: "var(--danger)" })
+let fetchList = css({
+    margin: "6px 0",
+    padding: "0",
+    listStyle: "none",
+    display: "grid",
+    gap: "4px",
+    fontSize: "13px",
+    "& li": { display: "flex", gap: "8px", alignItems: "baseline" },
+})
+let countsStyle = css({ color: "var(--muted)" })
+let detailStyle = css({ color: "var(--muted)", fontSize: "12px" })
+let statusBadge = css({
+    display: "inline-block",
+    padding: "1px 6px",
+    borderRadius: "999px",
+    border: "1px solid var(--line-strong)",
+    fontSize: "11px",
+    fontWeight: 600,
+    whiteSpace: "nowrap",
+    '&[data-status="updated"]': { color: "var(--accent)" },
+    '&[data-status="needs-resolution"], &[data-status="failed"]': { color: "var(--danger)", borderColor: "var(--danger)" },
+    '&[data-status="skipped"], &[data-status="cancelled"]': { color: "var(--warning)" },
+})
+let stackStyle = css({ border: "1px solid var(--line)", borderRadius: "6px", margin: "6px 0", background: "var(--panel-deep)" })
+let summaryStyle = css({ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", cursor: "pointer", fontSize: "13px" })
+let bodyStyle = css({ padding: "0 10px 10px 10px", display: "grid", gap: "4px" })
+let footerStyle = css({ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "14px" })
+let buttonStyle = css({
+    minHeight: "30px",
+    padding: "0 12px",
+    borderRadius: "4px",
+    fontSize: "13px",
+    color: "var(--text)",
+    border: "1px solid var(--line-strong)",
+    background: "var(--control)",
+    "&:hover:not(:disabled)": { background: "var(--control-hover)" },
+})
+
 export function createPullLatest(options: Options) {
-    const running = new Map<string, { message: string; cancelling: boolean }>()
+    let running = new Map<string, { message: string; cancelling: boolean }>()
     let outcome: { repositoryId: string; result: PullResult } | undefined
     let error: { repositoryId: string; message: string } | undefined
     let returnFocus: HTMLElement | null = null
-    const unsubscribe = options.api.onPullProgress((progress: PullProgress) => {
-        const active = running.get(progress.repositoryId)
+    let unsubscribe = options.api.onPullProgress((progress: PullProgress) => {
+        let active = running.get(progress.repositoryId)
         if (active && !active.cancelling) {
             active.message = progress.message
             void options.update()
@@ -36,55 +99,13 @@ export function createPullLatest(options: Options) {
     })
     options.signal.addEventListener("abort", unsubscribe, { once: true })
 
-    async function start(repositoryId: string) {
-        if (running.has(repositoryId))
-            return
-        const graph = options.graph(repositoryId)
-        const branches = options.scope(repositoryId)
-        returnFocus = document.activeElement as HTMLElement | null
-        running.set(repositoryId, { message: "Fetching…", cancelling: false })
-        error = undefined
-        await options.update()
-        try {
-            const response = await options.api.pullLatest(repositoryId, { branches, remote: graph?.selectedRemote })
-            if (!response.ok)
-                throw new Error(response.error.message)
-            // Only outcomes that need the user's attention interrupt them; a clean pull is confirmed in passing.
-            if (needsAttention(response.result))
-                outcome = { repositoryId, result: response.result }
-            else
-                options.notify({ code: "pull.latest", message: response.result.message, transient: true })
-        } catch (reason) {
-            error = { repositoryId, message: reason instanceof Error ? reason.message : String(reason) }
-        } finally {
-            running.delete(repositoryId)
-        }
-        await options.completed(repositoryId)
-        await options.update()
-    }
-
-    async function cancel(repositoryId: string) {
-        const active = running.get(repositoryId)
-        if (!active || active.cancelling)
-            return
-        active.cancelling = true
-        active.message = "Cancelling at the next safe boundary…"
-        await options.update()
-        await options.api.cancelPull(repositoryId)
-    }
-
-    function close() {
-        outcome = undefined
-        error = undefined
-        void options.update().then(() => returnFocus?.focus())
-    }
-
     return {
         busy: (repositoryId: string) => running.has(repositoryId),
         control(repositoryId: string): PullControl {
-            const graph = options.graph(repositoryId)
-            const remotes = graph?.availableRemotes ?? []
-            const active = running.get(repositoryId)
+            let graph = options.graph(repositoryId)
+            let remotes = graph?.availableRemotes ?? []
+            let active = running.get(repositoryId)
+
             return {
                 available: Boolean(graph) && remotes.length > 0,
                 hint: !graph ? "Loading the Branch Graph…" : remotes.length == 0 ? "Add a remote to pull." : "Fetch and synchronize open stacks",
@@ -109,6 +130,51 @@ export function createPullLatest(options: Options) {
             )
         },
     }
+
+    async function start(repositoryId: string) {
+        if (running.has(repositoryId))
+            return
+
+        let graph = options.graph(repositoryId)
+        let branches = options.scope(repositoryId)
+        returnFocus = document.activeElement as HTMLElement | null
+        running.set(repositoryId, { message: "Fetching…", cancelling: false })
+        error = undefined
+        await options.update()
+
+        try {
+            let response = await options.api.pullLatest(repositoryId, { branches, remote: graph?.selectedRemote })
+            if (!response.ok)
+                throw new Error(response.error.message)
+            // Only outcomes that need the user's attention interrupt them; a clean pull is confirmed in passing.
+            if (needsAttention(response.result))
+                outcome = { repositoryId, result: response.result }
+            else
+                options.notify({ code: "pull.latest", message: response.result.message, transient: true })
+        } catch (reason) {
+            error = { repositoryId, message: reason instanceof Error ? reason.message : String(reason) }
+        } finally {
+            running.delete(repositoryId)
+        }
+        await options.completed(repositoryId)
+        await options.update()
+    }
+
+    async function cancel(repositoryId: string) {
+        let active = running.get(repositoryId)
+        if (!active || active.cancelling)
+            return
+        active.cancelling = true
+        active.message = "Cancelling at the next safe boundary…"
+        await options.update()
+        await options.api.cancelPull(repositoryId)
+    }
+
+    function close() {
+        outcome = undefined
+        error = undefined
+        void options.update().then(() => returnFocus?.focus())
+    }
 }
 
 function needsAttention(result: PullResult) {
@@ -116,21 +182,13 @@ function needsAttention(result: PullResult) {
         || result.stacks.some(stack => stack.status != "updated" && stack.status != "current")
 }
 
-const statusLabels: Record<PullStackStatus, string> = {
-    updated: "Updated",
-    current: "Already current",
-    "needs-resolution": "Needs resolution",
-    skipped: "Skipped",
-    failed: "Failed",
-    cancelled: "Not started",
-}
-
 function PullOutcome(handle: Handle<{ result?: PullResult; error?: string; close(): void; resolve(branch: string): void }>) {
     return () => {
-        const { result, error } = handle.props
-        const counts = new Map<PullStackStatus, number>()
-        for (const stack of result?.stacks ?? [])
+        let { result, error } = handle.props
+        let counts = new Map<PullStackStatus, number>()
+        for (let stack of result?.stacks ?? [])
             counts.set(stack.status, (counts.get(stack.status) ?? 0) + 1)
+
         return (
             <dialog
                 class="pull-outcome"
@@ -180,8 +238,8 @@ function PullOutcome(handle: Handle<{ result?: PullResult; error?: string; close
 
 function StackOutcome(handle: Handle<{ stack: PullStackOutcome; resolve(branch: string): void }>) {
     return () => {
-        const { stack } = handle.props
-        const tip = stack.branches.at(-1) ?? ""
+        let { stack } = handle.props
+        let tip = stack.branches.at(-1) ?? ""
         return (
             <details class={`pull-stack ${stack.status}`} mix={stackStyle} open={stack.status != "current" && stack.status != "updated"}>
                 <summary mix={summaryStyle}>
@@ -203,57 +261,3 @@ function StackOutcome(handle: Handle<{ stack: PullStackOutcome; resolve(branch: 
         )
     }
 }
-
-const dialogStyle = css({
-    width: "520px",
-    maxWidth: "calc(100vw - 32px)",
-    maxHeight: "80vh",
-    overflow: "auto",
-    color: "var(--text)",
-    background: "var(--panel)",
-    border: "1px solid var(--line)",
-    boxShadow: "var(--shadow-dialog)",
-    "&::backdrop": { background: "var(--scrim)" },
-    borderRadius: "8px",
-    padding: "20px",
-    "& h2": { margin: "0 0 12px", fontSize: "17px", fontWeight: 600 },
-    "& p": { margin: "6px 0", overflowWrap: "anywhere", fontSize: "13px", lineHeight: 1.5 },
-})
-const errorStyle = css({ color: "var(--danger)" })
-const fetchList = css({
-    margin: "6px 0",
-    padding: "0",
-    listStyle: "none",
-    display: "grid",
-    gap: "4px",
-    fontSize: "13px",
-    "& li": { display: "flex", gap: "8px", alignItems: "baseline" },
-})
-const countsStyle = css({ color: "var(--muted)" })
-const detailStyle = css({ color: "var(--muted)", fontSize: "12px" })
-const statusBadge = css({
-    display: "inline-block",
-    padding: "1px 6px",
-    borderRadius: "999px",
-    border: "1px solid var(--line-strong)",
-    fontSize: "11px",
-    fontWeight: 600,
-    whiteSpace: "nowrap",
-    '&[data-status="updated"]': { color: "var(--accent)" },
-    '&[data-status="needs-resolution"], &[data-status="failed"]': { color: "var(--danger)", borderColor: "var(--danger)" },
-    '&[data-status="skipped"], &[data-status="cancelled"]': { color: "var(--warning)" },
-})
-const stackStyle = css({ border: "1px solid var(--line)", borderRadius: "6px", margin: "6px 0", background: "var(--panel-deep)" })
-const summaryStyle = css({ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", cursor: "pointer", fontSize: "13px" })
-const bodyStyle = css({ padding: "0 10px 10px 10px", display: "grid", gap: "4px" })
-const footerStyle = css({ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "14px" })
-const buttonStyle = css({
-    minHeight: "30px",
-    padding: "0 12px",
-    borderRadius: "4px",
-    fontSize: "13px",
-    color: "var(--text)",
-    border: "1px solid var(--line-strong)",
-    background: "var(--control)",
-    "&:hover:not(:disabled)": { background: "var(--control-hover)" },
-})

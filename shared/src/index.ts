@@ -6,16 +6,16 @@ import { RecoveryStatusResultSchema, type WorktreeRecovery } from "./worktree-re
 export * from "./conflicts"
 export * from "./worktree-recovery"
 
-export const ENGINE_VERSION = "0.1.0"
+export let engineVersion = "0.1.0"
 
-export const ExitCode = {
+export let ExitCode = {
     ok: 0,
     failure: 1,
     usage: 2,
     cancelled: 3,
 } as const
 
-export const ErrorCodeSchema = z.enum([
+export let ErrorCodeSchema = z.enum([
     "usage.invalid-argument",
     "usage.unknown-command",
     "engine.internal",
@@ -39,7 +39,7 @@ export const ErrorCodeSchema = z.enum([
     "operation.recovery-blocked",
 ])
 
-export const ProgressEventSchema = z.object({
+export let ProgressEventSchema = z.object({
     type: z.literal("progress"),
     command: z.string(),
     completed: z.number().int().nonnegative(),
@@ -47,13 +47,13 @@ export const ProgressEventSchema = z.object({
     message: z.string(),
 })
 
-export const EchoResultSchema = z.object({
+export let EchoResultSchema = z.object({
     type: z.literal("result"),
     command: z.literal("echo"),
     message: z.string(),
 })
 
-export const OperationSummarySchema = z.object({
+export let OperationSummarySchema = z.object({
     id: z.string(),
     timestamp: z.string(),
     kind: z.string(),
@@ -62,7 +62,7 @@ export const OperationSummarySchema = z.object({
     affectedWorktrees: z.array(z.string()),
 })
 
-export const OperationAvailabilityReasonSchema = z.enum([
+export let OperationAvailabilityReasonSchema = z.enum([
     "empty",
     "ref-changed",
     "index-changed",
@@ -71,7 +71,7 @@ export const OperationAvailabilityReasonSchema = z.enum([
     "precondition-failed",
 ])
 
-export const OperationTransitionResultSchema = z.object({
+export let OperationTransitionResultSchema = z.object({
     type: z.literal("result"),
     command: z.enum(["undo", "redo"]),
     status: z.enum(["performed", "unavailable"]),
@@ -79,19 +79,19 @@ export const OperationTransitionResultSchema = z.object({
     operation: OperationSummarySchema.optional(),
 })
 
-export const OperationHistoryEntrySchema = OperationSummarySchema.extend({
+export let OperationHistoryEntrySchema = OperationSummarySchema.extend({
     state: z.enum(["applied", "undone"]),
     isNextUndo: z.boolean(),
     isNextRedo: z.boolean(),
 })
 
-export const OperationAvailabilitySchema = z.object({
+export let OperationAvailabilitySchema = z.object({
     available: z.boolean(),
     operationId: z.string().optional(),
     reason: OperationAvailabilityReasonSchema.optional(),
 })
 
-export const OperationHistoryResultSchema = z.object({
+export let OperationHistoryResultSchema = z.object({
     type: z.literal("result"),
     command: z.literal("history"),
     position: z.number().int().nonnegative(),
@@ -101,25 +101,25 @@ export const OperationHistoryResultSchema = z.object({
     redo: OperationAvailabilitySchema,
 })
 
-export const TestMutationResultSchema = z.object({
+export let TestMutationResultSchema = z.object({
     type: z.literal("result"),
     command: z.literal("test-mutation"),
     operation: OperationSummarySchema,
 })
 
-export const WorktreeResultSchema = z.object({
+export let WorktreeResultSchema = z.object({
     type: z.literal("result"),
     command: z.literal("worktree"),
     operation: OperationSummarySchema,
 })
 export type WorktreeResult = z.infer<typeof WorktreeResultSchema>
 
-export const RecoveredExecutionSchema = z.object({
+export let RecoveredExecutionSchema = z.object({
     action: z.enum(["apply", "undo", "redo"]),
     operation: OperationSummarySchema,
 })
 
-export const RecoveryResultSchema = z.object({
+export let RecoveryResultSchema = z.object({
     type: z.literal("result"),
     command: z.literal("recover"),
     status: z.enum(["clean", "recovered"]),
@@ -127,20 +127,20 @@ export const RecoveryResultSchema = z.object({
     backupPath: z.string().optional(),
 })
 
-export const CancelledEventSchema = z.object({
+export let CancelledEventSchema = z.object({
     type: z.literal("cancelled"),
     command: z.string(),
     message: z.string(),
 })
 
-export const ErrorEventSchema = z.object({
+export let ErrorEventSchema = z.object({
     type: z.literal("error"),
     code: ErrorCodeSchema,
     message: z.string(),
     details: z.record(z.string(), z.unknown()).optional(),
 })
 
-export const EngineMessageSchema = z.union([
+export let EngineMessageSchema = z.union([
     ProgressEventSchema,
     EchoResultSchema,
     OperationTransitionResultSchema,
@@ -548,7 +548,7 @@ export interface ChangeSelection {
 export type ChangesResult = { ok: true; inventory: ChangesInventory } | { ok: false; error: EntryError }
 export type FileDiffResult = { ok: true; page: FileDiffPage } | { ok: false; error: EntryError }
 
-export const DiffSourceSchema = z.discriminatedUnion("kind", [
+export let DiffSourceSchema = z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("branches"), fromRef: z.string().regex(/^refs\/(heads|remotes)\/.+/), toRef: z.string().regex(/^refs\/(heads|remotes)\/.+/) }),
     z.object({
         kind: z.literal("comparison"),
@@ -562,12 +562,14 @@ export const DiffSourceSchema = z.discriminatedUnion("kind", [
         parentId: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/).optional(),
     }),
 ])
-export const ChangesRequestSchema = z.object({
+
+export let ChangesRequestSchema = z.object({
     source: DiffSourceSchema,
     includeIgnored: z.boolean().optional(),
     offset: z.number().int().nonnegative().optional(),
 })
-export const FileDiffRequestSchema = z.object({
+
+export let FileDiffRequestSchema = z.object({
     source: DiffSourceSchema,
     path: z.string().min(1),
     view: z.enum(["combined", "staged", "unstaged", "base", "ours", "theirs"]).optional(),
@@ -576,6 +578,7 @@ export const FileDiffRequestSchema = z.object({
     inventoryVersion: z.string().optional(),
     expectedVersion: z.string().optional(),
 })
+
 export * from "./composition"
 export * from "./file-history"
 export * from "./local-operations"

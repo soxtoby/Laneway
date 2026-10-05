@@ -17,7 +17,7 @@ import { createWorktreeActions } from "./worktree-actions"
 import { branchNodeFor, localIdentities, reconcileWorktreeColumns, recoveryColumnId, recoveryWorkspaceColumn, workspaceGraph } from "./worktree-columns"
 import { WorktreeRecoveryPanel } from "./worktree-recovery"
 
-const defaultColumnWidth = 380
+let defaultColumnWidth = 380
 
 interface RepositoryGraphState {
     graph?: BranchGraph
@@ -75,8 +75,1020 @@ export interface BranchWorkspace {
     repositoryActions(repositoryId: string, mainWorktree: string): { busy: boolean; stashes(): void; undo(): void; redo(): void; pull: PullControl }
 }
 
+let branchContextMenu = css({
+    position: "fixed",
+    width: "max-content",
+    maxWidth: "calc(100vw - 16px)",
+    borderRadius: "3px",
+    margin: 0,
+    padding: "4px",
+    border: "1px solid var(--line-strong)",
+    background: "var(--panel)",
+    color: "var(--text)",
+    "&::backdrop": { background: "transparent" },
+    "& button": {
+        display: "block",
+        width: "100%",
+        textAlign: "left",
+        color: "inherit",
+        background: "var(--control)",
+        border: 0,
+        padding: "4px 8px",
+        font: "inherit",
+        cursor: "pointer",
+    },
+})
+
+let branchDragType = "application/x-laneway-branch"
+
+interface LensNavigationResult {
+    kind: "repository" | "branch"
+    repositoryId: string
+    nodeId: string
+    label: string
+    detail: string
+    score: number
+}
+
+interface ColumnCommandResult extends Omit<LensNavigationResult, "kind"> {
+    kind: "command"
+    delta: number
+}
+
+export type LensResult = LensNavigationResult | ColumnCommandResult
+
+type ColumnNode = BranchGraph["branches"][number] | BranchGraph["virtualBranches"][number]
+type RecoveryColumnNode = { kind: "recovery"; id: string; name: string; recovery: WorktreeRecovery }
+
+let toneMain = css({ color: "var(--accent)" })
+let toneWorktree = css({ color: "var(--ok)" })
+let toneBranch = css({ color: "var(--focus)" })
+let toneWarning = css({ color: "var(--warning)" })
+
+let columnKindIcon = css({
+    flex: "0 0 auto",
+    display: "grid",
+    placeItems: "center",
+    width: "18px",
+    height: "18px",
+})
+
+let columnTabs = css({
+    display: "flex",
+    alignItems: "stretch",
+    minWidth: "0",
+    overflow: "hidden",
+})
+
+let columnTab = css({
+    position: "relative",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "7px",
+    maxWidth: "220px",
+    minWidth: "0",
+    padding: "0 12px",
+    color: "var(--muted)",
+    border: "0",
+    borderRadius: "0",
+    background: "transparent",
+    fontSize: "12.5px",
+    fontWeight: "500",
+    "&:hover": { color: "var(--text)", background: "var(--hover)" },
+    "&.collapsed": { color: "var(--faint)", fontStyle: "italic" },
+    "&.active": { color: "var(--text)", fontWeight: "600" },
+    "&.active::before": {
+        content: '""',
+        position: "absolute",
+        left: "8px",
+        right: "8px",
+        bottom: "-1px",
+        height: "3px",
+        borderRadius: "2px 2px 0 0",
+        background: "var(--accent)",
+    },
+    "&:focus-visible": { outlineOffset: "-2px" },
+})
+
+let columnTabName = css({
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+})
+
+let expandColumnIcon = css({
+    display: "grid",
+    placeItems: "center",
+})
+
+let branchColumnActions = css({
+    order: "1",
+    flex: "0 0 auto",
+    display: "flex",
+    alignItems: "center",
+    gap: "2px",
+})
+
+let workspaceStyle = css({
+    height: "100%",
+    display: "grid",
+    gridTemplateColumns: "var(--rail) minmax(0, 1fr)",
+})
+
+let graphDesk = css({
+    position: "relative",
+    minWidth: "0",
+    minHeight: "0",
+    // No side padding: the branch columns scroll right up to the window edge and the repository rail.
+    padding: "var(--gutter) 0",
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
+    background: "var(--canvas)",
+})
+
+let graphDeskProgress = css({
+    position: "absolute",
+    top: "0",
+    left: "0",
+    zIndex: "1",
+    width: "26%",
+    height: "2px",
+    background: "var(--accent)",
+    opacity: "0.7",
+    animation: "progress-sweep 1.3s ease-in-out infinite alternate",
+    "@media (forced-colors: active)": {
+        background: "Highlight",
+    },
+})
+
+let graphToolbar = css({
+    position: "relative",
+    flexShrink: "0",
+    flexWrap: "wrap",
+    minHeight: "46px",
+    padding: "0 8px 0 14px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "4px 8px",
+    borderBottom: "1px solid var(--line)",
+    background: "var(--panel)",
+})
+
+let graphToolbarH1 = css({
+    margin: "0",
+    overflow: "hidden",
+    fontFamily: '"Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif',
+    fontSize: "16px",
+    fontWeight: "600",
+    letterSpacing: "-0.01em",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+})
+
+let graphActions = css({
+    display: "flex",
+    flex: "0 0 auto",
+    gap: "4px",
+    "&:first-child": {
+        minWidth: "0",
+        display: "flex",
+        alignItems: "baseline",
+        gap: "8px",
+        overflow: "hidden",
+    },
+})
+
+let graphPanelToggleButton = css({
+    width: "32px",
+    height: "32px",
+    padding: "0",
+    display: "grid",
+    placeItems: "center",
+    color: "var(--chrome-muted)",
+    border: "1px solid transparent",
+    borderRadius: "6px",
+    background: "transparent",
+    "&:hover": { color: "var(--chrome-text)", background: "var(--chrome-2)" },
+    '&[aria-expanded="true"]': { color: "var(--chrome-accent)" },
+    "&:focus-visible": { outline: "2px solid var(--ring)", outlineOffset: "1px" },
+})
+
+let graphActionsButton = css({
+    height: "28px",
+    padding: "0 10px",
+    color: "var(--text)",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "var(--radius)",
+    background: "var(--panel)",
+    fontSize: "12px",
+    fontWeight: "500",
+    "&.active": {
+        color: "var(--focus)",
+        borderColor: "var(--focus-edge)",
+        background: "var(--focus-wash)",
+    },
+    "&:hover:not(:disabled)": {
+        background: "var(--control-hover)",
+    },
+})
+
+let branchGraphSettingsButton = css({
+    width: "28px",
+    height: "28px",
+    padding: "0",
+    display: "grid",
+    placeItems: "center",
+    color: "var(--text)",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "var(--radius)",
+    background: "var(--panel)",
+    "&.active": { color: "var(--focus)", borderColor: "var(--focus-edge)", background: "var(--focus-wash)" },
+    "&:hover:not(:disabled)": { background: "var(--control-hover)" },
+})
+
+let graphLimit = css({
+    padding: "6px 12px",
+    color: "var(--warning)",
+    borderBottom: "1px solid var(--line)",
+    background: "var(--warning-wash)",
+    fontSize: "12px",
+    lineHeight: "1.4",
+})
+
+let graphLayout = css({
+    "&.graph-collapsed": { gridTemplateColumns: "minmax(0, 1fr)" },
+    minWidth: "0",
+    minHeight: "0",
+    display: "grid",
+    flex: "1 1 auto",
+    gridTemplateColumns: "clamp(260px, 28%, 380px) minmax(0, 1fr)",
+    overflow: "hidden",
+    "@media (max-width: 1080px)": {
+        gridTemplateColumns: "clamp(230px, 34%, 320px) minmax(0, 1fr)",
+    },
+})
+
+let graphSidebar = css({
+    "&.collapsed": { display: "none" },
+    position: "relative",
+    zIndex: "1",
+    minWidth: "0",
+    minHeight: "0",
+    marginLeft: "4px",
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "var(--radius-card)",
+    background: "var(--panel)",
+    boxShadow: "var(--card-shadow), var(--edge-shadow)",
+})
+
+let graphPanel = css({
+    flex: "1 1 auto",
+    position: "relative",
+    minWidth: "0",
+    minHeight: "0",
+    display: "grid",
+    gridTemplateRows: "auto auto minmax(0, 1fr) auto",
+    background: "var(--panel)",
+})
+
+let graphRows = css({
+    minHeight: "0",
+    padding: "0",
+    overflow: "auto",
+    // Virtual rows and spacers already preserve position; browser anchoring
+    // otherwise compensates for their replacement and moves the viewport.
+    overflowAnchor: "none",
+    outline: "0",
+    "&:focus-visible": {
+        boxShadow: "inset 0 0 0 2px var(--focus)",
+    },
+})
+
+let graphSpacer = css({
+    width: "1px",
+    pointerEvents: "none",
+})
+
+let unassignedMarkers = css({
+    padding: "7px 10px",
+    color: "var(--muted)",
+    borderTop: "1px solid var(--line)",
+    fontSize: "12px",
+    lineHeight: "1.45",
+})
+
+let unassignedMarkersSummary = css({
+    cursor: "default",
+})
+
+let unassignedMarkersButton = css({
+    display: "block",
+    marginTop: "6px",
+    color: "var(--warning)",
+    border: "0",
+    background: "transparent",
+    font: "inherit",
+    textDecoration: "underline",
+})
+
+let graphSummary = css({
+    minHeight: "28px",
+    padding: "0 14px",
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    overflow: "hidden",
+    color: "var(--muted)",
+    borderBottom: "1px solid var(--line)",
+    background: "var(--panel-deep)",
+    fontSize: "11.5px",
+    whiteSpace: "nowrap",
+})
+
+let graphSummarySpan = css({
+    "& + span::before": {
+        marginRight: "12px",
+        content: '"·"',
+    },
+})
+
+let baseUnresolved = css({
+    padding: "7px 10px",
+    color: "var(--warning)",
+    borderBottom: "1px solid var(--line)",
+    background: "var(--warning-wash)",
+    fontSize: "12px",
+    lineHeight: "1.45",
+})
+
+let baseUnresolvedSummary = css({
+    cursor: "default",
+})
+
+let baseUnresolvedDiv = css({
+    marginTop: "6px",
+    display: "grid",
+    gridTemplateColumns: "minmax(80px, 1fr) 2fr",
+    alignItems: "center",
+    gap: "8px",
+})
+
+let baseUnresolvedSpan = css({
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "4px",
+})
+
+let baseUnresolvedButton = css({
+    minHeight: "24px",
+    padding: "0 7px",
+    color: "var(--text)",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "4px",
+    background: "var(--control)",
+    fontSize: "12px",
+    "&.active": {
+        color: "var(--warning)",
+        borderColor: "var(--warning-edge)",
+        background: "var(--warning-wash)",
+    },
+})
+
+let graphRow = css({
+    position: "relative",
+    width: "100%",
+    height: "40px",
+    minHeight: "40px",
+    padding: "3px 8px 3px 0",
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    color: "var(--text)",
+    textAlign: "left",
+    border: "0",
+    borderRadius: "0",
+    background: "transparent",
+    // Row separators are shadows so the 40px rail geometry stays exact.
+    boxShadow: "inset 0 -1px var(--line)",
+    "&.selected": {
+        background: "var(--focus-wash)",
+        boxShadow: "inset 3px 0 var(--focus), inset 0 -1px var(--line)",
+    },
+    "&.simple": {
+        paddingLeft: "0",
+    },
+    "&:hover": {
+        background: "var(--hover)",
+    },
+    "&.rebase-target": {
+        outline: "2px solid var(--focus)",
+        outlineOffset: "-2px",
+        background: "var(--focus-wash)",
+    },
+    "&.rebase-source": {
+        opacity: "0.6",
+    },
+})
+
+let graphRailLines = css({
+    flexShrink: "0",
+    overflow: "hidden",
+    alignSelf: "center",
+})
+
+let branchCopy = css({
+    minWidth: "0",
+    flex: "1 1 auto",
+    display: "grid",
+    gap: "1px",
+})
+
+let branchCopyStrong = css({
+    overflow: "hidden",
+    fontSize: "13px",
+    fontWeight: "600",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+})
+
+let branchCopySmall = css({
+    color: "var(--muted)",
+    fontFamily: "var(--mono)",
+    fontSize: "10.5px",
+    letterSpacing: "0",
+    textTransform: "none",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+})
+
+let branchDetails = css({
+    minWidth: "0",
+    height: "18px",
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    overflow: "hidden",
+    "& button": { minHeight: "16px", padding: "0 3px" },
+})
+
+let worktreeChip = css({
+    maxWidth: "110px",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    padding: "1px 6px",
+    overflow: "hidden",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "4px",
+    fontFamily: "var(--mono)",
+    fontSize: "10.5px",
+    fontWeight: "600",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    "& svg": { flex: "0 0 auto" },
+    color: "var(--ok-ink)",
+    borderColor: "var(--ok-edge)",
+    background: "var(--ok-wash)",
+})
+
+let tagChip = css({
+    maxWidth: "110px",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    padding: "1px 6px",
+    overflow: "hidden",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "4px",
+    fontFamily: "var(--mono)",
+    fontSize: "10.5px",
+    fontWeight: "600",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    "& svg": { flex: "0 0 auto" },
+    color: "var(--warning)",
+    borderColor: "var(--accent-edge)",
+    background: "var(--accent-wash)",
+})
+
+let markerButton = css({
+    width: "20px",
+    height: "18px",
+    padding: "0",
+    display: "inline-grid",
+    placeItems: "center",
+    color: "var(--stash-ink)",
+    border: "1px solid var(--stash-edge)",
+    borderRadius: "4px",
+    background: "var(--stash-wash)",
+    "&:hover": { background: "var(--stash-edge)", color: "var(--panel)" },
+})
+
+let divergence = css({
+    maxWidth: "110px",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    padding: "1px 6px",
+    overflow: "hidden",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "4px",
+    fontFamily: "var(--mono)",
+    fontSize: "10.5px",
+    fontWeight: "600",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    "& svg": { flex: "0 0 auto" },
+    color: "var(--muted)",
+    background: "var(--panel-deep)",
+})
+
+let openBranch = css({
+    height: "24px",
+    padding: "0 10px",
+    color: "var(--focus)",
+    border: "1px solid var(--focus-edge)",
+    borderRadius: "var(--radius)",
+    background: "var(--panel)",
+    fontSize: "12px",
+    fontWeight: "600",
+    "&:hover": {
+        color: "#fff",
+        borderColor: "var(--focus)",
+        background: "var(--focus)",
+    },
+})
+
+let columnEmpty = css({
+    minWidth: "0",
+    minHeight: "0",
+    display: "grid",
+    placeContent: "center",
+    overflow: "hidden",
+    color: "var(--faint)",
+    textAlign: "center",
+})
+
+let columnEmptySpan = css({
+    color: "var(--muted)",
+    fontSize: "14px",
+})
+
+let columnEmptyP = css({
+    margin: "6px 0 0",
+    fontSize: "12px",
+})
+
+let branchColumns = css({
+    position: "relative",
+    minWidth: "0",
+    minHeight: "0",
+    display: "flex",
+    alignItems: "stretch",
+    gap: "var(--gutter)",
+    // Room for the 1px card ring, which sits outside each column's box. The side padding scrolls with the
+    // columns, leaving a gap at either end while scrolled columns run to the strip's edges.
+    padding: "1px var(--gutter) 1px 4px",
+    // Beside the sidebar, the columns tuck under its rounded edge so scrolled columns disappear beneath its shadow.
+    ".graph-layout:not(.graph-collapsed) &": {
+        marginLeft: "calc(-1 * var(--radius-card))",
+        paddingLeft: "calc(var(--gutter) + var(--radius-card))",
+    },
+    overflowX: "auto",
+    overflowY: "hidden",
+    // Column focus rings and dividers stay beneath the Branch Graph sidebar.
+    isolation: "isolate",
+    // A styled scrollbar takes up room, so it sits under the columns instead of overlaying their bottom edge.
+    "&::-webkit-scrollbar": { height: "10px" },
+    "&::-webkit-scrollbar-track": { background: "transparent" },
+    "&::-webkit-scrollbar-thumb": {
+        background: "var(--line-strong)",
+        border: "2px solid var(--canvas)",
+        borderRadius: "5px",
+    },
+    "&::-webkit-scrollbar-thumb:hover": { background: "var(--faint)" },
+    "&.maximized .branch-column": {
+        width: "100%",
+    },
+})
+
+let collapsedColumnButton = css({
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    writingMode: "vertical-rl",
+    padding: "12px",
+    color: "var(--text)",
+    background: "var(--panel)",
+    border: "0",
+    cursor: "pointer",
+    "&:hover": { background: "var(--control-hover)" },
+})
+
+let branchColumn = css({
+    "&.collapsed": { minWidth: "52px", gridTemplateRows: "minmax(0, 1fr)" },
+    position: "relative",
+    width: `${defaultColumnWidth}px`,
+    minWidth: "310px",
+    flex: "0 0 auto",
+    display: "grid",
+    gridTemplateRows: "auto minmax(0, 1fr)",
+    overflow: "hidden",
+    // The card edge is a shadow ring so the column's content box starts at its left edge.
+    border: "0",
+    borderRadius: "var(--radius-card)",
+    background: "var(--panel)",
+    boxShadow: "0 0 0 1px var(--line-strong), var(--card-shadow)",
+    // The focus ring is an overlay so the header and body cannot paint over it.
+    "&:focus-visible": { outline: "0" },
+    "&:focus-visible::after": {
+        content: '""',
+        position: "absolute",
+        inset: "0",
+        zIndex: "10",
+        border: "2px solid var(--ring)",
+        borderRadius: "inherit",
+        pointerEvents: "none",
+    },
+    // Leaves room for at least one auxiliary column beside a maximized column.
+    "&.attached": { borderTopRightRadius: "0", borderBottomRightRadius: "0" },
+    "&.split": { maxWidth: "calc(100% - 310px - var(--gutter))" },
+    "&:has(.column-inspection.focused)": {
+        width: "240px !important",
+        minWidth: "240px !important",
+    },
+})
+
+let branchColumnHeader = css({
+    position: "relative",
+    minHeight: "46px",
+    padding: "0 6px 0 0",
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    borderBottom: "1px solid var(--line)",
+    background: "var(--panel)",
+    '&[draggable="true"]': {
+        cursor: "grab",
+    },
+    '&[draggable="true"]:active': {
+        cursor: "grabbing",
+    },
+})
+
+let branchColumnH2 = css({
+    flex: "1 1 auto",
+    minWidth: "0",
+    margin: "0",
+    overflow: "hidden",
+    fontFamily: '"Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif',
+    fontSize: "15px",
+    fontWeight: "600",
+    letterSpacing: "-0.01em",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+})
+
+let branchColumnButton = css({
+    width: "28px",
+    height: "28px",
+    padding: "0",
+    display: "grid",
+    placeItems: "center",
+    color: "var(--muted)",
+    border: "1px solid transparent",
+    borderRadius: "var(--radius)",
+    background: "transparent",
+    "&:hover": {
+        color: "var(--text)",
+        borderColor: "var(--line)",
+        background: "var(--control-hover)",
+    },
+})
+
+// The collapse control fills the header's full height at its leading edge, like a tab strip handle.
+let columnCollapseButton = css({
+    flex: "0 0 34px",
+    alignSelf: "stretch",
+    margin: "0",
+    padding: "0",
+    display: "grid",
+    placeItems: "center",
+    color: "var(--muted)",
+    border: "0",
+    borderRadius: "0",
+    background: "transparent",
+    cursor: "pointer",
+    "&:hover": {
+        color: "var(--text)",
+        background: "var(--control-hover)",
+    },
+    "&:focus-visible": {
+        outline: "2px solid var(--ring)",
+        outlineOffset: "-2px",
+    },
+})
+
+// The divider sits in the gap after its column, clear of the column's scrollbar; its negative margins cancel
+// the extra flex gap it would otherwise add.
+let columnDivider = css({
+    position: "relative",
+    zIndex: "2",
+    flex: "0 0 var(--gutter)",
+    alignSelf: "stretch",
+    margin: "0 calc(-1 * var(--gutter))",
+    cursor: "col-resize",
+    "&:focus-visible": {
+        outline: "2px solid var(--ring)",
+        outlineOffset: "0",
+    },
+    // Between a column and its auxiliary columns, the divider is the seam of their shared card: it carries the card's
+    // outline across the gap and still resizes the column.
+    "&.attached": {
+        borderInline: "1px solid var(--line)",
+        background: "var(--panel-deep)",
+        boxShadow: "0 -1px 0 var(--line-strong), 0 1px 0 var(--line-strong)",
+    },
+    "&.attached:hover, &.attached:focus-visible": { background: "var(--accent-wash-strong)" },
+})
+
+let graphSettings = css({
+    position: "absolute",
+    zIndex: "6",
+    top: "calc(100% + 4px)",
+    right: "8px",
+    width: "min(360px, calc(100% - 20px))",
+    padding: "10px 12px 14px",
+    display: "grid",
+    gap: "14px",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "6px",
+    background: "var(--raised)",
+    boxShadow: "var(--shadow-popover)",
+    "@media (forced-colors: active)": {
+        boxShadow: "none",
+    },
+})
+
+let graphSettingsHeader = css({
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "12px",
+})
+
+let graphSettingsH2 = css({
+    margin: "0",
+    fontSize: "13px",
+    fontWeight: "600",
+})
+
+// A quiet icon button, like the other close affordances, rather than a boxed control.
+let closeGraphSettingsButton = css({
+    width: "24px",
+    height: "24px",
+    padding: "0",
+    display: "grid",
+    placeItems: "center",
+    color: "var(--muted)",
+    border: "0",
+    borderRadius: "4px",
+    background: "transparent",
+    "&:hover": { color: "var(--text)", background: "var(--control-hover)" },
+})
+
+let graphSettingsField = css({
+    display: "grid",
+    gap: "6px",
+})
+
+let graphSettingsHint = css({
+    margin: "0",
+    color: "var(--muted)",
+    fontSize: "11.5px",
+    lineHeight: "1.45",
+})
+
+let graphSettingsCode = css({
+    color: "var(--text)",
+    fontFamily: "var(--mono)",
+    fontSize: "11px",
+})
+
+let graphSettingsRow = css({
+    display: "flex",
+    gap: "6px",
+    alignItems: "stretch",
+})
+
+let graphSettingsInput = css({
+    flex: "1",
+    minWidth: "0",
+    fontFamily: "var(--mono)",
+    fontSize: "12px",
+})
+
+let remoteOptions = css({
+    display: "grid",
+    gap: "6px",
+    margin: "0",
+    padding: "0",
+    border: "0",
+    minWidth: "0",
+})
+
+let remoteOptionsLabel = css({
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "8px",
+    fontSize: "12.5px",
+    cursor: "pointer",
+})
+
+let remoteOptionsInput = css({
+    background: "var(--field)",
+    border: "1px solid var(--line-strong)",
+    boxShadow: "none",
+    "@media (forced-colors: active)": {
+        appearance: "auto",
+        "&::before": {
+            display: "none",
+        },
+    },
+    "&:checked": {
+        background: "var(--accent)",
+        borderColor: "var(--accent)",
+        boxShadow: "none",
+    },
+    "&:focus-visible": {
+        outline: "2px solid var(--accent)",
+        outlineOffset: "2px",
+        boxShadow: "none",
+    },
+    "&::before": {
+        background: "var(--accent-ink)",
+        boxShadow: "none",
+    },
+})
+
+let graphSettingsLabel = css({
+    display: "block",
+    padding: "0",
+    margin: "0",
+    color: "var(--text)",
+    fontSize: "12px",
+    fontWeight: "600",
+})
+
+let secondaryButton = css({
+    color: "var(--text)",
+    border: "1px solid var(--line-strong)",
+    background: "var(--control)",
+    "&.active": {
+        color: "var(--accent)",
+        borderColor: "var(--accent-edge)",
+        background: "var(--accent-wash)",
+    },
+    minHeight: "28px",
+    padding: "0 14px",
+    borderRadius: "4px",
+    fontSize: "13px",
+    fontWeight: "500",
+    textTransform: "none",
+    "&:hover:not(:disabled)": {
+        background: "var(--control-hover)",
+    },
+})
+
+let markerDetails = css({
+    position: "absolute",
+    right: "8px",
+    bottom: "8px",
+    left: "8px",
+    padding: "10px",
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) auto",
+    border: "1px solid var(--warning-edge)",
+    borderRadius: "6px",
+    background: "var(--warning-raised)",
+    boxShadow: "var(--shadow-popover)",
+    "@media (forced-colors: active)": {
+        boxShadow: "none",
+    },
+})
+
+let markerDetailsDiv = css({
+    minWidth: "0",
+    display: "flex",
+    alignItems: "baseline",
+    gap: "8px",
+    overflow: "hidden",
+})
+
+let markerDetailsSpan = css({
+    color: "var(--faint)",
+    fontFamily: "var(--mono)",
+    fontSize: "10px",
+    letterSpacing: "0",
+    textTransform: "none",
+})
+
+let markerDetailsSmall = css({
+    color: "var(--faint)",
+    fontFamily: "var(--mono)",
+    fontSize: "10px",
+    letterSpacing: "0",
+    textTransform: "none",
+})
+
+let closeMarkerDetailsButton = css({
+    minHeight: "26px",
+    padding: "0 7px",
+    color: "var(--muted)",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "4px",
+    background: "transparent",
+    fontSize: "12px",
+    minWidth: "26px",
+    borderColor: "transparent",
+    "&:hover": {
+        color: "var(--text)",
+        borderColor: "var(--line-strong)",
+        background: "var(--control)",
+    },
+})
+
+let markerDetailsP = css({
+    gridColumn: "1 / -1",
+    margin: "7px 0 0",
+    color: "var(--muted)",
+    fontSize: "12px",
+})
+
+let graphLoading = css({
+    minWidth: "240px",
+    margin: "auto",
+    padding: "20px",
+    textAlign: "center",
+})
+
+let graphLoadingSpan = css({
+    width: "22px",
+    height: "22px",
+    margin: "0 auto 12px",
+    display: "block",
+    border: "2px solid var(--line-strong)",
+    borderTopColor: "var(--accent)",
+    borderRadius: "50%",
+    animation: "graph-spin 800ms linear infinite",
+})
+
+let graphLoadingP = css({
+    marginBottom: "6px",
+    fontSize: "13px",
+})
+
+let graphLoadingSmall = css({
+    color: "var(--faint)",
+    fontSize: "11px",
+    lineHeight: "1.45",
+    textTransform: "none",
+})
+
+let graphError = css({
+    minWidth: "240px",
+    margin: "auto",
+    padding: "20px",
+    textAlign: "center",
+})
+
+let graphErrorSpan = css({
+    color: "var(--faint)",
+    fontSize: "11px",
+    lineHeight: "1.45",
+    textTransform: "none",
+})
+
+let graphErrorP = css({
+    marginBottom: "6px",
+    fontSize: "13px",
+})
+
+let primaryButton = css({
+    minHeight: "28px",
+    marginTop: "12px",
+    padding: "0 12px",
+    borderRadius: "4px",
+})
+
 export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWorkspace {
-    const states = new Map<string, RepositoryGraphState>()
+    let states = new Map<string, RepositoryGraphState>()
     let activeRepositoryId: string | undefined
     let lensOpen = false
     let lensQuery = ""
@@ -84,14 +1096,14 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
     let restoreFocus: HTMLElement | null = null
     let currentWorkspace: Workspace | undefined
     let comparisonSource: { repositoryId: string; fromRef: string; replaceId?: string; chooseFrom?: boolean; chooseFirst?: boolean } | undefined
-    const worktreeActions = createWorktreeActions({
+    let worktreeActions = createWorktreeActions({
         api: options.api,
         update: options.update,
         completed: async (repositoryId, request, columnId) => {
-            const repository = options.workspace().repositories.find(item => item.id == repositoryId)
-            const destination = repository?.columns.find(item => item.id == columnId)
+            let repository = options.workspace().repositories.find(item => item.id == repositoryId)
+            let destination = repository?.columns.find(item => item.id == columnId)
             if (request.action == "switch" && destination && !destination.worktreePath) {
-                const source = repository?.columns.find(item => item.worktreePath == request.path)
+                let source = repository?.columns.find(item => item.worktreePath == request.path)
                 destination.worktreePath = request.path
                 destination.worktreeId = source?.worktreeId
                 if (source) {
@@ -103,12 +1115,12 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         },
     })
     let localMutations = 0
-    const conflicts = createConflictResolution({
+    let conflicts = createConflictResolution({
         api: options.api,
         update: options.update,
         changed: repositoryId => read(repositoryId, false, false),
     })
-    const inspection = createInspection({
+    let inspection = createInspection({
         api: options.api,
         update: options.update,
         signal: options.signal,
@@ -130,13 +1142,13 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         maximized: repositoryId => stateFor(repositoryId).maximizedBranchId,
         maximize: (repositoryId, id) => maximizeBranch(repositoryId, id),
     })
-    const localBranches = createLocalBranchActions({
+    let localBranches = createLocalBranchActions({
         api: options.api,
         update: options.update,
         completed: async (repositoryId, request) => {
-            const state = stateFor(repositoryId)
+            let state = stateFor(repositoryId)
             if (request.action == "branch-rename") {
-                const oldId = `branch:refs/heads/${request.name}`, newId = `branch:refs/heads/${request.newName}`
+                let oldId = `branch:refs/heads/${request.name}`, newId = `branch:refs/heads/${request.newName}`
                 state.openedBranchIds = state.openedBranchIds.map(id => id == oldId ? newId : id)
                 state.collapsedColumnIds = state.collapsedColumnIds.map(id => id == oldId ? newId : id)
                 if (state.focusedColumnId == oldId)
@@ -145,8 +1157,8 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                     state.selectedId = newId
                 state.widths[newId] = state.widths[oldId] ?? defaultColumnWidth
                 state.diffLayouts[newId] = state.diffLayouts[oldId] ?? "unified"
-                const repository = options.workspace().repositories.find(item => item.id == repositoryId)
-                for (const column of repository?.columns ?? []) {
+                let repository = options.workspace().repositories.find(item => item.id == repositoryId)
+                for (let column of repository?.columns ?? []) {
                     if (column.id == oldId && column.kind == "branch") {
                         column.id = newId
                         column.ref = `refs/heads/${request.newName}`
@@ -160,17 +1172,17 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         },
     })
 
-    const pullLatest = createPullLatest({
+    let pullLatest = createPullLatest({
         api: options.api,
         update: options.update,
         signal: options.signal,
         graph: repositoryId => stateFor(repositoryId).graph,
         scope: repositoryId => {
             // Scope freezes at activation: every open column, collapsed or not, contributes its local branch.
-            const state = stateFor(repositoryId)
-            const branches = state.graph ? workspaceGraph(state.graph).branches : []
+            let state = stateFor(repositoryId)
+            let branches = state.graph ? workspaceGraph(state.graph).branches : []
             return state.openedBranchIds.flatMap(id => {
-                const branch = branches.find(candidate => candidate.id == id)
+                let branch = branches.find(candidate => candidate.id == id)
                 return branch && branch.localRefs.includes(branch.preferredRef) ? [branch.preferredRef] : []
             })
         },
@@ -178,7 +1190,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         notify: options.notify,
         openBranch: (repositoryId, branchName) => openBranch(repositoryId, `branch:refs/heads/${branchName}`),
     })
-    const rebase = createBranchRebase({
+    let rebase = createBranchRebase({
         api: options.api,
         update: options.update,
         notify: options.notify,
@@ -188,31 +1200,32 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         },
         resolve: (repositoryId, names) => {
             // Lower branches show inside a dependent's column, so the lowest unresolved branch shows every conflict above it.
-            const graph = stateFor(repositoryId).graph
-            const branches = graph ? workspaceGraph(graph).branches : []
-            const name = names.find(name => branches.some(branch => branch.name == name && branch.unresolved)) ?? names[0]
+            let graph = stateFor(repositoryId).graph
+            let branches = graph ? workspaceGraph(graph).branches : []
+            let name = names.find(name => branches.some(branch => branch.name == name && branch.unresolved)) ?? names[0]
             openBranch(repositoryId, `branch:refs/heads/${name}`)
         },
     })
 
     // One timer polls the Branch Graph and Working Changes together so a poll costs one burst of updates.
-    const interval = window.setInterval(() => {
+    let interval = window.setInterval(() => {
         if (activeRepositoryId && document.visibilityState == "visible" && document.hasFocus()) {
             void read(activeRepositoryId, false, true)
             inspection.refreshWorking()
         }
     }, 5_000)
-    const onFocus = () => {
+    let onFocus = () => {
         if (activeRepositoryId)
             void read(activeRepositoryId, false, true)
     }
     // Disk changes noticed by main arrive at any time; one that lands mid-read is replayed once that read settles.
-    const changedWhileReading = new Set<string>()
-    const unsubscribeChanges = options.api.onRepositoryChanged(({ repositoryId }) => {
+    let changedWhileReading = new Set<string>()
+    let unsubscribeChanges = options.api.onRepositoryChanged(({ repositoryId }) => {
         // Laneway's own operations change the same files; their completion refreshes everything once.
         if (repositoryId != activeRepositoryId || worktreeActions.busy() || localBranches.busy() || localMutations > 0 || pullLatest.busy(repositoryId))
             return
-        const state = stateFor(repositoryId)
+
+        let state = stateFor(repositoryId)
         if (state.loading || state.refreshing) {
             changedWhileReading.add(repositoryId)
             return
@@ -220,7 +1233,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         void read(repositoryId, false, true)
         inspection.refreshWorking()
     })
-    const onShortcut = (event: KeyboardEvent) => {
+    let onShortcut = (event: KeyboardEvent) => {
         if (event.defaultPrevented)
             return
         if (
@@ -235,7 +1248,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             event.preventDefault()
             openLens()
         } else if (event.key == "Escape" && activeRepositoryId) {
-            const state = stateFor(activeRepositoryId)
+            let state = stateFor(activeRepositoryId)
             if (rebase.choosing(activeRepositoryId))
                 rebase.stopChoosing()
             else if (state.showSettings) {
@@ -254,7 +1267,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         unsubscribeChanges()
         window.removeEventListener("focus", onFocus)
         window.removeEventListener("keydown", onShortcut)
-        for (const id of states.keys()) {
+        for (let id of states.keys()) {
             void options.api.cancelBranchGraph(id)
             void options.api.cancelBranchHistory(id)
         }
@@ -275,21 +1288,22 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         },
         render(active, workspace, railCollapsed = false, toggleRail = () => {}) {
             currentWorkspace = workspace
-            const state = stateFor(active.id)
+            let state = stateFor(active.id)
             inspection.retain(active.id, state.openedBranchIds, state.graph && workspaceGraph(state.graph))
-            const graph = state.graph
+            let graph = state.graph
             // Rows show each local branch identity, so every branch sharing a tip can be opened, dragged, and dropped on.
-            const identities = graph && workspaceGraph(graph)
-            const visibleBranches = graph ? branchesForDisplay(graph, state.showAll, state.collapsedBranchIds) : []
-            const rowBranches = graph ? visibleBranches.flatMap(branch => localIdentities(graph, branch)) : []
-            const layout = graph ? layoutBranchGraph(graph, rowBranches) : { rows: [], width: 26 }
-            const selectableIds = layout.rows.map(row => row.node.id)
-            const nodeWindow = windowNodes(layout.rows, state.graphScrollTop, state.graphViewportHeight)
+            let identities = graph && workspaceGraph(graph)
+            let visibleBranches = graph ? branchesForDisplay(graph, state.showAll, state.collapsedBranchIds) : []
+            let rowBranches = graph ? visibleBranches.flatMap(branch => localIdentities(graph, branch)) : []
+            let layout = graph ? layoutBranchGraph(graph, rowBranches) : { rows: [], width: 26 }
+            let selectableIds = layout.rows.map(row => row.node.id)
+            let nodeWindow = windowNodes(layout.rows, state.graphScrollTop, state.graphViewportHeight)
             if (
                 state.selectedId && !selectableIds.includes(state.selectedId)
             ) {
                 state.selectedId = undefined
             }
+
             return (
                 <section class="workspace graph-workspace" mix={workspaceStyle} aria-live="polite">
                     {worktreeActions.dialog()}
@@ -326,7 +1340,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                     mix={[
                                         ref(button => button.focus()),
                                         on("click", () => {
-                                            const branch = workspaceGraph(graph).branches.find(branch => branch.id == state.contextMenu?.branchId)
+                                            let branch = workspaceGraph(graph).branches.find(branch => branch.id == state.contextMenu?.branchId)
                                             state.contextMenu = undefined
                                             if (branch)
                                                 compareWith(active.id, branch.preferredRef)
@@ -336,7 +1350,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                     Compare with…
                                 </button>
                                 {(() => {
-                                    const branch = workspaceGraph(graph).branches.find(branch => branch.id == state.contextMenu?.branchId)
+                                    let branch = workspaceGraph(graph).branches.find(branch => branch.id == state.contextMenu?.branchId)
                                     return branch && rebaseable(branch) && (
                                         <button
                                             type="button"
@@ -354,7 +1368,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                     )
                                 })()}
                                 {(["branch-create", "branch-rename", "branch-delete"] as const).map(action => {
-                                    const branch = workspaceGraph(graph).branches.find(branch => branch.id == state.contextMenu?.branchId)
+                                    let branch = workspaceGraph(graph).branches.find(branch => branch.id == state.contextMenu?.branchId)
                                     return branch && (action == "branch-create" || branch.localRefs.length > 0) && (
                                         <button
                                             role="menuitem"
@@ -487,9 +1501,9 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                             )}
                                             {nodeWindow.nodes.map(row => {
                                                 if (row.node.kind == "branch") {
-                                                    const branch = row.node.branch
-                                                    const choosing = identities!.branches.find(candidate => candidate.id == rebase.choosing(active.id))
-                                                    const dragged = () => identities!.branches.find(candidate => candidate.id == state.draggingBranchId)
+                                                    let branch = row.node.branch
+                                                    let choosing = identities!.branches.find(candidate => candidate.id == rebase.choosing(active.id))
+                                                    let dragged = () => identities!.branches.find(candidate => candidate.id == state.draggingBranchId)
                                                     return (
                                                         <BranchRow
                                                             branch={branch}
@@ -515,11 +1529,11 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                                             dragStart={() => state.draggingBranchId = branch.id}
                                                             dragEnd={() => state.draggingBranchId = undefined}
                                                             accepts={() => {
-                                                                const source = dragged()
+                                                                let source = dragged()
                                                                 return !!source && canRebaseOnto(identities!, source, branch)
                                                             }}
                                                             drop={() => {
-                                                                const source = dragged()
+                                                                let source = dragged()
                                                                 state.draggingBranchId = undefined
                                                                 if (source)
                                                                     void rebase.start(active.id, identities!, source.id, branch.id)
@@ -596,7 +1610,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                     worktreePath={id => backingPath(active.id, id)}
                                     worktreeControls={column => worktreeActions.controls(active.id, column, backingPath(active.id, column.id), graph)}
                                     dropBranch={(columnId, branchRef) => {
-                                        const path = backingPath(active.id, columnId)
+                                        let path = backingPath(active.id, columnId)
                                         if (path)
                                             void worktreeActions.prepare(active.id, { action: "switch", path, branch: branchRef, move: true })
                                     }}
@@ -616,21 +1630,22 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             )
         },
         columnTabs(active) {
-            const state = stateFor(active.id)
-            const graph = state.graph && workspaceGraph(state.graph)
+            let state = stateFor(active.id)
+            let graph = state.graph && workspaceGraph(state.graph)
             if (!graph)
                 return null
-            const columns = state.openedBranchIds.map(id =>
+            let columns = state.openedBranchIds.map(id =>
                 graph.branches.find(branch => branch.id == id) ?? graph.virtualBranches.find(branch => branch.id == id)
                     ?? recoveryNode(state.worktreeRecoveries.find(item => recoveryColumnId(item) == id))
             ).filter(column => column != undefined)
             if (columns.length == 0)
                 return null
+
             return (
                 <div class="column-tabs" role="tablist" aria-label="Open columns" mix={columnTabs}>
                     {columns.map(column => {
-                        const identity = columnIdentity(column, backingPath(active.id, column.id))
-                        const collapsed = state.collapsedColumnIds.includes(column.id)
+                        let identity = columnIdentity(column, backingPath(active.id, column.id))
+                        let collapsed = state.collapsedColumnIds.includes(column.id)
                         return (
                             <button
                                 type="button"
@@ -642,7 +1657,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                 mix={[
                                     columnTab,
                                     on("click", () => {
-                                        const element = [...document.querySelectorAll<HTMLElement>("[data-column-id]")].find(node =>
+                                        let element = [...document.querySelectorAll<HTMLElement>("[data-column-id]")].find(node =>
                                             node.dataset.columnId == column.id
                                         )
                                         element?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" })
@@ -713,185 +1728,15 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         },
     }
 
-    function stateFor(repositoryId: string) {
-        let state = states.get(repositoryId)
-        if (!state) {
-            const saved = options.workspace().repositories.find(repository => repository.id == repositoryId)
-            state = {
-                worktreeRecoveries: [],
-                recoveryErrors: {},
-                diffLayouts: Object.fromEntries(saved?.columns.map(column => [column.id, column.diffLayout ?? "unified"]) ?? []),
-                loading: false,
-                refreshing: false,
-                showAll: false,
-                openedBranchIds: saved?.columns.map(column => column.id) ?? [],
-                widths: Object.fromEntries(saved?.columns.map(column => [column.id, column.width]) ?? []),
-                focusedColumnId: saved?.focusedColumnId,
-                focusRestored: false,
-                showSettings: false,
-                patterns: "",
-                graphCollapsed: true,
-                collapsedColumnIds: saved?.columns.filter(column => column.collapsed).map(column => column.id) ?? [],
-                collapsedBranchIds: [],
-                remoteRefreshed: false,
-                baseCandidateSelections: {},
-                graphScrollTop: 0,
-                graphViewportHeight: 600,
-            }
-            states.set(repositoryId, state)
-        }
-        return state
-    }
-
-    async function ensure(repositoryId: string, refreshRemoteAfter = false) {
-        if (!stateFor(repositoryId).graph)
-            await read(repositoryId, false, false)
-        const state = stateFor(repositoryId)
-        if (refreshRemoteAfter && state.graph && !state.remoteRefreshed)
-            await read(repositoryId, true, true)
-    }
-
-    async function read(repositoryId: string, refreshRemote: boolean, quiet: boolean) {
-        const state = stateFor(repositoryId)
-        if (
-            state.loading || state.refreshing
-            || (quiet && (worktreeActions.busy() || localBranches.busy() || localMutations > 0 || pullLatest.busy(repositoryId)))
-        ) {
-            return
-        }
-        // A quiet read shows nothing until it finds a difference; `refreshing` only guards against overlapping reads.
-        let changed = !quiet || state.error != undefined
-        state.error = undefined
-        if (state.graph)
-            state.refreshing = true
-        else
-            state.loading = true
-        if (!quiet)
-            await options.update()
-        try {
-            const result = await options.api.readBranchGraph(repositoryId, refreshRemote)
-            if (result.ok) {
-                const recoveries = result.worktreeRecoveries ?? []
-                if (
-                    !changed
-                    && (refreshRemote || JSON.stringify(state.graph) != JSON.stringify(result.graph)
-                        || JSON.stringify(state.worktreeRecoveries) != JSON.stringify(recoveries))
-                ) {
-                    changed = true
-                }
-                state.worktreeRecoveries = recoveries
-                const columns = workspaceGraph(result.graph)
-                const validColumnIds = new Set(
-                    [...columns.branches, ...columns.virtualBranches].map(branch => branch.id).concat(recoveries.map(recoveryColumnId)),
-                )
-                const removedColumns = state.openedBranchIds.filter(id => !validColumnIds.has(id) && !id.startsWith("recovery:"))
-                const previousPatterns = state.graph?.remotePatterns.join(", ")
-                state.graph = result.graph
-                state.openedBranchIds.push(...inspection.refreshComparisons(repositoryId, columns))
-                if (refreshRemote)
-                    state.remoteRefreshed = true
-                // Quiet refreshes must not wipe a draft the user is still typing into the settings panel.
-                const savedPatterns = result.graph.remotePatterns.join(", ")
-                if (!state.showSettings || savedPatterns != previousPatterns)
-                    state.patterns = savedPatterns
-                state.openedBranchIds = state.openedBranchIds.filter(id => validColumnIds.has(id))
-                if (!state.focusedColumnId || !state.openedBranchIds.includes(state.focusedColumnId))
-                    state.focusedColumnId = state.openedBranchIds[0]
-                for (const column of [...columns.branches, ...columns.virtualBranches].filter(column => state.openedBranchIds.includes(column.id)))
-                    state.widths[column.id] ??= defaultColumnWidth
-                const savedRepository = options.workspace().repositories.find(repository => repository.id == repositoryId)
-                if (savedRepository?.status == "available") {
-                    const reconciled = reconcileWorktreeColumns(savedRepository.columns, result.graph, savedRepository.focusedColumnId, recoveries)
-                    state.openedBranchIds = [
-                        ...reconciled.columns.map(column => column.id),
-                        ...state.openedBranchIds.filter(id => !savedRepository.columns.some(column => column.id == id)),
-                    ]
-                    for (const column of reconciled.columns) {
-                        state.widths[column.id] = column.width
-                        state.diffLayouts[column.id] = column.diffLayout ?? "unified"
-                        state.collapsedColumnIds = state.collapsedColumnIds.filter(id => id != column.id)
-                        if (column.collapsed)
-                            state.collapsedColumnIds.push(column.id)
-                    }
-                    state.focusedColumnId = reconciled.focused
-                    savedRepository.columns = reconciled.columns
-                }
-                if (savedRepository?.status == "available" && !savedRepository.layoutInitialized) {
-                    const selectedPath = savedRepository.info.selectedWorktree
-                    const initialColumn = columns.branches.find(branch => branch.checkedOut.some(worktree => worktree.path == selectedPath))
-                        ?? result.graph.virtualBranches.find(branch => branch.worktree.path == selectedPath)
-                    if (initialColumn) {
-                        state.openedBranchIds.push(initialColumn.id)
-                        state.focusedColumnId = initialColumn.id
-                        state.widths[initialColumn.id] = defaultColumnWidth
-                    }
-                    savedRepository.layoutInitialized = true
-                }
-                for (const column of [...columns.branches.filter(branch => branch.checkedOut.length > 0), ...columns.virtualBranches]) {
-                    const worktrees = column.kind == "branch" ? column.checkedOut : [column.worktree]
-                    if (!state.openedBranchIds.includes(column.id) && !worktrees.some(worktree => recoveries.some(item => item.path == worktree.path)))
-                        state.openedBranchIds.push(column.id)
-                    state.widths[column.id] ??= defaultColumnWidth
-                }
-                state.openedBranchIds = [...new Set(state.openedBranchIds)]
-                if (state.maximizedBranchId && !state.openedBranchIds.includes(state.maximizedBranchId))
-                    state.maximizedBranchId = undefined
-                if (!state.focusedColumnId || !state.openedBranchIds.includes(state.focusedColumnId))
-                    state.focusedColumnId = state.openedBranchIds[0]
-                state.baseCandidateSelections = Object.fromEntries(
-                    Object.entries(state.baseCandidateSelections).filter(([branchId, candidateId]) => {
-                        const branch = result.graph.branches.find(candidate => candidate.id == branchId)
-                        return branch?.base.status == "ambiguous" && branch.base.candidates.some(candidate => candidate.branchId == candidateId)
-                    }),
-                )
-                if (removedColumns.length > 0) {
-                    options.notify({
-                        code: "branch.removed",
-                        message: `${
-                            removedColumns.length == 1 ? "An open branch" : `${removedColumns.length} open branches`
-                        } no longer exists; its column was closed.`,
-                    })
-                }
-                await persist(repositoryId)
-            } else if (result.error.code != "git.cancelled") {
-                changed = true
-                const refreshedWorkspace = (await options.api.getState()).workspace
-                if (refreshedWorkspace.repositories.some(repository => repository.id == repositoryId && repository.status == "missing"))
-                    options.workspaceChanged(refreshedWorkspace)
-                state.error = result.error.message
-                if (state.graph)
-                    options.notify({ code: result.error.code, message: `Branch Graph refresh failed: ${result.error.message}` })
-            }
-        } catch (error) {
-            changed = true
-            state.error = errorMessage(error)
-        } finally {
-            state.loading = false
-            state.refreshing = false
-            if (changedWhileReading.delete(repositoryId) && repositoryId == activeRepositoryId)
-                void read(repositoryId, false, true)
-            if (changed || !state.focusRestored)
-                await options.update()
-            if (!state.focusRestored && state.focusedColumnId) {
-                state.focusRestored = true
-                const column = [...document.querySelectorAll<HTMLElement>("[data-column-id]")].find(candidate =>
-                    candidate.dataset.columnId == state.focusedColumnId
-                )
-                column?.focus({ preventScroll: true })
-                column?.scrollIntoView({ block: "nearest", inline: "nearest" })
-            }
-        }
-    }
-
     function toggleGraph(repositoryId: string) {
-        const state = stateFor(repositoryId)
+        let state = stateFor(repositoryId)
         state.graphCollapsed = !state.graphCollapsed
         state.showSettings = false
         void options.update()
     }
 
     function toggleAll(repositoryId: string) {
-        const state = stateFor(repositoryId)
+        let state = stateFor(repositoryId)
         state.showAll = !state.showAll
         if (
             !state.showAll && state.graph && state.selectedId
@@ -903,101 +1748,62 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         void options.update()
     }
 
-    function selectNode(repositoryId: string, nodeId: string) {
-        const state = stateFor(repositoryId)
-        state.selectedId = nodeId
-        state.marker = undefined
-        void options.update()
-    }
-
     function selectMarker(repositoryId: string, branchId: string, marker: BranchGraphMarker) {
-        const state = stateFor(repositoryId)
+        let state = stateFor(repositoryId)
         state.selectedId = branchId
         state.marker = marker
         if (marker.kind == "stash") {
-            const repository = options.workspace().repositories.find(item => item.id == repositoryId)
+            let repository = options.workspace().repositories.find(item => item.id == repositoryId)
             if (repository?.status == "available")
                 void localBranches.stashes(repositoryId, repository.info.mainWorktree, marker.objectId)
         }
         void options.update()
     }
 
-    function openBranch(repositoryId: string, branchId: string) {
-        const state = stateFor(repositoryId)
-        if (!state.openedBranchIds.includes(branchId))
-            state.openedBranchIds.push(branchId)
-        state.collapsedColumnIds = state.collapsedColumnIds.filter(id => id != branchId)
-        state.selectedId = branchId
-        state.focusedColumnId = branchId
-        state.widths[branchId] ??= defaultColumnWidth
-        state.maximizedBranchId = undefined
-        void persist(repositoryId).then(() => options.update()).then(() =>
-            [...document.querySelectorAll<HTMLElement>("[data-column-id]")].find(column => column.dataset.columnId == branchId)?.focus()
-        )
-    }
-
-    function collapseColumn(repositoryId: string, branchId: string) {
-        const state = stateFor(repositoryId)
-        state.collapsedColumnIds = state.collapsedColumnIds.includes(branchId)
-            ? state.collapsedColumnIds.filter(id => id != branchId)
-            : [...state.collapsedColumnIds, branchId]
-        state.maximizedBranchId = undefined
-        void persist(repositoryId).then(() => options.update()).then(() => {
-            const column = [...document.querySelectorAll<HTMLElement>("[data-column-id]")].find(element => element.dataset.columnId == branchId)
-            ;(column?.querySelector<HTMLElement>(".expand-column") ?? column)?.focus()
-        })
-    }
-
     function closeBranch(repositoryId: string, branchId: string) {
-        const state = stateFor(repositoryId)
+        let state = stateFor(repositoryId)
         if (backingPath(repositoryId, branchId)) {
             collapseColumn(repositoryId, branchId)
             return
         }
-        const index = state.openedBranchIds.indexOf(branchId)
+        let index = state.openedBranchIds.indexOf(branchId)
         state.openedBranchIds = state.openedBranchIds.filter(id => id != branchId)
         if (state.maximizedBranchId == branchId)
             state.maximizedBranchId = undefined
         if (state.focusedColumnId == branchId)
             state.focusedColumnId = state.openedBranchIds[index] ?? state.openedBranchIds[index - 1]
         void persist(repositoryId).then(() => options.update()).then(() => {
-            const next = state.focusedColumnId
+            let next = state.focusedColumnId
                 ? [...document.querySelectorAll<HTMLElement>("[data-column-id]")].find(column => column.dataset.columnId == state.focusedColumnId)
                 : document.querySelector<HTMLElement>(".graph-rows")
             next?.focus()
         })
     }
 
+    function collapseColumn(repositoryId: string, branchId: string) {
+        let state = stateFor(repositoryId)
+        state.collapsedColumnIds = state.collapsedColumnIds.includes(branchId)
+            ? state.collapsedColumnIds.filter(id => id != branchId)
+            : [...state.collapsedColumnIds, branchId]
+        state.maximizedBranchId = undefined
+        void persist(repositoryId).then(() => options.update()).then(() => {
+            let column = [...document.querySelectorAll<HTMLElement>("[data-column-id]")].find(element => element.dataset.columnId == branchId)
+            ;(column?.querySelector<HTMLElement>(".expand-column") ?? column)?.focus()
+        })
+    }
+
     function focusColumn(repositoryId: string, branchId: string) {
-        const state = stateFor(repositoryId)
+        let state = stateFor(repositoryId)
         if (state.focusedColumnId == branchId)
             return
         state.focusedColumnId = branchId
         void persist(repositoryId)
     }
 
-    function moveColumn(repositoryId: string, branchId: string, delta: number) {
-        const state = stateFor(repositoryId)
-        const index = state.openedBranchIds.indexOf(branchId)
-        const target = index + delta
-        if (index < 0 || target < 0 || target >= state.openedBranchIds.length) {
-            options.notify({ code: "column.boundary", message: target < 0 ? "Already first column." : "Already last column.", transient: true })
-            return
-        }
-        state.openedBranchIds.splice(index, 1)
-        state.openedBranchIds.splice(target, 0, branchId)
-        state.focusedColumnId = branchId
-        void persist(repositoryId).then(() => options.update()).then(() => {
-            const column = [...document.querySelectorAll<HTMLElement>("[data-column-id]")].find(candidate => candidate.dataset.columnId == branchId)
-            column?.focus({ preventScroll: true })
-            column?.scrollIntoView({ block: "nearest", inline: "nearest" })
-        })
-    }
-
     function previewColumnMove(repositoryId: string, branchId: string, targetId: string) {
-        const state = stateFor(repositoryId)
-        const from = state.openedBranchIds.indexOf(branchId)
-        const to = state.openedBranchIds.indexOf(targetId)
+        let state = stateFor(repositoryId)
+        let from = state.openedBranchIds.indexOf(branchId)
+        let to = state.openedBranchIds.indexOf(targetId)
         if (from < 0 || to < 0 || from == to)
             return
         state.openedBranchIds.splice(from, 1)
@@ -1006,7 +1812,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
     }
 
     function commitColumnMove(repositoryId: string, branchId: string) {
-        const state = stateFor(repositoryId)
+        let state = stateFor(repositoryId)
         state.focusedColumnId = branchId
         state.draggingColumnId = undefined
         state.dragOriginalIds = undefined
@@ -1018,81 +1824,17 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         void persist(repositoryId).then(() => options.update())
     }
 
-    function backingPath(repositoryId: string, columnId: string) {
-        const recovery = stateFor(repositoryId).worktreeRecoveries.find(item => recoveryColumnId(item) == columnId)
-        if (recovery)
-            return recovery.path
-        const graph = stateFor(repositoryId).graph
-        const virtual = graph?.virtualBranches.find(branch => branch.id == columnId)
-        if (virtual)
-            return virtual.worktree.path
-        const branch = graph && workspaceGraph(graph).branches.find(branch => branch.id == columnId)
-        const saved = options.workspace().repositories.find(repository => repository.id == repositoryId)?.columns.find(column => column.id == columnId)
-            ?.worktreePath
-        return branch?.checkedOut.find(worktree => worktree.path == saved)?.path ?? (branch?.checkedOut.length == 1 ? branch.checkedOut[0].path : undefined)
-    }
-
-    async function persist(repositoryId: string) {
-        const workspace = options.workspace()
-        const repository = workspace.repositories.find(candidate => candidate.id == repositoryId)
-        const state = stateFor(repositoryId)
-        if (!repository || !state.graph)
-            return
-        repository.columns = state.openedBranchIds.flatMap((id): WorkspaceColumn[] => {
-            const recovery = state.worktreeRecoveries.find(item => recoveryColumnId(item) == id)
-            if (recovery) {
-                return [{
-                    ...recoveryWorkspaceColumn(recovery, state.widths[id] ?? defaultColumnWidth),
-                    collapsed: state.collapsedColumnIds.includes(id),
-                    diffLayout: state.diffLayouts[id] ?? "unified",
-                }]
-            }
-            const branch = workspaceGraph(state.graph!).branches.find(candidate => candidate.id == id)
-            if (branch) {
-                return [{
-                    kind: "branch" as const,
-                    id,
-                    ref: branch.preferredRef,
-                    lastSeenObjectId: branch.tip,
-                    width: state.widths[id] ?? defaultColumnWidth,
-                    collapsed: state.collapsedColumnIds.includes(id),
-                    diffLayout: state.diffLayouts[id] ?? "unified",
-                    ...(backingPath(repositoryId, id) ? { worktreePath: backingPath(repositoryId, id) } : {}),
-                    worktreeId: branch.checkedOut.find(worktree => worktree.path == backingPath(repositoryId, id))?.id,
-                }]
-            }
-            const virtual = state.graph!.virtualBranches.find(candidate => candidate.id == id)
-            return virtual
-                ? [{
-                    kind: "virtual" as const,
-                    id,
-                    worktreePath: virtual.worktree.path,
-                    worktreeId: virtual.worktree.id,
-                    lastSeenObjectId: virtual.objectId,
-                    width: state.widths[id] ?? defaultColumnWidth,
-                    collapsed: state.collapsedColumnIds.includes(id),
-                    diffLayout: state.diffLayouts[id] ?? "unified",
-                }]
-                : []
-        })
-        repository.focusedColumnId = state.focusedColumnId
-        try {
-            options.workspaceChanged(await options.api.updateWorkspace(workspace))
-        } catch (error) {
-            options.notify({ code: "workspace.write-failed", message: errorMessage(error) })
-        }
-    }
-
     async function recoverWorktree(repositoryId: string, recovery: WorktreeRecovery, action: RecoveryRequest["action"]) {
-        const state = stateFor(repositoryId)
+        let state = stateFor(repositoryId)
         if (state.recoveryBusy || localMutations || worktreeActions.busy())
             return
         state.recoveryBusy = recovery.operationId
         delete state.recoveryErrors[recovery.operationId]
         localMutations++
         await options.update()
+
         try {
-            const result = await options.api.recoverWorktree(repositoryId, { operationId: recovery.operationId, action })
+            let result = await options.api.recoverWorktree(repositoryId, { operationId: recovery.operationId, action })
             if (!result.ok)
                 state.recoveryErrors[recovery.operationId] = result.error.message
             else if (result.backupPath)
@@ -1107,13 +1849,13 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
     }
 
     function maximizeBranch(repositoryId: string, branchId: string) {
-        const state = stateFor(repositoryId)
+        let state = stateFor(repositoryId)
         state.maximizedBranchId = state.maximizedBranchId == branchId ? undefined : branchId
         void options.update()
     }
 
     async function applyGraphSettings(repositoryId: string, settings: RepositoryGraphSettings) {
-        const state = stateFor(repositoryId)
+        let state = stateFor(repositoryId)
         try {
             await options.api.setRepositoryGraphSettings(repositoryId, settings)
             state.showSettings = false
@@ -1125,10 +1867,10 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
     }
 
     function graphKeydown(event: KeyboardEvent, repositoryId: string, rows: GraphRowLayout[]) {
-        const nodeIds = rows.map(row => row.node.id)
-        const state = stateFor(repositoryId)
-        const index = nodeIds.findIndex(id => id == state.selectedId)
-        const selected = state.graph && workspaceGraph(state.graph).branches.find(branch => branch.id == state.selectedId)
+        let nodeIds = rows.map(row => row.node.id)
+        let state = stateFor(repositoryId)
+        let index = nodeIds.findIndex(id => id == state.selectedId)
+        let selected = state.graph && workspaceGraph(state.graph).branches.find(branch => branch.id == state.selectedId)
         if (event.key == "Enter" && rebase.choosing(repositoryId) && state.selectedId) {
             event.preventDefault()
             chooseRebaseDestination(repositoryId, state.selectedId)
@@ -1150,26 +1892,26 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         }
         if ((event.key == "ContextMenu" || event.shiftKey && event.key == "F10") && selected) {
             event.preventDefault()
-            const rect = event.currentTarget instanceof HTMLElement ? event.currentTarget.getBoundingClientRect() : undefined
+            let rect = event.currentTarget instanceof HTMLElement ? event.currentTarget.getBoundingClientRect() : undefined
             state.contextMenu = { branchId: selected.id, x: rect?.left ?? 0, y: rect?.top ?? 0 }
             void options.update()
         } else if (event.key == "ArrowDown" || event.key == "ArrowUp") {
             event.preventDefault()
-            const delta = event.key == "ArrowDown" ? 1 : -1
-            const nextIndex = index < 0 && delta < 0 ? nodeIds.length - 1 : Math.max(0, Math.min(nodeIds.length - 1, index + delta))
+            let delta = event.key == "ArrowDown" ? 1 : -1
+            let nextIndex = index < 0 && delta < 0 ? nodeIds.length - 1 : Math.max(0, Math.min(nodeIds.length - 1, index + delta))
             if (nodeIds[nextIndex]) {
-                const nextId = nodeIds[nextIndex]
+                let nextId = nodeIds[nextIndex]
                 state.selectedId = nextId
-                const nodeIndex = rows.findIndex(row => row.node.id == nextId)
+                let nodeIndex = rows.findIndex(row => row.node.id == nextId)
                 if (nodeIndex >= 0) {
-                    const top = nodeIndex * graphRowHeight
+                    let top = nodeIndex * graphRowHeight
                     if (top < state.graphScrollTop)
                         state.graphScrollTop = top
                     else if (top + graphRowHeight > state.graphScrollTop + state.graphViewportHeight)
                         state.graphScrollTop = Math.max(0, top + graphRowHeight - state.graphViewportHeight)
                 }
                 void options.update().then(() => {
-                    const rows = document.querySelector<HTMLElement>(".graph-rows")
+                    let rows = document.querySelector<HTMLElement>(".graph-rows")
                     if (rows)
                         rows.scrollTop = state.graphScrollTop
                 })
@@ -1180,7 +1922,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         } else if ((event.key == "ArrowLeft" || event.key == "ArrowRight") && selected) {
             event.preventDefault()
             // Branches stack on a whole Branch Node, so collapsing any identity at its tip collapses them all.
-            const nodeId = branchNodeFor(state.graph!, selected.id)!.id
+            let nodeId = branchNodeFor(state.graph!, selected.id)!.id
             state.collapsedBranchIds = event.key == "ArrowLeft"
                 ? [...new Set([...state.collapsedBranchIds, nodeId])]
                 : state.collapsedBranchIds.filter(id => id != nodeId)
@@ -1191,10 +1933,24 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         }
     }
 
+    function openBranch(repositoryId: string, branchId: string) {
+        let state = stateFor(repositoryId)
+        if (!state.openedBranchIds.includes(branchId))
+            state.openedBranchIds.push(branchId)
+        state.collapsedColumnIds = state.collapsedColumnIds.filter(id => id != branchId)
+        state.selectedId = branchId
+        state.focusedColumnId = branchId
+        state.widths[branchId] ??= defaultColumnWidth
+        state.maximizedBranchId = undefined
+        void persist(repositoryId).then(() => options.update()).then(() =>
+            [...document.querySelectorAll<HTMLElement>("[data-column-id]")].find(column => column.dataset.columnId == branchId)?.focus()
+        )
+    }
+
     function chooseRebaseDestination(repositoryId: string, targetId: string) {
-        const state = stateFor(repositoryId), sourceId = rebase.choosing(repositoryId)
-        const graph = state.graph && workspaceGraph(state.graph)
-        const source = graph?.branches.find(branch => branch.id == sourceId), target = graph?.branches.find(branch => branch.id == targetId)
+        let state = stateFor(repositoryId), sourceId = rebase.choosing(repositoryId)
+        let graph = state.graph && workspaceGraph(state.graph)
+        let source = graph?.branches.find(branch => branch.id == sourceId), target = graph?.branches.find(branch => branch.id == targetId)
         if (!graph || !source)
             return
         if (target && canRebaseOnto(graph, source, target))
@@ -1205,37 +1961,13 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         }
     }
 
-    function lensGraph(repositoryId: string) {
-        const graph = stateFor(repositoryId).graph
-        return graph && workspaceGraph(graph)
-    }
-
-    function openLens() {
-        if (lensOpen)
-            return lensInput?.focus()
-        restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
-        lensOpen = true
-        lensQuery = ""
-        for (const repository of currentWorkspace?.repositories ?? []) {
-            if (repository.status == "available")
-                void ensure(repository.id, false)
-        }
-        void options.update()
-    }
-
-    function closeLens() {
-        lensOpen = false
-        comparisonSource = undefined
-        void options.update().then(() => restoreFocus?.focus())
-    }
-
     async function activateLensResult(result: LensResult) {
         if (comparisonSource) {
-            const request = comparisonSource
-            const state = stateFor(request.repositoryId)
-            const graph = lensGraph(request.repositoryId)
+            let request = comparisonSource
+            let state = stateFor(request.repositoryId)
+            let graph = lensGraph(request.repositoryId)
             if (request.chooseFirst) {
-                const branch = graph?.branches.find(branch => branch.id == result.nodeId)
+                let branch = graph?.branches.find(branch => branch.id == result.nodeId)
                 if (branch) {
                     comparisonSource = { repositoryId: request.repositoryId, fromRef: branch.preferredRef, replaceId: request.replaceId }
                     lensQuery = ""
@@ -1243,11 +1975,11 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                 }
                 return
             }
-            const fixedNode = graph?.branches.find(branch => branch.refs.includes(request.fromRef))
-            const fixed = fixedNode ? { ...fixedNode, preferredRef: request.fromRef } : undefined
-            const selected = graph?.branches.find(branch => branch.id == result.nodeId)
-            const from = request.chooseFrom ? selected : fixed
-            const to = request.chooseFrom ? fixed : selected
+            let fixedNode = graph?.branches.find(branch => branch.refs.includes(request.fromRef))
+            let fixed = fixedNode ? { ...fixedNode, preferredRef: request.fromRef } : undefined
+            let selected = graph?.branches.find(branch => branch.id == result.nodeId)
+            let from = request.chooseFrom ? selected : fixed
+            let to = request.chooseFrom ? fixed : selected
             if (!from || !to || !graph)
                 return
             lensOpen = false
@@ -1278,47 +2010,320 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         await options.update()
         document.querySelector<HTMLElement>(".graph-rows")?.focus()
     }
+
+    function selectNode(repositoryId: string, nodeId: string) {
+        let state = stateFor(repositoryId)
+        state.selectedId = nodeId
+        state.marker = undefined
+        void options.update()
+    }
+
+    function moveColumn(repositoryId: string, branchId: string, delta: number) {
+        let state = stateFor(repositoryId)
+        let index = state.openedBranchIds.indexOf(branchId)
+        let target = index + delta
+        if (index < 0 || target < 0 || target >= state.openedBranchIds.length) {
+            options.notify({ code: "column.boundary", message: target < 0 ? "Already first column." : "Already last column.", transient: true })
+            return
+        }
+        state.openedBranchIds.splice(index, 1)
+        state.openedBranchIds.splice(target, 0, branchId)
+        state.focusedColumnId = branchId
+        void persist(repositoryId).then(() => options.update()).then(() => {
+            let column = [...document.querySelectorAll<HTMLElement>("[data-column-id]")].find(candidate => candidate.dataset.columnId == branchId)
+            column?.focus({ preventScroll: true })
+            column?.scrollIntoView({ block: "nearest", inline: "nearest" })
+        })
+    }
+
+    function lensGraph(repositoryId: string) {
+        let graph = stateFor(repositoryId).graph
+        return graph && workspaceGraph(graph)
+    }
+
+    function closeLens() {
+        lensOpen = false
+        comparisonSource = undefined
+        void options.update().then(() => restoreFocus?.focus())
+    }
+
     function compareWith(repositoryId: string, fromRef: string, replaceId?: string, toRef?: string) {
-        const chooseFrom = !!toRef && !stateFor(repositoryId).graph?.branches.some(branch => branch.refs.includes(fromRef))
-        const chooseFirst = chooseFrom && !stateFor(repositoryId).graph?.branches.some(branch => branch.refs.includes(toRef!))
+        let chooseFrom = !!toRef && !stateFor(repositoryId).graph?.branches.some(branch => branch.refs.includes(fromRef))
+        let chooseFirst = chooseFrom && !stateFor(repositoryId).graph?.branches.some(branch => branch.refs.includes(toRef!))
         comparisonSource = { repositoryId, fromRef: chooseFirst ? "" : chooseFrom ? toRef! : fromRef, replaceId, chooseFrom, chooseFirst }
         openLens()
         restoreFocus = replaceId
             ? document.querySelector<HTMLElement>(`[data-auxiliary-id="${replaceId}"]`)
             : document.querySelector<HTMLElement>(".graph-rows")
     }
+
+    function openLens() {
+        if (lensOpen)
+            return lensInput?.focus()
+
+        restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+        lensOpen = true
+        lensQuery = ""
+        for (let repository of currentWorkspace?.repositories ?? []) {
+            if (repository.status == "available")
+                void ensure(repository.id, false)
+        }
+        void options.update()
+    }
+
+    async function ensure(repositoryId: string, refreshRemoteAfter = false) {
+        if (!stateFor(repositoryId).graph)
+            await read(repositoryId, false, false)
+        let state = stateFor(repositoryId)
+        if (refreshRemoteAfter && state.graph && !state.remoteRefreshed)
+            await read(repositoryId, true, true)
+    }
+
+    async function read(repositoryId: string, refreshRemote: boolean, quiet: boolean) {
+        let state = stateFor(repositoryId)
+        if (
+            state.loading || state.refreshing
+            || (quiet && (worktreeActions.busy() || localBranches.busy() || localMutations > 0 || pullLatest.busy(repositoryId)))
+        ) {
+            return
+        }
+        // A quiet read shows nothing until it finds a difference; `refreshing` only guards against overlapping reads.
+        let changed = !quiet || state.error != undefined
+        state.error = undefined
+        if (state.graph)
+            state.refreshing = true
+        else
+            state.loading = true
+        if (!quiet)
+            await options.update()
+
+        try {
+            let result = await options.api.readBranchGraph(repositoryId, refreshRemote)
+            if (result.ok) {
+                let recoveries = result.worktreeRecoveries ?? []
+                if (
+                    !changed
+                    && (refreshRemote || JSON.stringify(state.graph) != JSON.stringify(result.graph)
+                        || JSON.stringify(state.worktreeRecoveries) != JSON.stringify(recoveries))
+                ) {
+                    changed = true
+                }
+                state.worktreeRecoveries = recoveries
+                let columns = workspaceGraph(result.graph)
+                let validColumnIds = new Set(
+                    [...columns.branches, ...columns.virtualBranches].map(branch => branch.id).concat(recoveries.map(recoveryColumnId)),
+                )
+                let removedColumns = state.openedBranchIds.filter(id => !validColumnIds.has(id) && !id.startsWith("recovery:"))
+                let previousPatterns = state.graph?.remotePatterns.join(", ")
+                state.graph = result.graph
+                state.openedBranchIds.push(...inspection.refreshComparisons(repositoryId, columns))
+                if (refreshRemote)
+                    state.remoteRefreshed = true
+                // Quiet refreshes must not wipe a draft the user is still typing into the settings panel.
+                let savedPatterns = result.graph.remotePatterns.join(", ")
+                if (!state.showSettings || savedPatterns != previousPatterns)
+                    state.patterns = savedPatterns
+                state.openedBranchIds = state.openedBranchIds.filter(id => validColumnIds.has(id))
+                if (!state.focusedColumnId || !state.openedBranchIds.includes(state.focusedColumnId))
+                    state.focusedColumnId = state.openedBranchIds[0]
+                for (let column of [...columns.branches, ...columns.virtualBranches].filter(column => state.openedBranchIds.includes(column.id)))
+                    state.widths[column.id] ??= defaultColumnWidth
+
+                let savedRepository = options.workspace().repositories.find(repository => repository.id == repositoryId)
+                if (savedRepository?.status == "available") {
+                    let reconciled = reconcileWorktreeColumns(savedRepository.columns, result.graph, savedRepository.focusedColumnId, recoveries)
+                    state.openedBranchIds = [
+                        ...reconciled.columns.map(column => column.id),
+                        ...state.openedBranchIds.filter(id => !savedRepository.columns.some(column => column.id == id)),
+                    ]
+                    for (let column of reconciled.columns) {
+                        state.widths[column.id] = column.width
+                        state.diffLayouts[column.id] = column.diffLayout ?? "unified"
+                        state.collapsedColumnIds = state.collapsedColumnIds.filter(id => id != column.id)
+                        if (column.collapsed)
+                            state.collapsedColumnIds.push(column.id)
+                    }
+                    state.focusedColumnId = reconciled.focused
+                    savedRepository.columns = reconciled.columns
+                }
+
+                if (savedRepository?.status == "available" && !savedRepository.layoutInitialized) {
+                    let selectedPath = savedRepository.info.selectedWorktree
+                    let initialColumn = columns.branches.find(branch => branch.checkedOut.some(worktree => worktree.path == selectedPath))
+                        ?? result.graph.virtualBranches.find(branch => branch.worktree.path == selectedPath)
+                    if (initialColumn) {
+                        state.openedBranchIds.push(initialColumn.id)
+                        state.focusedColumnId = initialColumn.id
+                        state.widths[initialColumn.id] = defaultColumnWidth
+                    }
+                    savedRepository.layoutInitialized = true
+                }
+
+                for (let column of [...columns.branches.filter(branch => branch.checkedOut.length > 0), ...columns.virtualBranches]) {
+                    let worktrees = column.kind == "branch" ? column.checkedOut : [column.worktree]
+                    if (!state.openedBranchIds.includes(column.id) && !worktrees.some(worktree => recoveries.some(item => item.path == worktree.path)))
+                        state.openedBranchIds.push(column.id)
+                    state.widths[column.id] ??= defaultColumnWidth
+                }
+
+                state.openedBranchIds = [...new Set(state.openedBranchIds)]
+                if (state.maximizedBranchId && !state.openedBranchIds.includes(state.maximizedBranchId))
+                    state.maximizedBranchId = undefined
+                if (!state.focusedColumnId || !state.openedBranchIds.includes(state.focusedColumnId))
+                    state.focusedColumnId = state.openedBranchIds[0]
+                state.baseCandidateSelections = Object.fromEntries(
+                    Object.entries(state.baseCandidateSelections).filter(([branchId, candidateId]) => {
+                        let branch = result.graph.branches.find(candidate => candidate.id == branchId)
+                        return branch?.base.status == "ambiguous" && branch.base.candidates.some(candidate => candidate.branchId == candidateId)
+                    }),
+                )
+
+                if (removedColumns.length > 0) {
+                    options.notify({
+                        code: "branch.removed",
+                        message: `${
+                            removedColumns.length == 1 ? "An open branch" : `${removedColumns.length} open branches`
+                        } no longer exists; its column was closed.`,
+                    })
+                }
+
+                await persist(repositoryId)
+            } else if (result.error.code != "git.cancelled") {
+                changed = true
+                let refreshedWorkspace = (await options.api.getState()).workspace
+                if (refreshedWorkspace.repositories.some(repository => repository.id == repositoryId && repository.status == "missing"))
+                    options.workspaceChanged(refreshedWorkspace)
+                state.error = result.error.message
+                if (state.graph)
+                    options.notify({ code: result.error.code, message: `Branch Graph refresh failed: ${result.error.message}` })
+            }
+        } catch (error) {
+            changed = true
+            state.error = errorMessage(error)
+        } finally {
+            state.loading = false
+            state.refreshing = false
+            if (changedWhileReading.delete(repositoryId) && repositoryId == activeRepositoryId)
+                void read(repositoryId, false, true)
+            if (changed || !state.focusRestored)
+                await options.update()
+            if (!state.focusRestored && state.focusedColumnId) {
+                state.focusRestored = true
+                let column = [...document.querySelectorAll<HTMLElement>("[data-column-id]")].find(candidate =>
+                    candidate.dataset.columnId == state.focusedColumnId
+                )
+                column?.focus({ preventScroll: true })
+                column?.scrollIntoView({ block: "nearest", inline: "nearest" })
+            }
+        }
+    }
+
+    async function persist(repositoryId: string) {
+        let workspace = options.workspace()
+        let repository = workspace.repositories.find(candidate => candidate.id == repositoryId)
+        let state = stateFor(repositoryId)
+        if (!repository || !state.graph)
+            return
+        repository.columns = state.openedBranchIds.flatMap((id): WorkspaceColumn[] => {
+            let recovery = state.worktreeRecoveries.find(item => recoveryColumnId(item) == id)
+            if (recovery) {
+                return [{
+                    ...recoveryWorkspaceColumn(recovery, state.widths[id] ?? defaultColumnWidth),
+                    collapsed: state.collapsedColumnIds.includes(id),
+                    diffLayout: state.diffLayouts[id] ?? "unified",
+                }]
+            }
+            let branch = workspaceGraph(state.graph!).branches.find(candidate => candidate.id == id)
+            if (branch) {
+                return [{
+                    kind: "branch" as const,
+                    id,
+                    ref: branch.preferredRef,
+                    lastSeenObjectId: branch.tip,
+                    width: state.widths[id] ?? defaultColumnWidth,
+                    collapsed: state.collapsedColumnIds.includes(id),
+                    diffLayout: state.diffLayouts[id] ?? "unified",
+                    ...(backingPath(repositoryId, id) ? { worktreePath: backingPath(repositoryId, id) } : {}),
+                    worktreeId: branch.checkedOut.find(worktree => worktree.path == backingPath(repositoryId, id))?.id,
+                }]
+            }
+            let virtual = state.graph!.virtualBranches.find(candidate => candidate.id == id)
+
+            return virtual
+                ? [{
+                    kind: "virtual" as const,
+                    id,
+                    worktreePath: virtual.worktree.path,
+                    worktreeId: virtual.worktree.id,
+                    lastSeenObjectId: virtual.objectId,
+                    width: state.widths[id] ?? defaultColumnWidth,
+                    collapsed: state.collapsedColumnIds.includes(id),
+                    diffLayout: state.diffLayouts[id] ?? "unified",
+                }]
+                : []
+        })
+        repository.focusedColumnId = state.focusedColumnId
+
+        try {
+            options.workspaceChanged(await options.api.updateWorkspace(workspace))
+        } catch (error) {
+            options.notify({ code: "workspace.write-failed", message: errorMessage(error) })
+        }
+    }
+
+    function backingPath(repositoryId: string, columnId: string) {
+        let recovery = stateFor(repositoryId).worktreeRecoveries.find(item => recoveryColumnId(item) == columnId)
+        if (recovery)
+            return recovery.path
+        let graph = stateFor(repositoryId).graph
+        let virtual = graph?.virtualBranches.find(branch => branch.id == columnId)
+        if (virtual)
+            return virtual.worktree.path
+        let branch = graph && workspaceGraph(graph).branches.find(branch => branch.id == columnId)
+        let saved = options.workspace().repositories.find(repository => repository.id == repositoryId)?.columns.find(column => column.id == columnId)
+            ?.worktreePath
+
+        return branch?.checkedOut.find(worktree => worktree.path == saved)?.path ?? (branch?.checkedOut.length == 1 ? branch.checkedOut[0].path : undefined)
+    }
+
+    function stateFor(repositoryId: string) {
+        let state = states.get(repositoryId)
+        if (!state) {
+            let saved = options.workspace().repositories.find(repository => repository.id == repositoryId)
+            state = {
+                worktreeRecoveries: [],
+                recoveryErrors: {},
+                diffLayouts: Object.fromEntries(saved?.columns.map(column => [column.id, column.diffLayout ?? "unified"]) ?? []),
+                loading: false,
+                refreshing: false,
+                showAll: false,
+                openedBranchIds: saved?.columns.map(column => column.id) ?? [],
+                widths: Object.fromEntries(saved?.columns.map(column => [column.id, column.width]) ?? []),
+                focusedColumnId: saved?.focusedColumnId,
+                focusRestored: false,
+                showSettings: false,
+                patterns: "",
+                graphCollapsed: true,
+                collapsedColumnIds: saved?.columns.filter(column => column.collapsed).map(column => column.id) ?? [],
+                collapsedBranchIds: [],
+                remoteRefreshed: false,
+                baseCandidateSelections: {},
+                graphScrollTop: 0,
+                graphViewportHeight: 600,
+            }
+            states.set(repositoryId, state)
+        }
+        return state
+    }
 }
 
-const branchContextMenu = css({
-    position: "fixed",
-    width: "max-content",
-    maxWidth: "calc(100vw - 16px)",
-    borderRadius: "3px",
-    margin: 0,
-    padding: "4px",
-    border: "1px solid var(--line-strong)",
-    background: "var(--panel)",
-    color: "var(--text)",
-    "&::backdrop": { background: "transparent" },
-    "& button": {
-        display: "block",
-        width: "100%",
-        textAlign: "left",
-        color: "inherit",
-        background: "var(--control)",
-        border: 0,
-        padding: "4px 8px",
-        font: "inherit",
-        cursor: "pointer",
-    },
-})
-
 function windowNodes(nodes: GraphRowLayout[], scrollTop: number, viewportHeight: number) {
-    const overscan = 6
-    const maximumScrollTop = Math.max(0, nodes.length * graphRowHeight - viewportHeight)
-    const effectiveScrollTop = Math.min(scrollTop, maximumScrollTop)
-    const start = Math.max(0, Math.floor(effectiveScrollTop / graphRowHeight) - overscan)
-    const end = Math.min(nodes.length, Math.ceil((effectiveScrollTop + viewportHeight) / graphRowHeight) + overscan)
+    let overscan = 6
+    let maximumScrollTop = Math.max(0, nodes.length * graphRowHeight - viewportHeight)
+    let effectiveScrollTop = Math.min(scrollTop, maximumScrollTop)
+    let start = Math.max(0, Math.floor(effectiveScrollTop / graphRowHeight) - overscan)
+    let end = Math.min(nodes.length, Math.ceil((effectiveScrollTop + viewportHeight) / graphRowHeight) + overscan)
+
     return {
         start,
         nodes: nodes.slice(start, end),
@@ -1332,15 +2337,15 @@ function branchesForDisplay(graph: BranchGraph, showAll: boolean, collapsedBranc
     if (showAll)
         branches = graph.branches
     else {
-        const structural = new Set(
+        let structural = new Set(
             graph.branches.filter(branch => branch.primary || branch.checkedOut.length > 0 || branch.involvement == "involved").map(branch => branch.id),
         )
         let changed = true
         while (changed) {
             changed = false
-            for (const branch of graph.branches.filter(branch => structural.has(branch.id))) {
-                const baseIds = branch.base.status == "known" ? [branch.base.branchId] : branch.base.candidates.map(candidate => candidate.branchId)
-                for (const id of baseIds) {
+            for (let branch of graph.branches.filter(branch => structural.has(branch.id))) {
+                let baseIds = branch.base.status == "known" ? [branch.base.branchId] : branch.base.candidates.map(candidate => candidate.branchId)
+                for (let id of baseIds) {
                     if (!structural.has(id)) {
                         structural.add(id)
                         changed = true
@@ -1350,17 +2355,19 @@ function branchesForDisplay(graph: BranchGraph, showAll: boolean, collapsedBranc
         }
         branches = graph.branches.filter(branch => structural.has(branch.id))
     }
-    const collapsed = new Set(collapsedBranchIds)
+    let collapsed = new Set(collapsedBranchIds)
+
     return branches.filter(branch => {
         let parent = branch.base.status == "known" ? branch.base.branchId : undefined
-        const visited = new Set<string>()
+        let visited = new Set<string>()
         while (parent && !visited.has(parent)) {
             if (collapsed.has(parent))
                 return false
             visited.add(parent)
-            const parentBranch = graph.branches.find(candidate => candidate.id == parent)
+            let parentBranch = graph.branches.find(candidate => candidate.id == parent)
             parent = parentBranch?.base.status == "known" ? parentBranch.base.branchId : undefined
         }
+
         return true
     })
 }
@@ -1385,7 +2392,7 @@ function BaseUnresolved(
     handle: Handle<{ branches: BranchGraphBranchNode[]; selections: Record<string, string>; choose(branchId: string, candidateId: string): void }>,
 ) {
     return () => {
-        const unresolved = handle.props.branches.filter(branch => branch.base.status == "ambiguous")
+        let unresolved = handle.props.branches.filter(branch => branch.base.status == "ambiguous")
         if (unresolved.length == 0)
             return null
         return (
@@ -1437,8 +2444,8 @@ function BranchRow(
     >,
 ) {
     return () => {
-        const props = handle.props
-        const branch = props.branch
+        let props = handle.props
+        let branch = props.branch
         return (
             <div
                 class={`graph-row ${props.selected ? "selected" : ""} ${props.rebase ? `rebase-${props.rebase}` : ""}`}
@@ -1457,6 +2464,7 @@ function BranchRow(
                     on("dragover", event => {
                         if (!event.dataTransfer?.types.includes(branchDragType) || !props.accepts())
                             return
+
                         event.preventDefault()
                         event.dataTransfer.dropEffect = "move"
                         event.currentTarget.classList.add("rebase-target")
@@ -1556,8 +2564,6 @@ function BranchRow(
     }
 }
 
-const branchDragType = "application/x-laneway-branch"
-
 function SimpleNodeRow(
     handle: Handle<{ id: string; kind: "tag" | "worktree"; name: string; title: string; rail: RemixNode; selected: boolean; select(): void }>,
 ) {
@@ -1587,7 +2593,7 @@ function SimpleNodeRow(
 
 function GraphRail(handle: Handle<{ row: GraphRowLayout }>) {
     return () => {
-        const { x, color, sameCommit } = handle.props.row
+        let { x, color, sameCommit } = handle.props.row
         return (
             <svg
                 class="graph-rail-lines"
@@ -1602,8 +2608,8 @@ function GraphRail(handle: Handle<{ row: GraphRowLayout }>) {
                     ? (() => {
                         // One commit labelled by several rows stretches its node across them, so branches sharing a tip
                         // don't read as a stack. Each row draws its part; open ends meet the neighbouring row's.
-                        const top = sameCommit.above ? 0 : 20, bottom = sameCommit.below ? 40 : 20
-                        const outline = (open: "M" | "L") =>
+                        let top = sameCommit.above ? 0 : 20, bottom = sameCommit.below ? 40 : 20
+                        let outline = (open: "M" | "L") =>
                             `M ${x - 4} ${bottom} V ${top} ${sameCommit.above ? `${open} ${x + 4} ${top}` : `A 4 4 0 0 1 ${x + 4} ${top}`} V ${bottom}${
                                 sameCommit.below ? "" : ` A 4 4 0 0 1 ${x - 4} ${bottom}`
                             }`
@@ -1644,12 +2650,12 @@ function BranchColumns(
     >,
 ) {
     return () => {
-        const props = handle.props
-        const columns = props.state.openedBranchIds.map(id =>
+        let props = handle.props
+        let columns = props.state.openedBranchIds.map(id =>
             props.graph.branches.find(branch => branch.id == id) ?? props.graph.virtualBranches.find(branch => branch.id == id)
                 ?? recoveryNode(props.state.worktreeRecoveries.find(item => recoveryColumnId(item) == id))
         ).filter(column => column != undefined)
-        const unavailable = props.inspection.unavailableComparisonSources(props.repositoryId, props.graph)
+        let unavailable = props.inspection.unavailableComparisonSources(props.repositoryId, props.graph)
         if (columns.length == 0 && unavailable.length == 0) {
             return (
                 <section class="column-empty" mix={columnEmpty}>
@@ -1664,19 +2670,22 @@ function BranchColumns(
                 </section>
             )
         }
-        const visible = props.state.maximizedBranchId ? columns.filter(column => column.id == props.state.maximizedBranchId) : columns
+        let visible = props.state.maximizedBranchId ? columns.filter(column => column.id == props.state.maximizedBranchId) : columns
+
         return (
             <section class={`branch-columns ${props.state.maximizedBranchId ? "maximized" : ""}`} mix={branchColumns}>
                 {visible.map(column => {
-                    const collapsed = props.state.collapsedColumnIds.includes(column.id)
-                    const width = props.state.widths[column.id] ?? defaultColumnWidth
-                    const auxiliary = collapsed || column.kind == "recovery" ? null : props.inspection.breakout(props.repositoryId, column.id)
+                    let collapsed = props.state.collapsedColumnIds.includes(column.id)
+                    let width = props.state.widths[column.id] ?? defaultColumnWidth
+                    let auxiliary = collapsed || column.kind == "recovery" ? null : props.inspection.breakout(props.repositoryId, column.id)
                     // Auxiliary columns join onto their source column's card.
-                    const attached = Array.isArray(auxiliary) && auxiliary.length > 0
+                    let attached = Array.isArray(auxiliary) && auxiliary.length > 0
                     // A maximized column shares the space with its auxiliary columns, split by its own resizable width.
-                    const split = !!props.state.maximizedBranchId && attached
+                    let split = !!props.state.maximizedBranchId && attached
+
                     // A keyed run of siblings rather than a fragment: Remix appends a node added to the end of a fragment after
                     // the parent's last child, which put a newly opened diff column after every other column.
+
                     return [
                         <article
                             key={column.id}
@@ -1764,11 +2773,11 @@ function BranchColumns(
                                                 }),
                                                 on("drop", event => {
                                                     event.preventDefault()
-                                                    const source = props.state.draggingColumnId
+                                                    let source = props.state.draggingColumnId
                                                     if (source)
                                                         props.commitMove(source)
                                                     else {
-                                                        const branch = event.dataTransfer?.getData(branchDragType)
+                                                        let branch = event.dataTransfer?.getData(branchDragType)
                                                         if (branch && column.kind != "recovery")
                                                             props.dropBranch(column.id, branch)
                                                     }
@@ -1792,7 +2801,7 @@ function BranchColumns(
                                                 <Icon name="collapse-left" size={15} />
                                             </button>
                                             {(() => {
-                                                const identity = columnIdentity(column, props.worktreePath(column.id))
+                                                let identity = columnIdentity(column, props.worktreePath(column.id))
                                                 return (
                                                     <span class="column-kind" title={identity.kind} mix={[columnKindIcon, identity.tone]}>
                                                         <Icon name={identity.icon} size={17} />
@@ -1871,11 +2880,12 @@ function BranchColumns(
 function ColumnDivider(handle: Handle<{ branchId: string; width: number; attached: boolean; resize(branchId: string, width: number): void }>) {
     // Sizes the column ahead of the resize and returns its new width. A split column is capped to keep its auxiliary
     // columns in view, so its width is read back rather than assumed.
-    const applyWidth = (divider: HTMLElement, width: number) => {
-        const column = divider.previousElementSibling as HTMLElement | null
+    let applyWidth = (divider: HTMLElement, width: number) => {
+        let column = divider.previousElementSibling as HTMLElement | null
         width = Math.max(310, width)
         if (column)
             column.style.width = `${width}px`
+
         return column?.classList.contains("split") ? column.getBoundingClientRect().width : width
     }
     return () => (
@@ -1891,8 +2901,8 @@ function ColumnDivider(handle: Handle<{ branchId: string; width: number; attache
             mix={[
                 columnDivider,
                 on("keydown", event => {
-                    const step = event.shiftKey ? 50 : 10
-                    const width = event.key == "ArrowLeft" || event.key == "ArrowRight"
+                    let step = event.shiftKey ? 50 : 10
+                    let width = event.key == "ArrowLeft" || event.key == "ArrowRight"
                         ? handle.props.width + (event.key == "ArrowLeft" ? -step : step)
                         : event.key == "Home"
                         ? 310
@@ -1906,11 +2916,11 @@ function ColumnDivider(handle: Handle<{ branchId: string; width: number; attache
                 }),
                 on("pointerdown", event => {
                     event.preventDefault()
-                    const startX = event.clientX
-                    const startWidth = handle.props.width
-                    const divider = event.currentTarget
-                    const move = (next: PointerEvent) => applyWidth(divider, startWidth + next.clientX - startX)
-                    const end = (next: PointerEvent) => {
+                    let startX = event.clientX
+                    let startWidth = handle.props.width
+                    let divider = event.currentTarget
+                    let move = (next: PointerEvent) => applyWidth(divider, startWidth + next.clientX - startX)
+                    let end = (next: PointerEvent) => {
                         window.removeEventListener("pointermove", move)
                         window.removeEventListener("pointerup", end)
                         handle.props.resize(handle.props.branchId, applyWidth(divider, startWidth + next.clientX - startX))
@@ -1926,7 +2936,7 @@ function ColumnDivider(handle: Handle<{ branchId: string; width: number; attache
 }
 
 function GraphSettings(handle: Handle<{ graph: BranchGraph; state: RepositoryGraphState; apply(settings: RepositoryGraphSettings): void; close(): void }>) {
-    const applyPatterns = () =>
+    let applyPatterns = () =>
         handle.props.apply({ selectedRemote: handle.props.graph.selectedRemote, remotePatterns: splitPatterns(handle.props.state.patterns) })
     return () => (
         <section class="graph-settings" role="dialog" aria-labelledby={handle.id + "-title"} mix={graphSettings}>
@@ -2053,31 +3063,15 @@ function GraphError(handle: Handle<{ message: string; retry(): void }>) {
     )
 }
 
-interface LensNavigationResult {
-    kind: "repository" | "branch"
-    repositoryId: string
-    nodeId: string
-    label: string
-    detail: string
-    score: number
-}
-
-interface ColumnCommandResult extends Omit<LensNavigationResult, "kind"> {
-    kind: "command"
-    delta: number
-}
-
-export type LensResult = LensNavigationResult | ColumnCommandResult
-
 function lensResults(workspace: Workspace, states: Map<string, RepositoryGraphState>, activeId: string | undefined, query: string): LensResult[] {
-    const needle = query.trim().toLocaleLowerCase()
+    let needle = query.trim().toLocaleLowerCase()
     if (!needle)
         return []
-    const results: LensResult[] = []
-    const focusedColumnId = activeId ? states.get(activeId)?.focusedColumnId : undefined
+    let results: LensResult[] = []
+    let focusedColumnId = activeId ? states.get(activeId)?.focusedColumnId : undefined
     if (activeId && focusedColumnId) {
-        for (const command of [{ label: "Move column left", delta: -1 }, { label: "Move column right", delta: 1 }]) {
-            const score = textScore(command.label, needle)
+        for (let command of [{ label: "Move column left", delta: -1 }, { label: "Move column right", delta: 1 }]) {
+            let score = textScore(command.label, needle)
             if (score > 0) {
                 results.push({
                     kind: "command",
@@ -2091,9 +3085,9 @@ function lensResults(workspace: Workspace, states: Map<string, RepositoryGraphSt
             }
         }
     }
-    for (const repository of workspace.repositories) {
-        const name = repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name
-        const repoScore = textScore(name, needle)
+    for (let repository of workspace.repositories) {
+        let name = repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name
+        let repoScore = textScore(name, needle)
         if (repoScore > 0) {
             results.push({
                 kind: "repository",
@@ -2104,13 +3098,14 @@ function lensResults(workspace: Workspace, states: Map<string, RepositoryGraphSt
                 score: repoScore,
             })
         }
-        const graph = states.get(repository.id)?.graph
-        for (const branch of graph ? workspaceGraph(graph).branches : []) {
-            const score = Math.max(...[branch.name, ...branch.aliases].map(value => textScore(value, needle)))
+        let graph = states.get(repository.id)?.graph
+        for (let branch of graph ? workspaceGraph(graph).branches : []) {
+            let score = Math.max(...[branch.name, ...branch.aliases].map(value => textScore(value, needle)))
             if (score > 0)
                 results.push({ kind: "branch", repositoryId: repository.id, nodeId: branch.id, label: branch.name, detail: name, score })
         }
     }
+
     return results.sort((left, right) =>
         Number(right.repositoryId == activeId) - Number(left.repositoryId == activeId) || right.score - left.score
         || left.label.localeCompare(right.label, undefined, { numeric: true })
@@ -2118,13 +3113,14 @@ function lensResults(workspace: Workspace, states: Map<string, RepositoryGraphSt
 }
 
 function textScore(value: string, query: string) {
-    const text = value.toLocaleLowerCase()
+    let text = value.toLocaleLowerCase()
     if (text == query)
         return 4
     if (text.startsWith(query))
         return 3
     if (text.split(/[\/_.-]+/).some(part => part.startsWith(query)))
         return 2
+
     return text.includes(query) ? 1 : 0
 }
 
@@ -2140,9 +3136,6 @@ function shortOid(objectId: string) {
     return objectId.slice(0, 8)
 }
 
-type ColumnNode = BranchGraph["branches"][number] | BranchGraph["virtualBranches"][number]
-type RecoveryColumnNode = { kind: "recovery"; id: string; name: string; recovery: WorktreeRecovery }
-
 function recoveryNode(recovery?: WorktreeRecovery): RecoveryColumnNode | undefined {
     return recovery && { kind: "recovery", id: recoveryColumnId(recovery), name: baseName(recovery.path), recovery }
 }
@@ -2151,12 +3144,14 @@ function recoveryNode(recovery?: WorktreeRecovery): RecoveryColumnNode | undefin
 function columnIdentity(column: ColumnNode | RecoveryColumnNode, worktreePath: string | undefined) {
     if (column.kind == "recovery")
         return { icon: "warning" as const, kind: "Worktree recovery", name: column.name, tone: toneWarning }
-    const worktree = column.kind == "branch" ? column.checkedOut.find(item => item.path == worktreePath) : column.worktree
+
+    let worktree = column.kind == "branch" ? column.checkedOut.find(item => item.path == worktreePath) : column.worktree
     if (worktree) {
         return worktree.main
             ? { icon: "folder" as const, kind: "Main worktree", name: worktree.name, tone: toneMain }
             : { icon: "folder" as const, kind: column.kind == "virtual" ? "Virtual worktree" : "Worktree", name: worktree.name, tone: toneWorktree }
     }
+
     return {
         icon: "branch" as const,
         kind: column.kind == "branch" ? column.remoteOnly ? "Remote branch" : "Branch" : "Virtual branch",
@@ -2164,970 +3159,3 @@ function columnIdentity(column: ColumnNode | RecoveryColumnNode, worktreePath: s
         tone: toneBranch,
     }
 }
-
-const toneMain = css({ color: "var(--accent)" })
-const toneWorktree = css({ color: "var(--ok)" })
-const toneBranch = css({ color: "var(--focus)" })
-const toneWarning = css({ color: "var(--warning)" })
-
-const columnKindIcon = css({
-    flex: "0 0 auto",
-    display: "grid",
-    placeItems: "center",
-    width: "18px",
-    height: "18px",
-})
-
-const columnTabs = css({
-    display: "flex",
-    alignItems: "stretch",
-    minWidth: "0",
-    overflow: "hidden",
-})
-
-const columnTab = css({
-    position: "relative",
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "7px",
-    maxWidth: "220px",
-    minWidth: "0",
-    padding: "0 12px",
-    color: "var(--muted)",
-    border: "0",
-    borderRadius: "0",
-    background: "transparent",
-    fontSize: "12.5px",
-    fontWeight: "500",
-    "&:hover": { color: "var(--text)", background: "var(--hover)" },
-    "&.collapsed": { color: "var(--faint)", fontStyle: "italic" },
-    "&.active": { color: "var(--text)", fontWeight: "600" },
-    "&.active::before": {
-        content: '""',
-        position: "absolute",
-        left: "8px",
-        right: "8px",
-        bottom: "-1px",
-        height: "3px",
-        borderRadius: "2px 2px 0 0",
-        background: "var(--accent)",
-    },
-    "&:focus-visible": { outlineOffset: "-2px" },
-})
-
-const columnTabName = css({
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-})
-
-const expandColumnIcon = css({
-    display: "grid",
-    placeItems: "center",
-})
-
-const branchColumnActions = css({
-    order: "1",
-    flex: "0 0 auto",
-    display: "flex",
-    alignItems: "center",
-    gap: "2px",
-})
-
-const workspaceStyle = css({
-    height: "100%",
-    display: "grid",
-    gridTemplateColumns: "var(--rail) minmax(0, 1fr)",
-})
-
-const graphDesk = css({
-    position: "relative",
-    minWidth: "0",
-    minHeight: "0",
-    // No side padding: the branch columns scroll right up to the window edge and the repository rail.
-    padding: "var(--gutter) 0",
-    display: "flex",
-    flexDirection: "column",
-    overflow: "hidden",
-    background: "var(--canvas)",
-})
-
-const graphDeskProgress = css({
-    position: "absolute",
-    top: "0",
-    left: "0",
-    zIndex: "1",
-    width: "26%",
-    height: "2px",
-    background: "var(--accent)",
-    opacity: "0.7",
-    animation: "progress-sweep 1.3s ease-in-out infinite alternate",
-    "@media (forced-colors: active)": {
-        background: "Highlight",
-    },
-})
-
-const graphToolbar = css({
-    position: "relative",
-    flexShrink: "0",
-    flexWrap: "wrap",
-    minHeight: "46px",
-    padding: "0 8px 0 14px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "4px 8px",
-    borderBottom: "1px solid var(--line)",
-    background: "var(--panel)",
-})
-
-const graphToolbarH1 = css({
-    margin: "0",
-    overflow: "hidden",
-    fontFamily: '"Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif',
-    fontSize: "16px",
-    fontWeight: "600",
-    letterSpacing: "-0.01em",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-})
-
-const graphActions = css({
-    display: "flex",
-    flex: "0 0 auto",
-    gap: "4px",
-    "&:first-child": {
-        minWidth: "0",
-        display: "flex",
-        alignItems: "baseline",
-        gap: "8px",
-        overflow: "hidden",
-    },
-})
-
-const graphPanelToggleButton = css({
-    width: "32px",
-    height: "32px",
-    padding: "0",
-    display: "grid",
-    placeItems: "center",
-    color: "var(--chrome-muted)",
-    border: "1px solid transparent",
-    borderRadius: "6px",
-    background: "transparent",
-    "&:hover": { color: "var(--chrome-text)", background: "var(--chrome-2)" },
-    '&[aria-expanded="true"]': { color: "var(--chrome-accent)" },
-    "&:focus-visible": { outline: "2px solid var(--ring)", outlineOffset: "1px" },
-})
-
-const graphActionsButton = css({
-    height: "28px",
-    padding: "0 10px",
-    color: "var(--text)",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "var(--radius)",
-    background: "var(--panel)",
-    fontSize: "12px",
-    fontWeight: "500",
-    "&.active": {
-        color: "var(--focus)",
-        borderColor: "var(--focus-edge)",
-        background: "var(--focus-wash)",
-    },
-    "&:hover:not(:disabled)": {
-        background: "var(--control-hover)",
-    },
-})
-
-const branchGraphSettingsButton = css({
-    width: "28px",
-    height: "28px",
-    padding: "0",
-    display: "grid",
-    placeItems: "center",
-    color: "var(--text)",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "var(--radius)",
-    background: "var(--panel)",
-    "&.active": { color: "var(--focus)", borderColor: "var(--focus-edge)", background: "var(--focus-wash)" },
-    "&:hover:not(:disabled)": { background: "var(--control-hover)" },
-})
-
-const graphLimit = css({
-    padding: "6px 12px",
-    color: "var(--warning)",
-    borderBottom: "1px solid var(--line)",
-    background: "var(--warning-wash)",
-    fontSize: "12px",
-    lineHeight: "1.4",
-})
-
-const graphLayout = css({
-    "&.graph-collapsed": { gridTemplateColumns: "minmax(0, 1fr)" },
-    minWidth: "0",
-    minHeight: "0",
-    display: "grid",
-    flex: "1 1 auto",
-    gridTemplateColumns: "clamp(260px, 28%, 380px) minmax(0, 1fr)",
-    overflow: "hidden",
-    "@media (max-width: 1080px)": {
-        gridTemplateColumns: "clamp(230px, 34%, 320px) minmax(0, 1fr)",
-    },
-})
-
-const graphSidebar = css({
-    "&.collapsed": { display: "none" },
-    position: "relative",
-    zIndex: "1",
-    minWidth: "0",
-    minHeight: "0",
-    marginLeft: "4px",
-    display: "flex",
-    flexDirection: "column",
-    overflow: "hidden",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "var(--radius-card)",
-    background: "var(--panel)",
-    boxShadow: "var(--card-shadow), var(--edge-shadow)",
-})
-
-const graphPanel = css({
-    flex: "1 1 auto",
-    position: "relative",
-    minWidth: "0",
-    minHeight: "0",
-    display: "grid",
-    gridTemplateRows: "auto auto minmax(0, 1fr) auto",
-    background: "var(--panel)",
-})
-
-const graphRows = css({
-    minHeight: "0",
-    padding: "0",
-    overflow: "auto",
-    // Virtual rows and spacers already preserve position; browser anchoring
-    // otherwise compensates for their replacement and moves the viewport.
-    overflowAnchor: "none",
-    outline: "0",
-    "&:focus-visible": {
-        boxShadow: "inset 0 0 0 2px var(--focus)",
-    },
-})
-
-const graphSpacer = css({
-    width: "1px",
-    pointerEvents: "none",
-})
-
-const unassignedMarkers = css({
-    padding: "7px 10px",
-    color: "var(--muted)",
-    borderTop: "1px solid var(--line)",
-    fontSize: "12px",
-    lineHeight: "1.45",
-})
-
-const unassignedMarkersSummary = css({
-    cursor: "default",
-})
-
-const unassignedMarkersButton = css({
-    display: "block",
-    marginTop: "6px",
-    color: "var(--warning)",
-    border: "0",
-    background: "transparent",
-    font: "inherit",
-    textDecoration: "underline",
-})
-
-const graphSummary = css({
-    minHeight: "28px",
-    padding: "0 14px",
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    overflow: "hidden",
-    color: "var(--muted)",
-    borderBottom: "1px solid var(--line)",
-    background: "var(--panel-deep)",
-    fontSize: "11.5px",
-    whiteSpace: "nowrap",
-})
-
-const graphSummarySpan = css({
-    "& + span::before": {
-        marginRight: "12px",
-        content: '"·"',
-    },
-})
-
-const baseUnresolved = css({
-    padding: "7px 10px",
-    color: "var(--warning)",
-    borderBottom: "1px solid var(--line)",
-    background: "var(--warning-wash)",
-    fontSize: "12px",
-    lineHeight: "1.45",
-})
-
-const baseUnresolvedSummary = css({
-    cursor: "default",
-})
-
-const baseUnresolvedDiv = css({
-    marginTop: "6px",
-    display: "grid",
-    gridTemplateColumns: "minmax(80px, 1fr) 2fr",
-    alignItems: "center",
-    gap: "8px",
-})
-
-const baseUnresolvedSpan = css({
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "4px",
-})
-
-const baseUnresolvedButton = css({
-    minHeight: "24px",
-    padding: "0 7px",
-    color: "var(--text)",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "4px",
-    background: "var(--control)",
-    fontSize: "12px",
-    "&.active": {
-        color: "var(--warning)",
-        borderColor: "var(--warning-edge)",
-        background: "var(--warning-wash)",
-    },
-})
-
-const graphRow = css({
-    position: "relative",
-    width: "100%",
-    height: "40px",
-    minHeight: "40px",
-    padding: "3px 8px 3px 0",
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    color: "var(--text)",
-    textAlign: "left",
-    border: "0",
-    borderRadius: "0",
-    background: "transparent",
-    // Row separators are shadows so the 40px rail geometry stays exact.
-    boxShadow: "inset 0 -1px var(--line)",
-    "&.selected": {
-        background: "var(--focus-wash)",
-        boxShadow: "inset 3px 0 var(--focus), inset 0 -1px var(--line)",
-    },
-    "&.simple": {
-        paddingLeft: "0",
-    },
-    "&:hover": {
-        background: "var(--hover)",
-    },
-    "&.rebase-target": {
-        outline: "2px solid var(--focus)",
-        outlineOffset: "-2px",
-        background: "var(--focus-wash)",
-    },
-    "&.rebase-source": {
-        opacity: "0.6",
-    },
-})
-
-const graphRailLines = css({
-    flexShrink: "0",
-    overflow: "hidden",
-    alignSelf: "center",
-})
-
-const branchCopy = css({
-    minWidth: "0",
-    flex: "1 1 auto",
-    display: "grid",
-    gap: "1px",
-})
-
-const branchCopyStrong = css({
-    overflow: "hidden",
-    fontSize: "13px",
-    fontWeight: "600",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-})
-
-const branchCopySmall = css({
-    color: "var(--muted)",
-    fontFamily: "var(--mono)",
-    fontSize: "10.5px",
-    letterSpacing: "0",
-    textTransform: "none",
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-})
-
-const branchDetails = css({
-    minWidth: "0",
-    height: "18px",
-    display: "flex",
-    alignItems: "center",
-    gap: "4px",
-    overflow: "hidden",
-    "& button": { minHeight: "16px", padding: "0 3px" },
-})
-
-const worktreeChip = css({
-    maxWidth: "110px",
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "4px",
-    padding: "1px 6px",
-    overflow: "hidden",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "4px",
-    fontFamily: "var(--mono)",
-    fontSize: "10.5px",
-    fontWeight: "600",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-    "& svg": { flex: "0 0 auto" },
-    color: "var(--ok-ink)",
-    borderColor: "var(--ok-edge)",
-    background: "var(--ok-wash)",
-})
-
-const tagChip = css({
-    maxWidth: "110px",
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "4px",
-    padding: "1px 6px",
-    overflow: "hidden",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "4px",
-    fontFamily: "var(--mono)",
-    fontSize: "10.5px",
-    fontWeight: "600",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-    "& svg": { flex: "0 0 auto" },
-    color: "var(--warning)",
-    borderColor: "var(--accent-edge)",
-    background: "var(--accent-wash)",
-})
-
-const markerButton = css({
-    width: "20px",
-    height: "18px",
-    padding: "0",
-    display: "inline-grid",
-    placeItems: "center",
-    color: "var(--stash-ink)",
-    border: "1px solid var(--stash-edge)",
-    borderRadius: "4px",
-    background: "var(--stash-wash)",
-    "&:hover": { background: "var(--stash-edge)", color: "var(--panel)" },
-})
-
-const divergence = css({
-    maxWidth: "110px",
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "4px",
-    padding: "1px 6px",
-    overflow: "hidden",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "4px",
-    fontFamily: "var(--mono)",
-    fontSize: "10.5px",
-    fontWeight: "600",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-    "& svg": { flex: "0 0 auto" },
-    color: "var(--muted)",
-    background: "var(--panel-deep)",
-})
-
-const openBranch = css({
-    height: "24px",
-    padding: "0 10px",
-    color: "var(--focus)",
-    border: "1px solid var(--focus-edge)",
-    borderRadius: "var(--radius)",
-    background: "var(--panel)",
-    fontSize: "12px",
-    fontWeight: "600",
-    "&:hover": {
-        color: "#fff",
-        borderColor: "var(--focus)",
-        background: "var(--focus)",
-    },
-})
-
-const columnEmpty = css({
-    minWidth: "0",
-    minHeight: "0",
-    display: "grid",
-    placeContent: "center",
-    overflow: "hidden",
-    color: "var(--faint)",
-    textAlign: "center",
-})
-
-const columnEmptySpan = css({
-    color: "var(--muted)",
-    fontSize: "14px",
-})
-
-const columnEmptyP = css({
-    margin: "6px 0 0",
-    fontSize: "12px",
-})
-
-const branchColumns = css({
-    position: "relative",
-    minWidth: "0",
-    minHeight: "0",
-    display: "flex",
-    alignItems: "stretch",
-    gap: "var(--gutter)",
-    // Room for the 1px card ring, which sits outside each column's box. The side padding scrolls with the
-    // columns, leaving a gap at either end while scrolled columns run to the strip's edges.
-    padding: "1px var(--gutter) 1px 4px",
-    // Beside the sidebar, the columns tuck under its rounded edge so scrolled columns disappear beneath its shadow.
-    ".graph-layout:not(.graph-collapsed) &": {
-        marginLeft: "calc(-1 * var(--radius-card))",
-        paddingLeft: "calc(var(--gutter) + var(--radius-card))",
-    },
-    overflowX: "auto",
-    overflowY: "hidden",
-    // Column focus rings and dividers stay beneath the Branch Graph sidebar.
-    isolation: "isolate",
-    // A styled scrollbar takes up room, so it sits under the columns instead of overlaying their bottom edge.
-    "&::-webkit-scrollbar": { height: "10px" },
-    "&::-webkit-scrollbar-track": { background: "transparent" },
-    "&::-webkit-scrollbar-thumb": {
-        background: "var(--line-strong)",
-        border: "2px solid var(--canvas)",
-        borderRadius: "5px",
-    },
-    "&::-webkit-scrollbar-thumb:hover": { background: "var(--faint)" },
-    "&.maximized .branch-column": {
-        width: "100%",
-    },
-})
-
-const collapsedColumnButton = css({
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    writingMode: "vertical-rl",
-    padding: "12px",
-    color: "var(--text)",
-    background: "var(--panel)",
-    border: "0",
-    cursor: "pointer",
-    "&:hover": { background: "var(--control-hover)" },
-})
-
-const branchColumn = css({
-    "&.collapsed": { minWidth: "52px", gridTemplateRows: "minmax(0, 1fr)" },
-    position: "relative",
-    width: `${defaultColumnWidth}px`,
-    minWidth: "310px",
-    flex: "0 0 auto",
-    display: "grid",
-    gridTemplateRows: "auto minmax(0, 1fr)",
-    overflow: "hidden",
-    // The card edge is a shadow ring so the column's content box starts at its left edge.
-    border: "0",
-    borderRadius: "var(--radius-card)",
-    background: "var(--panel)",
-    boxShadow: "0 0 0 1px var(--line-strong), var(--card-shadow)",
-    // The focus ring is an overlay so the header and body cannot paint over it.
-    "&:focus-visible": { outline: "0" },
-    "&:focus-visible::after": {
-        content: '""',
-        position: "absolute",
-        inset: "0",
-        zIndex: "10",
-        border: "2px solid var(--ring)",
-        borderRadius: "inherit",
-        pointerEvents: "none",
-    },
-    // Leaves room for at least one auxiliary column beside a maximized column.
-    "&.attached": { borderTopRightRadius: "0", borderBottomRightRadius: "0" },
-    "&.split": { maxWidth: "calc(100% - 310px - var(--gutter))" },
-    "&:has(.column-inspection.focused)": {
-        width: "240px !important",
-        minWidth: "240px !important",
-    },
-})
-
-const branchColumnHeader = css({
-    position: "relative",
-    minHeight: "46px",
-    padding: "0 6px 0 0",
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    borderBottom: "1px solid var(--line)",
-    background: "var(--panel)",
-    '&[draggable="true"]': {
-        cursor: "grab",
-    },
-    '&[draggable="true"]:active': {
-        cursor: "grabbing",
-    },
-})
-
-const branchColumnH2 = css({
-    flex: "1 1 auto",
-    minWidth: "0",
-    margin: "0",
-    overflow: "hidden",
-    fontFamily: '"Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif',
-    fontSize: "15px",
-    fontWeight: "600",
-    letterSpacing: "-0.01em",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-})
-
-const branchColumnButton = css({
-    width: "28px",
-    height: "28px",
-    padding: "0",
-    display: "grid",
-    placeItems: "center",
-    color: "var(--muted)",
-    border: "1px solid transparent",
-    borderRadius: "var(--radius)",
-    background: "transparent",
-    "&:hover": {
-        color: "var(--text)",
-        borderColor: "var(--line)",
-        background: "var(--control-hover)",
-    },
-})
-
-// The collapse control fills the header's full height at its leading edge, like a tab strip handle.
-const columnCollapseButton = css({
-    flex: "0 0 34px",
-    alignSelf: "stretch",
-    margin: "0",
-    padding: "0",
-    display: "grid",
-    placeItems: "center",
-    color: "var(--muted)",
-    border: "0",
-    borderRadius: "0",
-    background: "transparent",
-    cursor: "pointer",
-    "&:hover": {
-        color: "var(--text)",
-        background: "var(--control-hover)",
-    },
-    "&:focus-visible": {
-        outline: "2px solid var(--ring)",
-        outlineOffset: "-2px",
-    },
-})
-
-// The divider sits in the gap after its column, clear of the column's scrollbar; its negative margins cancel
-// the extra flex gap it would otherwise add.
-const columnDivider = css({
-    position: "relative",
-    zIndex: "2",
-    flex: "0 0 var(--gutter)",
-    alignSelf: "stretch",
-    margin: "0 calc(-1 * var(--gutter))",
-    cursor: "col-resize",
-    "&:focus-visible": {
-        outline: "2px solid var(--ring)",
-        outlineOffset: "0",
-    },
-    // Between a column and its auxiliary columns, the divider is the seam of their shared card: it carries the card's
-    // outline across the gap and still resizes the column.
-    "&.attached": {
-        borderInline: "1px solid var(--line)",
-        background: "var(--panel-deep)",
-        boxShadow: "0 -1px 0 var(--line-strong), 0 1px 0 var(--line-strong)",
-    },
-    "&.attached:hover, &.attached:focus-visible": { background: "var(--accent-wash-strong)" },
-})
-
-const graphSettings = css({
-    position: "absolute",
-    zIndex: "6",
-    top: "calc(100% + 4px)",
-    right: "8px",
-    width: "min(360px, calc(100% - 20px))",
-    padding: "10px 12px 14px",
-    display: "grid",
-    gap: "14px",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "6px",
-    background: "var(--raised)",
-    boxShadow: "var(--shadow-popover)",
-    "@media (forced-colors: active)": {
-        boxShadow: "none",
-    },
-})
-
-const graphSettingsHeader = css({
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "12px",
-})
-
-const graphSettingsH2 = css({
-    margin: "0",
-    fontSize: "13px",
-    fontWeight: "600",
-})
-
-// A quiet icon button, like the other close affordances, rather than a boxed control.
-const closeGraphSettingsButton = css({
-    width: "24px",
-    height: "24px",
-    padding: "0",
-    display: "grid",
-    placeItems: "center",
-    color: "var(--muted)",
-    border: "0",
-    borderRadius: "4px",
-    background: "transparent",
-    "&:hover": { color: "var(--text)", background: "var(--control-hover)" },
-})
-
-const graphSettingsField = css({
-    display: "grid",
-    gap: "6px",
-})
-
-const graphSettingsHint = css({
-    margin: "0",
-    color: "var(--muted)",
-    fontSize: "11.5px",
-    lineHeight: "1.45",
-})
-
-const graphSettingsCode = css({
-    color: "var(--text)",
-    fontFamily: "var(--mono)",
-    fontSize: "11px",
-})
-
-const graphSettingsRow = css({
-    display: "flex",
-    gap: "6px",
-    alignItems: "stretch",
-})
-
-const graphSettingsInput = css({
-    flex: "1",
-    minWidth: "0",
-    fontFamily: "var(--mono)",
-    fontSize: "12px",
-})
-
-const remoteOptions = css({
-    display: "grid",
-    gap: "6px",
-    margin: "0",
-    padding: "0",
-    border: "0",
-    minWidth: "0",
-})
-
-const remoteOptionsLabel = css({
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "8px",
-    fontSize: "12.5px",
-    cursor: "pointer",
-})
-
-const remoteOptionsInput = css({
-    background: "var(--field)",
-    border: "1px solid var(--line-strong)",
-    boxShadow: "none",
-    "@media (forced-colors: active)": {
-        appearance: "auto",
-        "&::before": {
-            display: "none",
-        },
-    },
-    "&:checked": {
-        background: "var(--accent)",
-        borderColor: "var(--accent)",
-        boxShadow: "none",
-    },
-    "&:focus-visible": {
-        outline: "2px solid var(--accent)",
-        outlineOffset: "2px",
-        boxShadow: "none",
-    },
-    "&::before": {
-        background: "var(--accent-ink)",
-        boxShadow: "none",
-    },
-})
-
-const graphSettingsLabel = css({
-    display: "block",
-    padding: "0",
-    margin: "0",
-    color: "var(--text)",
-    fontSize: "12px",
-    fontWeight: "600",
-})
-
-const secondaryButton = css({
-    color: "var(--text)",
-    border: "1px solid var(--line-strong)",
-    background: "var(--control)",
-    "&.active": {
-        color: "var(--accent)",
-        borderColor: "var(--accent-edge)",
-        background: "var(--accent-wash)",
-    },
-    minHeight: "28px",
-    padding: "0 14px",
-    borderRadius: "4px",
-    fontSize: "13px",
-    fontWeight: "500",
-    textTransform: "none",
-    "&:hover:not(:disabled)": {
-        background: "var(--control-hover)",
-    },
-})
-
-const markerDetails = css({
-    position: "absolute",
-    right: "8px",
-    bottom: "8px",
-    left: "8px",
-    padding: "10px",
-    display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) auto",
-    border: "1px solid var(--warning-edge)",
-    borderRadius: "6px",
-    background: "var(--warning-raised)",
-    boxShadow: "var(--shadow-popover)",
-    "@media (forced-colors: active)": {
-        boxShadow: "none",
-    },
-})
-
-const markerDetailsDiv = css({
-    minWidth: "0",
-    display: "flex",
-    alignItems: "baseline",
-    gap: "8px",
-    overflow: "hidden",
-})
-
-const markerDetailsSpan = css({
-    color: "var(--faint)",
-    fontFamily: "var(--mono)",
-    fontSize: "10px",
-    letterSpacing: "0",
-    textTransform: "none",
-})
-
-const markerDetailsSmall = css({
-    color: "var(--faint)",
-    fontFamily: "var(--mono)",
-    fontSize: "10px",
-    letterSpacing: "0",
-    textTransform: "none",
-})
-
-const closeMarkerDetailsButton = css({
-    minHeight: "26px",
-    padding: "0 7px",
-    color: "var(--muted)",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "4px",
-    background: "transparent",
-    fontSize: "12px",
-    minWidth: "26px",
-    borderColor: "transparent",
-    "&:hover": {
-        color: "var(--text)",
-        borderColor: "var(--line-strong)",
-        background: "var(--control)",
-    },
-})
-
-const markerDetailsP = css({
-    gridColumn: "1 / -1",
-    margin: "7px 0 0",
-    color: "var(--muted)",
-    fontSize: "12px",
-})
-
-const graphLoading = css({
-    minWidth: "240px",
-    margin: "auto",
-    padding: "20px",
-    textAlign: "center",
-})
-
-const graphLoadingSpan = css({
-    width: "22px",
-    height: "22px",
-    margin: "0 auto 12px",
-    display: "block",
-    border: "2px solid var(--line-strong)",
-    borderTopColor: "var(--accent)",
-    borderRadius: "50%",
-    animation: "graph-spin 800ms linear infinite",
-})
-
-const graphLoadingP = css({
-    marginBottom: "6px",
-    fontSize: "13px",
-})
-
-const graphLoadingSmall = css({
-    color: "var(--faint)",
-    fontSize: "11px",
-    lineHeight: "1.45",
-    textTransform: "none",
-})
-
-const graphError = css({
-    minWidth: "240px",
-    margin: "auto",
-    padding: "20px",
-    textAlign: "center",
-})
-
-const graphErrorSpan = css({
-    color: "var(--faint)",
-    fontSize: "11px",
-    lineHeight: "1.45",
-    textTransform: "none",
-})
-
-const graphErrorP = css({
-    marginBottom: "6px",
-    fontSize: "13px",
-})
-
-const primaryButton = css({
-    minHeight: "28px",
-    marginTop: "12px",
-    padding: "0 12px",
-    borderRadius: "4px",
-})

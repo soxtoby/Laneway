@@ -38,25 +38,29 @@ export function defaultWorkspacePath(
 ) {
     if (platform == "win32")
         return resolve(environment.APPDATA ?? resolve(homedir(), "AppData", "Roaming"), "Laneway", "workspace.json")
-    if (platform == "darwin")
+    else if (platform == "darwin")
         return resolve(homedir(), "Library", "Application Support", "Laneway", "workspace.json")
-    return resolve(environment.XDG_CONFIG_HOME ?? resolve(homedir(), ".config"), "laneway", "workspace.json")
+    else
+        return resolve(environment.XDG_CONFIG_HOME ?? resolve(homedir(), ".config"), "laneway", "workspace.json")
 }
 
 export function parseWorkspacePresentation(value: unknown) {
     if (!value || typeof value != "object" || Array.isArray(value))
         throw new Error("Workspace State is invalid.")
-    const record = value as Partial<Workspace>
+
+    let record = value as Partial<Workspace>
     if (!Array.isArray(record.repositories))
         throw new Error("Workspace State is invalid.")
-    const repositories = Array.from(record.repositories, repository => parsePresentation(repository)).filter(repository => repository != undefined)
-    const ids = new Set(repositories.map(repository => repository.id))
+
+    let repositories = Array.from(record.repositories, repository => parsePresentation(repository)).filter(repository => repository != undefined)
+    let ids = new Set(repositories.map(repository => repository.id))
     if (
         repositories.length != record.repositories.length || ids.size != repositories.length
         || (record.activeRepositoryId !== undefined && !ids.has(record.activeRepositoryId))
     ) {
         throw new Error("Workspace State is invalid.")
     }
+
     return { repositories, activeRepositoryId: record.activeRepositoryId }
 }
 
@@ -69,32 +73,38 @@ export async function readWorkspace(path = defaultWorkspacePath()): Promise<{ wo
             return { workspace: emptyWorkspace(), skipped: 0 }
         throw new WorkspaceStateError("workspace.corrupt", `Laneway could not read Workspace State at ${path}.`, path)
     }
+
     let value: unknown
     try {
         value = JSON.parse(content)
     } catch {
         throw new WorkspaceStateError("workspace.corrupt", `Workspace State at ${path} is not valid JSON.`, path)
     }
+
     if (!value || typeof value != "object" || Array.isArray(value))
         throw new WorkspaceStateError("workspace.corrupt", `Workspace State at ${path} must be an object.`, path)
-    const record = value as Record<string, unknown>
+
+    let record = value as Record<string, unknown>
     if (record.version != 1) {
-        const code = typeof record.version == "number" && record.version > 1 ? "workspace.unsupported-version" : "workspace.corrupt"
+        let code: WorkspaceStateError["code"] = typeof record.version == "number" && record.version > 1 ? "workspace.unsupported-version" : "workspace.corrupt"
         throw new WorkspaceStateError(code, `Workspace State at ${path} has an unsupported version.`, path)
     }
     if (!Array.isArray(record.repositories))
         throw new WorkspaceStateError("workspace.corrupt", `Workspace State at ${path} has no repository list.`, path)
-    const seen = new Set<string>()
-    const repositories: StoredRepository[] = []
-    for (const value of record.repositories) {
-        const repository = parseRepository(value)
-        if (!repository || seen.has(repository.id))
-            continue
-        seen.add(repository.id)
-        repositories.push(repository)
+
+    let seen = new Set<string>()
+    let repositories: StoredRepository[] = []
+    for (let value of record.repositories) {
+        let repository = parseRepository(value)
+        if (repository && !seen.has(repository.id)) {
+            seen.add(repository.id)
+            repositories.push(repository)
+        }
     }
-    const activeRepositoryId = nonEmptyString(record.activeRepositoryId) ? record.activeRepositoryId : undefined
-    const lastRepositoryParentPath = nonEmptyString(record.lastRepositoryParentPath) ? record.lastRepositoryParentPath : undefined
+
+    let activeRepositoryId = nonEmptyString(record.activeRepositoryId) ? record.activeRepositoryId : undefined
+    let lastRepositoryParentPath = nonEmptyString(record.lastRepositoryParentPath) ? record.lastRepositoryParentPath : undefined
+
     return {
         workspace: {
             version: 1,
@@ -106,8 +116,15 @@ export async function readWorkspace(path = defaultWorkspacePath()): Promise<{ wo
     }
 }
 
+export async function resetWorkspace(path = defaultWorkspacePath()) {
+    await copyFile(path, `${path}.bak`).catch(() => undefined)
+    let workspace = emptyWorkspace()
+    await writeWorkspace(workspace, path)
+    return workspace
+}
+
 export async function writeWorkspace(workspace: StoredWorkspace, path = defaultWorkspacePath()) {
-    const temporaryPath = `${path}.${crypto.randomUUID()}.tmp`
+    let temporaryPath = `${path}.${crypto.randomUUID()}.tmp`
     try {
         await mkdir(dirname(path), { recursive: true })
         await writeFile(temporaryPath, `${JSON.stringify(workspace, null, 4)}\n`, { encoding: "utf8", flag: "wx" })
@@ -118,13 +135,6 @@ export async function writeWorkspace(workspace: StoredWorkspace, path = defaultW
     }
 }
 
-export async function resetWorkspace(path = defaultWorkspacePath()) {
-    await copyFile(path, `${path}.bak`).catch(() => undefined)
-    const workspace = emptyWorkspace()
-    await writeWorkspace(workspace, path)
-    return workspace
-}
-
 function emptyWorkspace(): StoredWorkspace {
     return { version: 1, repositories: [] }
 }
@@ -132,17 +142,20 @@ function emptyWorkspace(): StoredWorkspace {
 function parseRepository(value: unknown): StoredRepository | undefined {
     if (!value || typeof value != "object" || Array.isArray(value))
         return undefined
-    const record = value as Record<string, unknown>
+
+    let record = value as Record<string, unknown>
     if (
         !nonEmptyString(record.path) || !nonEmptyString(record.name)
         || typeof record.open != "boolean" || !Array.isArray(record.anchors) || !record.anchors.every(nonEmptyString)
     ) {
         return undefined
     }
-    const presentation = parsePresentation(record, true)
+
+    let presentation = parsePresentation(record, true)
     if (!presentation)
         return undefined
-    const objectFormat = record.objectFormat == "sha1" || record.objectFormat == "sha256" ? record.objectFormat as ObjectFormat : undefined
+
+    let objectFormat = record.objectFormat == "sha1" || record.objectFormat == "sha256" ? record.objectFormat as ObjectFormat : undefined
     return {
         ...presentation,
         path: record.path,
@@ -156,19 +169,23 @@ function parseRepository(value: unknown): StoredRepository | undefined {
 function parsePresentation(value: unknown, restoring = false) {
     if (!value || typeof value != "object" || Array.isArray(value))
         return undefined
-    const record = value as Partial<StoredRepository>
+
+    let record = value as Partial<StoredRepository>
     if (!nonEmptyString(record.id) || !Array.isArray(record.columns))
         return undefined
-    const columns = Array.from(record.columns, column => parseColumn(column, restoring)).filter(column => column != undefined)
+
+    let columns = Array.from(record.columns, column => parseColumn(column, restoring)).filter(column => column != undefined)
     if (columns.length != record.columns.length)
         return undefined
-    const ids = new Set(columns.map(column => column.id))
+
+    let ids = new Set(columns.map(column => column.id))
     if (
         !restoring && (ids.size != columns.length || typeof record.layoutInitialized != "boolean"
             || (record.focusedColumnId !== undefined && !ids.has(record.focusedColumnId)))
     ) {
         return undefined
     }
+
     return {
         id: record.id,
         columns,
@@ -180,16 +197,18 @@ function parsePresentation(value: unknown, restoring = false) {
 function parseColumn(value: unknown, restoring = false): WorkspaceColumn | undefined {
     if (!value || typeof value != "object" || Array.isArray(value))
         return undefined
-    const record = value as Record<string, unknown>
+
+    let record = value as Record<string, unknown>
     if (
         !nonEmptyString(record.id) || !nonEmptyString(record.lastSeenObjectId) || typeof record.width != "number" || !Number.isFinite(record.width)
         || record.width < 310
     ) {
         return undefined
     }
-    const diffLayout = record.diffLayout == "split" || record.diffLayout == "unified" ? record.diffLayout as DiffLayout : undefined
-    const worktreePath = nonEmptyString(record.worktreePath) ? record.worktreePath : undefined
-    const worktreeId = nonEmptyString(record.worktreeId) ? record.worktreeId : undefined
+
+    let diffLayout = record.diffLayout == "split" || record.diffLayout == "unified" ? record.diffLayout as DiffLayout : undefined
+    let worktreePath = nonEmptyString(record.worktreePath) ? record.worktreePath : undefined
+    let worktreeId = nonEmptyString(record.worktreeId) ? record.worktreeId : undefined
     if (
         !restoring && ((record.collapsed !== undefined && typeof record.collapsed != "boolean")
             || (record.diffLayout !== undefined && diffLayout === undefined)
@@ -197,6 +216,7 @@ function parseColumn(value: unknown, restoring = false): WorkspaceColumn | undef
     ) {
         return undefined
     }
+
     if (record.kind == "branch" && nonEmptyString(record.ref)) {
         return {
             kind: "branch",
@@ -209,8 +229,7 @@ function parseColumn(value: unknown, restoring = false): WorkspaceColumn | undef
             ...(worktreePath ? { worktreePath } : {}),
             ...(worktreeId ? { worktreeId } : {}),
         }
-    }
-    if (record.kind == "virtual" && nonEmptyString(record.worktreePath)) {
+    } else if (record.kind == "virtual" && nonEmptyString(record.worktreePath)) {
         return {
             kind: "virtual",
             id: record.id,
@@ -221,8 +240,9 @@ function parseColumn(value: unknown, restoring = false): WorkspaceColumn | undef
             ...(record.collapsed === true ? { collapsed: true } : {}),
             ...(diffLayout ? { diffLayout } : {}),
         }
+    } else {
+        return undefined
     }
-    return undefined
 }
 
 function nonEmptyString(value: unknown): value is string {

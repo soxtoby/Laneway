@@ -2,6 +2,135 @@ import { css, type Handle, on, ref } from "remix/ui"
 import * as listbox from "remix/ui/listbox"
 import type { LensResult } from "./branch-workspace"
 
+let lensBackdrop = css({
+    position: "fixed",
+    zIndex: "50",
+    inset: "0",
+    padding: "14vh 18px 18px",
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "center",
+    background: "transparent",
+    width: "100vw",
+    height: "100vh",
+    maxHeight: "none",
+    maxWidth: "none",
+    margin: "0",
+    border: "0",
+    borderRadius: "0",
+    boxShadow: "none",
+})
+
+let commandLens = css({
+    width: "min(600px, 100%)",
+    overflow: "hidden",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "8px",
+    background: "var(--raised)",
+    boxShadow: "var(--shadow-dialog)",
+    "@media (forced-colors: active)": {
+        boxShadow: "none",
+    },
+})
+
+let commandLensHeader = css({
+    height: "40px",
+    padding: "0 12px",
+    display: "grid",
+    gridTemplateColumns: "auto minmax(0, 1fr)",
+    alignItems: "center",
+    gap: "10px",
+    borderBottom: "1px solid var(--line)",
+})
+
+let commandLensSearchInput = css({
+    height: "100%",
+    padding: "0",
+    border: "0",
+    borderRadius: "0",
+    background: "transparent",
+    fontFamily: "inherit",
+    fontSize: "14px",
+    "&:hover": {
+        border: "0",
+        boxShadow: "none",
+    },
+    "&:focus": {
+        border: "0",
+        boxShadow: "none",
+    },
+})
+
+let lensGuidance = css({
+    margin: "0",
+    padding: "16px 14px",
+    color: "var(--muted)",
+    fontSize: "12px",
+})
+
+let lensResults = css({
+    maxHeight: "46vh",
+    padding: "4px",
+    overflowY: "auto",
+})
+
+let lensResultsButton = css({
+    width: "100%",
+    minHeight: "38px",
+    padding: "5px 8px",
+    display: "grid",
+    gridTemplateColumns: "38px minmax(0, 1fr) auto",
+    alignItems: "center",
+    gap: "9px",
+    color: "var(--text)",
+    textAlign: "left",
+    border: "1px solid transparent",
+    borderRadius: "4px",
+    background: "transparent",
+    '&[data-highlighted="true"]': {
+        borderColor: "var(--accent-edge)",
+        background: "var(--accent-wash-strong)",
+    },
+})
+
+let lensKind = css({
+    color: "var(--accent)",
+    fontFamily: "var(--mono)",
+    fontSize: "10px",
+    "&.branch": {
+        color: "var(--warning)",
+    },
+    "&:nth-child(2)": {
+        minWidth: "0",
+        display: "grid",
+        gap: "1px",
+    },
+})
+
+let lensResultsSpan = css({
+    "&:nth-child(2)": {
+        minWidth: "0",
+        display: "grid",
+        gap: "1px",
+    },
+})
+
+let lensResultsStrong = css({
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    fontSize: "13px",
+})
+
+let lensResultsSmall = css({
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    color: "var(--faint)",
+    fontFamily: "var(--mono)",
+    fontSize: "10px",
+})
+
 export function CommandLens(
     handle: Handle<{
         query: string
@@ -16,18 +145,19 @@ export function CommandLens(
     let active: string | null = null
     let list: listbox.ListboxRef | undefined
     let search: HTMLInputElement
-    const listId = `${handle.id}-results`
+    let listId = `${handle.id}-results`
 
     return () => {
-        const { results, query } = handle.props
-        const highlighted = results.some(result => resultId(result) == active) ? active : results[0] ? resultId(results[0]) : null
+        let { results, query } = handle.props
+        let highlighted = results.some(result => resultId(result) == active) ? active : results[0] ? resultId(results[0]) : null
         handle.queueTask(() => {
-            const id = list?.active?.id
+            let id = list?.active?.id
             if (id)
                 search.setAttribute("aria-activedescendant", id)
             else
                 search.removeAttribute("aria-activedescendant")
         })
+
         return (
             <dialog
                 class="lens-backdrop"
@@ -54,7 +184,7 @@ export function CommandLens(
                         void handle.update()
                     }}
                     onSelect={value => {
-                        const result = handle.props.results.find(result => resultId(result) == value)
+                        let result = handle.props.results.find(result => resultId(result) == value)
                         if (result)
                             void handle.props.activate(result)
                     }}
@@ -152,132 +282,3 @@ export function CommandLens(
 function resultId(result: LensResult) {
     return JSON.stringify([result.kind, result.repositoryId, result.nodeId, result.kind == "command" ? result.delta : null])
 }
-
-const lensBackdrop = css({
-    position: "fixed",
-    zIndex: "50",
-    inset: "0",
-    padding: "14vh 18px 18px",
-    display: "flex",
-    alignItems: "flex-start",
-    justifyContent: "center",
-    background: "transparent",
-    width: "100vw",
-    height: "100vh",
-    maxHeight: "none",
-    maxWidth: "none",
-    margin: "0",
-    border: "0",
-    borderRadius: "0",
-    boxShadow: "none",
-})
-
-const commandLens = css({
-    width: "min(600px, 100%)",
-    overflow: "hidden",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "8px",
-    background: "var(--raised)",
-    boxShadow: "var(--shadow-dialog)",
-    "@media (forced-colors: active)": {
-        boxShadow: "none",
-    },
-})
-
-const commandLensHeader = css({
-    height: "40px",
-    padding: "0 12px",
-    display: "grid",
-    gridTemplateColumns: "auto minmax(0, 1fr)",
-    alignItems: "center",
-    gap: "10px",
-    borderBottom: "1px solid var(--line)",
-})
-
-const commandLensSearchInput = css({
-    height: "100%",
-    padding: "0",
-    border: "0",
-    borderRadius: "0",
-    background: "transparent",
-    fontFamily: "inherit",
-    fontSize: "14px",
-    "&:hover": {
-        border: "0",
-        boxShadow: "none",
-    },
-    "&:focus": {
-        border: "0",
-        boxShadow: "none",
-    },
-})
-
-const lensGuidance = css({
-    margin: "0",
-    padding: "16px 14px",
-    color: "var(--muted)",
-    fontSize: "12px",
-})
-
-const lensResults = css({
-    maxHeight: "46vh",
-    padding: "4px",
-    overflowY: "auto",
-})
-
-const lensResultsButton = css({
-    width: "100%",
-    minHeight: "38px",
-    padding: "5px 8px",
-    display: "grid",
-    gridTemplateColumns: "38px minmax(0, 1fr) auto",
-    alignItems: "center",
-    gap: "9px",
-    color: "var(--text)",
-    textAlign: "left",
-    border: "1px solid transparent",
-    borderRadius: "4px",
-    background: "transparent",
-    '&[data-highlighted="true"]': {
-        borderColor: "var(--accent-edge)",
-        background: "var(--accent-wash-strong)",
-    },
-})
-
-const lensKind = css({
-    color: "var(--accent)",
-    fontFamily: "var(--mono)",
-    fontSize: "10px",
-    "&.branch": {
-        color: "var(--warning)",
-    },
-    "&:nth-child(2)": {
-        minWidth: "0",
-        display: "grid",
-        gap: "1px",
-    },
-})
-
-const lensResultsSpan = css({
-    "&:nth-child(2)": {
-        minWidth: "0",
-        display: "grid",
-        gap: "1px",
-    },
-})
-
-const lensResultsStrong = css({
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-    fontSize: "13px",
-})
-
-const lensResultsSmall = css({
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-    color: "var(--faint)",
-    fontFamily: "var(--mono)",
-    fontSize: "10px",
-})

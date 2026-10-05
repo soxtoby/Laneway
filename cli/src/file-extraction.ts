@@ -27,7 +27,7 @@ interface Extraction {
     commits: Commit[]
     changes: Change[]
 }
-const extractions = new WeakMap<LocalPreview, Extraction>()
+let extractions = new WeakMap<LocalPreview, Extraction>()
 
 /** A file untouched by descendants can leave a linear commit chain without merging or checking out any files. */
 export async function prepareFileExtraction(repo: RepositoryGit, request: CompositionRequest) {
@@ -37,21 +37,24 @@ export async function prepareFileExtraction(repo: RepositoryGit, request: Compos
     ) {
         return undefined
     }
-    const paths = request.files.map(file => file.path)
+
+    let paths = request.files.map(file => file.path)
     if (
         new Set(paths).size != paths.length
         || paths.some(path => path.split("/").some(part => !part || part == "." || part == "..") || /[\x00\n\r\\]/.test(path))
     ) {
         return undefined
     }
-    const worktrees = await readRegisteredWorktrees(repo)
-    const target = worktrees.find(worktree =>
+
+    let worktrees = await readRegisteredWorktrees(repo)
+    let target = worktrees.find(worktree =>
         !worktree.missing && normalize(worktree.path) == normalize(request.target.kind == "working" ? request.target.worktreePath : "")
     )
     if (!target?.branchRef || request.source.branch && target.branchRef != `refs/heads/${request.source.branch.replace(/^refs\/heads\//, "")}`)
         return undefined
-    const run = (args: string[], input?: string) => repo.command(target.path, args, input)
-    const [configuration, refOutput, hooks, blocked, inventory] = await Promise.all([
+
+    let run = (args: string[], input?: string) => repo.command(target.path, args, input)
+    let [configuration, refOutput, hooks, blocked, inventory] = await Promise.all([
         run(["config", "--null", "--list", "--includes"]),
         run([
             "for-each-ref",
@@ -82,13 +85,14 @@ export async function prepareFileExtraction(repo: RepositoryGit, request: Compos
     ])
     if (inventory && inventory.version != request.inventoryVersion)
         throw new Error("Source files changed. Select the changes again.")
-    const config = new Map(
+
+    let config = new Map(
         configuration.toString().split("\0").filter(Boolean).map(record => {
-            const split = record.indexOf("\n")
+            let split = record.indexOf("\n")
             return [record.slice(0, split), record.slice(split + 1)]
         }),
     )
-    const refs = Object.fromEntries(refOutput.toString().trim().split("\n").filter(Boolean).map(line => line.split(" ")))
+    let refs = Object.fromEntries(refOutput.toString().trim().split("\n").filter(Boolean).map(line => line.split(" ")))
     if (
         hooks.some(Boolean) || blocked.some(Boolean) || [...config.keys()].some(key => key.startsWith("hook.") || key == "core.hookspath")
         || ![undefined, "false", "no", "off", "0"].includes(config.get("commit.gpgsign")) || config.has("i18n.commitencoding")
@@ -96,8 +100,9 @@ export async function prepareFileExtraction(repo: RepositoryGit, request: Compos
     ) {
         return undefined
     }
-    const source = request.source.objectId
-    const [related, topology, delta, touched] = await Promise.all([
+
+    let source = request.source.objectId
+    let [related, topology, delta, touched] = await Promise.all([
         run(["for-each-ref", `--contains=${source}`, "--format=%(refname) %(objectname)", "refs/heads", "refs/remotes"]),
         repo.run(target.path, ["rev-list", "--reverse", "--max-count=65", "--format=%H %T %P", "--no-commit-header", `${source}^..${target.head}`]),
         run(["diff-tree", "--no-commit-id", "--raw", "--no-abbrev", "--no-renames", "-r", "-z", source]),
@@ -105,7 +110,7 @@ export async function prepareFileExtraction(repo: RepositoryGit, request: Compos
     ])
     if (related.toString().trim() != `${target.branchRef} ${target.head}` || topology.exitCode || touched.length)
         return undefined
-    const rows = topology.stdout.toString().trim().split("\n").map(line => line.split(" "))
+    let rows = topology.stdout.toString().trim().split("\n").map(line => line.split(" "))
     if (
         rows.length > 64 || rows[0]?.[0] != source || rows.at(-1)?.[0] != target.head
         || rows.some((row, i) => row.length != 3 || i > 0 && (row[2] != rows[i - 1][0] || row[1] == rows[i - 1][1]))
@@ -113,47 +118,53 @@ export async function prepareFileExtraction(repo: RepositoryGit, request: Compos
     ) {
         return undefined
     }
-    const records = delta.toString().split("\0").filter(Boolean), changes: Change[] = []
+
+    let records = delta.toString().split("\0").filter(Boolean), changes: Change[] = []
     for (let i = 0; i < records.length; i += 2) {
-        const [beforeMode, mode, before, after, status] = records[i].slice(1).split(" ")
+        let [beforeMode, mode, before, after, status] = records[i].slice(1).split(" ")
         if (paths.includes(records[i + 1])) {
             if (status != "M" || beforeMode != mode || !["100644", "100755"].includes(mode))
                 return undefined
             changes.push({ path: records[i + 1], mode, before, after })
         }
     }
+
     // Emptying a commit, renames, additions, and shared/published stacks use the general planner.
     if (changes.length != paths.length || changes.length == records.length / 2)
         return undefined
-    const [objects, before] = await Promise.all([
+
+    let [objects, before] = await Promise.all([
         run(["cat-file", "--batch"], rows.map(row => row[0]).join("\n") + "\n"),
         captureGitCheckpoint(repo, [target.path], undefined, worktrees, new Map([[normalize(target.path), paths.slice().sort()]])),
     ])
-    const expectedRefs = Object.fromEntries(Object.entries(refs).filter(([ref]) => !ref.startsWith("refs/remotes/")))
+    let expectedRefs = Object.fromEntries(Object.entries(refs).filter(([ref]) => !ref.startsWith("refs/remotes/")))
     if (JSON.stringify(expectedRefs) != JSON.stringify(before.refs) || before.refs[target.branchRef] != target.head)
         throw new Error("Repository refs changed while preparing the transfer. Review it again.")
-    const index = (await run(["--literal-pathspecs", "ls-files", "--stage", "-v", "-z", "--", ...paths])).toString()
-    const entries = index?.split("\0").filter(Boolean) ?? []
+
+    let index = (await run(["--literal-pathspecs", "ls-files", "--stage", "-v", "-z", "--", ...paths])).toString()
+    let entries = index?.split("\0").filter(Boolean) ?? []
     if (
         !index || entries.some(entry => !/^[A-Za-z] \d{6} [a-f0-9]+ 0\t/.test(entry))
         || changes.some(change => !entries.includes(`H ${change.mode} ${change.after} 0\t${change.path}`))
     ) {
         return undefined
     }
-    const commits: Commit[] = []
+
+    let commits: Commit[] = []
     let offset = 0
-    for (const [oid, tree, parent] of rows) {
-        const newline = objects.indexOf(10, offset), [actual, type, size] = objects.subarray(offset, newline).toString().split(" ")
+    for (let [oid, tree, parent] of rows) {
+        let newline = objects.indexOf(10, offset), [actual, type, size] = objects.subarray(offset, newline).toString().split(" ")
         if (actual != oid || type != "commit")
             throw new Error("Cannot read the selected commit chain.")
-        const raw = objects.subarray(newline + 1, newline + 1 + Number(size)), split = raw.indexOf("\n\n")
-        const headers = raw.subarray(0, split).toString(), author = /^author (.+)$/m.exec(headers)?.[1]
+        let raw = objects.subarray(newline + 1, newline + 1 + Number(size)), split = raw.indexOf("\n\n")
+        let headers = raw.subarray(0, split).toString(), author = /^author (.+)$/m.exec(headers)?.[1]
         if (!author || /^encoding /m.test(headers))
             return undefined
         commits.push({ oid, tree, parent, author, message: raw.subarray(split + 2) })
         offset = newline + 2 + Number(size)
     }
-    const preview: LocalPreview = {
+
+    let preview: LocalPreview = {
         token: createHash("sha256").update(
             "file-extraction-v1\0" + checkpointIdentity(before) + refOutput + configuration
                 + JSON.stringify(CompositionRequestSchema.parse({ ...request, allowConflicts: false })),
@@ -168,6 +179,7 @@ export async function prepareFileExtraction(repo: RepositoryGit, request: Compos
         stashes: [],
         worktrees: [],
     }
+
     extractions.set(preview, { before, path: target.path, ref: target.branchRef, head: target.head, commits, changes })
     return { before, preview }
 }
@@ -182,10 +194,10 @@ export async function extractFiles(
     refs: Map<string, string | null>,
     cancelled: () => boolean,
 ): Promise<LocalResult> {
-    const plan = extractions.get(preview)!
-    const identity = (await repo.command(plan.path, ["var", "GIT_COMMITTER_IDENT"])).toString().trim()
-    const temporary = `refs/laneway/extraction/${randomUUID()}`, chunks: Buffer[] = []
-    for (const [i, commit] of plan.commits.entries()) {
+    let plan = extractions.get(preview)!
+    let identity = (await repo.command(plan.path, ["var", "GIT_COMMITTER_IDENT"])).toString().trim()
+    let temporary = `refs/laneway/extraction/${randomUUID()}`, chunks: Buffer[] = []
+    for (let [i, commit] of plan.commits.entries()) {
         chunks.push(
             Buffer.from(`commit ${temporary}\nmark :${i + 1}\nauthor ${commit.author}\ncommitter ${identity}\ndata ${commit.message.length}\n`),
             commit.message,
@@ -195,13 +207,16 @@ export async function extractFiles(
             ),
         )
     }
+
     chunks.push(Buffer.from(`get-mark :${plan.commits.length}\nreset ${temporary}\n\ndone\n`))
     if (cancelled() || !await checkpointMatches(repo, plan.before))
         throw new Error("Repository content changed or the transfer was cancelled. No transfer was applied.")
-    const head = (await repo.command(plan.path, ["-c", "gc.auto=0", "-c", "maintenance.auto=false", "fast-import", "--quiet", "--done"], Buffer.concat(chunks)))
+
+    let head = (await repo.command(plan.path, ["-c", "gc.auto=0", "-c", "maintenance.auto=false", "fast-import", "--quiet", "--done"], Buffer.concat(chunks)))
         .toString().trim()
     if (cancelled())
         throw new Error("Transfer cancelled before changing files or refs.")
+
     await repo.updateRefs([{ ref: plan.ref, before: plan.head, after: head }])
     refs.set(plan.ref, head)
     await repo.command(
@@ -209,5 +224,6 @@ export async function extractFiles(
         ["update-index", "-z", "--index-info"],
         plan.changes.map(change => `${change.mode} ${change.before}\t${change.path}\0`).join(""),
     )
+
     return { type: "result", command: "local", status: "performed", message: "Changes transferred." }
 }

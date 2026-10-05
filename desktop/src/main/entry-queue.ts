@@ -21,18 +21,22 @@ export class EntryQueue<T> {
     cancel() {
         if (!this.cancelActive)
             return false
+
         this.cancelActive()
-        for (const entry of this.pending.splice(0))
+        for (let entry of this.pending.splice(0))
             entry.resolve(this.cancelledResult())
+
         return true
     }
 
     private async drain() {
         if (this.active)
             return
-        const entry = this.pending.shift()
+
+        let entry = this.pending.shift()
         if (!entry)
             return
+
         this.active = true
         try {
             entry.resolve(await entry.run(cancel => this.cancelActive = cancel))

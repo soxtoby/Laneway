@@ -1,5 +1,31 @@
 import type { BranchGraphBranchNode, LocalPreview, LocalRequest } from "@laneway/shared"
 import { css, on, ref } from "remix/ui"
+let dialogStyle = css({
+    width: "min(480px, calc(100vw - 32px))",
+    margin: "auto",
+    padding: "18px",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "6px",
+    background: "var(--panel)",
+    color: "var(--text)",
+    boxShadow: "var(--shadow-dialog)",
+    "&::backdrop": { background: "var(--scrim)" },
+    "& h2": { margin: "0 0 12px", fontSize: "16px" },
+    "& input:not([type=checkbox]), & select": {
+        width: "100%",
+        marginTop: "6px",
+        padding: "7px",
+        border: "1px solid var(--line-strong)",
+        borderRadius: "4px",
+        background: "var(--field)",
+        color: "var(--text)",
+    },
+    "& footer": { display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "14px" },
+    "& button": { padding: "5px 9px", background: "var(--control)", color: "var(--text)", border: "1px solid var(--line-strong)", borderRadius: "4px" },
+    "& .stash-action-row": { display: "flex", alignItems: "center", gap: "6px", padding: "8px 0", borderBottom: "1px solid var(--line)" },
+    "& .stash-action-row span": { flex: 1, minWidth: 0, overflowWrap: "anywhere" },
+    "& small": { display: "block", color: "var(--muted)" },
+})
 
 export function createLocalBranchActions(options: {
     api: Window["laneway"]
@@ -11,79 +37,7 @@ export function createLocalBranchActions(options: {
     let preview: LocalPreview | undefined
     let destination = "", selectedStash = ""
     let returnFocus: HTMLElement | undefined
-    const update = () => void options.update()
-    function request(): LocalRequest {
-        if (mode == "branch-create")
-            return { action: mode, name, commit }
-        if (mode == "branch-rename")
-            return { action: mode, name: original, newName: name }
-        return { action: "branch-delete", name: original, confirmed }
-    }
-    async function inspect(value: LocalRequest, id = repositoryId) {
-        const response = await options.api.localOperation(id, value)
-        if (!response.ok)
-            throw new Error(response.error.message)
-        return response.result.preview!
-    }
-    /** Runs one operation straight away, for controls that edit in place rather than through the dialog. */
-    async function perform(id: string, value: LocalRequest) {
-        const fresh = await inspect(value, id)
-        const response = await options.api.localOperation(id, value, fresh.token)
-        if (!response.ok)
-            throw new Error(response.error.message)
-        if (response.result.status == "failed")
-            throw new Error(response.result.message)
-        await options.completed(id, value)
-    }
-    async function execute(value = request()) {
-        if (busy)
-            return
-        busy = true
-        error = ""
-        update()
-        try {
-            // The delete dialog already holds a preview; the engine re-verifies its token at execution,
-            // so a second preview here would only add a round trip before the branch disappears.
-            const reviewed = value.action == "branch-delete" ? preview : undefined
-            const fresh = reviewed ?? await inspect(value)
-            if (value.action == "branch-delete" && fresh.uniqueCommits && !confirmed) {
-                preview = fresh
-                return
-            }
-            const response = await options.api.localOperation(repositoryId, value, fresh.token)
-            if (!response.ok) {
-                if (reviewed) {
-                    const current = await inspect(value).catch(() => undefined)
-                    if (current && current.token != reviewed.token) {
-                        confirmed = false
-                        preview = current
-                        throw new Error("The branch changed. Review deletion again.")
-                    }
-                }
-                throw new Error(response.error.message)
-            }
-            if (response.result.status == "failed")
-                throw new Error(response.result.message)
-            await options.completed(repositoryId, value)
-            if (mode == "stashes") {
-                preview = await inspect(value.action == "stash-drop" ? { action: "stage", path: destination, unstage: false } : value)
-                selectedStash = ""
-            } else {
-                close()
-            }
-        } catch (reason) {
-            error = reason instanceof Error ? reason.message : String(reason)
-        } finally {
-            busy = false
-            update()
-        }
-    }
-    function close() {
-        mode = undefined
-        preview = undefined
-        error = ""
-        void options.update().then(() => returnFocus?.focus())
-    }
+    let update = () => void options.update()
     return {
         busy: () => busy,
         perform,
@@ -125,6 +79,7 @@ export function createLocalBranchActions(options: {
             error = ""
             preview = undefined
             update()
+
             try {
                 preview = await inspect({ action: "stage", path, unstage: false })
             } catch (reason) {
@@ -258,30 +213,83 @@ export function createLocalBranchActions(options: {
             )
         },
     }
+
+    function request(): LocalRequest {
+        if (mode == "branch-create")
+            return { action: mode, name, commit }
+        if (mode == "branch-rename")
+            return { action: mode, name: original, newName: name }
+        return { action: "branch-delete", name: original, confirmed }
+    }
+
+    /** Runs one operation straight away, for controls that edit in place rather than through the dialog. */
+    async function perform(id: string, value: LocalRequest) {
+        let fresh = await inspect(value, id)
+        let response = await options.api.localOperation(id, value, fresh.token)
+        if (!response.ok)
+            throw new Error(response.error.message)
+        if (response.result.status == "failed")
+            throw new Error(response.result.message)
+        await options.completed(id, value)
+    }
+
+    async function execute(value = request()) {
+        if (busy)
+            return
+
+        busy = true
+        error = ""
+        update()
+
+        try {
+            // The delete dialog already holds a preview; the engine re-verifies its token at execution,
+            // so a second preview here would only add a round trip before the branch disappears.
+            let reviewed = value.action == "branch-delete" ? preview : undefined
+            let fresh = reviewed ?? await inspect(value)
+            if (value.action == "branch-delete" && fresh.uniqueCommits && !confirmed) {
+                preview = fresh
+                return
+            }
+            let response = await options.api.localOperation(repositoryId, value, fresh.token)
+            if (!response.ok) {
+                if (reviewed) {
+                    let current = await inspect(value).catch(() => undefined)
+                    if (current && current.token != reviewed.token) {
+                        confirmed = false
+                        preview = current
+                        throw new Error("The branch changed. Review deletion again.")
+                    }
+                }
+                throw new Error(response.error.message)
+            }
+            if (response.result.status == "failed")
+                throw new Error(response.result.message)
+            await options.completed(repositoryId, value)
+            if (mode == "stashes") {
+                preview = await inspect(value.action == "stash-drop" ? { action: "stage", path: destination, unstage: false } : value)
+                selectedStash = ""
+            } else {
+                close()
+            }
+        } catch (reason) {
+            error = reason instanceof Error ? reason.message : String(reason)
+        } finally {
+            busy = false
+            update()
+        }
+    }
+
+    async function inspect(value: LocalRequest, id = repositoryId) {
+        let response = await options.api.localOperation(id, value)
+        if (!response.ok)
+            throw new Error(response.error.message)
+        return response.result.preview!
+    }
+
+    function close() {
+        mode = undefined
+        preview = undefined
+        error = ""
+        void options.update().then(() => returnFocus?.focus())
+    }
 }
-const dialogStyle = css({
-    width: "min(480px, calc(100vw - 32px))",
-    margin: "auto",
-    padding: "18px",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "6px",
-    background: "var(--panel)",
-    color: "var(--text)",
-    boxShadow: "var(--shadow-dialog)",
-    "&::backdrop": { background: "var(--scrim)" },
-    "& h2": { margin: "0 0 12px", fontSize: "16px" },
-    "& input:not([type=checkbox]), & select": {
-        width: "100%",
-        marginTop: "6px",
-        padding: "7px",
-        border: "1px solid var(--line-strong)",
-        borderRadius: "4px",
-        background: "var(--field)",
-        color: "var(--text)",
-    },
-    "& footer": { display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "14px" },
-    "& button": { padding: "5px 9px", background: "var(--control)", color: "var(--text)", border: "1px solid var(--line-strong)", borderRadius: "4px" },
-    "& .stash-action-row": { display: "flex", alignItems: "center", gap: "6px", padding: "8px 0", borderBottom: "1px solid var(--line)" },
-    "& .stash-action-row span": { flex: 1, minWidth: 0, overflowWrap: "anywhere" },
-    "& small": { display: "block", color: "var(--muted)" },
-})

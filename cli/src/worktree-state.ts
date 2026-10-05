@@ -4,37 +4,45 @@ import { chmod, lstat, mkdir, readdir, readlink, rename, rm, rmdir, symlink, unl
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { z } from "zod"
 
-const FileSchema = z.object({ name: z.string(), object: z.string(), mode: z.number(), link: z.boolean(), identity: z.string().optional() })
-const RootSchema = z.object({
+let FileSchema = z.object({ name: z.string(), object: z.string(), mode: z.number(), link: z.boolean(), identity: z.string().optional() })
+let RootSchema = z.object({
     path: z.string(),
     kind: z.enum(["working", "admin", "main", "stash"]),
     present: z.boolean(),
     files: z.array(FileSchema),
     scope: z.array(z.string()).optional(),
 })
-export const WorktreeStateSchema = z.object({ roots: z.array(RootSchema), refs: z.record(z.string(), z.string()) })
+export let WorktreeStateSchema = z.object({ roots: z.array(RootSchema), refs: z.record(z.string(), z.string()) })
 export type WorktreeState = z.infer<typeof WorktreeStateSchema>
 type Root = z.infer<typeof RootSchema>
 
 export async function relocateRemovedState(repository: RepositoryGit, state: WorktreeState, oldPath: string, newPath: string) {
-    const result = structuredClone(state)
-    for (const root of result.roots) {
+    let result = structuredClone(state)
+    for (let root of result.roots) {
         if (normalize(root.path) == normalize(oldPath))
             root.path = newPath
-        if (root.kind != "admin")
-            continue
-        const link = root.files.find(file => file.name == "gitdir")
-        if (!link)
-            continue
-        const value = (await repository.command(repository.descriptor.mainWorktree, ["cat-file", "blob", link.object])).toString()
-        if (normalize(dirname(value.trim())) != normalize(oldPath))
-            continue
-        link.object =
-            (await repository.command(repository.descriptor.mainWorktree, ["hash-object", "-w", "--stdin"], `${join(newPath, ".git").replaceAll("\\", "/")}\n`))
-                .toString().trim()
+        let link = root.kind == "admin" ? root.files.find(file => file.name == "gitdir") : undefined
+        if (link) {
+            let value = (await repository.command(repository.descriptor.mainWorktree, ["cat-file", "blob", link.object])).toString()
+            if (normalize(dirname(value.trim())) == normalize(oldPath)) {
+                link.object = (await repository.command(
+                    repository.descriptor.mainWorktree,
+                    ["hash-object", "-w", "--stdin"],
+                    `${join(newPath, ".git").replaceAll("\\", "/")}\n`,
+                ))
+                    .toString().trim()
+            }
+        }
     }
+
     result.roots.sort((a, b) => a.path.localeCompare(b.path))
+
     return result
+}
+
+export async function worktreeStateMatches(repository: RepositoryGit, expected: WorktreeState) {
+    let actual = await captureWorktreeState(repository, expected.roots.filter(root => root.kind == "working").map(root => root.path), expected)
+    return stateIdentity(actual) == stateIdentity(expected)
 }
 
 /**
@@ -49,36 +57,41 @@ export async function captureWorktreeState(
     registered?: RegisteredWorktree[],
     scopes?: Map<string, string[]>,
 ): Promise<WorktreeState> {
-    const worktrees = registered ?? await readRegisteredWorktrees(repository)
-    const roots = new Map<string, Root>()
-    const submodules = new Map<string, string[]>()
-    const ordinaryFiles: Array<{ path: string; file: z.infer<typeof FileSchema> }> = []
-    const add = (path: string, kind: Root["kind"], scope = scopes?.get(normalize(path)) ?? roots.get(normalize(path))?.scope) =>
+    let worktrees = registered ?? await readRegisteredWorktrees(repository)
+    let roots = new Map<string, Root>()
+    let submodules = new Map<string, string[]>()
+    let ordinaryFiles: Array<{ path: string; file: z.infer<typeof FileSchema> }> = []
+    let add = (path: string, kind: Root["kind"], scope = scopes?.get(normalize(path)) ?? roots.get(normalize(path))?.scope) =>
         roots.set(normalize(path), { path, kind, present: false, files: [], ...(scope ? { scope } : {}) })
-    for (const root of template?.roots ?? [])
+
+    for (let root of template?.roots ?? [])
         add(root.path, root.kind, root.scope)
-    for (const path of paths) {
+
+    for (let path of paths) {
         add(path, "working")
-        const worktree = worktrees.find(item => normalize(item.path) == normalize(path))
+        let worktree = worktrees.find(item => normalize(item.path) == normalize(path))
         if (worktree)
             add(worktree.gitDirectory, worktree.main ? "main" : "admin")
         if (worktree && !worktree.missing && !roots.get(normalize(path))?.scope) {
-            const children = await populatedSubmodules(repository, path)
+            let children = await populatedSubmodules(repository, path)
             submodules.set(normalize(path), children)
-            for (const child of children) {
-                const admin = (await repository.command(child, ["rev-parse", "--absolute-git-dir"])).toString().trim()
+            for (let child of children) {
+                let admin = (await repository.command(child, ["rev-parse", "--absolute-git-dir"])).toString().trim()
                 if (worktree.main || !normalize(admin).startsWith(normalize(worktree.gitDirectory) + sep))
                     add(admin, "admin")
             }
         }
     }
+
     add(join(repository.descriptor.commonDirectory, "logs", "refs"), "stash")
-    for (const root of roots.values()) {
+
+    for (let root of roots.values()) {
         root.present = await pathExists(root.path)
         if (!root.present)
             continue
         if ((await lstat(root.path)).isSymbolicLink())
             throw new Error(`Cannot snapshot a symbolic-link worktree root: ${root.path}`)
+
         let names: string[]
         if (root.kind == "working") {
             if (!await pathExists(join(root.path, ".git"))) {
@@ -96,20 +109,21 @@ export async function captureWorktreeState(
             names = ["stash"]
         else
             names = await filesUnder(root.path)
-        const sorted = [...new Set(names)].sort()
+
+        let sorted = [...new Set(names)].sort()
         for (let offset = 0; offset < sorted.length; offset += 64) {
-            const files = await Promise.all(
+            let files = await Promise.all(
                 sorted.slice(offset, offset + 64).map(async name => {
-                    const path = safeChild(root.path, name)
-                    const stat = await lstat(path).catch(error => {
+                    let path = safeChild(root.path, name)
+                    let stat = await lstat(path).catch(error => {
                         if ((error as NodeJS.ErrnoException).code != "ENOENT")
                             throw error
                         return undefined
                     })
                     if (!stat || stat.isDirectory())
                         return undefined
-                    const link = stat.isSymbolicLink()
-                    const object = link
+                    let link = stat.isSymbolicLink()
+                    let object = link
                         ? (await repository.command(repository.descriptor.mainWorktree, ["hash-object", "-w", "--stdin"], await readlink(path))).toString()
                             .trim()
                         : ""
@@ -122,26 +136,28 @@ export async function captureWorktreeState(
                     return { path, file: { name, object, mode: stat.mode & 0o777, link, identity } }
                 }),
             )
-            for (const item of files.filter(item => item != undefined)) {
+            for (let item of files.filter(item => item != undefined)) {
                 root.files.push(item.file)
                 if (!item.file.link)
                     ordinaryFiles.push(item)
             }
         }
     }
+
     if (ordinaryFiles.length) {
-        const output = await repository.command(
+        let output = await repository.command(
             repository.descriptor.mainWorktree,
             ["hash-object", "-w", "--no-filters", "--stdin-paths"],
             ordinaryFiles.map(item => JSON.stringify(item.path.replaceAll("\\", "/"))).join("\n") + "\n",
         )
-        const objects = output.toString().trim().split("\n")
+        let objects = output.toString().trim().split("\n")
         if (objects.length != ordinaryFiles.length)
             throw new Error("Git did not capture every worktree file.")
         ordinaryFiles.forEach((item, index) => item.file.object = objects[index]!)
     }
-    const refs: Record<string, string> = {}
-    const output =
+
+    let refs: Record<string, string> = {}
+    let output =
         (await repository.command(repository.descriptor.mainWorktree, [
             "for-each-ref",
             "--format=%(refname) %(objectname)",
@@ -151,34 +167,37 @@ export async function captureWorktreeState(
             "refs/laneway/conflicts/current",
             "refs/laneway/conflict-candidates",
         ])).toString()
-    for (const line of output.trim().split("\n").filter(Boolean)) {
-        const [ref, oid] = line.split(" ")
+    for (let line of output.trim().split("\n").filter(Boolean)) {
+        let [ref, oid] = line.split(" ")
         refs[ref!] = oid!
     }
+
     return { roots: [...roots.values()].sort((a, b) => a.path.localeCompare(b.path)), refs }
 }
 
 async function workingFiles(repository: RepositoryGit, path: string, submodules?: string[], prefix = ""): Promise<string[]> {
-    const names = (await repository.command(path, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"])).toString().split("\0").filter(Boolean)
-    const result = names.map(name => prefix + name)
-    for (const child of submodules ?? await populatedSubmodules(repository, path)) {
+    let names = (await repository.command(path, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"])).toString().split("\0").filter(Boolean)
+    let result = names.map(name => prefix + name)
+    for (let child of submodules ?? await populatedSubmodules(repository, path)) {
         // The recursive submodule listing already includes descendants.
-        const childPrefix = prefix + relative(path, child).replaceAll("\\", "/") + "/"
-        const files = (await repository.command(child, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"])).toString().split("\0").filter(Boolean)
+        let childPrefix = prefix + relative(path, child).replaceAll("\\", "/") + "/"
+        let files = (await repository.command(child, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"])).toString().split("\0").filter(Boolean)
         result.push(childPrefix + ".git", ...files.map(name => childPrefix + name))
     }
+
     return result
 }
 
 async function filesUnder(root: string, prefix = ""): Promise<string[]> {
-    const result: string[] = []
-    for (const entry of await readdir(join(root, prefix), { withFileTypes: true })) {
-        const name = prefix + entry.name
+    let result: string[] = []
+    for (let entry of await readdir(join(root, prefix), { withFileTypes: true })) {
+        let name = prefix + entry.name
         if (entry.isDirectory())
             result.push(...await filesUnder(root, name + "/"))
         else
             result.push(name)
     }
+
     return result
 }
 
@@ -199,24 +218,20 @@ export function stateIdentity(state: WorktreeState) {
     })
 }
 
-export async function worktreeStateMatches(repository: RepositoryGit, expected: WorktreeState) {
-    const actual = await captureWorktreeState(repository, expected.roots.filter(root => root.kind == "working").map(root => root.path), expected)
-    return stateIdentity(actual) == stateIdentity(expected)
-}
-
 export async function worktreeStateObjects(repository: RepositoryGit, state: WorktreeState, heads = new Map<string, string>()) {
-    const objects = new Set(Object.values(state.refs))
-    const files = [...new Set(state.roots.flatMap(root => root.files.map(file => file.object)))]
-    for (const file of files)
+    let objects = new Set(Object.values(state.refs))
+    let files = [...new Set(state.roots.flatMap(root => root.files.map(file => file.object)))]
+    for (let file of files)
         objects.add(file)
+
     // Retain HEAD commits as well as raw snapshots; a raw HEAD file alone does not keep its commit reachable.
     for (
-        const root of state.roots.filter(root =>
+        let root of state.roots.filter(root =>
             root.kind == "main"
             || (root.kind == "admin" && normalize(dirname(root.path)) == normalize(join(repository.descriptor.commonDirectory, "worktrees")))
         )
     ) {
-        const head = root.files.find(file => file.name == "HEAD")
+        let head = root.files.find(file => file.name == "HEAD")
         if (head) {
             let value = heads.get(head.object)
             if (value == undefined) {
@@ -227,48 +242,52 @@ export async function worktreeStateObjects(repository: RepositoryGit, state: Wor
                 objects.add(value)
         }
     }
+
     return [...objects]
 }
 
 export async function restoreWorktreeState(repository: RepositoryGit, source: WorktreeState, target: WorktreeState) {
-    const objects = [...new Set(target.roots.flatMap(root => root.files.map(file => file.object)))]
-    const content = new Map<string, Buffer>()
+    let objects = [...new Set(target.roots.flatMap(root => root.files.map(file => file.object)))]
+    let content = new Map<string, Buffer>()
     if (objects.length) {
-        const output = await repository.command(repository.descriptor.mainWorktree, ["cat-file", "--batch"], objects.join("\n") + "\n")
+        let output = await repository.command(repository.descriptor.mainWorktree, ["cat-file", "--batch"], objects.join("\n") + "\n")
         let offset = 0
-        for (const object of objects) {
-            const newline = output.indexOf(10, offset)
-            const header = output.subarray(offset, newline).toString().split(" ")
+        for (let object of objects) {
+            let newline = output.indexOf(10, offset)
+            let header = output.subarray(offset, newline).toString().split(" ")
             if (header[0] != object || header[1] != "blob")
                 throw new Error(`Missing retained worktree object ${object}.`)
-            const size = Number(header[2])
+            let size = Number(header[2])
             if (!Number.isSafeInteger(size) || size < 0 || newline + size + 1 >= output.length)
                 throw new Error("Invalid retained object size.")
             content.set(object, output.subarray(newline + 1, newline + 1 + size))
             offset = newline + size + 2
         }
     }
+
     // Every source root was verified before starting. A crash during filesystem restoration
     // leaves the journal pending and requires recovery inspection rather than an unsafe reset.
-    const moved = new Map<string, string>()
-    for (const root of source.roots.filter(root => root.kind == "working" && root.present)) {
+    let moved = new Map<string, string>()
+    for (let root of source.roots.filter(root => root.kind == "working" && root.present)) {
         if (target.roots.some(item => normalize(item.path) == normalize(root.path) && item.present))
             continue
-        const link = root.files.find(file => file.name == ".git")
-        const next = link
+        let link = root.files.find(file => file.name == ".git")
+        let next = link
             && target.roots.find(item => item.kind == "working" && item.present && item.files.some(file => file.name == ".git" && file.object == link.object))
         if (next)
             moved.set(root.path, next.path)
         else {
-            const ignored = await repository.command(root.path, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"])
+            let ignored = await repository.command(root.path, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"])
             if (ignored.length)
                 throw new Error(`Move ignored files out of ${root.path} before undo/redo deletes this directory. Ignored files are outside recovery.`)
         }
     }
+
     // Rename the directory itself so ignored files survive rename undo/redo too.
-    for (const [from, to] of moved)
+    for (let [from, to] of moved)
         await rename(from, to)
-    const sourceRoots = source.roots.map(root => moved.has(root.path) ? { ...root, path: moved.get(root.path)! } : root)
+
+    let sourceRoots = source.roots.map(root => moved.has(root.path) ? { ...root, path: moved.get(root.path)! } : root)
     await repository.updateRefs(
         [...new Set([...Object.keys(source.refs), ...Object.keys(target.refs)])].filter(ref => source.refs[ref] != target.refs[ref]).map(ref => ({
             ref,
@@ -276,8 +295,9 @@ export async function restoreWorktreeState(repository: RepositoryGit, source: Wo
             after: target.refs[ref] ?? null,
         })),
     )
-    for (const root of sourceRoots) {
-        const next = target.roots.find(item => normalize(item.path) == normalize(root.path))
+
+    for (let root of sourceRoots) {
+        let next = target.roots.find(item => normalize(item.path) == normalize(root.path))
         if (!root.present)
             continue
         if (!next?.present && root.kind != "stash") {
@@ -286,22 +306,23 @@ export async function restoreWorktreeState(repository: RepositoryGit, source: Wo
             await rm(root.path, { recursive: true, force: true })
             continue
         }
-        for (const file of root.files) {
+        for (let file of root.files) {
             if (!next?.files.some(item => item.name == file.name)) {
-                const path = safeChild(root.path, file.name)
+                let path = safeChild(root.path, file.name)
                 if (await pathExists(path))
                     await unlink(path)
             }
         }
     }
-    for (const root of target.roots.filter(root => root.present)) {
+
+    for (let root of target.roots.filter(root => root.present)) {
         await mkdir(root.path, { recursive: true })
-        for (const file of root.files) {
-            const path = safeChild(root.path, file.name)
-            const bytes = content.get(file.object)!
+        for (let file of root.files) {
+            let path = safeChild(root.path, file.name)
+            let bytes = content.get(file.object)!
             await mkdir(dirname(path), { recursive: true })
             if (await pathExists(path)) {
-                const stat = await lstat(path)
+                let stat = await lstat(path)
                 if (stat.isDirectory()) {
                     if ((await readdir(path)).length)
                         throw new Error(`Cannot replace a non-empty directory: ${path}`)
@@ -322,7 +343,7 @@ export async function restoreWorktreeState(repository: RepositoryGit, source: Wo
 }
 
 function safeChild(root: string, name: string) {
-    const path = resolve(root, name)
+    let path = resolve(root, name)
     if (isAbsolute(name) || !path.startsWith(resolve(root) + sep))
         throw new Error("Invalid snapshot path.")
     return path

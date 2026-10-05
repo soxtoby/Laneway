@@ -1,5 +1,6 @@
 import type { Appearance, AuthorIdentitySettings, BranchHistoryRequest, EntryProgress, RepositoryGraphSettings, Workspace } from "@laneway/shared"
 import type { ChangesRequest, FileDiffRequest } from "@laneway/shared"
+import type { FileHistoryRequest } from "@laneway/shared"
 import type { WorktreeRequest } from "@laneway/shared"
 import type { CommitDraft, LocalRequest } from "@laneway/shared"
 import type { ConflictRequest } from "@laneway/shared"
@@ -12,7 +13,7 @@ contextBridge.exposeInMainWorld("laneway", {
     pullLatest: (repositoryId: string, request: PullRequest) => ipcRenderer.invoke("pull:latest", repositoryId, request),
     cancelPull: (repositoryId: string) => ipcRenderer.invoke("pull:cancel", repositoryId),
     onPullProgress: (listener: (progress: PullProgress) => void) => {
-        const handler = (_event: Electron.IpcRendererEvent, progress: PullProgress) => listener(progress)
+        let handler = (_event: Electron.IpcRendererEvent, progress: PullProgress) => listener(progress)
         ipcRenderer.on("pull:progress", handler)
         return () => ipcRenderer.off("pull:progress", handler)
     },
@@ -55,14 +56,13 @@ contextBridge.exposeInMainWorld("laneway", {
     cancelBranchHistory: (repositoryId: string) => ipcRenderer.invoke("graph:history-cancel", { repositoryId }),
     setRepositoryGraphSettings: (repositoryId: string, settings: RepositoryGraphSettings) => ipcRenderer.invoke("graph:settings", { repositoryId, settings }),
     onEntryProgress: (listener: (progress: EntryProgress) => void) => {
-        const handler = (_event: Electron.IpcRendererEvent, progress: EntryProgress) => listener(progress)
+        let handler = (_event: Electron.IpcRendererEvent, progress: EntryProgress) => listener(progress)
         ipcRenderer.on("entry:progress", handler)
         return () => ipcRenderer.off("entry:progress", handler)
     },
     onRepositoryChanged: (listener: (change: { repositoryId: string }) => void) => {
-        const handler = (_event: Electron.IpcRendererEvent, change: { repositoryId: string }) => listener(change)
+        let handler = (_event: Electron.IpcRendererEvent, change: { repositoryId: string }) => listener(change)
         ipcRenderer.on("repository:changed", handler)
         return () => ipcRenderer.off("repository:changed", handler)
     },
 })
-import type { FileHistoryRequest } from "@laneway/shared"

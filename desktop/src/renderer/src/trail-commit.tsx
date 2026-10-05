@@ -15,58 +15,27 @@ export interface TrailCommitState {
     requests: Set<string>
     alive: boolean
 }
+let column = css({
+    ...auxiliaryColumnFrame,
+    minWidth: 0,
+    "& > header": { ...auxiliaryColumnHeader, position: "sticky", top: 0, zIndex: 10 },
+    "& > header strong": { flex: 1, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" },
+    "& > header > button": auxiliaryCloseButton,
+    "& .change-file": { top: "46px" },
+    "& > small, & > label, & p": { display: "block", margin: "6px 8px", fontSize: "12px", color: "var(--muted)" },
+    "& .related-file": { display: "flex", gap: "8px", width: "100%", padding: "6px 8px", textAlign: "left" },
+    "& .related-file small": { marginLeft: "auto", color: "var(--muted)" },
+})
 export function createTrailCommits(options: { api: Window["laneway"]; update(): Promise<AbortSignal>; signal: AbortSignal }) {
-    const states = new Set<TrailCommitState>()
+    let states = new Set<TrailCommitState>()
     let sequence = 0
-    const update = () => {
+    let update = () => {
         if (!options.signal.aborted)
             void options.update()
     }
-    async function read(state: TrailCommitState, more = false) {
-        if (state.loading || !state.alive)
-            return
-        const id = `related:${++sequence}`
-        const generation = state.generation
-        state.requests.add(id)
-        state.loading = true
-        state.error = undefined
-        update()
-        try {
-            const result = await options.api.readFileHistory(state.repositoryId, id, {
-                source: { kind: "commit", objectId: state.entry.objectId },
-                path: state.entry.path,
-                related: {
-                    objectId: state.entry.objectId,
-                    path: state.entry.path,
-                    parentId: state.parentId,
-                    offset: more ? state.related?.nextRelatedOffset : undefined,
-                },
-            })
-            if (!state.alive || state.generation != generation)
-                return
-            if (!result.ok)
-                throw new Error(result.error.message)
-            state.related = { ...result.page, related: [...(more ? state.related?.related ?? [] : []), ...result.page.related ?? []] }
-        } catch (error) {
-            if (state.alive && state.generation == generation)
-                state.error = String(error)
-        } finally {
-            state.requests.delete(id)
-            if (state.alive && state.generation == generation) {
-                state.loading = false
-                update()
-            }
-        }
-    }
-    function cancel(state: TrailCommitState) {
-        state.generation++
-        state.loading = false
-        for (const id of state.requests)
-            void options.api.cancelInspection(state.repositoryId, id)
-    }
     return {
         create(repositoryId: string, entry: FileHistoryEntry) {
-            const state: TrailCommitState = {
+            let state: TrailCommitState = {
                 kind: "trail-commit",
                 repositoryId,
                 entry,
@@ -80,7 +49,7 @@ export function createTrailCommits(options: { api: Window["laneway"]; update(): 
             return state
         },
         suspend() {
-            for (const state of states)
+            for (let state of states)
                 cancel(state)
         },
         dispose(state: TrailCommitState) {
@@ -162,15 +131,50 @@ export function createTrailCommits(options: { api: Window["laneway"]; update(): 
             )
         },
     }
+
+    async function read(state: TrailCommitState, more = false) {
+        if (state.loading || !state.alive)
+            return
+
+        let id = `related:${++sequence}`
+        let generation = state.generation
+        state.requests.add(id)
+        state.loading = true
+        state.error = undefined
+        update()
+
+        try {
+            let result = await options.api.readFileHistory(state.repositoryId, id, {
+                source: { kind: "commit", objectId: state.entry.objectId },
+                path: state.entry.path,
+                related: {
+                    objectId: state.entry.objectId,
+                    path: state.entry.path,
+                    parentId: state.parentId,
+                    offset: more ? state.related?.nextRelatedOffset : undefined,
+                },
+            })
+            if (!state.alive || state.generation != generation)
+                return
+            if (!result.ok)
+                throw new Error(result.error.message)
+            state.related = { ...result.page, related: [...(more ? state.related?.related ?? [] : []), ...result.page.related ?? []] }
+        } catch (error) {
+            if (state.alive && state.generation == generation)
+                state.error = String(error)
+        } finally {
+            state.requests.delete(id)
+            if (state.alive && state.generation == generation) {
+                state.loading = false
+                update()
+            }
+        }
+    }
+
+    function cancel(state: TrailCommitState) {
+        state.generation++
+        state.loading = false
+        for (let id of state.requests)
+            void options.api.cancelInspection(state.repositoryId, id)
+    }
 }
-const column = css({
-    ...auxiliaryColumnFrame,
-    minWidth: 0,
-    "& > header": { ...auxiliaryColumnHeader, position: "sticky", top: 0, zIndex: 10 },
-    "& > header strong": { flex: 1, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" },
-    "& > header > button": auxiliaryCloseButton,
-    "& .change-file": { top: "46px" },
-    "& > small, & > label, & p": { display: "block", margin: "6px 8px", fontSize: "12px", color: "var(--muted)" },
-    "& .related-file": { display: "flex", gap: "8px", width: "100%", padding: "6px 8px", textAlign: "left" },
-    "& .related-file small": { marginLeft: "auto", color: "var(--muted)" },
-})

@@ -7,13 +7,30 @@ export interface ConflictSides {
     right: { label: string; action: string; description: string }
 }
 
+let mergeStyle = css({
+    borderTop: "1px solid var(--line)",
+    "& .merge-sides": {
+        padding: "6px 12px",
+        background: "var(--raised)",
+        color: "var(--muted)",
+        fontSize: "11px",
+        display: "grid",
+        gap: "5px",
+        "& > div": { display: "grid", gap: "2px" },
+        "& strong": { color: "var(--text)", fontWeight: "500" },
+        "& span": { overflowWrap: "anywhere" },
+    },
+    "& .pierre-merge": { overflow: "auto", maxHeight: "min(65vh, 640px)", minHeight: "40px", userSelect: "text" },
+    "& [role=alert]": { color: "var(--danger)", padding: "8px" },
+})
+
 export function MergeResolution(
     handle: Handle<
         { name: string; contents: string; subject: ConflictSubject; sides: ConflictSides; busy: boolean; resolve(contents: string): Promise<boolean> }
     >,
 ) {
     let pending = false, error = ""
-    const appearance = () => document.documentElement.dataset.appearance == "dark" ? "dark" : "light"
+    let appearance = () => document.documentElement.dataset.appearance == "dark" ? "dark" : "light"
     return () => (
         <section aria-label={"Merge resolution for " + handle.props.name} aria-busy={pending || handle.props.busy} mix={mergeStyle}>
             <div class="merge-sides">
@@ -32,9 +49,9 @@ export function MergeResolution(
                 inert={pending || handle.props.busy}
                 mix={ref((node, signal) => {
                     // Pierre owns this DOM; Remix updates only the surrounding UI.
-                    const host = document.createElement("div")
+                    let host = document.createElement("div")
                     node.attachShadow({ mode: "open" }).append(host)
-                    const sheet = new CSSStyleSheet()
+                    let sheet = new CSSStyleSheet()
                     sheet.replaceSync(`
                         :host { --diffs-font-family: var(--mono); --diffs-font-size: 12px; --diffs-line-height: 24px; }
                         [data-merge-conflict-marker-row] {
@@ -52,7 +69,7 @@ export function MergeResolution(
                         [data-merge-conflict-marker-row] button::after { content: none !important; }
                         [data-merge-conflict-action-separator] { display: none !important; }
                     `)
-                    const viewer = new UnresolvedFile({
+                    let viewer = new UnresolvedFile({
                         theme: { light: "github-light", dark: "github-dark" },
                         themeType: appearance(),
                         preferredHighlighter: "shiki-js",
@@ -60,7 +77,7 @@ export function MergeResolution(
                         disableErrorHandling: true,
                         expandUnchanged: true,
                         onPostRender: (element, _instance, phase) => {
-                            const shadow = element.shadowRoot
+                            let shadow = element.shadowRoot
                             if (phase != "unmount" && shadow && !shadow.adoptedStyleSheets.includes(sheet))
                                 shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, sheet]
                             if (phase != "unmount" && shadow)
@@ -69,7 +86,8 @@ export function MergeResolution(
                         onMergeConflictAction: (choice, instance) => {
                             if (pending || handle.props.busy)
                                 return
-                            const result = instance.resolveConflict(choice.conflict.conflictIndex, choice.resolution)
+
+                            let result = instance.resolveConflict(choice.conflict.conflictIndex, choice.resolution)
                             if (!result)
                                 return
                             pending = true
@@ -82,13 +100,14 @@ export function MergeResolution(
                             })
                         },
                     })
+
                     try {
                         viewer.render({ file: { name: handle.props.name, contents: handle.props.contents }, containerWrapper: host })
                     } catch (e) {
                         error = e instanceof Error ? e.message : String(e)
                         void handle.update()
                     }
-                    const observer = new MutationObserver(() => {
+                    let observer = new MutationObserver(() => {
                         viewer.setOptions({ ...viewer.options, themeType: appearance() })
                         viewer.rerender()
                     })
@@ -107,33 +126,33 @@ export function MergeResolution(
 // Display changes never alter the markers saved in partially resolved files.
 function placeSideControls(shadow: ShadowRoot, sides: ConflictSides) {
     let next: string | undefined
-    const conflicts: string[] = []
-    for (const row of shadow.querySelectorAll<HTMLElement>("[data-merge-conflict-actions], [data-merge-conflict-marker-row]")) {
+    let conflicts: string[] = []
+    for (let row of shadow.querySelectorAll<HTMLElement>("[data-merge-conflict-actions], [data-merge-conflict-marker-row]")) {
         if (row.hasAttribute("data-merge-conflict-actions")) {
-            const both = row.querySelector<HTMLButtonElement>('[data-merge-conflict-action="both"]')
+            let both = row.querySelector<HTMLButtonElement>('[data-merge-conflict-action="both"]')
             next = both?.dataset.mergeConflictConflictIndex
             if (both)
                 both.textContent = "Keep both"
             continue
         }
-        const kind = row.dataset.mergeConflict
+        let kind = row.dataset.mergeConflict
         if (kind == "marker-start" && next != undefined) {
             conflicts.push(next)
             next = undefined
         }
-        const index = conflicts.at(-1)
+        let index = conflicts.at(-1)
         if (kind == "marker-end")
             conflicts.pop()
         if (index == undefined || (kind != "marker-start" && kind != "marker-end"))
             continue
-        const side = kind == "marker-start" ? sides.left : sides.right
-        const action = kind == "marker-start" ? "current" : "incoming"
-        const button = shadow.querySelector<HTMLButtonElement>(
+        let side = kind == "marker-start" ? sides.left : sides.right
+        let action = kind == "marker-start" ? "current" : "incoming"
+        let button = shadow.querySelector<HTMLButtonElement>(
             `[data-merge-conflict-action="${action}"][data-merge-conflict-conflict-index="${index}"]`,
         )
         if (!button)
             continue
-        const label = document.createElement("span")
+        let label = document.createElement("span")
         label.textContent = side.label
         label.title = side.description
         button.textContent = "Keep this"
@@ -141,20 +160,3 @@ function placeSideControls(shadow: ShadowRoot, sides: ConflictSides) {
         row.replaceChildren(label, button)
     }
 }
-
-const mergeStyle = css({
-    borderTop: "1px solid var(--line)",
-    "& .merge-sides": {
-        padding: "6px 12px",
-        background: "var(--raised)",
-        color: "var(--muted)",
-        fontSize: "11px",
-        display: "grid",
-        gap: "5px",
-        "& > div": { display: "grid", gap: "2px" },
-        "& strong": { color: "var(--text)", fontWeight: "500" },
-        "& span": { overflowWrap: "anywhere" },
-    },
-    "& .pierre-merge": { overflow: "auto", maxHeight: "min(65vh, 640px)", minHeight: "40px", userSelect: "text" },
-    "& [role=alert]": { color: "var(--danger)", padding: "8px" },
-})

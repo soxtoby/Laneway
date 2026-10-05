@@ -1,9 +1,10 @@
 import { z } from "zod"
 
-const oid = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)
-const id = z.string().regex(/^[a-zA-Z0-9-]+$/)
-const entry = z.object({ object: oid, mode: z.string().regex(/^(100644|100755|120000|160000)$/) })
-export const ConflictFileSchema = z.object({
+let oid = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)
+let id = z.string().regex(/^[a-zA-Z0-9-]+$/)
+let entry = z.object({ object: oid, mode: z.string().regex(/^(100644|100755|120000|160000)$/) })
+
+export let ConflictFileSchema = z.object({
     path: z.string(),
     base: entry.nullable(),
     left: entry.nullable(),
@@ -11,7 +12,8 @@ export const ConflictFileSchema = z.object({
     provisional: entry.nullable(),
     text: z.boolean(),
 })
-export const ConflictSubjectSchema = z.object({
+
+export let ConflictSubjectSchema = z.object({
     id,
     input: oid,
     tree: oid,
@@ -21,14 +23,16 @@ export const ConflictSubjectSchema = z.object({
     files: z.array(ConflictFileSchema),
     suggestion: oid.optional(),
 })
-export const ReplayStepSchema = z.object({
+
+export let ReplayStepSchema = z.object({
     id,
     source: oid,
     current: oid,
     conflict: ConflictSubjectSchema.optional(),
     accepted: z.object({ input: oid, tree: oid }).optional(),
 })
-export const UnresolvedStackSchema = z.object({
+
+export let UnresolvedStackSchema = z.object({
     id,
     temporaryRef: z.string(),
     base: oid,
@@ -36,7 +40,8 @@ export const UnresolvedStackSchema = z.object({
     branches: z.array(z.object({ ref: z.string(), before: oid, step: id, current: oid })),
     steps: z.array(ReplayStepSchema),
 })
-export const WorkingConflictSchema = z.object({
+
+export let WorkingConflictSchema = z.object({
     beforeTree: oid.optional(),
     beforeIndex: oid.optional(),
     afterIndex: oid.optional(),
@@ -48,18 +53,21 @@ export const WorkingConflictSchema = z.object({
     suspended: oid.optional(),
     conflict: ConflictSubjectSchema,
 })
-export const ConflictStateSchema = z.object({
+
+export let ConflictStateSchema = z.object({
     version: z.literal(1),
     stacks: z.array(UnresolvedStackSchema),
     working: z.array(WorkingConflictSchema),
     retainedConflicts: z.array(z.object({ commit: oid, source: oid, conflict: ConflictSubjectSchema })).default([]),
 })
-export const ResolutionCandidateSchema = z.object({
+
+export let ResolutionCandidateSchema = z.object({
     subject: id,
     input: oid,
     revision: z.string(),
     files: z.record(z.string(), entry.nullable()),
 })
+
 export type ConflictFile = z.infer<typeof ConflictFileSchema>
 export type ConflictSubject = z.infer<typeof ConflictSubjectSchema>
 export type ConflictState = z.infer<typeof ConflictStateSchema>
@@ -68,8 +76,8 @@ export type ReplayStep = z.infer<typeof ReplayStepSchema>
 export type WorkingConflict = z.infer<typeof WorkingConflictSchema>
 export type ResolutionCandidate = z.infer<typeof ResolutionCandidateSchema>
 
-const subjectRequest = { subject: id, input: oid, revision: z.string() }
-export const ConflictRequestSchema = z.discriminatedUnion("action", [
+let subjectRequest = { subject: id, input: oid, revision: z.string() }
+export let ConflictRequestSchema = z.discriminatedUnion("action", [
     z.object({ action: z.literal("list") }),
     z.object({ action: z.literal("inspect"), subject: id, files: z.array(z.string()).optional() }),
     z.object({ action: z.literal("rewrite"), branches: z.array(z.string().min(1)).min(1), base: oid, path: z.string().optional() }),
@@ -92,7 +100,7 @@ export const ConflictRequestSchema = z.discriminatedUnion("action", [
     z.object({ action: z.literal("publish-check"), branches: z.array(z.string()) }),
 ])
 export type ConflictRequest = z.infer<typeof ConflictRequestSchema>
-export const ConflictSummarySchema = z.object({
+export let ConflictSummarySchema = z.object({
     id: z.string(),
     stackId: z.string().optional(),
     kind: z.enum(["commit", "working"]),
@@ -102,7 +110,7 @@ export const ConflictSummarySchema = z.object({
     files: z.number(),
     suspended: z.boolean().optional(),
 })
-const viewFile = ConflictFileSchema.extend({
+let viewFile = ConflictFileSchema.extend({
     loaded: z.boolean().optional(),
     baseText: z.string().nullable(),
     leftText: z.string().nullable(),
@@ -113,7 +121,7 @@ const viewFile = ConflictFileSchema.extend({
     resolved: z.boolean(),
     hunks: z.array(z.object({ index: z.number(), start: z.number(), end: z.number(), left: z.string(), right: z.string() })),
 })
-export const ConflictResultSchema = z.object({
+export let ConflictResultSchema = z.object({
     type: z.literal("result"),
     command: z.literal("conflict"),
     conflicts: z.array(ConflictSummarySchema),

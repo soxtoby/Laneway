@@ -5,17 +5,125 @@ import { addEventListeners, css, type Handle, on } from "remix/ui"
 type Variant = "A" | "B" | "C"
 type FileState = { path: string; head: string; work: string; staged?: string; selected: boolean }
 type Stash = { label: string; branch: string; files: FileState[] }
-const variants: Variant[] = ["A", "B", "C"]
-const names = { A: "File selection", B: "File selection · expanded", C: "Staging divider" }
-const sample = (): FileState[] => [{ path: "src/branch-list.tsx", head: "showBranches(all)", work: "showBranches(involved)", selected: true }, {
+let variants: Variant[] = ["A", "B", "C"]
+let names = { A: "File selection", B: "File selection · expanded", C: "Staging divider" }
+let sample = (): FileState[] => [{ path: "src/branch-list.tsx", head: "showBranches(all)", work: "showBranches(involved)", selected: true }, {
     path: "src/branch-list.css",
     head: "gap: 12px;",
     work: "gap: 6px;",
     selected: true,
 }, { path: "docs/navigation.md", head: "", work: "Open a branch without switching worktrees.", selected: true }]
 
+let styles = css({
+    fontSize: "12px",
+    padding: "10px 12px 14px",
+    borderBottom: "1px solid var(--line)",
+    "& h3, & p": { margin: 0 },
+    "& button": {
+        cursor: "pointer",
+        border: "1px solid var(--line-strong)",
+        borderRadius: "4px",
+        padding: "5px 9px",
+        background: "var(--control)",
+        color: "var(--text)",
+        font: "inherit",
+    },
+    "& button:hover": { background: "var(--control-hover)" },
+    "& button:disabled": { opacity: 0.45, cursor: "default" },
+    "& button:focus-visible, & input:focus-visible, & textarea:focus-visible, & select:focus-visible": {
+        outline: "2px solid var(--accent)",
+        outlineOffset: "2px",
+    },
+    "& input:not([type=checkbox]), & textarea, & select": {
+        minWidth: 0,
+        width: "100%",
+        border: "1px solid var(--line-strong)",
+        borderRadius: "4px",
+        padding: "7px 8px",
+        background: "var(--field)",
+        color: "var(--text)",
+        font: "inherit",
+    },
+    "& input[type=checkbox]": { accentColor: "var(--accent)", width: "14px", height: "14px", margin: "0 3px 0 0" },
+    "& textarea": { resize: "vertical" },
+    "& .cp-heading": { display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" },
+    "& .cp-heading h3": { fontSize: "13px", fontWeight: 650 },
+    "& .cp-heading > span, & small, & .cp-empty, & .cp-summary": { color: "var(--muted)" },
+    "& .cp-heading > button": { marginLeft: "auto" },
+    "& .cp-text": { border: 0, background: "transparent", padding: "3px 0", color: "var(--muted)" },
+    "& .cp-files": { marginBottom: "8px" },
+    "& .cp-divider": { display: "flex", alignItems: "center", gap: "8px", margin: "10px 0 6px", color: "var(--muted)", fontSize: "11px" },
+    "& .cp-divider::before, & .cp-divider::after": { content: "''", height: "1px", flex: 1, background: "var(--line)" },
+    "& .cp-stage-actions": { justifyContent: "flex-end", gap: "12px" },
+    "& .cp-file": { display: "flex", alignItems: "center", gap: "6px", minHeight: "29px" },
+    "& .cp-status": { color: "var(--accent)", font: "11px var(--mono)", width: "12px" },
+    "& .cp-path": {
+        border: 0,
+        background: "transparent",
+        flex: 1,
+        minWidth: 0,
+        textAlign: "left",
+        padding: "5px 0",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+    },
+    "& .cp-small": { padding: "1px 7px", fontSize: "16px" },
+    "& .cp-message": { display: "grid", gap: "6px", marginTop: "10px" },
+    "& .cp-message .cp-text": { justifySelf: "start" },
+    "& .cp-actions": { display: "flex", alignItems: "center", gap: "7px", marginTop: "8px" },
+    "& .cp-primary": { background: "var(--accent)", borderColor: "var(--accent)", color: "var(--accent-ink)", fontWeight: 600 },
+    "& .cp-primary:hover": { background: "var(--accent-hover)" },
+    "& .cp-subheading": { display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", fontWeight: 600, margin: "10px 0 4px" },
+    "& .cp-subheading button": { marginLeft: "auto", fontWeight: 400 },
+    "& .cp-expand": { width: "100%", display: "flex", justifyContent: "space-between", textAlign: "left", marginTop: "10px", padding: "10px" },
+    "& .cp-composer": { padding: "10px", border: "1px solid var(--accent-edge)", borderRadius: "5px", background: "var(--accent-wash)" },
+    "& .cp-empty": { padding: "8px 0", fontSize: "11px" },
+    "& .cp-branch": { display: "grid", gap: "5px", padding: "8px", marginBottom: "8px", background: "var(--accent-wash)" },
+    "& .cp-stash-form, & .cp-prompt": {
+        marginTop: "10px",
+        padding: "10px",
+        border: "1px solid var(--line-strong)",
+        borderRadius: "4px",
+        background: "var(--raised)",
+    },
+    "& .cp-stash-form label, & .cp-prompt label": { display: "grid", gap: "6px", marginTop: "6px" },
+    "& .cp-stash": { display: "flex", alignItems: "center", gap: "6px", padding: "8px 0", borderTop: "1px solid var(--line)" },
+    "& .cp-stash > div": { flex: 1, minWidth: 0 },
+    "& .cp-stash strong, & .cp-stash small": { display: "block", fontSize: "11px" },
+    "& .cp-diff": { marginTop: "10px", border: "1px solid var(--line)", overflow: "auto", userSelect: "text" },
+    "& .cp-diff header": { padding: "6px", fontSize: "11px" },
+    "& .cp-diff pre": { margin: 0, padding: "5px 7px", font: "11px var(--mono)" },
+    "& .cp-deletion": { background: "var(--danger-wash)", color: "var(--danger)" },
+    "& .cp-addition": { background: "var(--accent-wash)", color: "var(--accent)" },
+    "& .cp-notice": { marginTop: "10px", padding: "8px", background: "var(--accent-wash)", borderLeft: "2px solid var(--accent)" },
+    "& .cp-notice button": { marginLeft: "8px" },
+    "& .cp-lab": {
+        position: "fixed",
+        zIndex: 1000,
+        bottom: "14px",
+        left: "50%",
+        transform: "translateX(-50%)",
+        width: "min(740px, calc(100vw - 28px))",
+        padding: "8px 12px",
+        background: "var(--raised)",
+        border: "1px solid var(--line-strong)",
+        borderRadius: "8px",
+        boxShadow: "var(--shadow-popover)",
+    },
+    "& .cp-switcher": { display: "flex", alignItems: "center", justifyContent: "center", gap: "12px" },
+    "& .cp-switcher strong": { minWidth: "180px", textAlign: "center" },
+    "& .cp-switcher span": { color: "var(--faint)", fontSize: "9px", letterSpacing: "0.06em" },
+    "& .cp-scenarios": { display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", marginTop: "8px", flexWrap: "wrap" },
+    "& .cp-scenarios label": { display: "flex", alignItems: "center", gap: "6px" },
+    "& .cp-scenarios select": { width: "170px", padding: "4px" },
+    "& .cp-lab details": { marginTop: "6px", fontSize: "10px", color: "var(--muted)" },
+    "& .cp-lab summary": { cursor: "pointer" },
+    "& .cp-lab pre": { maxHeight: "180px", overflow: "auto", userSelect: "text" },
+})
+
 export function CommitPrototype(handle: Handle) {
-    const query = new URLSearchParams(location.search).get("variant")
+    let query = new URLSearchParams(location.search).get("variant")
     let variant: Variant = query == "B" || query == "C" ? query : "A"
     let files = sample()
     let message = ""
@@ -38,30 +146,19 @@ export function CommitPrototype(handle: Handle) {
     let operations: string[] = []
     let undo: (() => void) | undefined
 
-    const dirty = () => files.filter(file => file.work != file.head || (file.staged !== undefined && file.staged != file.head))
-    const staged = () => files.filter(file => file.staged !== undefined && file.staged != file.head)
-    const unstaged = () => files.filter(file => file.work != (file.staged ?? file.head))
-    const included = () => variant == "C" ? staged().length ? staged() : dirty() : dirty().filter(file => file.selected)
-    const update = () => void handle.update()
-    const click = (action: () => void) =>
+    let dirty = () => files.filter(file => file.work != file.head || (file.staged !== undefined && file.staged != file.head))
+    let staged = () => files.filter(file => file.staged !== undefined && file.staged != file.head)
+    let unstaged = () => files.filter(file => file.work != (file.staged ?? file.head))
+    let included = () => variant == "C" ? staged().length ? staged() : dirty() : dirty().filter(file => file.selected)
+    let update = () => void handle.update()
+    let click = (action: () => void) =>
         on<HTMLButtonElement, "click">("click", () => {
             action()
             update()
         })
-
-    function switchVariant(step: number) {
-        variant = variants[(variants.indexOf(variant) + step + variants.length) % variants.length]
-        expanded = variant == "B"
-        const url = new URL(location.href)
-        url.searchParams.set("variant", variant)
-        history.replaceState(null, "", url)
-        hookPrompt = false
-        notice = ""
-        update()
-    }
     addEventListeners(window, handle.signal, {
         keydown(event) {
-            const target = event.target
+            let target = event.target
             if (target instanceof Element && target.closest("input, textarea, select, [contenteditable], [role=dialog]"))
                 return
             if (event.key == "ArrowLeft" || event.key == "ArrowRight") {
@@ -70,202 +167,6 @@ export function CommitPrototype(handle: Handle) {
             }
         },
     })
-
-    function checkpoint(label: string) {
-        const prior = structuredClone({ files, stashes, operations, virtual, branch, message, body })
-        undo = () => {
-            ;({ files, stashes, operations, virtual, branch, message, body } = prior)
-            notice = `Undid ${label.toLowerCase()}.`
-            undo = undefined
-        }
-        operations.push(label)
-    }
-    function loadScenario(value: string) {
-        scenario = value
-        files = sample()
-        message = ""
-        body = ""
-        notice = ""
-        hookPrompt = false
-        freshnessPending = false
-        hookEdited = false
-        preview = undefined
-        undo = undefined
-        operations = []
-        applyTarget = undefined
-        virtual = value == "virtual" || value == "initial"
-        branch = value == "initial" ? "main" : virtual ? "worktree/inspection" : "feature/laneway"
-        if (value == "staged" || value == "edited")
-            files[0].staged = files[0].work
-        if (value == "edited")
-            files[0].work = "showBranches(involved, { includePrimary: true })"
-        if (value == "clean")
-            files = []
-        if (value == "initial")
-            files.forEach(file => file.head = "")
-    }
-    function commit(continueHook = false) {
-        if (!message.trim() || !included().length || !branch.trim())
-            return
-        if (freshnessPending) {
-            freshnessPending = false
-            notice = "Working Changes changed. Review the refreshed files, then commit again."
-            return
-        }
-        if (virtual) {
-            checkpoint(`Create branch ${branch}`)
-            virtual = false
-        }
-        if (scenario == "failed-hook") {
-            notice = "Commit blocked: pre-commit hook failed. Your changes and draft remain."
-            return
-        }
-        if (scenario == "hook" && !continueHook) {
-            if (!hookEdited) {
-                for (const file of included()) {
-                    file.work += " // hook formatted"
-                    if (variant == "C" && staged().includes(file))
-                        file.staged = file.work
-                }
-                hookEdited = true
-            }
-            hookPrompt = true
-            return
-        }
-        checkpoint(`Commit: ${message.trim()}`)
-        const targets = included()
-        const useIndex = variant == "C" && staged().length > 0
-        for (const file of targets) {
-            file.head = useIndex ? file.staged! : file.work
-            file.staged = undefined
-        }
-        files = dirty()
-        notice = `Committed ${targets.length} file${targets.length == 1 ? "" : "s"} to ${branch}.`
-        message = ""
-        body = ""
-        hookPrompt = false
-        expanded = false
-        preview = undefined
-    }
-    function stashAll() {
-        checkpoint("Stash Working Changes")
-        stashes.unshift({ label: stashLabel.trim() || "Working Changes", branch, files: structuredClone(files) })
-        files = []
-        stashForm = false
-        stashLabel = ""
-        showStashes = true
-        notice = "Working Changes stashed."
-    }
-    function applyStash() {
-        if (applyTarget === undefined)
-            return
-        if (destination.startsWith("inspection") && dirty().length) {
-            notice = "Stash application requires a clean worktree. Commit or stash Working Changes first."
-            return
-        }
-        checkpoint("Apply stash")
-        const stash = stashes.splice(applyTarget, 1)[0]
-        if (destination.startsWith("inspection"))
-            files = structuredClone(stash.files)
-        notice = `Applied “${stash.label}” to ${destination}. Stash removed; Undo restores it.`
-        applyTarget = undefined
-    }
-
-    function fileRows(list: FileState[], kind: "selection" | "unstaged" | "staged") {
-        return (
-            <div class="cp-files">
-                {list.length
-                    ? list.map(file => (
-                        <div key={`${kind}:${file.path}`}>
-                            <div class="cp-file">
-                                {kind == "selection" && (
-                                    <input
-                                        type="checkbox"
-                                        aria-label={`Include ${file.path}`}
-                                        checked={file.selected}
-                                        mix={on("change", event => {
-                                            file.selected = event.currentTarget.checked
-                                            update()
-                                        })}
-                                    />
-                                )}
-                                <span class="cp-status">{file.head ? "M" : "A"}</span>
-                                <button
-                                    class="cp-path"
-                                    mix={click(() =>
-                                        preview = preview?.path == file.path && preview.kind == (kind == "staged" ? "staged" : "work")
-                                            ? undefined
-                                            : { path: file.path, kind: kind == "staged" ? "staged" : "work" }
-                                    )}
-                                >
-                                    {file.path}
-                                </button>
-                                {expanded && kind != "selection" && (
-                                    <button
-                                        class="cp-small"
-                                        aria-label={`${kind == "staged" ? "Unstage" : "Stage"} ${file.path}`}
-                                        mix={click(() => file.staged = kind == "staged" ? undefined : file.work)}
-                                    >
-                                        {kind == "staged" ? "−" : "+"}
-                                    </button>
-                                )}
-                            </div>
-                            {preview?.path == file.path && preview.kind == (kind == "staged" ? "staged" : "work") && (
-                                <div class="cp-diff">
-                                    <pre class="cp-deletion">− {(kind == "unstaged" ? file.staged ?? file.head : file.head) || "(new file)"}</pre>
-                                    <pre class="cp-addition">+ {kind == "staged" ? file.staged : file.work}</pre>
-                                </div>
-                            )}
-                        </div>
-                    ))
-                    : <p class="cp-empty">{kind == "staged" ? "Nothing staged — commit will include all changes." : "No changes"}</p>}
-            </div>
-        )
-    }
-    function messageFields() {
-        return (
-            <div class="cp-message">
-                <input
-                    aria-label="Commit title"
-                    placeholder="Commit title (required)"
-                    value={message}
-                    mix={on("input", event => {
-                        message = event.currentTarget.value
-                        update()
-                    })}
-                />
-                <textarea
-                    aria-label="Commit message"
-                    placeholder="Message (optional)"
-                    rows={3}
-                    value={body}
-                    mix={on("input", event => {
-                        body = event.currentTarget.value
-                        update()
-                    })}
-                />
-            </div>
-        )
-    }
-    function actions() {
-        const count = included().length
-        const title = variant == "C"
-            ? staged().length ? `Commit staged (${count})` : `Commit all changes (${count})`
-            : `Commit ${count} file${count == 1 ? "" : "s"}`
-        return (
-            <div class="cp-actions">
-                <button class="cp-primary" disabled={!message.trim() || !count || !branch.trim()} mix={click(() => commit())}>{title}</button>
-                <button
-                    mix={click(() => {
-                        expanded = false
-                        hookPrompt = false
-                    })}
-                >
-                    Cancel
-                </button>
-            </div>
-        )
-    }
 
     return () => {
         return (
@@ -487,112 +388,219 @@ export function CommitPrototype(handle: Handle) {
             </section>
         )
     }
-}
 
-const styles = css({
-    fontSize: "12px",
-    padding: "10px 12px 14px",
-    borderBottom: "1px solid var(--line)",
-    "& h3, & p": { margin: 0 },
-    "& button": {
-        cursor: "pointer",
-        border: "1px solid var(--line-strong)",
-        borderRadius: "4px",
-        padding: "5px 9px",
-        background: "var(--control)",
-        color: "var(--text)",
-        font: "inherit",
-    },
-    "& button:hover": { background: "var(--control-hover)" },
-    "& button:disabled": { opacity: 0.45, cursor: "default" },
-    "& button:focus-visible, & input:focus-visible, & textarea:focus-visible, & select:focus-visible": {
-        outline: "2px solid var(--accent)",
-        outlineOffset: "2px",
-    },
-    "& input:not([type=checkbox]), & textarea, & select": {
-        minWidth: 0,
-        width: "100%",
-        border: "1px solid var(--line-strong)",
-        borderRadius: "4px",
-        padding: "7px 8px",
-        background: "var(--field)",
-        color: "var(--text)",
-        font: "inherit",
-    },
-    "& input[type=checkbox]": { accentColor: "var(--accent)", width: "14px", height: "14px", margin: "0 3px 0 0" },
-    "& textarea": { resize: "vertical" },
-    "& .cp-heading": { display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" },
-    "& .cp-heading h3": { fontSize: "13px", fontWeight: 650 },
-    "& .cp-heading > span, & small, & .cp-empty, & .cp-summary": { color: "var(--muted)" },
-    "& .cp-heading > button": { marginLeft: "auto" },
-    "& .cp-text": { border: 0, background: "transparent", padding: "3px 0", color: "var(--muted)" },
-    "& .cp-files": { marginBottom: "8px" },
-    "& .cp-divider": { display: "flex", alignItems: "center", gap: "8px", margin: "10px 0 6px", color: "var(--muted)", fontSize: "11px" },
-    "& .cp-divider::before, & .cp-divider::after": { content: "''", height: "1px", flex: 1, background: "var(--line)" },
-    "& .cp-stage-actions": { justifyContent: "flex-end", gap: "12px" },
-    "& .cp-file": { display: "flex", alignItems: "center", gap: "6px", minHeight: "29px" },
-    "& .cp-status": { color: "var(--accent)", font: "11px var(--mono)", width: "12px" },
-    "& .cp-path": {
-        border: 0,
-        background: "transparent",
-        flex: 1,
-        minWidth: 0,
-        textAlign: "left",
-        padding: "5px 0",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-    },
-    "& .cp-small": { padding: "1px 7px", fontSize: "16px" },
-    "& .cp-message": { display: "grid", gap: "6px", marginTop: "10px" },
-    "& .cp-message .cp-text": { justifySelf: "start" },
-    "& .cp-actions": { display: "flex", alignItems: "center", gap: "7px", marginTop: "8px" },
-    "& .cp-primary": { background: "var(--accent)", borderColor: "var(--accent)", color: "var(--accent-ink)", fontWeight: 600 },
-    "& .cp-primary:hover": { background: "var(--accent-hover)" },
-    "& .cp-subheading": { display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", fontWeight: 600, margin: "10px 0 4px" },
-    "& .cp-subheading button": { marginLeft: "auto", fontWeight: 400 },
-    "& .cp-expand": { width: "100%", display: "flex", justifyContent: "space-between", textAlign: "left", marginTop: "10px", padding: "10px" },
-    "& .cp-composer": { padding: "10px", border: "1px solid var(--accent-edge)", borderRadius: "5px", background: "var(--accent-wash)" },
-    "& .cp-empty": { padding: "8px 0", fontSize: "11px" },
-    "& .cp-branch": { display: "grid", gap: "5px", padding: "8px", marginBottom: "8px", background: "var(--accent-wash)" },
-    "& .cp-stash-form, & .cp-prompt": {
-        marginTop: "10px",
-        padding: "10px",
-        border: "1px solid var(--line-strong)",
-        borderRadius: "4px",
-        background: "var(--raised)",
-    },
-    "& .cp-stash-form label, & .cp-prompt label": { display: "grid", gap: "6px", marginTop: "6px" },
-    "& .cp-stash": { display: "flex", alignItems: "center", gap: "6px", padding: "8px 0", borderTop: "1px solid var(--line)" },
-    "& .cp-stash > div": { flex: 1, minWidth: 0 },
-    "& .cp-stash strong, & .cp-stash small": { display: "block", fontSize: "11px" },
-    "& .cp-diff": { marginTop: "10px", border: "1px solid var(--line)", overflow: "auto", userSelect: "text" },
-    "& .cp-diff header": { padding: "6px", fontSize: "11px" },
-    "& .cp-diff pre": { margin: 0, padding: "5px 7px", font: "11px var(--mono)" },
-    "& .cp-deletion": { background: "var(--danger-wash)", color: "var(--danger)" },
-    "& .cp-addition": { background: "var(--accent-wash)", color: "var(--accent)" },
-    "& .cp-notice": { marginTop: "10px", padding: "8px", background: "var(--accent-wash)", borderLeft: "2px solid var(--accent)" },
-    "& .cp-notice button": { marginLeft: "8px" },
-    "& .cp-lab": {
-        position: "fixed",
-        zIndex: 1000,
-        bottom: "14px",
-        left: "50%",
-        transform: "translateX(-50%)",
-        width: "min(740px, calc(100vw - 28px))",
-        padding: "8px 12px",
-        background: "var(--raised)",
-        border: "1px solid var(--line-strong)",
-        borderRadius: "8px",
-        boxShadow: "var(--shadow-popover)",
-    },
-    "& .cp-switcher": { display: "flex", alignItems: "center", justifyContent: "center", gap: "12px" },
-    "& .cp-switcher strong": { minWidth: "180px", textAlign: "center" },
-    "& .cp-switcher span": { color: "var(--faint)", fontSize: "9px", letterSpacing: "0.06em" },
-    "& .cp-scenarios": { display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", marginTop: "8px", flexWrap: "wrap" },
-    "& .cp-scenarios label": { display: "flex", alignItems: "center", gap: "6px" },
-    "& .cp-scenarios select": { width: "170px", padding: "4px" },
-    "& .cp-lab details": { marginTop: "6px", fontSize: "10px", color: "var(--muted)" },
-    "& .cp-lab summary": { cursor: "pointer" },
-    "& .cp-lab pre": { maxHeight: "180px", overflow: "auto", userSelect: "text" },
-})
+    function switchVariant(step: number) {
+        variant = variants[(variants.indexOf(variant) + step + variants.length) % variants.length]
+        expanded = variant == "B"
+        let url = new URL(location.href)
+        url.searchParams.set("variant", variant)
+        history.replaceState(null, "", url)
+        hookPrompt = false
+        notice = ""
+        update()
+    }
+
+    function loadScenario(value: string) {
+        scenario = value
+        files = sample()
+        message = ""
+        body = ""
+        notice = ""
+        hookPrompt = false
+        freshnessPending = false
+        hookEdited = false
+        preview = undefined
+        undo = undefined
+        operations = []
+        applyTarget = undefined
+        virtual = value == "virtual" || value == "initial"
+        branch = value == "initial" ? "main" : virtual ? "worktree/inspection" : "feature/laneway"
+        if (value == "staged" || value == "edited")
+            files[0].staged = files[0].work
+        if (value == "edited")
+            files[0].work = "showBranches(involved, { includePrimary: true })"
+        if (value == "clean")
+            files = []
+        if (value == "initial")
+            files.forEach(file => file.head = "")
+    }
+
+    function stashAll() {
+        checkpoint("Stash Working Changes")
+        stashes.unshift({ label: stashLabel.trim() || "Working Changes", branch, files: structuredClone(files) })
+        files = []
+        stashForm = false
+        stashLabel = ""
+        showStashes = true
+        notice = "Working Changes stashed."
+    }
+
+    function applyStash() {
+        if (applyTarget === undefined)
+            return
+
+        if (destination.startsWith("inspection") && dirty().length) {
+            notice = "Stash application requires a clean worktree. Commit or stash Working Changes first."
+            return
+        }
+        checkpoint("Apply stash")
+        let stash = stashes.splice(applyTarget, 1)[0]
+        if (destination.startsWith("inspection"))
+            files = structuredClone(stash.files)
+        notice = `Applied “${stash.label}” to ${destination}. Stash removed; Undo restores it.`
+        applyTarget = undefined
+    }
+
+    function fileRows(list: FileState[], kind: "selection" | "unstaged" | "staged") {
+        return (
+            <div class="cp-files">
+                {list.length
+                    ? list.map(file => (
+                        <div key={`${kind}:${file.path}`}>
+                            <div class="cp-file">
+                                {kind == "selection" && (
+                                    <input
+                                        type="checkbox"
+                                        aria-label={`Include ${file.path}`}
+                                        checked={file.selected}
+                                        mix={on("change", event => {
+                                            file.selected = event.currentTarget.checked
+                                            update()
+                                        })}
+                                    />
+                                )}
+                                <span class="cp-status">{file.head ? "M" : "A"}</span>
+                                <button
+                                    class="cp-path"
+                                    mix={click(() =>
+                                        preview = preview?.path == file.path && preview.kind == (kind == "staged" ? "staged" : "work")
+                                            ? undefined
+                                            : { path: file.path, kind: kind == "staged" ? "staged" : "work" }
+                                    )}
+                                >
+                                    {file.path}
+                                </button>
+                                {expanded && kind != "selection" && (
+                                    <button
+                                        class="cp-small"
+                                        aria-label={`${kind == "staged" ? "Unstage" : "Stage"} ${file.path}`}
+                                        mix={click(() => file.staged = kind == "staged" ? undefined : file.work)}
+                                    >
+                                        {kind == "staged" ? "−" : "+"}
+                                    </button>
+                                )}
+                            </div>
+                            {preview?.path == file.path && preview.kind == (kind == "staged" ? "staged" : "work") && (
+                                <div class="cp-diff">
+                                    <pre class="cp-deletion">− {(kind == "unstaged" ? file.staged ?? file.head : file.head) || "(new file)"}</pre>
+                                    <pre class="cp-addition">+ {kind == "staged" ? file.staged : file.work}</pre>
+                                </div>
+                            )}
+                        </div>
+                    ))
+                    : <p class="cp-empty">{kind == "staged" ? "Nothing staged — commit will include all changes." : "No changes"}</p>}
+            </div>
+        )
+    }
+
+    function messageFields() {
+        return (
+            <div class="cp-message">
+                <input
+                    aria-label="Commit title"
+                    placeholder="Commit title (required)"
+                    value={message}
+                    mix={on("input", event => {
+                        message = event.currentTarget.value
+                        update()
+                    })}
+                />
+                <textarea
+                    aria-label="Commit message"
+                    placeholder="Message (optional)"
+                    rows={3}
+                    value={body}
+                    mix={on("input", event => {
+                        body = event.currentTarget.value
+                        update()
+                    })}
+                />
+            </div>
+        )
+    }
+
+    function actions() {
+        let count = included().length
+        let title = variant == "C"
+            ? staged().length ? `Commit staged (${count})` : `Commit all changes (${count})`
+            : `Commit ${count} file${count == 1 ? "" : "s"}`
+        return (
+            <div class="cp-actions">
+                <button class="cp-primary" disabled={!message.trim() || !count || !branch.trim()} mix={click(() => commit())}>{title}</button>
+                <button
+                    mix={click(() => {
+                        expanded = false
+                        hookPrompt = false
+                    })}
+                >
+                    Cancel
+                </button>
+            </div>
+        )
+    }
+
+    function commit(continueHook = false) {
+        if (!message.trim() || !included().length || !branch.trim())
+            return
+
+        if (freshnessPending) {
+            freshnessPending = false
+            notice = "Working Changes changed. Review the refreshed files, then commit again."
+            return
+        }
+        if (virtual) {
+            checkpoint(`Create branch ${branch}`)
+            virtual = false
+        }
+        if (scenario == "failed-hook") {
+            notice = "Commit blocked: pre-commit hook failed. Your changes and draft remain."
+            return
+        }
+        if (scenario == "hook" && !continueHook) {
+            if (!hookEdited) {
+                for (let file of included()) {
+                    file.work += " // hook formatted"
+                    if (variant == "C" && staged().includes(file))
+                        file.staged = file.work
+                }
+                hookEdited = true
+            }
+            hookPrompt = true
+            return
+        }
+        checkpoint(`Commit: ${message.trim()}`)
+        let targets = included()
+        let useIndex = variant == "C" && staged().length > 0
+        for (let file of targets) {
+            file.head = useIndex ? file.staged! : file.work
+            file.staged = undefined
+        }
+        files = dirty()
+        notice = `Committed ${targets.length} file${targets.length == 1 ? "" : "s"} to ${branch}.`
+        message = ""
+        body = ""
+        hookPrompt = false
+        expanded = false
+        preview = undefined
+    }
+
+    function checkpoint(label: string) {
+        let prior = structuredClone({ files, stashes, operations, virtual, branch, message, body })
+        undo = () => {
+            ;({ files, stashes, operations, virtual, branch, message, body } = prior)
+            notice = `Undid ${label.toLowerCase()}.`
+            undo = undefined
+        }
+        operations.push(label)
+    }
+}

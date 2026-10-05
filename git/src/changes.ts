@@ -22,35 +22,6 @@ interface ChangesSnapshot {
 }
 
 export type ChangesReadCache = Map<string, ChangesSnapshot>
-
-function operation(start: StartCommand) {
-    const active = new Set<Command>()
-    let cancelled = false
-    const check = () => {
-        if (cancelled)
-            throw new GitError("git.cancelled", "Diff inspection cancelled.")
-    }
-    return {
-        check,
-        cancel() {
-            cancelled = true
-            for (const command of active)
-                command.cancel()
-        },
-        async run(cwd: string, args: string[], onOutput?: (chunk: Buffer) => void, accepted = [0], input?: string) {
-            check()
-            const command = start(cwd, args, onOutput, input)
-            active.add(command)
-            const result = await command.result.finally(() => active.delete(command))
-            check()
-            if (command.wasCancelled())
-                throw new GitError("git.cancelled", "Diff inspection cancelled.")
-            if (!accepted.includes(result.exitCode))
-                throw new GitError("git.command-failed", redactGitText(result.stderr.toString()) || "Git could not inspect these changes.")
-            return result.stdout.toString("utf8")
-        },
-    }
-}
 type Reader = ReturnType<typeof operation>
 
 export function startChangesRead(
@@ -59,11 +30,11 @@ export function startChangesRead(
     request: ChangesRequest,
     cache?: ChangesReadCache,
 ): GitTask<ChangesInventory> {
-    const reader = operation(start)
-    const result = readSnapshot(descriptor, reader, request).then(snapshot => {
+    let reader = operation(start)
+    let result = readSnapshot(descriptor, reader, request).then(snapshot => {
         reader.check()
         if (cache) {
-            const key = snapshotKey(snapshot.inventory.source, snapshot.inventory.version)
+            let key = snapshotKey(snapshot.inventory.source, snapshot.inventory.version)
             cache.delete(key)
             cache.set(key, snapshot)
             if (cache.size > 16)
@@ -71,9 +42,11 @@ export function startChangesRead(
         }
         if (snapshot.inventory.source.kind != "comparison")
             return snapshot.inventory
-        const offset = request.offset ?? 0
+
+        let offset = request.offset ?? 0
         if (!Number.isSafeInteger(offset) || offset < 0)
             throw new GitError("git.command-failed", "Invalid comparison page.")
+
         return {
             ...snapshot.inventory,
             files: snapshot.inventory.files.slice(offset, offset + 200),
@@ -89,281 +62,97 @@ export function startFileDiffRead(
     request: FileDiffRequest,
     cache?: ChangesReadCache,
 ): GitTask<FileDiffPage> {
-    const reader = operation(start)
+    let reader = operation(start)
     return { cancel: reader.cancel, result: fileDiff(descriptor, reader, request, cache) }
 }
 
-function snapshotKey(source: DiffSource, version: string) {
-    return JSON.stringify([source, version])
-}
-
-async function directory(descriptor: RepositoryDescriptor, reader: Reader, source: DiffSource) {
-    if (source.kind == "branches" || source.kind == "comparison") {
-        if (source.kind == "comparison") {
-            oid(descriptor, source.fromObjectId)
-            oid(descriptor, source.toObjectId)
-        }
-        return descriptor.selectedWorktree
+function operation(start: StartCommand) {
+    let active = new Set<Command>()
+    let cancelled = false
+    let check = () => {
+        if (cancelled)
+            throw new GitError("git.cancelled", "Diff inspection cancelled.")
     }
-    if (source.kind == "commit") {
-        oid(descriptor, source.objectId)
-        if (source.parentId)
-            oid(descriptor, source.parentId)
-        return descriptor.selectedWorktree
-    }
-    if (!isAbsolute(source.worktreePath))
-        throw new GitError("git.invalid-root", "Choose a Registered Worktree.")
-    const path = await realpath(source.worktreePath)
-    const registrations = await reader.run(descriptor.selectedWorktree, ["worktree", "list", "--porcelain", "-z"])
-    const paths = registrations.split("\0").filter(value => value.startsWith("worktree ")).map(value => resolve(value.slice(9)))
-    if (!paths.some(candidate => equalPath(candidate, path)))
-        throw new GitError("git.invalid-root", "The worktree is no longer registered in this repository.")
-    return path
-}
-
-async function readSnapshot(descriptor: RepositoryDescriptor, reader: Reader, request: ChangesRequest): Promise<ChangesSnapshot> {
-    const cwd = await directory(descriptor, reader, request.source)
-    if (request.source.kind == "branches" || request.source.kind == "comparison") {
-        let source = request.source
-        if (source.kind == "branches") {
-            for (const ref of [source.fromRef, source.toRef]) {
-                if (!/^refs\/(heads|remotes)\/.+/.test(ref))
-                    throw new GitError("git.command-failed", "Choose a branch ref.")
-                await reader.run(cwd, ["check-ref-format", ref])
-            }
-            const refs = await reader.run(cwd, ["for-each-ref", "--format=%(refname) %(objectname)", "--", source.fromRef, source.toRef])
-            const tips = new Map(refs.trim().split("\n").map(line => line.trim().split(" ") as [string, string]))
-            const fromObjectId = tips.get(source.fromRef), toObjectId = tips.get(source.toRef)
-            if (!fromObjectId || !toObjectId)
-                throw new GitError("git.command-failed", "A compared branch is unavailable. Retarget or close this comparison.")
-            source = { kind: "comparison", fromObjectId, toObjectId }
-        }
-        const output = await reader.run(cwd, [
-            "diff-tree",
-            "--no-commit-id",
-            "-r",
-            "--raw",
-            "-z",
-            "--no-abbrev",
-            "--no-ext-diff",
-            "--no-textconv",
-            "-M",
-            source.fromObjectId,
-            source.toObjectId,
-            "--",
-        ])
-        const files = parseRaw(output)
-        const attributes = await readAttributes(reader, cwd, source, files)
-        return {
-            inventory: { source, version: hash(JSON.stringify(source) + output + JSON.stringify([...attributes])), parents: [], files },
-            cwd,
-            headId: "",
-            attributes,
-        }
-    }
-    if (request.source.kind == "working") {
-        const headBefore = await head(reader, cwd)
-        const status = await workingStatus(reader, cwd, request.includeIgnored)
-        const files = parseStatus(status)
-        const [headAfter, attributes, stamps, indexPath, indexEntries] = await Promise.all([
-            head(reader, cwd),
-            readAttributes(reader, cwd, request.source, files),
-            Promise.all(files.filter(file => !file.ignored).map(file => stamp(resolve(cwd, file.path)))),
-            reader.run(cwd, ["rev-parse", "--path-format=absolute", "--git-path", "index"]),
-            reader.run(cwd, ["ls-files", "--stage", "-z"]),
-        ])
-        if (headBefore != headAfter)
-            throw stale()
-        return {
-            inventory: {
-                source: request.source,
-                version: hash(headBefore + status + JSON.stringify(stamps) + JSON.stringify([...attributes]) + indexEntries),
-                parents: [],
-                files,
-            },
-            cwd,
-            headId: headBefore,
-            indexPath: indexPath.trim(),
-            indexEntries,
-            attributes,
-        }
-    }
-    const commit = request.source.objectId
-    const parents = (await reader.run(cwd, ["show", "-s", "--format=%P", commit, "--"])).trim().split(" ").filter(Boolean)
-    const parentId = request.source.parentId ?? parents[0]
-    if (parentId && !parents.includes(parentId))
-        throw new GitError("git.command-failed", "The selected comparison is not a parent of this commit.")
-    const source: DiffSource = { kind: "commit", objectId: commit, ...(parentId ? { parentId } : {}) }
-    const output = await reader.run(cwd, [
-        "diff-tree",
-        "--no-commit-id",
-        "--root",
-        "-r",
-        "--raw",
-        "-z",
-        "--no-abbrev",
-        "--no-ext-diff",
-        "--no-textconv",
-        "-M",
-        ...(parentId ? [parentId, commit] : [commit]),
-        "--",
-    ])
-    const files = parseRaw(output)
-    const attributes = await readAttributes(reader, cwd, source, files)
     return {
-        inventory: { source, version: hash(JSON.stringify(source) + output + JSON.stringify([...attributes])), parents, files },
-        cwd,
-        headId: "",
-        attributes,
+        check,
+        cancel() {
+            cancelled = true
+            for (let command of active)
+                command.cancel()
+        },
+        async run(cwd: string, args: string[], onOutput?: (chunk: Buffer) => void, accepted = [0], input?: string) {
+            check()
+            let command = start(cwd, args, onOutput, input)
+            active.add(command)
+            let result = await command.result.finally(() => active.delete(command))
+            check()
+            if (command.wasCancelled())
+                throw new GitError("git.cancelled", "Diff inspection cancelled.")
+            if (!accepted.includes(result.exitCode))
+                throw new GitError("git.command-failed", redactGitText(result.stderr.toString()) || "Git could not inspect these changes.")
+            return result.stdout.toString("utf8")
+        },
     }
-}
-
-async function readAttributes(reader: Reader, cwd: string, source: DiffSource, files: ChangedFile[]) {
-    const paths = files.filter(file => !file.ignored).map(file => file.path)
-    const attributes = new Map<string, string>()
-    if (!paths.length)
-        return attributes
-    const output = await reader.run(
-        cwd,
-        [
-            "check-attr",
-            "-z",
-            ...(source.kind == "commit" ? [`--source=${source.objectId}`] : source.kind == "comparison" ? [`--source=${source.toObjectId}`] : []),
-            "--all",
-            "--stdin",
-        ],
-        undefined,
-        [0],
-        paths.join("\0") + "\0",
-    )
-    const values = output.split("\0")
-    for (let i = 0; i + 2 < values.length; i += 3) {
-        const path = values[i]
-        attributes.set(path, (attributes.get(path) ?? "") + `${path}\0${values[i + 1]}\0${values[i + 2]}\0`)
-    }
-    return attributes
-}
-
-function parseStatus(output: string): ChangedFile[] {
-    const fields = output.split("\0")
-    const files: ChangedFile[] = []
-    for (let index = 0; index < fields.length; index++) {
-        const record = fields[index]
-        if (!record)
-            continue
-        const type = record[0]
-        if (type == "?" || type == "!") {
-            files.push({
-                path: record.slice(2),
-                status: type == "?" ? "added" : "ignored",
-                staged: false,
-                unstaged: true,
-                untracked: type == "?",
-                ignored: type == "!",
-                conflicted: false,
-            })
-            continue
-        }
-        const count = type == "1" ? 8 : type == "2" ? 9 : type == "u" ? 10 : 0
-        if (!count)
-            continue
-        const parts = record.split(" ")
-        const xy = parts[1]
-        const code = xy.replaceAll(".", "")[0] ?? "M"
-        files.push({
-            path: parts.slice(count).join(" "),
-            ...(type == "2" ? { oldPath: fields[++index] } : {}),
-            status: type == "u" ? "conflicted" : statusName(code),
-            staged: xy[0] != ".",
-            unstaged: xy[1] != ".",
-            untracked: false,
-            ignored: false,
-            conflicted: type == "u",
-            ...(parts[2].startsWith("S") ? { submodule: parts[2] } : {}),
-            oldMode: parts[3],
-            newMode: parts[type == "u" ? 6 : 5],
-        })
-    }
-    return files.sort((left, right) => left.path.localeCompare(right.path))
-}
-
-function parseRaw(output: string): ChangedFile[] {
-    const fields = output.split("\0")
-    const files: ChangedFile[] = []
-    for (let i = 0; i < fields.length; i++) {
-        if (!fields[i].startsWith(":"))
-            continue
-        const [oldMode, newMode, , , status] = fields[i].slice(1).split(" ")
-        const first = fields[++i]
-        const renamed = status.startsWith("R") || status.startsWith("C")
-        files.push({
-            path: renamed ? fields[++i] : first,
-            ...(renamed ? { oldPath: first } : {}),
-            status: statusName(status[0]),
-            staged: false,
-            unstaged: false,
-            untracked: false,
-            ignored: false,
-            conflicted: false,
-            oldMode,
-            newMode,
-            ...(oldMode == "160000" || newMode == "160000" ? { submodule: "S..." } : {}),
-        })
-    }
-    return files.sort((left, right) => left.path.localeCompare(right.path))
 }
 
 async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, request: FileDiffRequest, cache?: ChangesReadCache): Promise<FileDiffPage> {
     validatePath(request.path)
     if (request.offset != undefined && (!Number.isSafeInteger(request.offset) || request.offset < 0))
         throw new GitError("git.command-failed", "Invalid diff page.")
-    const cached = request.expectedVersion == undefined && request.inventoryVersion
+
+    let cached = request.expectedVersion == undefined && request.inventoryVersion
         ? cache?.get(snapshotKey(request.source, request.inventoryVersion))
         : undefined
-    const snapshot = cached ?? await readSnapshot(descriptor, reader, { source: request.source })
-    const { cwd, headId } = snapshot
-    const source = snapshot.inventory.source
+    let snapshot = cached ?? await readSnapshot(descriptor, reader, { source: request.source })
+    let { cwd, headId } = snapshot
+    let source = snapshot.inventory.source
     if (request.expectedVersion != undefined && !snapshot.inventory.files.some(file => file.path == request.path && !file.ignored))
         throw stale()
-    const file = changedFile(snapshot.inventory.files, request.path)
-    const attributes = snapshot.attributes.get(file.path) ?? ""
-    const view = request.view ?? "combined"
-    const stage = { base: 1, ours: 2, theirs: 3 }[view as "base" | "ours" | "theirs"]
+
+    let file = changedFile(snapshot.inventory.files, request.path)
+    let attributes = snapshot.attributes.get(file.path) ?? ""
+    let view = request.view ?? "combined"
+    let stage = { base: 1, ours: 2, theirs: 3 }[view as "base" | "ours" | "theirs"]
     if (source.kind != "working" && view != "combined" || stage && !file.conflicted)
         throw new GitError("git.command-failed", "This comparison is unavailable for the selected file.")
-    const before = request.expectedVersion != undefined && source.kind == "working" ? await workingIdentity(reader, cwd, file) : undefined
+
+    let before = request.expectedVersion != undefined && source.kind == "working" ? await workingIdentity(reader, cwd, file) : undefined
     if (before && (before.headId != headId || before.attributes != attributes))
         throw stale()
-    const evidence = source.kind == "working"
+    let evidence = source.kind == "working"
         ? await Promise.all([snapshot.indexEntries, ...[file.path, ...(file.oldPath ? [file.oldPath] : [])].map(path => stamp(resolve(cwd, path)))])
         : undefined
-    const collector = patchCollector(request.offset ?? 0, Boolean(stage))
-    const summary = collector.summary
-    const values = attributes.split("\0")
-    const attrs = new Map<string, string>()
+    let collector = patchCollector(request.offset ?? 0, Boolean(stage))
+    let summary = collector.summary
+
+    let values = attributes.split("\0")
+    let attrs = new Map<string, string>()
     for (let i = 0; i + 2 < values.length; i += 3)
         attrs.set(values[i + 1], values[i + 2])
-    const custom = attrs.get("diff") && !["unspecified", "set"].includes(attrs.get("diff")!)
-    const transformed = ["filter", "working-tree-encoding"].some(name => attrs.has(name) && !["unspecified", "unset"].includes(attrs.get(name)!))
+
+    let custom = attrs.get("diff") && !["unspecified", "set"].includes(attrs.get("diff")!)
+    let transformed = ["filter", "working-tree-encoding"].some(name => attrs.has(name) && !["unspecified", "unset"].includes(attrs.get(name)!))
     let selectable = source.kind != "comparison" && source.kind != "branches" && ["combined", "staged", "unstaged"].includes(view) && !file.conflicted
         && !file.oldPath
         && ![file.oldMode, file.newMode].some(mode => mode == "120000" || mode == "160000")
+
     if (file.oldMode != file.newMode && file.oldMode && file.newMode)
         summary.push(describeModeChange(file.oldMode, file.newMode))
     if (file.oldPath)
         summary.push(`Renamed ${file.oldPath} → ${file.path}`)
+
     if (custom || file.untracked && transformed) {
         summary.push("Binary or custom-filter file. Text conversion and external diff programs are disabled.")
         selectable = false
     } else if (stage) {
-        const stages = await reader.run(cwd, ["ls-files", "--stage", "-z", "--", file.path])
+        let stages = await reader.run(cwd, ["ls-files", "--stage", "-z", "--", file.path])
         if (stages.split("\0").some(record => record.split("\t")[0].endsWith(` ${stage}`)))
             await reader.run(cwd, ["show", `:${stage}:${file.path}`], collector.write)
         else
             summary.push(`This file is absent from ${view}.`)
         summary.push(`${view[0].toUpperCase()}${view.slice(1)} version, read-only`)
     } else {
-        const flags = [
+        let flags = [
             "--no-ext-diff",
             "--no-textconv",
             "--no-color",
@@ -373,7 +162,7 @@ async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, reques
             "--submodule=short",
             "--ignore-submodules=none",
         ]
-        const paths = [...new Set([file.oldPath, file.path].filter((path): path is string => Boolean(path)))]
+        let paths = [...new Set([file.oldPath, file.path].filter((path): path is string => Boolean(path)))]
         if (source.kind == "comparison") {
             await reader.run(
                 cwd,
@@ -399,7 +188,7 @@ async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, reques
             await safeFile(cwd, file.path)
             await reader.run(cwd, ["diff", "--no-index", ...flags, "--", process.platform == "win32" ? "NUL" : "/dev/null", file.path], collector.write, [0, 1])
         } else {
-            const revisions = view == "staged" ? ["--cached", ...(headId ? [headId] : [])] : view == "unstaged" ? [] : headId ? [headId] : ["--cached"]
+            let revisions = view == "staged" ? ["--cached", ...(headId ? [headId] : [])] : view == "unstaged" ? [] : headId ? [headId] : ["--cached"]
             // An unborn HEAD has no tree. For its combined diff read the worktree against an empty file.
             if (!headId && view == "combined") {
                 if (file.newMode != "000000") {
@@ -416,13 +205,15 @@ async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, reques
             }
         }
     }
-    const collected = collector.finish()
+
+    let collected = collector.finish()
     if (before && before.identity != (await workingIdentity(reader, cwd, file)).identity)
         throw stale()
     reader.check()
-    const version = hash(JSON.stringify(source) + JSON.stringify(file) + headId + view + attributes + JSON.stringify(evidence) + collected.digest)
+    let version = hash(JSON.stringify(source) + JSON.stringify(file) + headId + view + attributes + JSON.stringify(evidence) + collected.digest)
     if (request.expectedVersion != undefined && version != request.expectedVersion)
         throw stale()
+
     if (file.submodule) {
         summary.push(`Submodule ${file.submodule}. Inspect its repository for internal changes.`)
         selectable = false
@@ -431,6 +222,7 @@ async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, reques
         summary.push("Git filters or encoding conversion apply. Line composition is unavailable.")
         selectable = false
     }
+
     return {
         source,
         file,
@@ -444,28 +236,244 @@ async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, reques
     }
 }
 
+function snapshotKey(source: DiffSource, version: string) {
+    return JSON.stringify([source, version])
+}
+
+async function readSnapshot(descriptor: RepositoryDescriptor, reader: Reader, request: ChangesRequest): Promise<ChangesSnapshot> {
+    let cwd = await directory(descriptor, reader, request.source)
+
+    if (request.source.kind == "branches" || request.source.kind == "comparison") {
+        let source = request.source
+        if (source.kind == "branches") {
+            for (let ref of [source.fromRef, source.toRef]) {
+                if (!/^refs\/(heads|remotes)\/.+/.test(ref))
+                    throw new GitError("git.command-failed", "Choose a branch ref.")
+                await reader.run(cwd, ["check-ref-format", ref])
+            }
+            let refs = await reader.run(cwd, ["for-each-ref", "--format=%(refname) %(objectname)", "--", source.fromRef, source.toRef])
+            let tips = new Map(refs.trim().split("\n").map(line => line.trim().split(" ") as [string, string]))
+            let fromObjectId = tips.get(source.fromRef), toObjectId = tips.get(source.toRef)
+            if (!fromObjectId || !toObjectId)
+                throw new GitError("git.command-failed", "A compared branch is unavailable. Retarget or close this comparison.")
+            source = { kind: "comparison", fromObjectId, toObjectId }
+        }
+
+        let output = await reader.run(cwd, [
+            "diff-tree",
+            "--no-commit-id",
+            "-r",
+            "--raw",
+            "-z",
+            "--no-abbrev",
+            "--no-ext-diff",
+            "--no-textconv",
+            "-M",
+            source.fromObjectId,
+            source.toObjectId,
+            "--",
+        ])
+        let files = parseRaw(output)
+        let attributes = await readAttributes(reader, cwd, source, files)
+        return {
+            inventory: { source, version: hash(JSON.stringify(source) + output + JSON.stringify([...attributes])), parents: [], files },
+            cwd,
+            headId: "",
+            attributes,
+        }
+    }
+    if (request.source.kind == "working") {
+        let headBefore = await head(reader, cwd)
+        let status = await workingStatus(reader, cwd, request.includeIgnored)
+        let files = parseStatus(status)
+
+        let [headAfter, attributes, stamps, indexPath, indexEntries] = await Promise.all([
+            head(reader, cwd),
+            readAttributes(reader, cwd, request.source, files),
+            Promise.all(files.filter(file => !file.ignored).map(file => stamp(resolve(cwd, file.path)))),
+            reader.run(cwd, ["rev-parse", "--path-format=absolute", "--git-path", "index"]),
+            reader.run(cwd, ["ls-files", "--stage", "-z"]),
+        ])
+        if (headBefore != headAfter)
+            throw stale()
+
+        return {
+            inventory: {
+                source: request.source,
+                version: hash(headBefore + status + JSON.stringify(stamps) + JSON.stringify([...attributes]) + indexEntries),
+                parents: [],
+                files,
+            },
+            cwd,
+            headId: headBefore,
+            indexPath: indexPath.trim(),
+            indexEntries,
+            attributes,
+        }
+    }
+
+    let commit = request.source.objectId
+    let parents = (await reader.run(cwd, ["show", "-s", "--format=%P", commit, "--"])).trim().split(" ").filter(Boolean)
+    let parentId = request.source.parentId ?? parents[0]
+    if (parentId && !parents.includes(parentId))
+        throw new GitError("git.command-failed", "The selected comparison is not a parent of this commit.")
+
+    let source: DiffSource = { kind: "commit", objectId: commit, ...(parentId ? { parentId } : {}) }
+    let output = await reader.run(cwd, [
+        "diff-tree",
+        "--no-commit-id",
+        "--root",
+        "-r",
+        "--raw",
+        "-z",
+        "--no-abbrev",
+        "--no-ext-diff",
+        "--no-textconv",
+        "-M",
+        ...(parentId ? [parentId, commit] : [commit]),
+        "--",
+    ])
+    let files = parseRaw(output)
+    let attributes = await readAttributes(reader, cwd, source, files)
+    return {
+        inventory: { source, version: hash(JSON.stringify(source) + output + JSON.stringify([...attributes])), parents, files },
+        cwd,
+        headId: "",
+        attributes,
+    }
+}
+
+async function directory(descriptor: RepositoryDescriptor, reader: Reader, source: DiffSource) {
+    if (source.kind == "branches" || source.kind == "comparison") {
+        if (source.kind == "comparison") {
+            oid(descriptor, source.fromObjectId)
+            oid(descriptor, source.toObjectId)
+        }
+        return descriptor.selectedWorktree
+    }
+    if (source.kind == "commit") {
+        oid(descriptor, source.objectId)
+        if (source.parentId)
+            oid(descriptor, source.parentId)
+        return descriptor.selectedWorktree
+    }
+    if (!isAbsolute(source.worktreePath))
+        throw new GitError("git.invalid-root", "Choose a Registered Worktree.")
+
+    let path = await realpath(source.worktreePath)
+    let registrations = await reader.run(descriptor.selectedWorktree, ["worktree", "list", "--porcelain", "-z"])
+    let paths = registrations.split("\0").filter(value => value.startsWith("worktree ")).map(value => resolve(value.slice(9)))
+    if (!paths.some(candidate => equalPath(candidate, path)))
+        throw new GitError("git.invalid-root", "The worktree is no longer registered in this repository.")
+    return path
+}
+
+async function readAttributes(reader: Reader, cwd: string, source: DiffSource, files: ChangedFile[]) {
+    let paths = files.filter(file => !file.ignored).map(file => file.path)
+    let attributes = new Map<string, string>()
+    if (!paths.length)
+        return attributes
+
+    let output = await reader.run(
+        cwd,
+        [
+            "check-attr",
+            "-z",
+            ...(source.kind == "commit" ? [`--source=${source.objectId}`] : source.kind == "comparison" ? [`--source=${source.toObjectId}`] : []),
+            "--all",
+            "--stdin",
+        ],
+        undefined,
+        [0],
+        paths.join("\0") + "\0",
+    )
+    let values = output.split("\0")
+    for (let i = 0; i + 2 < values.length; i += 3) {
+        let path = values[i]
+        attributes.set(path, (attributes.get(path) ?? "") + `${path}\0${values[i + 1]}\0${values[i + 2]}\0`)
+    }
+
+    return attributes
+}
+
+function parseStatus(output: string): ChangedFile[] {
+    let fields = output.split("\0")
+    let files: ChangedFile[] = []
+    for (let index = 0; index < fields.length; index++) {
+        let record = fields[index]
+        if (!record)
+            continue
+        let type = record[0]
+        if (type == "?" || type == "!") {
+            files.push({
+                path: record.slice(2),
+                status: type == "?" ? "added" : "ignored",
+                staged: false,
+                unstaged: true,
+                untracked: type == "?",
+                ignored: type == "!",
+                conflicted: false,
+            })
+            continue
+        }
+        let count = type == "1" ? 8 : type == "2" ? 9 : type == "u" ? 10 : 0
+        if (!count)
+            continue
+        let parts = record.split(" ")
+        let xy = parts[1]
+        let code = xy.replaceAll(".", "")[0] ?? "M"
+        files.push({
+            path: parts.slice(count).join(" "),
+            ...(type == "2" ? { oldPath: fields[++index] } : {}),
+            status: type == "u" ? "conflicted" : statusName(code),
+            staged: xy[0] != ".",
+            unstaged: xy[1] != ".",
+            untracked: false,
+            ignored: false,
+            conflicted: type == "u",
+            ...(parts[2].startsWith("S") ? { submodule: parts[2] } : {}),
+            oldMode: parts[3],
+            newMode: parts[type == "u" ? 6 : 5],
+        })
+    }
+    return files.sort((left, right) => left.path.localeCompare(right.path))
+}
+
+function parseRaw(output: string): ChangedFile[] {
+    let fields = output.split("\0")
+    let files: ChangedFile[] = []
+    for (let i = 0; i < fields.length; i++) {
+        if (!fields[i].startsWith(":"))
+            continue
+        let [oldMode, newMode, , , status] = fields[i].slice(1).split(" ")
+        let first = fields[++i]
+        let renamed = status.startsWith("R") || status.startsWith("C")
+        files.push({
+            path: renamed ? fields[++i] : first,
+            ...(renamed ? { oldPath: first } : {}),
+            status: statusName(status[0]),
+            staged: false,
+            unstaged: false,
+            untracked: false,
+            ignored: false,
+            conflicted: false,
+            oldMode,
+            newMode,
+            ...(oldMode == "160000" || newMode == "160000" ? { submodule: "S..." } : {}),
+        })
+    }
+    return files.sort((left, right) => left.path.localeCompare(right.path))
+}
+
 function changedFile(files: ChangedFile[], path: string) {
-    const file = files.find(file => file.path == path)
+    let file = files.find(file => file.path == path)
     if (!file || file.ignored)
         throw new GitError("git.command-failed", "This file no longer has inspectable changes. Refresh the file list.")
     return file
 }
 
-function workingStatus(reader: Reader, cwd: string, includeIgnored = false, paths: string[] = []) {
-    return reader.run(cwd, [
-        "status",
-        "--porcelain=v2",
-        "-z",
-        "--untracked-files=all",
-        "--ignore-submodules=none",
-        ...(includeIgnored ? ["--ignored=matching"] : []),
-        "--",
-        ...paths,
-    ])
-}
-
 function describeModeChange(before: string, after: string) {
-    const type = (mode: string) => {
+    let type = (mode: string) => {
         switch (mode) {
             case "100644":
                 return "File"
@@ -494,26 +502,27 @@ function describeModeChange(before: string, after: string) {
 
 // Retain one page, even when Git produces a multi-gigabyte patch or one huge line.
 function patchCollector(offset: number, plain: boolean) {
-    const digest = createHash("sha256")
-    const decoder = new StringDecoder("utf8")
-    const validator = new TextDecoder("utf-8", { fatal: true })
-    const lines: DiffLine[] = []
-    const summary: string[] = []
+    let digest = createHash("sha256")
+    let decoder = new StringDecoder("utf8")
+    let validator = new TextDecoder("utf-8", { fatal: true })
+    let lines: DiffLine[] = []
+    let summary: string[] = []
     let pending = "", skipping = false, oversized = false, binary = false, invalidEncoding = false, inHunk = false
     let oldLine = 0, newLine = 0, hunk = -1, count = 0
-    const accept = (kind: DiffLine["kind"], text: string, old?: number, next?: number) => {
-        const id = count++
+
+    let accept = (kind: DiffLine["kind"], text: string, old?: number, next?: number) => {
+        let id = count++
         if (id >= offset && lines.length < 2000)
             lines.push({ id, kind, text, hunk, ...(old != undefined ? { oldLine: old } : {}), ...(next != undefined ? { newLine: next } : {}) })
     }
-    const line = (text: string) => {
+    let line = (text: string) => {
         if (plain) {
             if (text.includes("\0"))
                 binary = true
             accept("context", text, undefined, ++newLine)
             return
         }
-        const match = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(text)
+        let match = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(text)
         if (match) {
             oldLine = Number(match[1])
             newLine = Number(match[2])
@@ -537,8 +546,8 @@ function patchCollector(offset: number, plain: boolean) {
             summary.push(text)
         }
     }
-    const consume = (text: string) => {
-        for (const part of text.split(/(?<=\n)/)) {
+    let consume = (text: string) => {
+        for (let part of text.split(/(?<=\n)/)) {
             if (!skipping)
                 pending += part
             if (pending.length > 16384) {
@@ -553,6 +562,7 @@ function patchCollector(offset: number, plain: boolean) {
             }
         }
     }
+
     return {
         summary,
         write(chunk: Buffer) {
@@ -581,6 +591,7 @@ function patchCollector(offset: number, plain: boolean) {
                 summary.push("Very long lines are abbreviated. Line selection is unavailable.")
             if (invalidEncoding)
                 summary.push("Content is not UTF-8. Line selection is unavailable.")
+
             return {
                 lines: binary && plain ? [] : lines,
                 more: !(binary && plain) && count > offset + lines.length,
@@ -593,7 +604,7 @@ function patchCollector(offset: number, plain: boolean) {
 }
 
 async function workingIdentity(reader: Reader, cwd: string, file: ChangedFile) {
-    const [headId, indexPath, attributes, status] = await Promise.all([
+    let [headId, indexPath, attributes, status] = await Promise.all([
         head(reader, cwd),
         reader.run(cwd, ["rev-parse", "--path-format=absolute", "--git-path", "index"]),
         reader.run(cwd, ["check-attr", "-z", "--all", "--", file.path]),
@@ -605,9 +616,22 @@ async function workingIdentity(reader: Reader, cwd: string, file: ChangedFile) {
         identity: JSON.stringify([headId, await stamp(indexPath.trim()), await stamp(resolve(cwd, file.path)), attributes, status]),
     }
 }
+
+function workingStatus(reader: Reader, cwd: string, includeIgnored = false, paths: string[] = []) {
+    return reader.run(cwd, [
+        "status",
+        "--porcelain=v2",
+        "-z",
+        "--untracked-files=all",
+        "--ignore-submodules=none",
+        ...(includeIgnored ? ["--ignored=matching"] : []),
+        "--",
+        ...paths,
+    ])
+}
 async function stamp(path: string) {
     try {
-        const stat = await lstat(path, { bigint: true })
+        let stat = await lstat(path, { bigint: true })
         return [stat.size, stat.mtimeNs, stat.ctimeNs, stat.ino, stat.mode].map(String)
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code == "ENOENT")
@@ -616,12 +640,12 @@ async function stamp(path: string) {
     }
 }
 async function safeFile(cwd: string, path: string) {
-    const absolute = resolve(cwd, path)
-    const stat = await lstat(absolute)
+    let absolute = resolve(cwd, path)
+    let stat = await lstat(absolute)
     if (stat.isSymbolicLink())
         return
-    const actual = await realpath(absolute)
-    const rel = relative(await realpath(cwd), actual)
+    let actual = await realpath(absolute)
+    let rel = relative(await realpath(cwd), actual)
     if (rel == ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel) || !stat.isFile())
         throw new GitError("git.command-failed", "Only files inside this worktree can be inspected.")
 }

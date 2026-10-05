@@ -7,6 +7,42 @@ export interface OverflowAction {
     run(): void
 }
 
+// The global dialog rule sizes dialogs for forms, so the menu shrinks to its widest item instead.
+let menu = css({
+    position: "fixed",
+    margin: 0,
+    width: "max-content",
+    minWidth: "160px",
+    maxWidth: "calc(100vw - 16px)",
+    padding: "4px",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "var(--radius)",
+    background: "var(--raised)",
+    color: "var(--text)",
+    boxShadow: "var(--shadow-popover)",
+    "&::backdrop": { background: "transparent" },
+})
+
+let list = css({ outline: "none" })
+
+let item = css({
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    width: "100%",
+    padding: "6px 10px 6px 8px",
+    border: 0,
+    borderRadius: "3px",
+    textAlign: "left",
+    color: "var(--text)",
+    background: "transparent",
+    font: "inherit",
+    fontSize: "12px",
+    cursor: "pointer",
+    "& svg": { color: "var(--muted)", flex: "0 0 auto" },
+    "&:hover, &:focus-visible": { background: "var(--hover)" },
+})
+
 // A "more" button whose actions open in a modal dialog beneath it. The dialog lives in the top
 // layer, so sticky rows and scroll containers can neither clip nor cover the menu.
 export function OverflowMenu(
@@ -39,7 +75,7 @@ export function OverflowMenu(
                         ref(element => {
                             element.showModal()
                             // Right-align under the button, then keep the whole menu on screen.
-                            const bounds = element.getBoundingClientRect()
+                            let bounds = element.getBoundingClientRect()
                             element.style.left = `${Math.max(0, Math.min(anchor!.right - bounds.width, window.innerWidth - bounds.width))}px`
                             element.style.top = `${Math.max(0, Math.min(anchor!.bottom + 2, window.innerHeight - bounds.height))}px`
                             // Focus the list rather than an item, so a pointer-opened menu shows no focus ring.
@@ -56,10 +92,11 @@ export function OverflowMenu(
                         on("keydown", event => {
                             if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key))
                                 return
+
                             event.preventDefault()
-                            const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button")]
-                            const index = items.indexOf(document.activeElement as HTMLButtonElement)
-                            const next = event.key == "Home" ? 0 : event.key == "End"
+                            let items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button")]
+                            let index = items.indexOf(document.activeElement as HTMLButtonElement)
+                            let next = event.key == "Home" ? 0 : event.key == "End"
                                 ? items.length - 1
                                 : (index + (event.key == "ArrowDown" ? 1 : -1) + items.length) % items.length
                             items[next]?.focus()
@@ -89,39 +126,3 @@ export function OverflowMenu(
         </>
     )
 }
-
-// The global dialog rule sizes dialogs for forms, so the menu shrinks to its widest item instead.
-const menu = css({
-    position: "fixed",
-    margin: 0,
-    width: "max-content",
-    minWidth: "160px",
-    maxWidth: "calc(100vw - 16px)",
-    padding: "4px",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "var(--radius)",
-    background: "var(--raised)",
-    color: "var(--text)",
-    boxShadow: "var(--shadow-popover)",
-    "&::backdrop": { background: "transparent" },
-})
-
-const list = css({ outline: "none" })
-
-const item = css({
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    width: "100%",
-    padding: "6px 10px 6px 8px",
-    border: 0,
-    borderRadius: "3px",
-    textAlign: "left",
-    color: "var(--text)",
-    background: "transparent",
-    font: "inherit",
-    fontSize: "12px",
-    cursor: "pointer",
-    "& svg": { color: "var(--muted)", flex: "0 0 auto" },
-    "&:hover, &:focus-visible": { background: "var(--hover)" },
-})

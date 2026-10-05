@@ -135,7 +135,7 @@ export function startBranchGraphRead(
     cached?: BranchGraphReadCache,
     cache?: (value: BranchGraphReadCache) => void,
 ): GitTask<BranchGraph> {
-    const operation = cancellableRunner(startCommand)
+    let operation = cancellableRunner(startCommand)
     return {
         cancel: operation.cancel,
         result: readVerifiedGraph(descriptor, operation, options, cached, cache),
@@ -147,7 +147,7 @@ export function startBranchHistoryRead(
     startCommand: StartCommand,
     request: BranchHistoryRequest,
 ): GitTask<BranchHistoryPage> {
-    const operation = cancellableRunner(startCommand)
+    let operation = cancellableRunner(startCommand)
     return {
         cancel: operation.cancel,
         result: readHistoryPage(descriptor, operation, request),
@@ -156,11 +156,11 @@ export function startBranchHistoryRead(
 
 function cancellableRunner(startCommand: StartCommand): GraphRunner & { cancel(): void } {
     let cancelled = false
-    const current = new Set<CommandExecution>()
+    let current = new Set<CommandExecution>()
     return {
         cancel() {
             cancelled = true
-            for (const command of current)
+            for (let command of current)
                 command.cancel()
         },
         checkCancelled() {
@@ -170,9 +170,9 @@ function cancellableRunner(startCommand: StartCommand): GraphRunner & { cancel()
         async run(args, acceptedExitCodes = [0], input) {
             if (cancelled)
                 throw cancelledError()
-            const command = startCommand(args, input)
+            let command = startCommand(args, input)
             current.add(command)
-            const result = await command.result.finally(() => current.delete(command))
+            let result = await command.result.finally(() => current.delete(command))
             if (cancelled || command.wasCancelled())
                 throw cancelledError()
             if (!acceptedExitCodes.includes(result.exitCode)) {
@@ -194,15 +194,15 @@ async function readVerifiedGraph(
     cached?: BranchGraphReadCache,
     cache?: (value: BranchGraphReadCache) => void,
 ) {
-    const key = graphOptionsKey(options)
+    let key = graphOptionsKey(options)
     for (let attempt = 0; attempt < 3; attempt += 1) {
-        const before = await readEvidence(runner, descriptor)
-        const beforeFingerprint = fingerprint(before)
+        let before = await readEvidence(runner, descriptor)
+        let beforeFingerprint = fingerprint(before)
         runner.checkCancelled()
-        const previous = cached && [cached, ...cached.recent].find(value => value.key == key && value.evidence == beforeFingerprint)
+        let previous = cached && [cached, ...cached.recent].find(value => value.key == key && value.evidence == beforeFingerprint)
         if (!options.refreshRemote && previous)
             return structuredClone(previous.graph)
-        const built = await buildGraph(descriptor, runner, options, before, () => readVerificationEvidence(runner, descriptor), cached)
+        let built = await buildGraph(descriptor, runner, options, before, () => readVerificationEvidence(runner, descriptor), cached)
         if (verificationFingerprint(before) == verificationFingerprint(built.verification)) {
             runner.checkCancelled()
             cache?.({
@@ -228,7 +228,7 @@ async function readVerifiedGraph(
 }
 
 async function readVerificationEvidence(runner: GraphRunner, descriptor: RepositoryDescriptor) {
-    const [refResult, worktreeResult, context] = await Promise.all([
+    let [refResult, worktreeResult, context] = await Promise.all([
         runner.run([
             "for-each-ref",
             "--format=%(refname)%00%(objectname)%00%(*objectname)%00%(upstream)%00%(symref)%00%(authordate:unix)%00%(contents:subject)%00%(upstream:track,nobracket)%00",
@@ -253,7 +253,7 @@ function graphOptionsKey(options: BranchGraphReadOptions) {
 }
 
 async function readEvidence(runner: GraphRunner, descriptor: RepositoryDescriptor): Promise<Evidence> {
-    const [remoteResult, refResult, worktreeResult, stashResult, context] = await Promise.all([
+    let [remoteResult, refResult, worktreeResult, stashResult, context] = await Promise.all([
         runner.run(["remote"]),
         runner.run([
             "for-each-ref",
@@ -268,10 +268,11 @@ async function readEvidence(runner: GraphRunner, descriptor: RepositoryDescripto
         runner.run(["stash", "list", "--format=%gd%x00%H%x00%P%x00%gs"], [0]),
         readGraphContext(runner, descriptor),
     ])
-    const remoteText = text(remoteResult)
-    const refText = text(refResult)
-    const worktreeText = text(worktreeResult)
-    const stashText = text(stashResult)
+    let remoteText = text(remoteResult)
+    let refText = text(refResult)
+    let worktreeText = text(worktreeResult)
+    let stashText = text(stashResult)
+
     let associations: Record<string, string | null> = {}
     try {
         associations = JSON.parse(await readFile(join(descriptor.commonDirectory, "laneway-local.json"), "utf8")).stashes ?? {}
@@ -279,6 +280,7 @@ async function readEvidence(runner: GraphRunner, descriptor: RepositoryDescripto
         if ((error as NodeJS.ErrnoException).code != "ENOENT")
             throw error
     }
+
     return {
         remotes: remoteText.split("\n").filter(Boolean).sort(naturalCompare),
         remoteText,
@@ -296,25 +298,25 @@ async function readEvidence(runner: GraphRunner, descriptor: RepositoryDescripto
 }
 
 async function readGraphContext(runner: GraphRunner, descriptor: RepositoryDescriptor): Promise<GraphContext> {
-    const contents = async (path: string) =>
+    let contents = async (path: string) =>
         readFile(path).catch(error => {
             if ((error as NodeJS.ErrnoException).code == "ENOENT")
                 return Buffer.alloc(0)
             throw error
         })
-    const [configuration, mailmap, shallow, grafts] = await Promise.all([
+    let [configuration, mailmap, shallow, grafts] = await Promise.all([
         runner.run(["config", "--null", "--list", "--includes"]),
         contents(join(descriptor.mainWorktree, ".mailmap")),
         contents(resolve(descriptor.mainWorktree, process.env.GIT_SHALLOW_FILE ?? join(descriptor.commonDirectory, "shallow"))),
         contents(resolve(descriptor.mainWorktree, process.env.GIT_GRAFT_FILE ?? join(descriptor.commonDirectory, "info", "grafts"))),
     ])
-    const values = new Map(
+    let values = new Map(
         configuration.stdout.toString().split("\0").filter(Boolean).map(record => {
-            const separator = record.indexOf("\n")
+            let separator = record.indexOf("\n")
             return separator < 0 ? [record, ""] : [record.slice(0, separator), record.slice(separator + 1)]
         }),
     )
-    const [extraMailmap, mailmapBlob] = await Promise.all([
+    let [extraMailmap, mailmapBlob] = await Promise.all([
         values.get("mailmap.file")
             ? runner.run(["config", "--path", "--get", "mailmap.file"]).then(result => contents(resolve(descriptor.mainWorktree, text(result))))
             : Buffer.alloc(0),
@@ -322,14 +324,15 @@ async function readGraphContext(runner: GraphRunner, descriptor: RepositoryDescr
             ? runner.run(["rev-parse", "--verify", "--quiet", `${values.get("mailmap.blob")}^{blob}`], [0, 1, 128]).then(result => result.stdout)
             : Buffer.alloc(0),
     ])
-    const topology = digest([
+    let topology = digest([
         shallow,
         grafts,
         values.get("core.usereplacerefs") ?? "",
         process.env.GIT_NO_REPLACE_OBJECTS ?? "",
         process.env.GIT_REPLACE_REF_BASE ?? "",
     ])
-    const authors = digest([configuration.stdout, mailmap, extraMailmap, mailmapBlob])
+    let authors = digest([configuration.stdout, mailmap, extraMailmap, mailmapBlob])
+
     return {
         fingerprint: digest([configuration.stdout, topology, authors]),
         topology,
@@ -340,8 +343,8 @@ async function readGraphContext(runner: GraphRunner, descriptor: RepositoryDescr
 }
 
 function digest(parts: Array<string | Buffer>) {
-    const hash = createHash("sha256")
-    for (const part of parts)
+    let hash = createHash("sha256")
+    for (let part of parts)
         hash.update(String(Buffer.byteLength(part))).update("\0").update(part)
     return hash.digest("hex")
 }
@@ -354,28 +357,28 @@ async function buildGraph(
     verify: () => Promise<Pick<Evidence, "refText" | "worktreeText" | "context">>,
     cached?: BranchGraphReadCache,
 ) {
-    const availableRemotes = [...new Set([...evidence.remotes, ...listRefRemotes(evidence.refs)])].sort(naturalCompare)
-    const selectedRemote = options.selectedRemote && availableRemotes.includes(options.selectedRemote)
+    let availableRemotes = [...new Set([...evidence.remotes, ...listRefRemotes(evidence.refs)])].sort(naturalCompare)
+    let selectedRemote = options.selectedRemote && availableRemotes.includes(options.selectedRemote)
         ? options.selectedRemote
         : availableRemotes.length == 1
         ? availableRemotes[0]
         : undefined
-    const tips = graphTips(evidence.refs)
-    const replacements = evidence.refs.filter(ref => ref.ref.startsWith(process.env.GIT_REPLACE_REF_BASE ?? "refs/replace/")).map(
+    let tips = graphTips(evidence.refs)
+    let replacements = evidence.refs.filter(ref => ref.ref.startsWith(process.env.GIT_REPLACE_REF_BASE ?? "refs/replace/")).map(
         ref => [ref.ref, ref.objectId],
     )
-    const topologyKey = evidence.context.topology + JSON.stringify(replacements)
-    const topologyPromise = readTopology(runner, tips, topologyKey, cached?.topology)
-    const effectiveAuthorEmail = evidence.context.email
-    const authorIdentities = effectiveIdentities(options.authorIdentities, effectiveAuthorEmail)
-    const [primaryBranch, topologyCache] = await Promise.all([
+    let topologyKey = evidence.context.topology + JSON.stringify(replacements)
+    let topologyPromise = readTopology(runner, tips, topologyKey, cached?.topology)
+    let effectiveAuthorEmail = evidence.context.email
+    let authorIdentities = effectiveIdentities(options.authorIdentities, effectiveAuthorEmail)
+    let [primaryBranch, topologyCache] = await Promise.all([
         readPrimaryBranch(runner, evidence.refs, selectedRemote, options.refreshRemote == true),
         topologyPromise,
     ])
-    const topology = topologyCache.graph
-    const verificationPromise = verify()
-    const branches = createBranches(evidence.refs, evidence.worktrees, primaryBranch.ref)
-    const summaries = new Map(
+    let topology = topologyCache.graph
+    let verificationPromise = verify()
+    let branches = createBranches(evidence.refs, evidence.worktrees, primaryBranch.ref)
+    let summaries = new Map(
         evidence.refs.filter(ref =>
             (ref.ref.startsWith("refs/heads/") || ref.ref.startsWith("refs/remotes/"))
             && ref.authoredAt != undefined
@@ -384,18 +387,18 @@ async function buildGraph(
             .map(ref => [ref.objectId, { objectId: ref.objectId, authoredAt: ref.authoredAt!, subject: ref.subject! }]),
     )
 
-    const analysis = analyzeBranches(branches, evidence.refs, topologyCache, cached)
-    const exclusiveCommits = analysis.exclusive
-    const authorKey = topologyKey + evidence.context.authors + JSON.stringify(authorIdentities)
-    const [authors, verification] = await Promise.all([
+    let analysis = analyzeBranches(branches, evidence.refs, topologyCache, cached)
+    let exclusiveCommits = analysis.exclusive
+    let authorKey = topologyKey + evidence.context.authors + JSON.stringify(authorIdentities)
+    let [authors, verification] = await Promise.all([
         readAuthoredCommits(runner, exclusiveCommits, authorIdentities, authorKey, cached?.authors),
         verificationPromise,
     ])
-    const authoredCommits = new Set(exclusiveCommits.filter(objectId => authors.matches.get(objectId)))
+    let authoredCommits = new Set(exclusiveCommits.filter(objectId => authors.matches.get(objectId)))
     enrichBranches(topology, branches, authorIdentities, authoredCommits, summaries)
 
-    const patterns = options.remotePatterns.map(globPattern)
-    const included = new Set(
+    let patterns = options.remotePatterns.map(globPattern)
+    let included = new Set(
         branches.filter(branch =>
             !branch.remoteOnly
             || branch.primary
@@ -404,27 +407,27 @@ async function buildGraph(
         ).map(branch => branch.id),
     )
     includeBaseRelationships(branches, included)
-    const visibleBranches = branches.filter(branch => included.has(branch.id)).sort(compareBranches)
+    let visibleBranches = branches.filter(branch => included.has(branch.id)).sort(compareBranches)
 
     attachStashes(visibleBranches, evidence.stashes)
-    const { branchTags, tagNodes } = placeTags(evidence.refs, visibleBranches, topology)
-    for (const [branchId, tags] of branchTags) {
-        const branch = visibleBranches.find(candidate => candidate.id == branchId)
+    let { branchTags, tagNodes } = placeTags(evidence.refs, visibleBranches, topology)
+    for (let [branchId, tags] of branchTags) {
+        let branch = visibleBranches.find(candidate => candidate.id == branchId)
         if (branch)
             branch.tags = tags
     }
 
-    const primary = visibleBranches.find(branch => branch.primary)
-    const remoteTips = unique(
+    let primary = visibleBranches.find(branch => branch.primary)
+    let remoteTips = unique(
         evidence.refs.filter(ref => ref.ref.startsWith("refs/remotes/") && !ref.symbolicTarget).map(ref => ref.objectId),
         objectId => objectId,
     )
-    for (const branch of visibleBranches) {
+    for (let branch of visibleBranches) {
         branch.merged = Boolean(primary && branch.id != primary.id && topology.isAncestor(branch.tip, primary.tip))
         branch.published = branch.ownRemoteTips.some(remoteTip => topology.isAncestor(branch.tip, remoteTip))
     }
-    const virtualBranches = createVirtualBranches(evidence.worktrees)
-    const history = graphHistory(topology.commits, [
+    let virtualBranches = createVirtualBranches(evidence.worktrees)
+    let history = graphHistory(topology.commits, [
         ...[...visibleBranches].sort((left, right) => Number(right.primary) - Number(left.primary))
             .map(branch => ({ objectId: branch.tip, lineId: branch.id, connect: !branch.primary })),
         ...tagNodes.map(tag => ({ objectId: tag.objectId, lineId: tag.parentBranchId ?? tag.id, connect: false })),
@@ -460,27 +463,29 @@ async function buildGraph(
 }
 
 function analyzeBranches(branches: MutableBranch[], refs: RefRecord[], topology: TopologyCache, cached?: BranchGraphReadCache): BranchAnalysis {
-    const shape = JSON.stringify(branches.map(branch => [branch.id, branch.refs, branch.primary, [...branch.sourceUpstreams]]))
-    const tips = new Map(
+    let shape = JSON.stringify(branches.map(branch => [branch.id, branch.refs, branch.primary, [...branch.sourceUpstreams]]))
+    let tips = new Map(
         refs.filter(ref => ref.ref.startsWith("refs/heads/") || ref.ref.startsWith("refs/remotes/") && !ref.symbolicTarget).map(ref => [ref.ref, ref.objectId]),
     )
-    const reusable = cached?.analysis.shape == shape && equivalentBranchEnds(cached.topology, topology, cached.analysis.tips, tips)
+    let reusable = !!cached && cached.analysis.shape == shape && equivalentBranchEnds(cached.topology, topology, cached.analysis.tips, tips)
     let exclusive: string[]
-    if (reusable) {
-        const byId = new Map(branches.map(branch => [branch.id, branch]))
-        for (const branch of branches) {
-            const base = cached.analysis.bases.get(branch.id)!
+
+    if (cached && reusable) {
+        let byId = new Map(branches.map(branch => [branch.id, branch]))
+        for (let branch of branches) {
+            let base = cached.analysis.bases.get(branch.id)!
             branch.base = base.status == "known" ? knownBase(byId.get(base.branchId)!) : {
                 status: base.status,
                 candidates: base.candidates.map(candidate => baseCandidate(byId.get(candidate.branchId)!)),
             }
         }
-        const added = topology.records.filter(record => !cached.topology.indexes.has(record.objectId)).map(record => record.objectId)
+        let added = topology.records.filter(record => !cached.topology.indexes.has(record.objectId)).map(record => record.objectId)
         exclusive = [...cached.analysis.exclusive.filter(objectId => topology.indexes.has(objectId)), ...topology.graph.exclusiveCommits(branches, added)]
     } else {
         inferBases(branches, branches, topology.graph)
         exclusive = topology.graph.exclusiveCommits(branches)
     }
+
     return { shape, tips, bases: structuredClone(new Map(branches.map(branch => [branch.id, branch.base]))), exclusive }
 }
 
@@ -488,31 +493,33 @@ function analyzeBranches(branches: MutableBranch[], refs: RefRecord[], topology:
 function equivalentBranchEnds(before: TopologyCache, after: TopologyCache, oldRefs: Map<string, string>, newRefs: Map<string, string>) {
     if (before.key != after.key || oldRefs.size != newRefs.size)
         return false
-    const mapping = new Map<string, string>()
-    for (const [ref, oldTip] of oldRefs) {
-        const newTip = newRefs.get(ref)
+
+    let mapping = new Map<string, string>()
+    for (let [ref, oldTip] of oldRefs) {
+        let newTip = newRefs.get(ref)
         if (!newTip || mapping.has(oldTip) && mapping.get(oldTip) != newTip)
             return false
         mapping.set(oldTip, newTip)
     }
     if (new Set(mapping.values()).size != mapping.size)
         return false
-    const unshared = (cache: TopologyCache, objectId: string, tip: string) => !cache.tips.some(other => other != tip && cache.graph.isAncestor(objectId, other))
-    for (const [oldTip, newTip] of mapping) {
+
+    let unshared = (cache: TopologyCache, objectId: string, tip: string) => !cache.tips.some(other => other != tip && cache.graph.isAncestor(objectId, other))
+    for (let [oldTip, newTip] of mapping) {
         if (oldTip == newTip)
             continue
         if (!unshared(before, oldTip, oldTip) || !unshared(after, newTip, newTip))
             return false
         let boundary = newTip
         while (!before.indexes.has(boundary)) {
-            const record = after.records[after.indexes.get(boundary)!]
+            let record = after.records[after.indexes.get(boundary)!]
             if (!record || record.parentIds.length != 1 || !unshared(after, boundary, newTip))
                 return false
             boundary = record.parentIds[0]
         }
         let old = oldTip
         while (old != boundary) {
-            const record = before.records[before.indexes.get(old)!]
+            let record = before.records[before.indexes.get(old)!]
             if (!record || record.parentIds.length != 1 || !unshared(before, old, oldTip))
                 return false
             old = record.parentIds[0]
@@ -522,22 +529,22 @@ function equivalentBranchEnds(before: TopologyCache, after: TopologyCache, oldRe
 }
 
 function createBranches(refs: RefRecord[], worktrees: BranchGraphWorktree[], primaryRef?: string): MutableBranch[] {
-    const localRefs = refs.filter(ref => ref.ref.startsWith("refs/heads/"))
-    const remoteRefs = refs.filter(ref => ref.ref.startsWith("refs/remotes/") && !ref.symbolicTarget)
-    const remoteByName = new Map(remoteRefs.map(ref => [ref.ref, ref]))
-    const consumedRemoteRefs = new Set<string>()
-    const seeds: Array<{
+    let localRefs = refs.filter(ref => ref.ref.startsWith("refs/heads/"))
+    let remoteRefs = refs.filter(ref => ref.ref.startsWith("refs/remotes/") && !ref.symbolicTarget)
+    let remoteByName = new Map(remoteRefs.map(ref => [ref.ref, ref]))
+    let consumedRemoteRefs = new Set<string>()
+    let seeds: Array<{
         tip: string
         refs: RefRecord[]
         sourceUpstreams: Map<string, string>
     }> = []
 
-    for (const local of localRefs) {
-        const seedRefs = [local]
-        const sourceUpstreams = new Map<string, string>()
+    for (let local of localRefs) {
+        let seedRefs = [local]
+        let sourceUpstreams = new Map<string, string>()
         if (local.upstreamRef) {
             sourceUpstreams.set(local.ref, local.upstreamRef)
-            const upstream = remoteByName.get(local.upstreamRef)
+            let upstream = remoteByName.get(local.upstreamRef)
             if (upstream) {
                 seedRefs.push(upstream)
                 consumedRemoteRefs.add(upstream.ref)
@@ -545,28 +552,30 @@ function createBranches(refs: RefRecord[], worktrees: BranchGraphWorktree[], pri
         }
         seeds.push({ tip: local.objectId, refs: seedRefs, sourceUpstreams })
     }
-    for (const remote of remoteRefs) {
+    for (let remote of remoteRefs) {
         if (!consumedRemoteRefs.has(remote.ref))
             seeds.push({ tip: remote.objectId, refs: [remote], sourceUpstreams: new Map() })
     }
 
-    const grouped = new Map<string, typeof seeds>()
-    for (const seed of seeds)
+    let grouped = new Map<string, typeof seeds>()
+    for (let seed of seeds)
         grouped.set(seed.tip, [...grouped.get(seed.tip) ?? [], seed])
+
     return [...grouped.entries()].map(([tip, matchingSeeds]) => {
-        const matchingRefs = unique(matchingSeeds.flatMap(seed => seed.refs), ref => ref.ref)
-        const local = matchingRefs.filter(ref => ref.ref.startsWith("refs/heads/"))
-        const remote = matchingRefs.filter(ref => ref.ref.startsWith("refs/remotes/"))
-        const checkedOutRefs = new Set(worktrees.flatMap(worktree => worktree.branchRef ? [worktree.branchRef] : []))
-        const preferred = [...local].sort((left, right) => {
-            const checkout = Number(checkedOutRefs.has(right.ref)) - Number(checkedOutRefs.has(left.ref))
+        let matchingRefs = unique(matchingSeeds.flatMap(seed => seed.refs), ref => ref.ref)
+        let local = matchingRefs.filter(ref => ref.ref.startsWith("refs/heads/"))
+        let remote = matchingRefs.filter(ref => ref.ref.startsWith("refs/remotes/"))
+        let checkedOutRefs = new Set(worktrees.flatMap(worktree => worktree.branchRef ? [worktree.branchRef] : []))
+        let preferred = [...local].sort((left, right) => {
+            let checkout = Number(checkedOutRefs.has(right.ref)) - Number(checkedOutRefs.has(left.ref))
             return checkout || naturalCompare(shortRef(left.ref), shortRef(right.ref))
         })[0] ?? [...remote].sort((left, right) => naturalCompare(shortRef(left.ref), shortRef(right.ref)))[0]!
-        const sourceUpstreams = new Map(matchingSeeds.flatMap(seed => [...seed.sourceUpstreams]))
-        const upstreamRef = sourceUpstreams.get(preferred.ref)
-        const upstreamTip = upstreamRef ? remoteByName.get(upstreamRef)?.objectId : undefined
-        const allRefs = matchingRefs.map(ref => ref.ref).sort(naturalCompare)
-        const id = `branch:${preferred.ref}`
+        let sourceUpstreams = new Map(matchingSeeds.flatMap(seed => [...seed.sourceUpstreams]))
+        let upstreamRef = sourceUpstreams.get(preferred.ref)
+        let upstreamTip = upstreamRef ? remoteByName.get(upstreamRef)?.objectId : undefined
+        let allRefs = matchingRefs.map(ref => ref.ref).sort(naturalCompare)
+        let id = `branch:${preferred.ref}`
+
         return {
             kind: "branch",
             id,
@@ -597,47 +606,47 @@ function createBranches(refs: RefRecord[], worktrees: BranchGraphWorktree[], pri
 }
 
 function inferBases(branches: MutableBranch[], candidates: MutableBranch[], topology: GraphTopology) {
-    const mergeBasesByBranch = new Map<MutableBranch, Array<{ candidate: MutableBranch; objectId: string }>>()
-    for (const branch of branches) {
+    let mergeBasesByBranch = new Map<MutableBranch, Array<{ candidate: MutableBranch; objectId: string }>>()
+    for (let branch of branches) {
         if (branch.primary) {
             branch.base = { status: "unknown", candidates: [] }
             continue
         }
         mergeBasesByBranch.set(branch, topology.mergeBases(branch, candidates))
     }
-    const baseObjectIds = unique([...mergeBasesByBranch.values()].flat().map(entry => entry.objectId), objectId => objectId)
-    const isAncestor = topology.ancestry(baseObjectIds)
-    const candidatesById = new Map(candidates.map(candidate => [candidate.id, candidate]))
-    const excluded = new Map<MutableBranch, Set<string>>()
-    const closestBase = (mergeBases: Array<{ candidate: MutableBranch; objectId: string }>) =>
+    let baseObjectIds = unique([...mergeBasesByBranch.values()].flat().map(entry => entry.objectId), objectId => objectId)
+    let isAncestor = topology.ancestry(baseObjectIds)
+    let candidatesById = new Map(candidates.map(candidate => [candidate.id, candidate]))
+    let excluded = new Map<MutableBranch, Set<string>>()
+    let closestBase = (mergeBases: Array<{ candidate: MutableBranch; objectId: string }>) =>
         chooseBase(closestMergeBases(mergeBases, isAncestor), topology.isAncestor)
-    const infer = (branch: MutableBranch) => {
-        const mergeBases = mergeBasesByBranch.get(branch)!
-        const skippedTips = [...excluded.get(branch) ?? []].map(id => candidatesById.get(id)!.tip)
-        const base = closestBase(mergeBases.filter(entry => !skippedTips.some(tip => topology.isAncestor(tip, entry.candidate.tip))))
+    let infer = (branch: MutableBranch) => {
+        let mergeBases = mergeBasesByBranch.get(branch)!
+        let skippedTips = [...excluded.get(branch) ?? []].map(id => candidatesById.get(id)!.tip)
+        let base = closestBase(mergeBases.filter(entry => !skippedTips.some(tip => topology.isAncestor(tip, entry.candidate.tip))))
         branch.base = base.status == "unknown" && skippedTips.length > 0 ? closestBase(mergeBases) : base
     }
-    for (const branch of mergeBasesByBranch.keys())
+    for (let branch of mergeBasesByBranch.keys())
         infer(branch)
-    const holdsFork = (branch: MutableBranch, other: MutableBranch) =>
+    let holdsFork = (branch: MutableBranch, other: MutableBranch) =>
         mergeBasesByBranch.get(other)!.some(entry => entry.candidate == branch && branch.ownRemoteTips.includes(entry.objectId))
 
     // Siblings diverging from a commit that no other branch holds each see the other as a closest candidate.
     // Neither owns the shared commits, so both fall back to the next Base below the fork,
     // skipping the other and any branches stacked on it. Without a Base below the fork, they stay candidates.
     for (let pending = [...mergeBasesByBranch.keys()]; pending.length > 0;) {
-        const affected = new Set<MutableBranch>()
-        for (const branch of pending) {
-            for (const baseId of baseCandidateIds(branch.base)) {
-                const base = candidatesById.get(baseId)
+        let affected = new Set<MutableBranch>()
+        for (let branch of pending) {
+            for (let baseId of baseCandidateIds(branch.base)) {
+                let base = candidatesById.get(baseId)
                 if (!base || !mergeBasesByBranch.has(base) || excluded.get(branch)?.has(base.id) || !baseCandidateIds(base.base).includes(branch.id))
                     continue
                 // A sibling whose own remote ref sits at the fork holds the shared commits, so it stays the
                 // other's Base and only stops seeing the branch stacked on it.
-                const holders = [branch, base].filter(sibling => holdsFork(sibling, sibling == branch ? base : branch))
+                let holders = [branch, base].filter(sibling => holdsFork(sibling, sibling == branch ? base : branch))
                 if (holders.length == 1) {
-                    const [holder] = holders
-                    const stacked = holder == branch ? base : branch
+                    let [holder] = holders
+                    let stacked = holder == branch ? base : branch
                     excluded.set(holder, (excluded.get(holder) ?? new Set()).add(stacked.id))
                     affected.add(holder)
                     continue
@@ -647,30 +656,51 @@ function inferBases(branches: MutableBranch[], candidates: MutableBranch[], topo
                 affected.add(branch).add(base)
             }
         }
-        for (const branch of affected)
+        for (let branch of affected)
             infer(branch)
         pending = [...affected]
     }
-}
-
-function baseCandidateIds(base: BranchGraphBase) {
-    return base.status == "known" ? [base.branchId] : base.candidates.map(candidate => candidate.branchId)
 }
 
 function closestMergeBases(
     mergeBases: Array<{ candidate: MutableBranch; objectId: string }>,
     isAncestor: (ancestor: string, descendant: string) => boolean,
 ) {
-    const closest: typeof mergeBases = []
-    const frontier: string[] = []
-    for (const entry of mergeBases) {
-        if (frontier.some(objectId => entry.objectId != objectId && isAncestor(entry.objectId, objectId)))
-            continue
-        closest.push(entry)
-        if (!frontier.includes(entry.objectId))
-            frontier.push(entry.objectId)
+    let closest: typeof mergeBases = []
+    let frontier: string[] = []
+
+    for (let entry of mergeBases) {
+        if (!frontier.some(objectId => entry.objectId != objectId && isAncestor(entry.objectId, objectId))) {
+            closest.push(entry)
+            if (!frontier.includes(entry.objectId))
+                frontier.push(entry.objectId)
+        }
     }
+
     return closest
+}
+
+function chooseBase(
+    entries: Array<{ candidate: MutableBranch; objectId: string }>,
+    isAncestor: (ancestor: string, descendant: string) => boolean,
+): BranchGraphBase {
+    let uniqueCandidates = unique(entries, entry => entry.candidate.id)
+    if (uniqueCandidates.length == 0)
+        return { status: "unknown", candidates: [] }
+
+    // Candidates sharing one fork point are equally close, so the Primary Branch wins the tie
+    // before stacking is considered: branches merged beneath its tip never displace it.
+    let sameTopology = new Set(uniqueCandidates.map(entry => entry.objectId)).size == 1
+    let primary = sameTopology ? uniqueCandidates.find(entry => entry.candidate.primary) : undefined
+    if (primary)
+        return knownBase(primary.candidate)
+    let lowest = lowestCandidates(uniqueCandidates, isAncestor)
+    if (lowest.length == 1)
+        return knownBase(lowest[0].candidate)
+    return {
+        status: "ambiguous",
+        candidates: lowest.map(entry => baseCandidate(entry.candidate)).sort((left, right) => naturalCompare(left.name, right.name)),
+    }
 }
 
 // Candidates stacked on another candidate only reach the shared commits through it.
@@ -681,28 +711,6 @@ function lowestCandidates(
     return mergeBases.filter(entry =>
         !mergeBases.some(other => other.candidate.tip != entry.candidate.tip && isAncestor(other.candidate.tip, entry.candidate.tip))
     )
-}
-
-function chooseBase(
-    entries: Array<{ candidate: MutableBranch; objectId: string }>,
-    isAncestor: (ancestor: string, descendant: string) => boolean,
-): BranchGraphBase {
-    const uniqueCandidates = unique(entries, entry => entry.candidate.id)
-    if (uniqueCandidates.length == 0)
-        return { status: "unknown", candidates: [] }
-    // Candidates sharing one fork point are equally close, so the Primary Branch wins the tie
-    // before stacking is considered: branches merged beneath its tip never displace it.
-    const sameTopology = new Set(uniqueCandidates.map(entry => entry.objectId)).size == 1
-    const primary = sameTopology ? uniqueCandidates.find(entry => entry.candidate.primary) : undefined
-    if (primary)
-        return knownBase(primary.candidate)
-    const lowest = lowestCandidates(uniqueCandidates, isAncestor)
-    if (lowest.length == 1)
-        return knownBase(lowest[0].candidate)
-    return {
-        status: "ambiguous",
-        candidates: lowest.map(entry => baseCandidate(entry.candidate)).sort((left, right) => naturalCompare(left.name, right.name)),
-    }
 }
 
 function knownBase(branch: MutableBranch): BranchGraphBase {
@@ -720,34 +728,30 @@ function enrichBranches(
     authoredCommits: Set<string>,
     summaries: Map<string, BranchCommitSummary>,
 ) {
-    const hasIdentities = Boolean(identities.primary || identities.secondary.length > 0)
-    for (const branch of branches) {
+    let hasIdentities = Boolean(identities.primary || identities.secondary.length > 0)
+
+    for (let branch of branches) {
         if (branch.base.status != "known") {
             branch.involvement = "unknown"
             branch.lastUniqueCommit = undefined
-            continue
+        } else {
+            branch.lastUniqueCommit = summaries.get(branch.tip)
+            branch.involvement = !hasIdentities
+                ? "unknown"
+                : topology.hasExclusive(authoredCommits, branch.tip, branch.base.tip)
+                ? "involved"
+                : "uninvolved"
         }
-        branch.lastUniqueCommit = summaries.get(branch.tip)
-        if (!hasIdentities) {
-            branch.involvement = "unknown"
-            continue
-        }
-        const baseTip = branch.base.tip
-        branch.involvement = topology.hasExclusive(authoredCommits, branch.tip, baseTip) ? "involved" : "uninvolved"
     }
-}
-
-function escapeRegularExpression(value: string) {
-    return value.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&")
 }
 
 function includeBaseRelationships(branches: MutableBranch[], included: Set<string>) {
     let changed = true
     while (changed) {
         changed = false
-        for (const branch of branches.filter(candidate => included.has(candidate.id))) {
-            const baseIds = baseCandidateIds(branch.base)
-            for (const id of baseIds) {
+        for (let branch of branches.filter(candidate => included.has(candidate.id))) {
+            let baseIds = baseCandidateIds(branch.base)
+            for (let id of baseIds) {
                 if (!included.has(id)) {
                     included.add(id)
                     changed = true
@@ -757,37 +761,40 @@ function includeBaseRelationships(branches: MutableBranch[], included: Set<strin
     }
 }
 
+function baseCandidateIds(base: BranchGraphBase) {
+    return base.status == "known" ? [base.branchId] : base.candidates.map(candidate => candidate.branchId)
+}
+
 function attachStashes(branches: MutableBranch[], stashes: StashRecord[]) {
-    for (const stash of stashes) {
-        if (stash.branch === null)
-            continue
-        const branchName = stash.branch ?? /^(?:WIP on|On) ([^:]+):/.exec(stash.subject)?.[1]
-        const named = branchName ? branches.find(branch => branch.aliases.includes(branchName)) : undefined
-        const parent = stash.parentIds[0]
-        const exactParents = parent ? branches.filter(branch => branch.tip == parent) : []
-        const owner = named ?? (stash.branch === undefined && exactParents.length == 1 ? exactParents[0] : undefined)
+    for (let stash of stashes.filter(stash => stash.branch !== null)) {
+        let branchName = stash.branch ?? /^(?:WIP on|On) ([^:]+):/.exec(stash.subject)?.[1]
+        let named = branchName ? branches.find(branch => branch.aliases.includes(branchName)) : undefined
+        let parent = stash.parentIds[0]
+        let exactParents = parent ? branches.filter(branch => branch.tip == parent) : []
+        let owner = named ?? (stash.branch === undefined && exactParents.length == 1 ? exactParents[0] : undefined)
+
         if (owner)
             owner.markers.push(stashMarker(stash))
     }
 }
 
 function unassignedStashes(branches: MutableBranch[], stashes: StashRecord[]) {
-    const assigned = new Set(branches.flatMap(branch => branch.markers.map(marker => marker.id)))
+    let assigned = new Set(branches.flatMap(branch => branch.markers.map(marker => marker.id)))
     return stashes.map(stashMarker).filter(marker => !assigned.has(marker.id))
 }
 
 function placeTags(refs: RefRecord[], branches: MutableBranch[], topology: GraphTopology) {
-    const branchTags = new Map<string, string[]>()
-    const tagNodes: BranchGraphTagNode[] = []
-    for (const tag of refs.filter(ref => ref.ref.startsWith("refs/tags/"))) {
-        const target = tag.peeledObjectId || tag.objectId
-        const head = branches.find(branch => branch.tip == target)
+    let branchTags = new Map<string, string[]>()
+    let tagNodes: BranchGraphTagNode[] = []
+    for (let tag of refs.filter(ref => ref.ref.startsWith("refs/tags/"))) {
+        let target = tag.peeledObjectId || tag.objectId
+        let head = branches.find(branch => branch.tip == target)
         if (head) {
             branchTags.set(head.id, [...branchTags.get(head.id) ?? [], shortRef(tag.ref)].sort(naturalCompare))
             continue
         }
-        const possibleParents: MutableBranch[] = []
-        for (const branch of branches) {
+        let possibleParents: MutableBranch[] = []
+        for (let branch of branches) {
             if (!topology.isAncestor(target, branch.tip))
                 continue
             if (branch.base.status == "known" && topology.isAncestor(target, branch.base.tip))
@@ -829,13 +836,13 @@ function graphTips(refs: RefRecord[]) {
 }
 
 async function readTopology(runner: GraphRunner, tips: string[], key: string, cached?: TopologyCache): Promise<TopologyCache> {
-    const reusable = cached?.key == key ? cached : undefined
+    let reusable = cached?.key == key ? cached : undefined
     if (reusable && tips.length == reusable.tips.length && tips.every(tip => reusable.tips.includes(tip)))
         return reusable
     let records: TopologyRecord[] | undefined
     if (reusable) {
-        const added = tips.filter(tip => !reusable.indexes.has(tip))
-        const result = added.length
+        let added = tips.filter(tip => !reusable.indexes.has(tip))
+        let result = added.length
             ? await runner.run(
                 ["rev-list", "--topo-order", "--parents", "--stdin"],
                 [0, 128],
@@ -844,15 +851,15 @@ async function readTopology(runner: GraphRunner, tips: string[], key: string, ca
             : undefined
         if (!result?.exitCode) {
             // New records precede the cached ancestry; both portions remain topologically ordered.
-            const addedRecords = result ? parseTopology(result.stdout.toString()) : []
-            const byId = new Map(addedRecords.map(record => [record.objectId, record]))
-            const reachable = new Set<string>(), pending = [...tips]
+            let addedRecords = result ? parseTopology(result.stdout.toString()) : []
+            let byId = new Map(addedRecords.map(record => [record.objectId, record]))
+            let reachable = new Set<string>(), pending = [...tips]
             while (pending.length) {
-                const objectId = pending.pop()!
+                let objectId = pending.pop()!
                 if (reachable.has(objectId))
                     continue
                 reachable.add(objectId)
-                const record = byId.get(objectId) ?? reusable.records[reusable.indexes.get(objectId)!]
+                let record = byId.get(objectId) ?? reusable.records[reusable.indexes.get(objectId)!]
                 pending.push(...record?.parentIds ?? [])
             }
             records = [...addedRecords, ...reusable.records.filter(record => reachable.has(record.objectId))]
@@ -860,54 +867,54 @@ async function readTopology(runner: GraphRunner, tips: string[], key: string, ca
     }
     // An excluded old tip may have been collected after an external rewrite. Re-read current roots.
     records ??= tips.length ? parseTopology(text(await runner.run(["rev-list", "--topo-order", "--parents", "--stdin"], [0], tips.join("\n") + "\n"))) : []
-    const indexes = new Map(records.map((record, index) => [record.objectId, index]))
+    let indexes = new Map(records.map((record, index) => [record.objectId, index]))
     return { key, tips, records, indexes, graph: createTopology(records, tips, indexes) }
 }
 
 function createTopology(records: TopologyRecord[], tips: string[], commitIndexes: Map<string, number>): GraphTopology {
     if (!tips.length)
         return emptyTopology()
-    const commits: TopologyCommit[] = records.map(commit => ({
+    let commits: TopologyCommit[] = records.map(commit => ({
         objectId: commit.objectId,
         parentIndexes: commit.parentIds.map(parentId => commitIndexes.get(parentId))
             .filter((index): index is number => index != undefined),
     }))
-    const tipIndexes = new Map(tips.map((objectId, index) => [objectId, index]))
-    const wordCount = Math.ceil(tips.length / 32)
-    const reachability = new Uint32Array(commits.length * wordCount)
+    let tipIndexes = new Map(tips.map((objectId, index) => [objectId, index]))
+    let wordCount = Math.ceil(tips.length / 32)
+    let reachability = new Uint32Array(commits.length * wordCount)
 
     for (let commitIndex = 0; commitIndex < commits.length; commitIndex += 1) {
-        const commit = commits[commitIndex]
-        const tipIndex = tipIndexes.get(commit.objectId)
+        let commit = commits[commitIndex]
+        let tipIndex = tipIndexes.get(commit.objectId)
         if (tipIndex != undefined)
             reachability[commitIndex * wordCount + Math.floor(tipIndex / 32)] |= 1 << tipIndex % 32
-        for (const parentIndex of commit.parentIndexes) {
+        for (let parentIndex of commit.parentIndexes) {
             for (let word = 0; word < wordCount; word += 1)
                 reachability[parentIndex * wordCount + word] |= reachability[commitIndex * wordCount + word]
         }
     }
 
-    const ancestorCache = new Map<string, boolean>()
-    const hasReach = (commitIndex: number, tipIndex: number) => (reachability[commitIndex * wordCount + Math.floor(tipIndex / 32)] & 1 << tipIndex % 32) != 0
-    const isAncestor = (ancestor: string, descendant: string) => {
+    let ancestorCache = new Map<string, boolean>()
+    let hasReach = (commitIndex: number, tipIndex: number) => (reachability[commitIndex * wordCount + Math.floor(tipIndex / 32)] & 1 << tipIndex % 32) != 0
+    let isAncestor = (ancestor: string, descendant: string) => {
         if (ancestor == descendant)
             return true
-        const ancestorIndex = commitIndexes.get(ancestor)
-        const descendantIndex = commitIndexes.get(descendant)
+        let ancestorIndex = commitIndexes.get(ancestor)
+        let descendantIndex = commitIndexes.get(descendant)
         if (ancestorIndex == undefined || descendantIndex == undefined || ancestorIndex < descendantIndex)
             return false
-        const descendantTipIndex = tipIndexes.get(descendant)
+        let descendantTipIndex = tipIndexes.get(descendant)
         if (descendantTipIndex != undefined)
             return hasReach(ancestorIndex, descendantTipIndex)
-        const key = `${ancestor}\0${descendant}`
-        const cached = ancestorCache.get(key)
+        let key = `${ancestor}\0${descendant}`
+        let cached = ancestorCache.get(key)
         if (cached != undefined)
             return cached
-        const pending = [descendantIndex]
-        const visited = new Set<number>()
+        let pending = [descendantIndex]
+        let visited = new Set<number>()
         let found = false
         while (pending.length > 0 && !found) {
-            const current = pending.pop()!
+            let current = pending.pop()!
             if (current == ancestorIndex) {
                 found = true
                 break
@@ -925,15 +932,15 @@ function createTopology(records: TopologyRecord[], tips: string[], commitIndexes
         commits,
         isAncestor,
         ancestry(roots) {
-            const uniqueRoots = unique(roots, objectId => objectId)
-            const rootIndexes = new Map(uniqueRoots.map((objectId, index) => [objectId, index]))
-            const rootWordCount = Math.ceil(uniqueRoots.length / 32)
-            const rootReachability = new Uint32Array(commits.length * rootWordCount)
+            let uniqueRoots = unique(roots, objectId => objectId)
+            let rootIndexes = new Map(uniqueRoots.map((objectId, index) => [objectId, index]))
+            let rootWordCount = Math.ceil(uniqueRoots.length / 32)
+            let rootReachability = new Uint32Array(commits.length * rootWordCount)
             for (let commitIndex = 0; commitIndex < commits.length; commitIndex += 1) {
-                const rootIndex = rootIndexes.get(commits[commitIndex].objectId)
+                let rootIndex = rootIndexes.get(commits[commitIndex].objectId)
                 if (rootIndex != undefined)
                     rootReachability[commitIndex * rootWordCount + Math.floor(rootIndex / 32)] |= 1 << rootIndex % 32
-                for (const parentIndex of commits[commitIndex].parentIndexes) {
+                for (let parentIndex of commits[commitIndex].parentIndexes) {
                     for (let word = 0; word < rootWordCount; word += 1)
                         rootReachability[parentIndex * rootWordCount + word] |= rootReachability[commitIndex * rootWordCount + word]
                 }
@@ -941,21 +948,21 @@ function createTopology(records: TopologyRecord[], tips: string[], commitIndexes
             return (ancestor: string, descendant: string) => {
                 if (ancestor == descendant)
                     return true
-                const ancestorIndex = commitIndexes.get(ancestor)
-                const descendantRootIndex = rootIndexes.get(descendant)
+                let ancestorIndex = commitIndexes.get(ancestor)
+                let descendantRootIndex = rootIndexes.get(descendant)
                 if (ancestorIndex == undefined || descendantRootIndex == undefined)
                     return false
                 return (rootReachability[ancestorIndex * rootWordCount + Math.floor(descendantRootIndex / 32)] & 1 << descendantRootIndex % 32) != 0
             }
         },
         mergeBases(branch, candidates) {
-            const branchTipIndex = tipIndexes.get(branch.tip)
+            let branchTipIndex = tipIndexes.get(branch.tip)
             if (branchTipIndex == undefined)
                 return []
-            const unresolved = new Uint32Array(wordCount)
-            const candidatesByTipIndex = new Map<number, MutableBranch>()
-            for (const candidate of candidates) {
-                const candidateTipIndex = tipIndexes.get(candidate.tip)
+            let unresolved = new Uint32Array(wordCount)
+            let candidatesByTipIndex = new Map<number, MutableBranch>()
+            for (let candidate of candidates) {
+                let candidateTipIndex = tipIndexes.get(candidate.tip)
                 if (
                     candidate.id == branch.id
                     || candidate.tip == branch.tip
@@ -968,17 +975,17 @@ function createTopology(records: TopologyRecord[], tips: string[], commitIndexes
                 candidatesByTipIndex.set(candidateTipIndex, candidate)
             }
             let unresolvedCount = candidatesByTipIndex.size
-            const result: Array<{ candidate: MutableBranch; objectId: string }> = []
+            let result: Array<{ candidate: MutableBranch; objectId: string }> = []
             for (let commitIndex = 0; commitIndex < commits.length && unresolvedCount > 0; commitIndex += 1) {
                 if (!hasReach(commitIndex, branchTipIndex))
                     continue
-                const offset = commitIndex * wordCount
+                let offset = commitIndex * wordCount
                 for (let word = 0; word < wordCount; word += 1) {
                     let matching = (reachability[offset + word] & unresolved[word]) >>> 0
                     while (matching != 0) {
-                        const lowest = (matching & -matching) >>> 0
-                        const bit = 31 - Math.clz32(lowest)
-                        const candidate = candidatesByTipIndex.get(word * 32 + bit)
+                        let lowest = (matching & -matching) >>> 0
+                        let bit = 31 - Math.clz32(lowest)
+                        let candidate = candidatesByTipIndex.get(word * 32 + bit)
                         if (candidate)
                             result.push({ candidate, objectId: commits[commitIndex].objectId })
                         unresolved[word] &= ~lowest
@@ -990,17 +997,17 @@ function createTopology(records: TopologyRecord[], tips: string[], commitIndexes
             return result
         },
         exclusiveCommits(branches, candidates) {
-            const ranges = branches.flatMap(branch => {
+            let ranges = branches.flatMap(branch => {
                 if (branch.base.status != "known")
                     return []
-                const tipIndex = tipIndexes.get(branch.tip)
-                const baseIndex = tipIndexes.get(branch.base.tip)
+                let tipIndex = tipIndexes.get(branch.tip)
+                let baseIndex = tipIndexes.get(branch.base.tip)
                 return tipIndex == undefined || baseIndex == undefined ? [] : [{ tipIndex, baseIndex }]
             })
-            const result: string[] = []
-            const indexes = candidates ? candidates.map(objectId => commitIndexes.get(objectId)!).filter(index => index != undefined) : commits.keys()
-            for (const commitIndex of indexes) {
-                for (const range of ranges) {
+            let result: string[] = []
+            let indexes = candidates ? candidates.map(objectId => commitIndexes.get(objectId)!).filter(index => index != undefined) : commits.keys()
+            for (let commitIndex of indexes) {
+                for (let range of ranges) {
                     if (hasReach(commitIndex, range.tipIndex) && !hasReach(commitIndex, range.baseIndex)) {
                         result.push(commits[commitIndex].objectId)
                         break
@@ -1010,12 +1017,12 @@ function createTopology(records: TopologyRecord[], tips: string[], commitIndexes
             return result
         },
         hasExclusive(objectIds, tip, base) {
-            const tipIndex = tipIndexes.get(tip)
-            const baseIndex = tipIndexes.get(base)
+            let tipIndex = tipIndexes.get(tip)
+            let baseIndex = tipIndexes.get(base)
             if (tipIndex == undefined || baseIndex == undefined)
                 return false
-            for (const objectId of objectIds) {
-                const commitIndex = commitIndexes.get(objectId)
+            for (let objectId of objectIds) {
+                let commitIndex = commitIndexes.get(objectId)
                 if (commitIndex != undefined && hasReach(commitIndex, tipIndex) && !hasReach(commitIndex, baseIndex))
                     return true
             }
@@ -1025,19 +1032,19 @@ function createTopology(records: TopologyRecord[], tips: string[], commitIndexes
 }
 
 function parseTopology(output: string) {
-    const records: TopologyRecord[] = []
+    let records: TopologyRecord[] = []
     let lineStart = 0
     while (lineStart < output.length) {
         let lineEnd = output.indexOf("\n", lineStart)
         if (lineEnd < 0)
             lineEnd = output.length
-        const separator = output.indexOf(" ", lineStart)
-        const objectEnd = separator < 0 || separator > lineEnd ? lineEnd : separator
-        const parentIds: string[] = []
+        let separator = output.indexOf(" ", lineStart)
+        let objectEnd = separator < 0 || separator > lineEnd ? lineEnd : separator
+        let parentIds: string[] = []
         let parentStart = objectEnd + 1
         while (parentStart < lineEnd) {
-            const nextSeparator = output.indexOf(" ", parentStart)
-            const parentEnd = nextSeparator < 0 || nextSeparator > lineEnd ? lineEnd : nextSeparator
+            let nextSeparator = output.indexOf(" ", parentStart)
+            let parentEnd = nextSeparator < 0 || nextSeparator > lineEnd ? lineEnd : nextSeparator
             parentIds.push(output.slice(parentStart, parentEnd))
             parentStart = parentEnd + 1
         }
@@ -1066,13 +1073,13 @@ async function readAuthoredCommits(
     key: string,
     cached?: AuthorCache,
 ): Promise<AuthorCache> {
-    const emails = [identities.primary, ...identities.secondary].filter((email): email is string => Boolean(email))
+    let emails = [identities.primary, ...identities.secondary].filter((email): email is string => Boolean(email))
     if (emails.length == 0 || commits.length == 0)
         return { key, matches: new Map() }
-    const known = cached?.key == key ? cached.matches : new Map<string, boolean>()
-    const missing = commits.filter(objectId => !known.has(objectId))
-    const authorArguments = emails.flatMap(email => ["--author", `<${escapeRegularExpression(email)}>$`])
-    const output = missing.length
+    let known = cached?.key == key ? cached.matches : new Map<string, boolean>()
+    let missing = commits.filter(objectId => !known.has(objectId))
+    let authorArguments = emails.flatMap(email => ["--author", `<${escapeRegularExpression(email)}>$`])
+    let output = missing.length
         ? text(
             await runner.run(
                 ["log", "--stdin", "--no-walk", "--use-mailmap", "--regexp-ignore-case", "--format=%H", ...authorArguments],
@@ -1081,23 +1088,30 @@ async function readAuthoredCommits(
             ),
         )
         : ""
-    const matched = new Set(output.split("\n").filter(Boolean))
+    let matched = new Set(output.split("\n").filter(Boolean))
+
     return { key, matches: new Map(commits.map(objectId => [objectId, known.get(objectId) ?? matched.has(objectId)])) }
+}
+
+function escapeRegularExpression(value: string) {
+    return value.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&")
 }
 
 async function readPrimaryBranch(runner: GraphRunner, refs: RefRecord[], remote: string | undefined, refreshRemote: boolean) {
     if (!remote)
         return { status: "unknown" as const, reason: "Choose a remote to infer the Primary Branch." }
-    const cached = refs.find(ref => ref.ref == `refs/remotes/${remote}/HEAD`)?.symbolicTarget
+
+    let cached = refs.find(ref => ref.ref == `refs/remotes/${remote}/HEAD`)?.symbolicTarget
     let branchName = cached?.replace(`refs/remotes/${remote}/`, "")
     let remoteFailure: string | undefined
     if (refreshRemote) {
-        const result = await runner.run(["ls-remote", "--symref", remote, "HEAD"], [0, 1, 2, 128])
+        let result = await runner.run(["ls-remote", "--symref", remote, "HEAD"], [0, 1, 2, 128])
         if (result.exitCode == 0)
             branchName = /^ref:\s+refs\/heads\/([^\s]+)\s+HEAD$/m.exec(text(result))?.[1] ?? branchName
         else
             remoteFailure = redactGitText(result.stderr.toString()) || `Could not read ${remote}/HEAD.`
     }
+
     if (!branchName) {
         return {
             status: "unknown" as const,
@@ -1105,7 +1119,8 @@ async function readPrimaryBranch(runner: GraphRunner, refs: RefRecord[], remote:
             reason: remoteFailure ?? `${remote} does not advertise a default branch in local Git data.`,
         }
     }
-    const ref = `refs/remotes/${remote}/${branchName}`
+
+    let ref = `refs/remotes/${remote}/${branchName}`
     if (!refs.some(candidate => candidate.ref == ref)) {
         return {
             status: "unknown" as const,
@@ -1114,24 +1129,27 @@ async function readPrimaryBranch(runner: GraphRunner, refs: RefRecord[], remote:
             reason: `${remote}/${branchName} has not been fetched.`,
         }
     }
+
     return { status: "known" as const, remote, ref, ...(remoteFailure ? { reason: remoteFailure } : {}) }
 }
 
 async function readHistoryPage(descriptor: RepositoryDescriptor, runner: GraphRunner, request: BranchHistoryRequest): Promise<BranchHistoryPage> {
     validateObjectId(descriptor, request.tip)
-    for (const baseTip of request.baseTips)
+    for (let baseTip of request.baseTips)
         validateObjectId(descriptor, baseTip)
-    const remoteTips = request.remoteTips ?? []
-    for (const remoteTip of remoteTips)
+    let remoteTips = request.remoteTips ?? []
+    for (let remoteTip of remoteTips)
         validateObjectId(descriptor, remoteTip)
-    const before = request.branchRef == request.tip
+
+    let before = request.branchRef == request.tip
         ? request.tip
         : optionalText(await runner.run(["rev-parse", "--verify", "--quiet", request.branchRef], [0, 1]))
     if (before != request.tip)
         throw new GitError("git.command-failed", "The branch moved before Laneway could expand its commits. Refresh the Branch Graph and try again.")
-    const offset = Math.max(0, request.offset ?? 0)
-    const limit = Math.min(200, Math.max(1, request.limit ?? 100))
-    const output = text(
+
+    let offset = Math.max(0, request.offset ?? 0)
+    let limit = Math.min(200, Math.max(1, request.limit ?? 100))
+    let output = text(
         await runner.run([
             "log",
             "--use-mailmap",
@@ -1144,23 +1162,26 @@ async function readHistoryPage(descriptor: RepositoryDescriptor, runner: GraphRu
             ...(request.baseTips.length > 0 ? ["--not", ...request.baseTips] : []),
         ]),
     )
-    const commits = parseHistory(output)
+    let commits = parseHistory(output)
+
     if (remoteTips.includes(request.tip)) {
-        for (const commit of commits)
+        for (let commit of commits)
             commit.remote = true
     } else if (remoteTips.length > 0) {
         // Only unpublished commits are listed, so the walk stays as short as the branch's lead over its remotes.
         // Repositories can have many remote branches, so their tips go through stdin rather than the command line.
-        const exclusions = [...remoteTips, ...request.baseTips].map(objectId => `^${objectId}\n`).join("")
-        const local = new Set(text(await runner.run(["rev-list", "--stdin", request.tip], [0], exclusions)).split("\n").filter(Boolean))
-        for (const commit of commits)
+        let exclusions = [...remoteTips, ...request.baseTips].map(objectId => `^${objectId}\n`).join("")
+        let local = new Set(text(await runner.run(["rev-list", "--stdin", request.tip], [0], exclusions)).split("\n").filter(Boolean))
+        for (let commit of commits)
             commit.remote = !local.has(commit.objectId)
     }
-    const after = request.branchRef == request.tip
+
+    let after = request.branchRef == request.tip
         ? request.tip
         : optionalText(await runner.run(["rev-parse", "--verify", "--quiet", request.branchRef], [0, 1]))
     if (after != request.tip)
         throw new GitError("git.command-failed", "The branch moved while Laneway expanded its commits. Refresh the Branch Graph and try again.")
+
     return {
         branchRef: request.branchRef,
         tip: request.tip,
@@ -1172,7 +1193,7 @@ async function readHistoryPage(descriptor: RepositoryDescriptor, runner: GraphRu
 
 function parseRefs(output: string): RefRecord[] {
     return output.split("\n").map(line => line.replace(/\0$/, "")).filter(Boolean).map(line => {
-        const [ref, objectId, peeledObjectId, upstreamRef, symbolicTarget, authoredAt, subject, tracking] = line.split("\0")
+        let [ref, objectId, peeledObjectId, upstreamRef, symbolicTarget, authoredAt, subject, tracking] = line.split("\0")
         return {
             ref,
             objectId,
@@ -1189,11 +1210,11 @@ function parseRefs(output: string): RefRecord[] {
 
 function parseWorktrees(output: string): BranchGraphWorktree[] {
     return output.split("\0\0").map(record => record.split("\0").filter(Boolean)).filter(fields => fields.length > 0).map((fields, index) => {
-        const values = new Map(fields.map(field => {
-            const separator = field.indexOf(" ")
+        let values = new Map(fields.map(field => {
+            let separator = field.indexOf(" ")
             return separator < 0 ? [field, ""] : [field.slice(0, separator), field.slice(separator + 1)]
         }))
-        const path = values.get("worktree") ?? ""
+        let path = values.get("worktree") ?? ""
         return {
             path,
             name: basename(path),
@@ -1206,14 +1227,14 @@ function parseWorktrees(output: string): BranchGraphWorktree[] {
 
 function parseStashes(output: string): StashRecord[] {
     return output.split("\n").filter(Boolean).map(line => {
-        const [selector, objectId, parents, subject] = line.split("\0")
+        let [selector, objectId, parents, subject] = line.split("\0")
         return { selector, objectId, parentIds: parents.split(" ").filter(Boolean), subject }
     })
 }
 
 function parseHistory(output: string): BranchHistoryCommit[] {
     return output.split("\n").filter(Boolean).map(line => {
-        const [objectId, parents, authorName, authorEmail, authoredAt, subject] = line.split("\0")
+        let [objectId, parents, authorName, authorEmail, authoredAt, subject] = line.split("\0")
         return {
             objectId,
             parentIds: parents.split(" ").filter(Boolean),
@@ -1250,7 +1271,7 @@ function listRefRemotes(refs: RefRecord[]) {
 function globPattern(value: string) {
     let source = ""
     for (let index = 0; index < value.length; index += 1) {
-        const character = value[index]
+        let character = value[index]
         if (character == "*" && value[index + 1] == "*") {
             source += ".*"
             index += 1
@@ -1281,21 +1302,21 @@ function shortObjectId(objectId: string) {
     return objectId.slice(0, 10)
 }
 
-function fingerprint(evidence: Evidence) {
-    return `${evidence.remoteText}\0${evidence.refText}\0${evidence.worktreeText}\0${evidence.stashText}\0${evidence.context.fingerprint}`
-}
-
 function verificationFingerprint(evidence: Pick<Evidence, "refText" | "worktreeText" | "context">) {
     return `${evidence.refText}\0${evidence.worktreeText}\0${evidence.context.fingerprint}`
 }
 
-function text(result: CommandResult) {
-    return result.stdout.toString().trim()
+function fingerprint(evidence: Evidence) {
+    return `${evidence.remoteText}\0${evidence.refText}\0${evidence.worktreeText}\0${evidence.stashText}\0${evidence.context.fingerprint}`
 }
 
 function optionalText(result: CommandResult) {
-    const value = text(result)
+    let value = text(result)
     return value || undefined
+}
+
+function text(result: CommandResult) {
+    return result.stdout.toString().trim()
 }
 
 function unique<T>(values: T[], key: (value: T) => string) {
@@ -1303,14 +1324,14 @@ function unique<T>(values: T[], key: (value: T) => string) {
 }
 
 function withoutInternals(branch: MutableBranch): BranchGraphBranchNode {
-    const { sourceUpstreams, ownRemoteTips, ...result } = branch
+    let { sourceUpstreams, ownRemoteTips, ...result } = branch
     void sourceUpstreams
     void ownRemoteTips
     return result
 }
 
 function validateObjectId(descriptor: RepositoryDescriptor, objectId: string) {
-    const length = descriptor.objectFormat == "sha1" ? 40 : 64
+    let length = descriptor.objectFormat == "sha1" ? 40 : 64
     if (!new RegExp(`^[0-9a-f]{${length}}$`).test(objectId))
         throw new GitError("git.command-failed", `Laneway received an invalid ${descriptor.objectFormat} object ID.`)
 }

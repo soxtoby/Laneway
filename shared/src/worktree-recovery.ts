@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-export const WorktreeRecoverySchema = z.object({
+export let WorktreeRecoverySchema = z.object({
     operationId: z.string(),
     worktreeId: z.string(),
     path: z.string(),
@@ -11,13 +11,13 @@ export const WorktreeRecoverySchema = z.object({
 })
 export type WorktreeRecovery = z.infer<typeof WorktreeRecoverySchema>
 
-export const RecoveryRequestSchema = z.object({
+export let RecoveryRequestSchema = z.object({
     operationId: z.string().uuid(),
     action: z.enum(["restore", "remove"]),
 })
 export type RecoveryRequest = z.infer<typeof RecoveryRequestSchema>
 
-export const RecoveryStatusResultSchema = z.object({
+export let RecoveryStatusResultSchema = z.object({
     type: z.literal("result"),
     command: z.literal("recovery-status"),
     worktrees: z.array(WorktreeRecoverySchema),

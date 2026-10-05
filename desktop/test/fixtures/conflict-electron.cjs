@@ -1,29 +1,29 @@
-const { app, ipcMain } = require("electron")
-const conflictReads = []
-const originalHandle = ipcMain.handle.bind(ipcMain)
+let { app, ipcMain } = require("electron")
+let conflictReads = []
+let originalHandle = ipcMain.handle.bind(ipcMain)
 ipcMain.handle = (channel, listener) => originalHandle(channel, async (...args) => {
-    const started = performance.now()
-    const result = await listener(...args)
+    let started = performance.now()
+    let result = await listener(...args)
     if (channel == 'conflict:content' || channel == 'conflict:operation')
         conflictReads.push({ channel, request: args[2], ms: performance.now() - started })
     return result
 })
-const { writeFileSync } = require("node:fs")
-const { join } = require("node:path")
-const { pathToFileURL } = require("node:url")
-const [directory, productionMain, phase] = process.argv.slice(2)
+let { writeFileSync } = require("node:fs")
+let { join } = require("node:path")
+let { pathToFileURL } = require("node:url")
+let [directory, productionMain, phase] = process.argv.slice(2)
 app.setPath("userData", join(directory, "profile"))
 app.on("browser-window-created", (_event, window) => {
     window.hide()
     window.webContents.setBackgroundThrottling(false)
-    const deadline = setTimeout(async () => {
-        const body = await window.webContents.executeJavaScript('({ text: document.body.innerText, waiting: window.lastWait, csp: window.cspViolations })').catch(String)
+    let deadline = setTimeout(async () => {
+        let body = await window.webContents.executeJavaScript('({ text: document.body.innerText, waiting: window.lastWait, csp: window.cspViolations })').catch(String)
         writeFileSync(join(directory, `${phase}.json`), JSON.stringify({ error: 'Timed out', body }))
         app.exit(1)
     }, 85000)
     window.webContents.once("did-finish-load", async () => {
         try {
-            const result = await window.webContents.executeJavaScript(`(async () => {
+            let result = await window.webContents.executeJavaScript(`(async () => {
                 const violations = window.cspViolations = [];
                 const errors = [];
                 window.addEventListener('error', e => errors.push(e.error?.stack || e.message));
@@ -199,7 +199,7 @@ app.on("browser-window-created", (_event, window) => {
                 })()`)
                 writeFileSync(join(directory, `${phase}-dark.png`), (await window.webContents.capturePage()).toPNG())
             }
-            const violations = await window.webContents.executeJavaScript('window.cspViolations');
+            let violations = await window.webContents.executeJavaScript('window.cspViolations');
             if (violations.length) throw new Error('CSP: ' + violations.join(','));
             app.exit(0)
         } catch (error) {
