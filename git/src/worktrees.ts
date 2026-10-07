@@ -1,7 +1,7 @@
 import type { RegisteredWorktree, WorktreePreview, WorktreeRequest } from "@laneway/shared"
 import { createHash } from "node:crypto"
 import { lstat, readdir, readFile, readlink } from "node:fs/promises"
-import { basename, dirname, isAbsolute, join, resolve } from "node:path"
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { readConflictState } from "./conflicts"
 import { GitError, type RepositoryGit } from "./index"
 
@@ -74,8 +74,11 @@ export async function previewWorktree(repository: RepositoryGit, request: Worktr
         affected.push(destination)
 
     let dirty = false, uniqueCommits = false, hasSubmodules = false
-    let ignored: string[] = []
-    let hash = createHash("sha256").update(JSON.stringify({ request, worktrees, destination }))
+    let ignored: string[] = [], ignoredCount = 0
+    // Preservation choices made in the dialog must not invalidate the token, so only the fields that
+    // identify what the operation touches take part in it.
+    let identity = request.action == "remove" ? { action: request.action, path: request.path } : request
+    let hash = createHash("sha256").update(JSON.stringify({ request: identity, worktrees, destination }))
     hash.update(
         await repository.command(repository.descriptor.mainWorktree, [
             "for-each-ref",
@@ -108,9 +111,15 @@ export async function previewWorktree(repository: RepositoryGit, request: Worktr
                     hash.update((await lstat(target)).isSymbolicLink() ? await readlink(target) : await readFile(target))
                 }
 
-                let ignoredFiles = (await repository.command(path, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"])).toString().split("\0")
-                    .filter(Boolean)
-                ignored.push(...ignoredFiles.map(file => join(path, file)))
+                // Ignored directories collapse to one entry each: Git never descends into dependency
+                // and build trees, and churn inside them keeps the token the user is looking at valid.
+                let listing = await repository.command(path, ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"])
+                hash.update(listing)
+                for (let entry of listing.toString().split("\0").filter(Boolean)) {
+                    ignoredCount++
+                    if (ignored.length < 20)
+                        ignored.push(relative(worktree.path, join(path, entry)).replaceAll("\\", "/") + (entry.endsWith("/") ? "/" : ""))
+                }
             }
         }
     }
@@ -118,8 +127,18 @@ export async function previewWorktree(repository: RepositoryGit, request: Worktr
     if (request.action == "rename" && hasSubmodules)
         throw new GitError("git.command-failed", "Rename is unavailable for worktrees containing populated submodules.")
 
-    hash.update(JSON.stringify(ignored))
-    return { request, worktrees, destination, affected, ignored, dirty, uniqueCommits, populatedSubmodules: hasSubmodules, token: hash.digest("hex") }
+    return {
+        request,
+        worktrees,
+        destination,
+        affected,
+        ignored,
+        ignoredCount,
+        dirty,
+        uniqueCommits,
+        populatedSubmodules: hasSubmodules,
+        token: hash.digest("hex"),
+    }
 }
 
 export async function readRegisteredWorktrees(repository: RepositoryGit): Promise<RegisteredWorktree[]> {

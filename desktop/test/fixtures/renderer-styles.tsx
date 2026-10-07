@@ -22,6 +22,7 @@ async function checkRenderer() {
             affected: ["D:/project.worktrees/feature"],
             destination: "D:/project.worktrees/feature",
             ignored: [],
+            ignoredCount: 0,
             dirty: false,
             uniqueCommits: false,
             populatedSubmodules: false,
@@ -1008,7 +1009,8 @@ async function checkVirtualWorktree() {
                 request,
                 worktrees: [],
                 affected: ["D:/Source/inspection"],
-                ignored: Array.from({ length: 250 }, (_, index) => `D:/Source/inspection/generated-${index}.bin`),
+                ignored: Array.from({ length: 20 }, (_, index) => `generated-${index}.bin`),
+                ignoredCount: 250,
                 dirty: false,
                 uniqueCommits: false,
                 populatedSubmodules: false,
@@ -1023,7 +1025,8 @@ async function checkVirtualWorktree() {
         let remove = [...dialog.querySelectorAll("button")].find(button => button.textContent == "Remove worktree")!
         let styled = dialog.open && dialog.getBoundingClientRect().width <= 460 && remove.getBoundingClientRect().height >= 32
             && getComputedStyle(remove).backgroundColor != "rgba(0, 0, 0, 0)" && dialog.textContent!.includes("D:/Source/inspection")
-            && !dialog.textContent!.includes("ignored files") && !dialog.textContent!.includes("generated-0.bin")
+            && dialog.textContent!.includes("generated-0.bin") && dialog.textContent!.includes("and 247 more")
+            && !dialog.textContent!.includes("generated-3.bin")
             && dialog.scrollHeight <= innerHeight && !remove.disabled
         ;[...dialog.querySelectorAll("button")].find(button => button.textContent == "Cancel")!.click()
         await settle()

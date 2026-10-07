@@ -167,6 +167,12 @@ export function createWorktreeActions(options: Options) {
                                     {preview.worktrees.some(item => item.missing && item.path == request.path) && (
                                         <p>Remove the missing registration. Unavailable file contents cannot be recovered.</p>
                                     )}
+                                    {preview.ignoredCount > 0 && (
+                                        <p>
+                                            Deletes ignored files, which are outside undo: {preview.ignored.slice(0, 3).join(", ")}
+                                            {preview.ignoredCount > 3 ? ` and ${preview.ignoredCount - 3} more` : ""}.
+                                        </p>
+                                    )}
                                 </>
                             )}
                         </>
@@ -255,16 +261,10 @@ export function createWorktreeActions(options: Options) {
         await options.update()
 
         try {
+            // Preservation choices leave the token intact; the Engine re-reads the worktree under its
+            // lock and refuses when anything the user reviewed has changed since.
             let request = preview.request.action == "remove" ? { ...preview.request, preserve, allowIgnoredLoss: true } : preview.request
-            // Changed preservation choices need a matching preview token, while retaining
-            // the original evidence check for changes made while the dialog was open.
-            let original = await options.api.previewWorktree(repositoryId, preview.request)
-            if (!original.ok || original.preview.token != preview.token)
-                throw new Error("Worktree state changed. Cancel and review the operation again.")
-            let fresh = await options.api.previewWorktree(repositoryId, request)
-            if (!fresh.ok)
-                throw new Error(fresh.error.message)
-            let result = await options.api.executeWorktree(repositoryId, request, fresh.preview.token)
+            let result = await options.api.executeWorktree(repositoryId, request, preview.token)
             if (!result.ok)
                 throw new Error(result.error.message)
             preview = undefined

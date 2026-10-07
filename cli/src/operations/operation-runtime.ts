@@ -13,6 +13,7 @@ import { isFileExtraction } from "../composition/file-extraction"
 import { conflictMutation, conflictPaths, executeConflict, suspendWorkingConflicts } from "../conflicts/conflict-operations"
 import { LocalPreconditionError, mutateLocal, prepareLocal } from "../local-mutations"
 import { executePull, preparePull, type PullPreparation, type PullProgressReporter } from "../pull-latest"
+import { recoveryBackupPath } from "../worktrees/worktree-directory"
 import { mutateWorktree } from "../worktrees/worktree-mutations"
 import { relocateRemovedState, restoreWorktreeState, worktreeStateMatches, worktreeStateObjects } from "../worktrees/worktree-state"
 import { captureGitCheckpoint, checkpointIdentity, checkpointMatches, type GitCheckpoint, restoreGitCheckpoint, retainCheckpoint } from "./git-checkpoint"
@@ -192,15 +193,15 @@ class OperationRuntime {
         ) {
             throw new OperationRuntimeError("operation.precondition-failed", "Confirm moving the branch from its current worktree first.")
         }
-        if (request.action == "remove" && preview.ignored.length && !request.allowIgnoredLoss)
+        if (request.action == "remove" && preview.ignoredCount && !request.allowIgnoredLoss)
             throw new OperationRuntimeError("operation.precondition-failed", "Review ignored-file loss before removal.")
 
         let operation = await this.applyCheckpoint(
             preview.affected,
             `worktree.${request.action}`,
             `${request.action[0]!.toUpperCase()}${request.action.slice(1)} worktree ${preview.destination ?? ("path" in request ? request.path : "")}`,
-            async () => {
-                let changed = await mutateWorktree(this.repository, preview, branchPrefix)
+            async (_before, operationId) => {
+                let changed = await mutateWorktree(this.repository, preview, operationId, branchPrefix)
                 let conflictChanges = new Map<string, string | null>()
                 await suspendWorkingConflicts(this.repository, conflictChanges)
                 for (let ref of conflictChanges.keys())
@@ -217,7 +218,7 @@ class OperationRuntime {
         affected: string[],
         kind: string,
         summary: string,
-        mutate: (before: GitCheckpoint) => Promise<Set<string> | Map<string, string | null>>,
+        mutate: (before: GitCheckpoint, operationId: string) => Promise<Set<string> | Map<string, string | null>>,
         crashAfter?: JournalPhase,
         prepared?: GitCheckpoint,
     ): Promise<OperationSummary> {
@@ -260,7 +261,18 @@ class OperationRuntime {
         await this.cancelIfRequested(executionId, operation, "apply")
         crashIfRequested("preconditions-verified", crashAfter)
 
-        await mutate(before)
+        try {
+            await mutate(before, operation.id)
+        } catch (error) {
+            // A failure is unwound here rather than left as a pending execution, which would block every
+            // later operation in the repository until recovery. Only a failed restoration stays pending.
+            let outcome = await this.rollBackFailedMutation(before, operation)
+            if (outcome != "pending")
+                await this.abortBeforeCommit(executionId, operation, "apply")
+            if (outcome == "restored")
+                throw new Error(`${error instanceof Error ? error.message : String(error)} Laneway restored the Git state from before the operation.`)
+            throw error
+        }
         let expected = await captureGitCheckpoint(this.repository, affected, before, undefined, undefined, false)
         if ((kind.startsWith("local.") || kind.startsWith("pull.")) && checkpointIdentity(before) == checkpointIdentity(expected)) {
             await this.abortBeforeCommit(executionId, operation, "apply")
@@ -283,6 +295,18 @@ class OperationRuntime {
 
         await this.store.appendJournalPhase(executionId, operation.id, "apply", "finalized")
         return summarize(operation)
+    }
+
+    private async rollBackFailedMutation(before: GitCheckpoint, operation: StoredOperation): Promise<"unchanged" | "restored" | "pending"> {
+        try {
+            let current = await captureGitCheckpoint(this.repository, operation.affectedWorktrees, before, undefined, undefined, false)
+            if (checkpointIdentity(current) == checkpointIdentity(before))
+                return "unchanged"
+            await restoreGitCheckpoint(this.repository, current, before)
+            return "restored"
+        } catch {
+            return "pending"
+        }
     }
 
     private async restoreCheckpoint(operation: StoredOperation, action: "undo" | "redo", crashAfter?: JournalPhase) {
@@ -549,9 +573,11 @@ class OperationRuntime {
         if (request.action == "remove") {
             if (registrations.some(w => normalize(w.path) == normalize(backupPath) || normalize(w.path).startsWith(`${normalize(backupPath)}${sep}`)))
                 throw new OperationRuntimeError("operation.precondition-failed", "Another worktree occupies the recovery backup. Its files were left intact.")
+            // An earlier interrupted recovery may have left its backup where removal moves the directory.
+            await rm(resolve(backupPath), { recursive: true, force: true })
             if (registered) {
                 let preview = await previewWorktree(this.repository, { action: "remove", path: worktree.path, preserve: true, allowIgnoredLoss: true })
-                await mutateWorktree(this.repository, preview)
+                await mutateWorktree(this.repository, preview, operation.id)
             }
             await rm(resolve(worktree.path), { recursive: true, force: true })
             await rm(resolve(backupPath), { recursive: true, force: true })
@@ -970,10 +996,6 @@ function recoveryBlocked(operation: StoredOperation, action: string, message: st
         action,
         ...details,
     })
-}
-
-function recoveryBackupPath(path: string, operationId: string) {
-    return `${path}.laneway-recovery-${operationId}`
 }
 
 function crashIfRequested(phase: JournalPhase, requested?: JournalPhase) {

@@ -45,8 +45,14 @@ export function startGitProcess(options: GitRunOptions) {
     let cancelled = false
     let forceTimer: ReturnType<typeof setTimeout> | undefined
     let child: ChildProcessWithoutNullStreams
+    // Without long-path support, Git on Windows silently skips files beyond 260 characters and fails
+    // to delete them, which dependency trees inside worktrees reach routinely.
+    let configuration = [
+        ...(process.platform == "win32" ? ["-c", "core.longpaths=true"] : []),
+        ...(options.readOnly ? ["-c", "diff.autoRefreshIndex=false"] : []),
+    ]
     try {
-        child = spawn(options.installation.path, options.readOnly ? ["-c", "diff.autoRefreshIndex=false", ...options.args] : options.args, {
+        child = spawn(options.installation.path, [...configuration, ...options.args], {
             cwd: options.cwd,
             detached: process.platform != "win32",
             env: {

@@ -1,9 +1,10 @@
 import { branchSlug, hasUniqueCommits, normalize, populatedSubmodules, type RepositoryGit } from "@laneway/git"
 import type { RegisteredWorktree, WorktreePreview } from "@laneway/shared"
-import { mkdir, rm } from "node:fs/promises"
+import { mkdir } from "node:fs/promises"
 import { dirname } from "node:path"
+import { recoveryBackupPath, removeLinkedWorktree } from "./worktree-directory"
 
-export async function mutateWorktree(repository: RepositoryGit, preview: WorktreePreview, branchPrefix = "worktree/") {
+export async function mutateWorktree(repository: RepositoryGit, preview: WorktreePreview, operationId: string, branchPrefix = "worktree/") {
     let changedRefs = new Set<string>()
     let { request, worktrees, destination } = preview
     let main = repository.descriptor.mainWorktree
@@ -41,24 +42,21 @@ export async function mutateWorktree(repository: RepositoryGit, preview: Worktre
     else if (request.action == "unlock")
         await repository.command(main, ["worktree", "unlock", "--", current!.path])
     else if (request.action == "remove") {
-        if (preview.ignored.length && !request.allowIgnoredLoss)
+        if (preview.ignoredCount && !request.allowIgnoredLoss)
             throw new Error("Removal would delete ignored files. Review and acknowledge their loss first.")
 
-        if (request.preserve) {
+        // A worktree another program is using fails here with nothing to undo. An interrupted removal
+        // leaves the directory where the recovery column expects its backup.
+        await removeLinkedWorktree(current!, recoveryBackupPath(current!.path, operationId), async () => {
+            if (!request.preserve)
+                return
             if (current!.missing) {
                 if (await hasUniqueCommits(repository, current!))
                     await protectBranch(repository, current!, branchPrefix, changedRefs)
             } else {
                 await preserveBeforeSwitch(repository, current!, branchPrefix, changedRefs)
             }
-        }
-
-        if (current!.missing) {
-            // Delete exactly this unavailable registration, never prune other worktrees.
-            await rm(current!.gitDirectory, { recursive: true })
-        } else {
-            await repository.command(main, ["worktree", "remove", "--force", "--", current!.path])
-        }
+        })
     }
 
     return changedRefs

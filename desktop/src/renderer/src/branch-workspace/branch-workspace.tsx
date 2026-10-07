@@ -486,8 +486,9 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
     })
 
     // One timer polls the Branch Graph and Working Changes together so a poll costs one burst of updates.
+    // A worktree operation in flight skips the poll: its Git reads run inside the directory being removed.
     let interval = window.setInterval(() => {
-        if (activeRepositoryId && document.visibilityState == "visible" && document.hasFocus()) {
+        if (activeRepositoryId && document.visibilityState == "visible" && document.hasFocus() && !worktreeActions.busy()) {
             void read(activeRepositoryId, false, true)
             inspection.refreshWorking()
         }

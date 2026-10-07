@@ -33,7 +33,10 @@ export interface WorktreePreview {
     worktrees: RegisteredWorktree[]
     destination?: string
     affected: string[]
+    /** Up to twenty worktree-relative ignored entries, with whole ignored directories shown as `name/`. */
     ignored: string[]
+    /** Every ignored entry, including those beyond the first twenty. */
+    ignoredCount: number
     dirty: boolean
     uniqueCommits: boolean
     populatedSubmodules: boolean

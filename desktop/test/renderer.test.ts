@@ -173,21 +173,25 @@ test("failed recovery stays in its column across restart and reports its specifi
 
 test("worktree creation previews the destination and mutates only after confirmation", async () => {
     let scenario = inspectionScenario()
-    let executions = 0
-    scenario.api.previewWorktree = async (_id, request) => ({
-        ok: true,
-        preview: {
-            request,
-            worktrees: [],
-            destination: "D:/project.worktrees/feature",
-            affected: ["D:/project.worktrees/feature"],
-            ignored: [],
-            dirty: false,
-            uniqueCommits: false,
-            populatedSubmodules: false,
-            token: "current",
-        },
-    })
+    let executions = 0, previews = 0
+    scenario.api.previewWorktree = async (_id, request) => {
+        previews++
+        return {
+            ok: true,
+            preview: {
+                request,
+                worktrees: [],
+                destination: "D:/project.worktrees/feature",
+                affected: ["D:/project.worktrees/feature"],
+                ignored: [],
+                ignoredCount: 0,
+                dirty: false,
+                uniqueCommits: false,
+                populatedSubmodules: false,
+                token: "current",
+            },
+        }
+    }
     scenario.api.executeWorktree = async (_id, request, token) => {
         expect(request.action).toBe("create")
         expect(token).toBe("current")
@@ -216,6 +220,8 @@ test("worktree creation previews the destination and mutates only after confirma
     click(button(container.querySelector<HTMLDialogElement>('dialog[aria-label="Worktree operation"]')!, "Confirm"))
     await flush(root)
     expect(executions).toBe(1)
+    // Each dialog previews once; confirmation hands the reviewed token straight to the Engine.
+    expect(previews).toBe(2)
     dispose()
 })
 
@@ -284,7 +290,8 @@ test("worktree row renames inline and switches through branch search; removal st
                     request,
                     worktrees: [],
                     affected: ["D:\\Source\\inspection"],
-                    ignored: ["D:\\Source\\inspection\\generated.bin"],
+                    ignored: ["generated.bin"],
+                    ignoredCount: 1,
                     dirty: true,
                     uniqueCommits: false,
                     populatedSubmodules: false,
@@ -305,7 +312,7 @@ test("worktree row renames inline and switches through branch search; removal st
         expect(row.querySelector("[role='menu']")).toBeNull()
         let removeDialog = container.querySelector<HTMLDialogElement>('dialog[aria-label="Worktree operation"]')!
         expect(removeDialog.textContent).toContain("Working Changes detected")
-        expect(removeDialog.textContent).not.toContain("ignored")
+        expect(removeDialog.textContent).toContain("outside undo: generated.bin.")
         click(button(removeDialog, "Remove worktree"))
         await flush(root)
         expect(executed).toEqual({ action: "remove", path: "D:\\Source\\inspection", preserve: true, allowIgnoredLoss: true })

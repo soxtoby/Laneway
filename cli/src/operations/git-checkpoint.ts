@@ -4,6 +4,7 @@ import { createHash } from "node:crypto"
 import { lstat, mkdir, readFile, readlink, rm, writeFile } from "node:fs/promises"
 import { dirname, join, relative, resolve, sep } from "node:path"
 import { z } from "zod"
+import { removeLinkedWorktree } from "../worktrees/worktree-directory"
 import { retainRecoveryObjects } from "./recovery-objects"
 
 let identity = {
@@ -87,12 +88,17 @@ export async function restoreGitCheckpoint(repo: RepositoryGit, source: GitCheck
         if (!to?.registered) {
             if (from.main)
                 throw new Error("The Main Worktree cannot be removed.")
+            let registration = current.find(w => w.id == from.id)
+            if (!registration)
+                throw new Error(`The worktree registration for ${from.path} is gone.`)
+            if (registration.locked)
+                throw new Error(`Unlock ${from.path} before restoring this checkpoint.`)
             if (from.present) {
                 let ignored = await repo.command(from.path, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"])
                 if (ignored.length)
                     throw new Error(`Move ignored files out of ${from.path} before restoring this checkpoint.`)
             }
-            await repo.command(main, ["worktree", "remove", "--force", "--", from.path])
+            await removeLinkedWorktree(registration, `${registration.path}.laneway-removing`)
         } else if (to.present && !to.scope && await pathExists(to.path)) {
             if (from.head)
                 await repo.command(to.path, ["checkout", "--detach", "--force", "--no-overwrite-ignore", from.head])

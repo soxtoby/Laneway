@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { resolve } from "node:path"
 import { connectRepository, GitError, inferCloneDirectoryName, initializeRepository, isLikelyCloneSource, openRepository, parseGitVersion, redactGitText, selectGit, startCloneRepository } from "../src/index"
@@ -54,6 +54,25 @@ describe("system Git", () => {
         expect(opened.descriptor.mainWorktree).toBe(repository)
         expect(opened.descriptor.selectedWorktree).toBe(linked)
         expect(opened.descriptor.id).toBe(resolve(repository, ".git"))
+    })
+
+    test.if(process.platform == "win32")("sees untracked files beyond the Windows path limit", async () => {
+        let repository = await temporaryDirectory("laneway-long-paths-")
+        expect(runGit(repository, "init", "--quiet").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
+        await writeFile(resolve(repository, "README.md"), "initial\n")
+        expect(runGit(repository, "add", "README.md").exitCode).toBe(0)
+        expect(runGit(repository, "commit", "--quiet", "-m", "Initial").exitCode).toBe(0)
+        let deep = resolve(repository, "src")
+        while (deep.length < 300)
+            deep = resolve(deep, `segment-${"x".repeat(40)}`)
+        await mkdir(deep, { recursive: true })
+        await writeFile(resolve(deep, "leaf.txt"), "deep\n")
+
+        let state = await (await connectRepository(repository)).readWorktreeState(repository)
+
+        expect(state.untracked.some(file => file.endsWith("/leaf.txt"))).toBe(true)
     })
 
     test("rejects bare repositories with an explanation", async () => {

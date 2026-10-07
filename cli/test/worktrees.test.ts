@@ -1,7 +1,8 @@
 import { connectRepository, pathExists, previewWorktree, readRegisteredWorktrees } from "@laneway/git"
 import type { WorktreeRequest } from "@laneway/shared"
 import { afterEach, expect, test } from "bun:test"
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
+import { closeSync, openSync } from "node:fs"
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { executeOperationCommand } from "../src/operations/operation-runtime"
@@ -67,6 +68,101 @@ test("removal restores exact discarded Git state, excludes ignored files, and gu
 
     await expect(transition(path, "redo")).rejects.toThrow("outside Laneway")
     expect(await readFile(join(linked, "new.txt"), "utf8")).toBe("external\n")
+}, 60_000)
+
+test.if(process.platform == "win32")("removal refuses while another program uses the worktree, leaving it registered, intact, and unblocked", async () => {
+    let path = await fixture()
+    let repository = await connectRepository(path)
+    await perform(path, { action: "create", branch: "feature", move: false })
+    let linked = join(`${path}.worktrees`, "feature")
+    await writeFile(join(linked, "a.txt"), "unstaged\n")
+    await writeFile(join(linked, "new.txt"), "untracked\n")
+    await writeFile(join(linked, "ignored.txt"), "outside undo\n")
+    let handle = openSync(join(linked, "new.txt"), "r")
+    try {
+        await expect(perform(path, { action: "remove", path: linked, preserve: true, allowIgnoredLoss: true })).rejects.toThrow(
+            "Another program is using files",
+        )
+    } finally {
+        closeSync(handle)
+    }
+
+    expect((await readRegisteredWorktrees(repository)).map(w => w.path)).toContain(resolve(linked))
+    expect(await readFile(join(linked, "a.txt"), "utf8")).toBe("unstaged\n")
+    expect(await readFile(join(linked, "new.txt"), "utf8")).toBe("untracked\n")
+    expect(await readFile(join(linked, "ignored.txt"), "utf8")).toBe("outside undo\n")
+    expect(git(path, "stash", "list")).toBe("")
+    expect(await executeOperationCommand({ command: "recovery-status", noWait: false }, path)).toMatchObject({ worktrees: [] })
+    expect(await executeOperationCommand({ command: "history", noWait: false }, path)).toMatchObject({
+        entries: [expect.objectContaining({ kind: "worktree.create" })],
+    })
+
+    await perform(path, { action: "remove", path: linked, preserve: true, allowIgnoredLoss: true })
+
+    expect(await pathExists(linked)).toBe(false)
+    expect(await readdir(`${path}.worktrees`)).toEqual([])
+    expect(git(path, "stash", "list")).toContain("Laneway: feature")
+
+    await transition(path, "undo")
+
+    expect(await readFile(join(linked, "a.txt"), "utf8")).toBe("unstaged\n")
+    expect(await readFile(join(linked, "new.txt"), "utf8")).toBe("untracked\n")
+}, 60_000)
+
+test("a mutation that fails after changing Git state is rolled back immediately instead of waiting for recovery", async () => {
+    let path = await fixture()
+    await perform(path, { action: "create", branch: "feature", move: false })
+    let linked = join(`${path}.worktrees`, "feature")
+    // feature tracks a file that is ignored in main's worktree, so checkout refuses to overwrite it after stashing.
+    await writeFile(join(linked, "ignored.txt"), "tracked on feature\n")
+    git(linked, "add", "-f", "ignored.txt")
+    git(linked, "commit", "-qm", "track an ignored name")
+    git(linked, "checkout", "-q", "--detach")
+    await writeFile(join(path, "ignored.txt"), "local ignored\n")
+    await writeFile(join(path, "a.txt"), "dirty\n")
+
+    await expect(perform(path, { action: "switch", path, branch: "feature", move: false })).rejects.toThrow("restored the Git state")
+
+    expect(await readFile(join(path, "a.txt"), "utf8")).toBe("dirty\n")
+    expect(await readFile(join(path, "ignored.txt"), "utf8")).toBe("local ignored\n")
+    expect(git(path, "branch", "--show-current")).toBe("main")
+    expect(git(path, "stash", "list")).toBe("")
+    expect(await executeOperationCommand({ command: "recovery-status", noWait: false }, path)).toMatchObject({ worktrees: [] })
+    expect(await executeOperationCommand({ command: "history", noWait: false }, path)).toMatchObject({
+        entries: [expect.objectContaining({ kind: "worktree.create" })],
+    })
+}, 60_000)
+
+test("removal deletes ignored trees beyond Windows path limits while ignored churn and preservation choices keep the token valid", async () => {
+    let path = await fixture()
+    let repository = await connectRepository(path)
+    await perform(path, { action: "create", branch: "feature", move: false })
+    let linked = join(`${path}.worktrees`, "feature")
+    await mkdir(join(path, ".git", "info"), { recursive: true })
+    await writeFile(join(path, ".git", "info", "exclude"), "node_modules/\n")
+    let deep = join(linked, "node_modules")
+    while (deep.length < 300)
+        deep = join(deep, `package-${"x".repeat(40)}`)
+    await mkdir(deep, { recursive: true })
+    await writeFile(join(deep, "index.js"), "module.exports = 1\n")
+    await writeFile(join(linked, "ignored.txt"), "outside undo\n")
+
+    let preview = await previewWorktree(repository, { action: "remove", path: linked, preserve: true, allowIgnoredLoss: false })
+
+    expect(preview.ignored).toEqual(["ignored.txt", "node_modules/"])
+    expect(preview.ignoredCount).toBe(2)
+
+    await writeFile(join(deep, "touched.js"), "churn\n")
+    await executeOperationCommand({
+        command: "worktree",
+        request: { action: "remove", path: linked, preserve: false, allowIgnoredLoss: true },
+        token: preview.token,
+        noWait: false,
+    }, path)
+
+    expect(await pathExists(linked)).toBe(false)
+    expect(await readdir(`${path}.worktrees`)).toEqual([])
+    expect((await readRegisteredWorktrees(repository)).map(w => w.path)).toEqual([resolve(path)])
 }, 60_000)
 
 test("rename retains registration identity; locked/main protections and preview freshness", async () => {
