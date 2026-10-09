@@ -39,6 +39,9 @@ describe("Branch Graph and lazy history", () => {
             expect(runGit(repository, "tag", "waypoint", taggedCommit).exitCode).toBe(0)
             expect(runGit(repository, "config", "user.email", "unrelated@example.invalid").exitCode).toBe(0)
             await commitFile(repository, "tip.txt", "two\n", "Second tip commit")
+            expect(
+                runGit(repository, "commit", "--quiet", "--amend", "-m", "Second tip commit", "-m", "Explains the tip.", "-m", "In two paragraphs.").exitCode,
+            ).toBe(0)
             let tip = gitText(repository, "rev-parse", "HEAD")
             expect(runGit(repository, "branch", "feature/alias", tip).exitCode).toBe(0)
             await writeFile(resolve(repository, "working.txt"), "stashed\n")
@@ -71,7 +74,7 @@ describe("Branch Graph and lazy history", () => {
                 limit: 1,
             }).result
             expect(history.commits).toHaveLength(1)
-            expect(history.commits[0]).toMatchObject({ objectId: tip, subject: "Second tip commit" })
+            expect(history.commits[0]).toMatchObject({ objectId: tip, subject: "Second tip commit", body: "Explains the tip.\n\nIn two paragraphs." })
             expect(history.nextOffset).toBe(1)
 
             expect(runGit(repository, "checkout", "-q", "main").exitCode).toBe(0)

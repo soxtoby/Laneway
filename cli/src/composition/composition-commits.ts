@@ -4,20 +4,28 @@ import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
 
-// Hooks see the actual proposed commit in an isolated checkout and index. Their
-// configured commands and filters still come from the destination repository.
-// A source commit supplies the author and, unless a message is given, the message.
-export async function compositionCommit(repo: RepositoryGit, parent: string, tree: string, source?: string, message = "", cancelled = () => false) {
-    let [configuration, hooks] = await Promise.all([
-        repo.command(repo.descriptor.mainWorktree, ["config", "--null", "--list", "--includes"]),
-        gitText(repo, ["rev-parse", "--path-format=absolute", "--git-path", "hooks"]),
-    ])
+/** Repository facts every composed commit needs, read once per operation rather than once per commit. */
+export interface CommitContext {
+    repo: RepositoryGit
+    config: Array<[string, string]>
+    hooks: string
+    hasHooks: boolean
+    signing: boolean
+    cleanup: string
+}
 
+export async function prepareCommitContext(repo: RepositoryGit): Promise<CommitContext> {
+    let cwd = repo.descriptor.mainWorktree
+    let [configuration, hooks, signing, cleanup] = await Promise.all([
+        repo.command(cwd, ["config", "--null", "--list", "--includes"]),
+        gitText(repo, ["rev-parse", "--path-format=absolute", "--git-path", "hooks"]),
+        repo.run(cwd, ["config", "--bool", "--get", "commit.gpgsign"]),
+        repo.run(cwd, ["config", "--get", "commit.cleanup"]),
+    ])
     let config = configuration.toString().split("\0").filter(Boolean).map(record => {
         let index = record.indexOf("\n")
-        return [record.slice(0, index), record.slice(index + 1)]
+        return [record.slice(0, index), record.slice(index + 1)] as [string, string]
     }).filter(([key]) => !["core.worktree", "core.bare"].includes(key))
-
     let hasHooks = config.some(([key]) => key.startsWith("hook."))
         || (await Promise.all(["pre-commit", "prepare-commit-msg", "commit-msg"].map(async name => {
             try {
@@ -29,14 +37,56 @@ export async function compositionCommit(repo: RepositoryGit, parent: string, tre
                 throw error
             }
         }))).some(Boolean)
-    if (!hasHooks)
-        return commitWithoutHooks(repo, parent, tree, source, message, new Map(config.map(([key, value]) => [key, value])), cancelled)
+
+    return {
+        repo,
+        config,
+        hooks,
+        hasHooks,
+        signing: signing.stdout.toString().trim() == "true",
+        cleanup: cleanup.stdout.toString().trim(),
+    }
+}
+
+// Commit objects are immutable, so one read per commit serves every author and message lookup in a process.
+let rawCommits = new Map<string, Promise<string>>()
+
+/** The raw commit object: headers, a blank line, then the message. */
+export function rawCommit(repo: RepositoryGit, commit: string) {
+    let key = `${repo.descriptor.commonDirectory}\0${commit}`
+    let cached = rawCommits.get(key)
+    if (!cached) {
+        cached = repo.command(repo.descriptor.mainWorktree, ["cat-file", "commit", commit]).then(raw => raw.toString())
+        rawCommits.set(key, cached)
+        cached.catch(() => rawCommits.delete(key))
+    }
+    return cached
+}
+
+/** A source commit's author identity as commit environment, and its message. */
+export async function commitAuthor(repo: RepositoryGit, source: string) {
+    let raw = await rawCommit(repo, source)
+    let split = raw.indexOf("\n\n")
+    let author = /^author (.*) <([^>]*)> (.+)$/m.exec(raw.slice(0, split))!
+    return {
+        env: { GIT_AUTHOR_NAME: author[1], GIT_AUTHOR_EMAIL: author[2], GIT_AUTHOR_DATE: author[3] },
+        message: raw.slice(split + 2),
+    }
+}
+
+// Hooks see the actual proposed commit in an isolated checkout and index. Their
+// configured commands and filters still come from the destination repository.
+// A source commit supplies the author and, unless a message is given, the message.
+export async function compositionCommit(context: CommitContext, parent: string, tree: string, source?: string, message = "", cancelled = () => false) {
+    let { repo } = context
+    if (!context.hasHooks)
+        return commitWithoutHooks(context, parent, tree, source, message, cancelled)
 
     let root = resolve(tmpdir()), scratch = await mkdtemp(join(root, "laneway-composition-hook-"))
     let retain = false
     try {
         await repo.command(scratch, ["init", "-q", `--object-format=${repo.descriptor.objectFormat}`])
-        config.push(["core.hooksPath", hooks], ["core.bare", "false"])
+        let config = [...context.config, ["core.hooksPath", context.hooks], ["core.bare", "false"]]
         let env: Record<string, string> = {
             GIT_DIR: join(scratch, ".git"),
             GIT_WORK_TREE: scratch,
@@ -51,12 +101,9 @@ export async function compositionCommit(repo: RepositoryGit, parent: string, tre
         })
 
         if (source) {
-            let raw = (await repo.command(repo.descriptor.mainWorktree, ["cat-file", "commit", source])).toString()
-            let split = raw.indexOf("\n\n"), author = /^author (.*) <([^>]*)> (.+)$/m.exec(raw.slice(0, split))!
-            env.GIT_AUTHOR_NAME = author[1]
-            env.GIT_AUTHOR_EMAIL = author[2]
-            env.GIT_AUTHOR_DATE = author[3]
-            message ||= raw.slice(split + 2)
+            let author = await commitAuthor(repo, source)
+            Object.assign(env, author.env)
+            message ||= author.message
         }
 
         let run = (args: string[], input?: string) => repo.command(scratch, args, input, env)
@@ -78,16 +125,14 @@ export async function compositionCommit(repo: RepositoryGit, parent: string, tre
             throw new Error(`Commit hooks changed content (${names || "index or working files"}). Review the saved hook checkout, then retry composition.`)
         }
 
-        let cleanup = (await repo.run(repo.descriptor.mainWorktree, ["config", "--get", "commit.cleanup"])).stdout.toString().trim()
         let rawMessage = await readFile(messagePath, "utf8")
-        let prepared = source || cleanup == "verbatim"
+        let prepared = source || context.cleanup == "verbatim"
             ? rawMessage
-            : (await run(["stripspace", ...(cleanup == "strip" ? ["--strip-comments"] : [])], rawMessage)).toString()
+            : (await run(["stripspace", ...(context.cleanup == "strip" ? ["--strip-comments"] : [])], rawMessage)).toString()
         if (!source && !prepared.trim())
             throw new Error("A commit message is required.")
 
-        let signing = (await repo.run(repo.descriptor.mainWorktree, ["config", "--bool", "--get", "commit.gpgsign"])).stdout.toString().trim() == "true"
-        let commit = (await run(["commit-tree", tree, "-p", parent, ...(signing ? ["-S"] : [])], prepared)).toString().trim()
+        let commit = (await run(["commit-tree", tree, "-p", parent, ...(context.signing ? ["-S"] : [])], prepared)).toString().trim()
         return commit
     } catch (error) {
         retain = true
@@ -101,26 +146,23 @@ export async function compositionCommit(repo: RepositoryGit, parent: string, tre
 }
 
 async function commitWithoutHooks(
-    repo: RepositoryGit,
+    context: CommitContext,
     parent: string,
     tree: string,
     source: string | undefined,
     message: string,
-    config: Map<string, string>,
     cancelled: () => boolean,
 ) {
+    let { repo } = context
     let env: Record<string, string> = {}
     if (source) {
-        let raw = (await repo.command(repo.descriptor.mainWorktree, ["cat-file", "commit", source])).toString()
-        let split = raw.indexOf("\n\n"), author = /^author (.*) <([^>]*)> (.+)$/m.exec(raw.slice(0, split))!
-        env.GIT_AUTHOR_NAME = author[1]
-        env.GIT_AUTHOR_EMAIL = author[2]
-        env.GIT_AUTHOR_DATE = author[3]
-        message ||= raw.slice(split + 2)
-    } else if (config.get("commit.cleanup") != "verbatim") {
+        let author = await commitAuthor(repo, source)
+        env = author.env
+        message ||= author.message
+    } else if (context.cleanup != "verbatim") {
         message = (await repo.command(
             repo.descriptor.mainWorktree,
-            ["stripspace", ...(config.get("commit.cleanup") == "strip" ? ["--strip-comments"] : [])],
+            ["stripspace", ...(context.cleanup == "strip" ? ["--strip-comments"] : [])],
             message + "\n",
         )).toString()
     } else {
@@ -132,6 +174,5 @@ async function commitWithoutHooks(
     if (cancelled())
         throw new Error("Transfer cancelled while preparing commits.")
 
-    let signing = (await repo.run(repo.descriptor.mainWorktree, ["config", "--bool", "--get", "commit.gpgsign"])).stdout.toString().trim() == "true"
-    return gitText(repo, ["commit-tree", tree, "-p", parent, ...(signing ? ["-S"] : [])], message, env)
+    return gitText(repo, ["commit-tree", tree, "-p", parent, ...(context.signing ? ["-S"] : [])], message, env)
 }

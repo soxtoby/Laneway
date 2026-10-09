@@ -19,9 +19,10 @@ export async function prepareLocal(
     request: LocalRequest,
     prefix: string,
     expectedToken?: string,
+    verify = true,
 ): Promise<{ preview: LocalPreview; before: GitCheckpoint }> {
-    if (request.action == "compose")
-        return prepareComposition(repository, request, expectedToken)
+    if (request.action == "compose" || request.action == "reword")
+        return prepareComposition(repository, request, expectedToken, verify)
     if (repository.descriptor.shallow || repository.descriptor.partial || repository.descriptor.sparse)
         throw new Error("Local mutations require a complete, non-sparse repository.")
 
@@ -109,7 +110,7 @@ export async function mutateLocal(
     expectedRefs: Map<string, string | null>,
     cancelled?: () => boolean,
 ): Promise<LocalResult> {
-    if (request.action == "compose")
+    if (request.action == "compose" || request.action == "reword")
         return mutateComposition(repository, request, preview, expectedRefs, cancelled)
 
     let path = "path" in request && request.path ? request.path : repository.descriptor.mainWorktree

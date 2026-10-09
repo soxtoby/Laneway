@@ -137,11 +137,20 @@ class OperationRuntime {
     }
 
     async transfer(request: LocalRequest, crashAfter?: JournalPhase, prefix = "worktree/"): Promise<LocalResult> {
-        if (request.action != "compose")
+        if (request.action != "compose" && request.action != "reword")
             throw new OperationRuntimeError("operation.precondition-failed", "Choose a change transfer.")
-        let prepared = await prepareLocal(this.repository, request, prefix)
-        if (isFileExtraction(prepared.preview))
+        // A reword applies in the same invocation unless its preview reports a decision for the user; a separate
+        // apply would launch the engine and capture the repository again for nothing. Mutation re-verifies the
+        // checkpoint before changing refs, so the reword's preparation defers its own verification.
+        let prepared = await prepareLocal(this.repository, request, prefix, undefined, request.action != "reword")
+        let composition = prepared.preview.composition
+        let immediate = request.action == "reword"
+            ? !composition?.published.length && !composition?.removed.length && !composition?.conflicts.length
+            : isFileExtraction(prepared.preview)
+        if (immediate)
             return this.applyPreparedLocal(request, prepared, crashAfter)
+        if (request.action == "reword" && !await checkpointMatches(this.repository, prepared.before))
+            throw new OperationRuntimeError("operation.precondition-failed", "Repository content changed while preparing the reword. Review it again.")
 
         return { type: "result", command: "local-preview", status: "preview", preview: prepared.preview }
     }

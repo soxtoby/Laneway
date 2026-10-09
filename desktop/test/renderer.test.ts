@@ -1,4 +1,4 @@
-import type { BranchGraph, ChangesResult, CompositionPreview, CompositionRequest, EntryProgress, EntryResult, FileDiffResult, WorktreeRequest } from "@laneway/shared"
+import type { BranchGraph, ChangesResult, CompositionPreview, CompositionRequest, EntryProgress, EntryResult, FileDiffResult, LocalRequest, WorktreeRequest } from "@laneway/shared"
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { Window as HappyWindow } from "happy-dom"
 import type { createElement as createRemixElement, createRoot as createRemixRoot, VirtualRoot } from "remix/ui"
@@ -1806,6 +1806,102 @@ describe("Working Changes inspection", () => {
         click(button(dialog, "Cancel"))
         await flush(root)
         dispose()
+    })
+
+    test("rewords an expanded commit from its overflow menu and confirms published rewrites first", async () => {
+        let scenario = inspectionScenario()
+        let branch = scenario.graph.branches[1]
+        let rewords: Array<{ request: LocalRequest; token?: string }> = []
+        let graphReads = 0
+        let published: string[] = []
+        let api: Window["laneway"] = {
+            ...scenario.api,
+            readBranchGraph: async (...args) => {
+                graphReads++
+                return scenario.api.readBranchGraph(...args)
+            },
+            localOperation: async (id, request, token) => {
+                if (request.action != "reword")
+                    return scenario.api.localOperation(id, request, token)
+                rewords.push({ request, token })
+                if (token || !published.length)
+                    return { ok: true, result: { type: "result", command: "local", status: "performed", message: "Commit reworded." } }
+                return {
+                    ok: true,
+                    result: {
+                        type: "result",
+                        command: "local-preview",
+                        status: "preview",
+                        preview: {
+                            token: "reword",
+                            affected: [],
+                            uniqueCommits: false,
+                            unborn: false,
+                            suggestedBranch: "",
+                            staged: false,
+                            files: [],
+                            stashes: [],
+                            worktrees: [],
+                            composition: { branches: ["feature/laneway"], removed: [], conflicts: [], published, skipped: [], noop: false },
+                        },
+                    },
+                }
+            },
+        }
+        let { container, root, dispose } = render(api)
+        try {
+            await flush(root)
+            let label = "[aria-label='More actions for commit Inspect changes']"
+            let formLabel = "[aria-label='Reword commit Inspect changes']"
+            let openForm = async () => {
+                click(container.querySelector<HTMLButtonElement>(label)!)
+                await flush(root)
+                click(button(container.querySelector<HTMLElement>(`dialog${label} [role='menu']`)!, "Reword commit…"))
+                await flush(root)
+                return container.querySelector<HTMLElement>(formLabel)!
+            }
+            click(container.querySelector<HTMLButtonElement>(".commit-heading")!)
+            await flush(root)
+            let form = await openForm()
+            let title = form.querySelector<HTMLInputElement>("[aria-label='Commit title']")!
+            expect(title.value).toBe("Inspect changes")
+            expect(form.querySelector<HTMLTextAreaElement>("[aria-label='Commit message']")!.value).toBe("Inspect every change.")
+            expect(button(form, "Apply").disabled).toBe(true)
+            input(title, "Inspect all changes")
+            await flush(root)
+            expect(button(form, "Apply").disabled).toBe(false)
+            let reads = graphReads
+            click(button(form, "Apply"))
+            await flush(root)
+            expect(rewords.map(call => call.token)).toEqual([undefined])
+            expect(rewords[0].request).toEqual({
+                action: "reword",
+                objectId: branch.tip,
+                branch: "refs/heads/feature/laneway",
+                title: "Inspect all changes",
+                message: "Inspect every change.",
+                selectedRemote: "origin",
+            })
+            expect(container.querySelector(formLabel)).toBeNull()
+            expect(graphReads).toBeGreaterThan(reads)
+
+            // Published history waits for an explicit decision instead of rewriting at once.
+            published = ["feature/laneway"]
+            rewords.length = 0
+            form = await openForm()
+            input(form.querySelector<HTMLInputElement>("[aria-label='Commit title']")!, "Inspect published changes")
+            await flush(root)
+            click(button(form, "Apply"))
+            await flush(root)
+            expect(form.querySelector("[role='alert']")!.textContent).toContain("Rewrites history already published on feature/laneway")
+            expect(rewords.map(call => call.token)).toEqual([undefined])
+            click(button(form, "Rewrite history"))
+            await flush(root)
+            expect(rewords.map(call => call.token)).toEqual([undefined, "reword"])
+            expect(container.querySelector(formLabel)).toBeNull()
+        } finally {
+            dispose()
+        }
     })
 
     test("disposes pending commit breakout reads with its source and restores no auxiliary columns", async () => {

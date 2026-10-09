@@ -24,6 +24,8 @@ export interface WorkingPlan {
     index: string
     beforeTree: string
     beforeIndex: string
+    /** The symbolic HEAD before the rewrite, so an unchanged one is left alone. */
+    beforeRef?: string | null
     conflict?: ConflictSubject
     stashBase: string
     stashTree: string
@@ -63,6 +65,7 @@ let PlanSchema = z.object({
         index: z.string(),
         beforeTree: z.string(),
         beforeIndex: z.string(),
+        beforeRef: z.string().nullable().optional(),
         conflict: ConflictSubjectSchema.optional(),
         stashBase: z.string(),
         stashTree: z.string(),

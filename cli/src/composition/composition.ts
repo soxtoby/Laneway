@@ -1,38 +1,42 @@
 import { blob, conflictHunks, conflictStateRef, gitText, normalize, pathExists, readConflictState, readRegisteredWorktrees, replaceTreeFiles, replayTree, type RepositoryGit, retainedDocument, storeConflictState, temporaryBranchPrefix, treeEntries } from "@laneway/git"
-import type { CompositionPreview, CompositionRequest, ConflictSubject, LocalPreview, LocalResult, ReplayStep, ResolutionCandidate, UnresolvedStack } from "@laneway/shared"
-import { CompositionRequestSchema } from "@laneway/shared"
+import type { CompositionPreview, CompositionRequest, ConflictSubject, LocalPreview, LocalResult, ReplayStep, ResolutionCandidate, RewordRequest, UnresolvedStack } from "@laneway/shared"
+import { CompositionRequestSchema, RewordRequestSchema } from "@laneway/shared"
 import { createHash } from "node:crypto"
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { captureGitCheckpoint, checkpointIdentity, checkpointMatches, type GitCheckpoint } from "../operations/git-checkpoint"
-import { compositionCommit } from "./composition-commits"
+import { commitAuthor, compositionCommit, prepareCommitContext, rawCommit } from "./composition-commits"
 import { type CommitPlan, type Plan, readPlan, type WorkingPlan, writePlan } from "./composition-plan"
 import { hasPathCollision, selectionTrees, workingTree } from "./composition-source"
 import { extractFiles, isFileExtraction, prepareFileExtraction } from "./file-extraction"
 
 type TreeChange = Awaited<ReturnType<typeof replayTree>>
+/** Requests that rewrite history through replay: transfers, branch rebases, and rewords. */
+export type RewriteRequest = CompositionRequest | RewordRequest
 let plans = new WeakMap<LocalPreview, Plan>()
 let stableIdentity = { GIT_COMMITTER_DATE: "2000-01-01T00:00:00Z", GIT_AUTHOR_DATE: "2000-01-01T00:00:00Z" }
 
 export async function prepareComposition(
     repo: RepositoryGit,
-    request: CompositionRequest,
+    request: RewriteRequest,
     expectedToken?: string,
+    verify = true,
 ): Promise<{ before: GitCheckpoint; preview: LocalPreview }> {
     if (repo.descriptor.shallow || repo.descriptor.partial || repo.descriptor.sparse)
         throw new Error("Composition requires a complete, non-sparse repository.")
 
-    let extraction = await prepareFileExtraction(repo, request)
+    // A reword changes one commit's message and replays its descendants, so it shares the transfer machinery.
+    let compose = request.action == "compose" ? request : undefined
+    let reworded = request.action == "reword" ? request.objectId : undefined
+    let workingSource = compose && compose.source.kind == "working" ? compose.source.worktreePath : undefined
+    let workingTarget = compose && compose.target.kind == "working" ? compose.target.worktreePath : undefined
+    let extraction = compose && await prepareFileExtraction(repo, compose)
     if (extraction)
         return extraction
 
     let worktrees = await readRegisteredWorktrees(repo)
-    if (
-        request.source.kind == "working"
-        && !worktrees.some(w => !w.missing && normalize(w.path) == normalize(request.source.kind == "working" ? request.source.worktreePath : ""))
-    ) {
+    if (workingSource != undefined && !worktrees.some(w => !w.missing && normalize(w.path) == normalize(workingSource)))
         throw new Error("Choose an available Registered Worktree as the source.")
-    }
 
     let affected = worktrees.filter(w => !w.missing).map(w => w.path)
     let before = await captureGitCheckpoint(repo, affected, undefined, worktrees)
@@ -59,7 +63,7 @@ export async function prepareComposition(
         remoteRefs,
         configuration,
         attributes,
-        JSON.stringify(CompositionRequestSchema.parse({ ...request, allowConflicts: false })),
+        JSON.stringify(compose ? CompositionRequestSchema.parse({ ...compose, allowConflicts: false }) : RewordRequestSchema.parse(request)),
     )
 
     let cached = expectedToken == token ? await readPlan(repo, token) : undefined
@@ -74,7 +78,7 @@ export async function prepareComposition(
     let [state, graph, selection] = await Promise.all([
         readConflictState(repo, before.refs[conflictStateRef] ?? null),
         repo.startReadBranchGraph({ authorIdentities: { secondary: [] }, remotePatterns: [], selectedRemote: request.selectedRemote }).result,
-        request.source.kind == "branch" ? undefined : selectionTrees(repo, request),
+        compose && compose.source.kind != "branch" ? selectionTrees(repo, compose) : undefined,
     ])
     let originalState = structuredClone(state)
     let tips = new Map(Object.entries(before.refs).filter(([ref]) => ref.startsWith("refs/heads/") && !ref.startsWith(temporaryBranchPrefix)))
@@ -95,6 +99,13 @@ export async function prepareComposition(
             trees.set(value, readTree(repo, value))
         return trees.get(value)!
     }
+    let draft = async (parent: string, value: string, source?: string, message?: string) => {
+        let oid = await draftCommit(repo, parent, value, source, message)
+        trees.set(oid, Promise.resolve(value))
+        return oid
+    }
+    // Replaying onto a parent with the same tree as the old parent cannot change anything, so the merge is skipped.
+    let sameTree = async (a: string, b: string) => a == b || await tree(repo, a) == await tree(repo, b)
 
     let primaryLocal = graph.primaryBranch.ref && graph.primaryBranch.remote
         ? `refs/heads/${graph.primaryBranch.ref.slice(`refs/remotes/${graph.primaryBranch.remote}/`.length)}`
@@ -125,7 +136,20 @@ export async function prepareComposition(
         return result
     }
 
-    if (request.source.kind == "branch") {
+    if (request.action == "reword") {
+        let at = request.objectId
+        if (!await ancestor(repo, at, tip(request.branch)))
+            throw new Error("The commit is not in the selected branch.")
+        await editable(at)
+        let message = await rewordMessage(repo, request)
+        if (message.trimEnd() == (await commitMessage(repo, at)).trimEnd())
+            preview.noop = true
+        else {
+            // The tree stays as it is; recording it as a mutation is what makes the commit and its descendants rewrite.
+            mutations.set(at, { tree: await tree(repo, at) })
+            messages.set(at, message)
+        }
+    } else if (request.source.kind == "branch") {
         let { branch } = request.source
         if (request.target.kind != "branch" || request.mode != "move")
             throw new Error("Rebase a branch by moving it onto another branch.")
@@ -221,7 +245,7 @@ export async function prepareComposition(
                     messages.set(at, await combinedMessage(repo, at, wholeCommit))
             } else {
                 let message = wholeCommit ? undefined : request.message
-                let oid = await draftCommit(repo, at, result.tree, wholeCommit, message)
+                let oid = await draft(at, result.tree, wholeCommit, message)
                 commits.push({ oid, parent: at, tree: result.tree, source: wholeCommit, message, conflict: result.conflict })
                 inserted.set(at, oid)
             }
@@ -263,6 +287,8 @@ export async function prepareComposition(
 
     let mapped = new Map<string, string>(),
         stepByCommit = new Map<string, ReplayStep>(originalState.stacks.flatMap(s => s.steps.map(step => [step.current, step] as const)))
+    // A rewritten step's source, its mutation on the old parent, is only drafted once an unresolved stack records the step.
+    let lazySources = new Map<string, () => Promise<string>>()
     let descendants = new Map<string, string[]>()
     for (let [oid, ps] of parentMap) {
         for (let parent of ps)
@@ -284,7 +310,7 @@ export async function prepareComposition(
                 continue
             let current = await rewrite(old, inheritsTarget(ref))
             if (inserted.has(old)) {
-                let owns = request.target.kind != "working" && ref == refName(request.target.branch)
+                let owns = compose != undefined && compose.target.kind != "working" && ref == refName(compose.target.branch)
                 if (owns)
                     current = await insert(commits.find(c => c.oid == inserted.get(old))!, current)
             }
@@ -318,7 +344,9 @@ export async function prepareComposition(
     preview.branches = changedBranches.map(ref => ref.slice(11))
 
     for (let ref of changedBranches) {
-        let upstream = (await repo.run(repo.descriptor.mainWorktree, ["rev-parse", "--symbolic-full-name", `${ref}@{upstream}`])).stdout.toString().trim()
+        // Git resolves @{upstream} for branch names only, not for full ref names.
+        let name = ref.slice(11)
+        let upstream = (await repo.run(repo.descriptor.mainWorktree, ["rev-parse", "--symbolic-full-name", `${name}@{upstream}`])).stdout.toString().trim()
         // The Primary Branch's remote counterpart counts as published history even without tracking configuration.
         let remoteTip = upstream ? await repo.resolveRef(upstream) ?? tips.get(ref)! : ref == primaryLocal ? publishedTip : null
         if (remoteTip && !(await ancestor(repo, remoteTip, newTips.get(ref)!)))
@@ -341,8 +369,8 @@ export async function prepareComposition(
     for (let holder of worktrees) {
         let oldStack = originalState.stacks.find(s => s.temporaryRef == holder.branchRef)
         let ref = oldStack?.branches.at(-1)?.ref ?? holder.branchRef
-        let source = request.source.kind == "working" && normalize(holder.path) == normalize(request.source.worktreePath)
-        let target = request.target.kind == "working" && normalize(holder.path) == normalize(request.target.worktreePath)
+        let source = workingSource != undefined && normalize(holder.path) == normalize(workingSource)
+        let target = workingTarget != undefined && normalize(holder.path) == normalize(workingTarget)
         if (!changedBranches.includes(ref ?? "") && !sourceWorking && !destinationWorking || !changedBranches.includes(ref ?? "") && !source && !target)
             continue
         if (holder.missing)
@@ -350,14 +378,14 @@ export async function prepareComposition(
         let head = (await repo.command(holder.path, ["rev-parse", "HEAD"])).toString().trim()
         let current = await currentTree(holder.path), index = (await repo.command(holder.path, ["write-tree"])).toString().trim()
         let files: TreeChange = { tree: current }, staged: TreeChange = { tree: index }
-        let stagedSource = source && sourceWorking && request.view == "staged"
+        let stagedSource = source && sourceWorking && compose?.view == "staged"
         if (source && sourceWorking) {
-            if (request.view == "staged")
+            if (compose?.view == "staged")
                 staged = sourceWorking
             else {
                 files = sourceWorking
-                if (request.view == "combined") {
-                    if (request.files?.some(f => f.lineIds))
+                if (compose?.view == "combined") {
+                    if (compose.files?.some(f => f.lineIds))
                         staged = await merge(selection!.selected, index, selection!.base, "remaining staged changes")
                     else {
                         let original = await treeEntries(repo, selection!.base)
@@ -373,7 +401,7 @@ export async function prepareComposition(
         let stashTree = target ? selection!.selected : files.tree
         let stashIndex = target ? selection!.base : staged.tree
         let newHead = ref ? newTips.get(ref) ?? head : head
-        if (newHead != head) {
+        if (!await sameTree(head, newHead)) {
             if (!stagedSource)
                 files = await merge(head, newHead, files.tree, "worktree restoration")
             staged = await merge(head, newHead, staged.tree, "staged restoration")
@@ -410,6 +438,7 @@ export async function prepareComposition(
             index: staged.conflict ? await tree(repo, newHead) : staged.tree,
             beforeTree: current,
             beforeIndex: index,
+            beforeRef: holder.branchRef ?? null,
             conflict,
             stashBase,
             stashTree,
@@ -420,10 +449,13 @@ export async function prepareComposition(
         await verifyIgnoredFiles(repo, holder.path, files.tree)
     }
 
-    if (!await checkpointMatches(repo, before))
-        throw new Error("Repository content changed while preparing the transfer. Select and review it again.")
-    if (remoteRefs != await gitText(repo, ["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes", "refs/laneway/conflict-candidates"]))
-        throw new Error("Remote refs changed while preparing the transfer. Review it again.")
+    // A plan applied in this same invocation is verified again right before its refs change, so it can skip this check.
+    if (verify) {
+        if (!await checkpointMatches(repo, before))
+            throw new Error("Repository content changed while preparing the transfer. Select and review it again.")
+        if (remoteRefs != await gitText(repo, ["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes", "refs/laneway/conflict-candidates"]))
+            throw new Error("Remote refs changed while preparing the transfer. Review it again.")
+    }
 
     let local: LocalPreview = {
         token,
@@ -444,7 +476,7 @@ export async function prepareComposition(
     return { before, preview: local }
 
     async function skippedAt(destination: string, result: TreeChange) {
-        if (request.mode != "copy" || !selection)
+        if (compose?.mode != "copy" || !selection)
             return
         let counts = async (a: string, b: string) =>
             new Map(
@@ -481,7 +513,7 @@ export async function prepareComposition(
         let parent = overrides.get(old) ?? (ps[0] ? await rewrite(ps[0], includeInsert) : undefined)
         if (ps.slice(1).some(p => affectedCommits.has(p) && (includeInsert || !inserted.size)))
             throw new Error("Composition cannot restack merge commits. Copy to a linear destination instead.")
-        if (includeInsert && parent && inserted.has(ps[0]) && request.target.kind != "working") {
+        if (includeInsert && parent && inserted.has(ps[0]) && compose && compose.target.kind != "working") {
             let added = commits.find(c => c.oid == inserted.get(ps[0]))!
             parent = await insert(added, parent)
         }
@@ -497,16 +529,16 @@ export async function prepareComposition(
                 current = parent
             } else {
                 let sourceTree = changed?.tree ?? await tree(repo, old)
-                let result = parent == ps[0]
+                let result = await sameTree(parent, ps[0])
                     ? { tree: sourceTree, conflict: changed?.conflict }
                     : await merge(ps[0], parent, sourceTree, `commit ${old.slice(0, 8)}`)
-                if (parent != ps[0] && request.target.kind == "commit" && request.target.objectId == old) {
+                if (parent != ps[0] && compose?.target.kind == "commit" && compose.target.objectId == old) {
                     let replayed = await merge(ps[0], parent, old, `commit ${old.slice(0, 8)}`)
                     result = await merge(selection!.base, replayed.tree, selection!.selected, "transferred changes")
                 }
                 let existing = oldSubjects.get(old)
                 await protect(existing, await tree(repo, old), result.tree)
-                if (result.tree == await tree(repo, parent) && !existing && !result.conflict) {
+                if (result.tree == await tree(repo, parent) && !existing && !result.conflict && old != reworded) {
                     current = parent
                     preview.removed.push(old)
                 } else {
@@ -517,10 +549,11 @@ export async function prepareComposition(
                     let conflict = retained.conflict
                     result.tree = retained.tree
                     let message = messages.get(old)
-                    let source = changed || existing ? await draftCommit(repo, ps[0], sourceTree, old, message) : old
-                    current = await draftCommit(repo, parent, result.tree, old, message)
+                    current = await draft(parent, result.tree, old, message)
                     commits.push({ oid: current, parent, tree: result.tree, source: old, message, conflict })
-                    stepByCommit.set(current, { id: conflict?.id ?? id(old), source, current, conflict })
+                    if (changed || existing)
+                        lazySources.set(current, () => draft(ps[0], sourceTree, old, message))
+                    stepByCommit.set(current, { id: conflict?.id ?? id(old), source: old, current, conflict })
                 }
             }
         } else {
@@ -608,7 +641,7 @@ export async function prepareComposition(
             insertedResults.set(added.oid, parent)
             return parent
         }
-        let current = await draftCommit(repo, parent, result.tree, added.source, added.message)
+        let current = await draft(parent, result.tree, added.source, added.message)
         commits.push({ ...added, oid: current, parent, tree: result.tree, conflict: result.conflict })
         stepByCommit.set(current, { id: result.conflict?.id ?? id(added.oid), source: current, current, conflict: result.conflict })
         insertedResults.set(added.oid, current)
@@ -634,9 +667,9 @@ export async function prepareComposition(
     }
 
     function inheritsTarget(ref: string) {
-        if (request.target.kind == "working")
+        if (!compose || compose.target.kind == "working")
             return false
-        let target = refName(request.target.branch)
+        let target = refName(compose.target.branch)
         if (ref == target)
             return true
 
@@ -675,6 +708,13 @@ export async function prepareComposition(
             refs.push({ ref, before: before.refs[ref], after: tip })
             resolvedBranches.add(ref)
             return undefined
+        }
+        for (let step of steps) {
+            let pending = lazySources.get(step.current)
+            if (pending) {
+                step.source = await pending()
+                lazySources.delete(step.current)
+            }
         }
         let stackId = id(ref, tip),
             stack: UnresolvedStack = {
@@ -716,7 +756,7 @@ async function verifyIgnoredFiles(repo: RepositoryGit, path: string, tree: strin
 
 export async function mutateComposition(
     repo: RepositoryGit,
-    request: CompositionRequest,
+    request: RewriteRequest,
     preview: LocalPreview,
     changes: Map<string, string | null>,
     cancelled = () => false,
@@ -727,14 +767,16 @@ export async function mutateComposition(
     let plan = plans.get(preview)
     if (!plan)
         throw new Error("Prepare the transfer before executing it.")
-    if (plan.preview.conflicts.length && !request.allowConflicts)
+    if (plan.preview.conflicts.length && !(request.action == "compose" && request.allowConflicts))
         throw new Error("The transfer would conflict. Choose resolve now or resolve later before continuing.")
     if (plan.preview.noop) {
         return {
             type: "result",
             command: "local",
             status: "performed",
-            message: request.source.kind == "branch" && request.target.kind == "branch"
+            message: request.action == "reword"
+                ? "The commit message is unchanged."
+                : request.source.kind == "branch" && request.target.kind == "branch"
                 ? `${displayName(request.source.branch)} is already on top of ${displayName(request.target.branch)}.`
                 : "Already present",
         }
@@ -743,6 +785,7 @@ export async function mutateComposition(
         throw new Error("Transfer cancelled before changing files or refs.")
 
     let drafts = new Map(plan.commits.map(c => [c.oid, c])), final = new Map<string, string>()
+    let context = plan.commits.length ? await prepareCommitContext(repo) : undefined
     for (let update of plan.refs) {
         if (update.after)
             update.after = await finalize(update.after)
@@ -802,19 +845,26 @@ export async function mutateComposition(
         changes.set(update.ref, update.after)
 
     for (let working of plan.working) {
-        // Track the captured non-ignored untracked files in the temporary index
-        // before checkout, so a moved addition is actually removed at its source.
-        await repo.command(working.path, ["read-tree", working.beforeTree])
-        await repo.command(working.path, ["read-tree", "--reset", "-u", working.tree])
-        await repo.command(working.path, ["read-tree", working.index])
-        if (working.ref)
+        // A rewrite that leaves a worktree's files and index as they are, like a reword, needs no checkout.
+        if (working.tree != working.beforeTree || working.index != working.beforeIndex) {
+            // Track the captured non-ignored untracked files in the temporary index
+            // before checkout, so a moved addition is actually removed at its source.
+            await repo.command(working.path, ["read-tree", working.beforeTree])
+            await repo.command(working.path, ["read-tree", "--reset", "-u", working.tree])
+            await repo.command(working.path, ["read-tree", working.index])
+        }
+        if (working.ref && working.ref != working.beforeRef)
             await repo.command(working.path, ["symbolic-ref", "HEAD", working.ref])
     }
     return {
         type: "result",
         command: "local",
         status: "performed",
-        message: plan.preview.conflicts.length ? "Transfer completed with unresolved conflicts." : "Changes transferred.",
+        message: plan.preview.conflicts.length
+            ? "Transfer completed with unresolved conflicts."
+            : request.action == "reword"
+            ? "Commit reworded."
+            : "Changes transferred.",
     }
 
     async function finalize(value: string): Promise<string> {
@@ -824,7 +874,7 @@ export async function mutateComposition(
         if (!commit)
             return value
         let parent = await finalize(commit.parent)
-        let created = await compositionCommit(repo, parent, commit.tree, commit.source, commit.message, cancelled)
+        let created = await compositionCommit(context!, parent, commit.tree, commit.source, commit.message, cancelled)
         final.set(value, created)
         return created
     }
@@ -834,13 +884,9 @@ export async function mutateComposition(
 async function draftCommit(repo: RepositoryGit, parent: string, value: string, source?: string, message?: string) {
     let env: Record<string, string> = { ...stableIdentity }
     if (source) {
-        let raw = (await repo.command(repo.descriptor.mainWorktree, ["cat-file", "commit", source])).toString()
-        let split = raw.indexOf("\n\n")
-        let author = /^author (.*) <([^>]*)> (.+)$/m.exec(raw.slice(0, split))!
-        env.GIT_AUTHOR_NAME = author[1]
-        env.GIT_AUTHOR_EMAIL = author[2]
-        env.GIT_AUTHOR_DATE = author[3]
-        message ||= raw.slice(split + 2)
+        let author = await commitAuthor(repo, source)
+        Object.assign(env, author.env)
+        message ||= author.message
     }
     return gitText(repo, ["commit-tree", value, "-p", parent], message || "Composed changes", env)
 }
@@ -869,12 +915,21 @@ async function ancestor(repo: RepositoryGit, a: string, b: string) {
     return !(await repo.run(repo.descriptor.mainWorktree, ["merge-base", "--is-ancestor", a, b])).exitCode
 }
 
+/** The commit form's title and message, cleaned the way Git cleans a new commit's message. */
+async function rewordMessage(repo: RepositoryGit, request: RewordRequest) {
+    let raw = `${request.title}\n\n${request.message}\n`
+    let cleanup = (await repo.run(repo.descriptor.mainWorktree, ["config", "--get", "commit.cleanup"])).stdout.toString().trim() || "whitespace"
+    if (cleanup == "verbatim")
+        return raw
+    return (await repo.command(repo.descriptor.mainWorktree, ["stripspace", ...(cleanup == "strip" ? ["--strip-comments"] : [])], raw)).toString()
+}
+
 /** Two commits squashed into one read as Git's own squash message: the retained commit's message, then the incoming one. */
 async function combinedMessage(repo: RepositoryGit, retained: string, incoming: string) {
     return `${(await commitMessage(repo, retained)).trimEnd()}\n\n${(await commitMessage(repo, incoming)).trimEnd()}\n`
 }
 
 async function commitMessage(repo: RepositoryGit, commit: string) {
-    let raw = (await repo.command(repo.descriptor.mainWorktree, ["cat-file", "commit", commit])).toString()
+    let raw = await rawCommit(repo, commit)
     return raw.slice(raw.indexOf("\n\n") + 2)
 }

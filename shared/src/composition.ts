@@ -38,6 +38,16 @@ export let CompositionRequestSchema = z.object({
     allowConflicts: z.boolean().default(false),
 })
 
+/** Replaces one commit's message in place, restacking everything built on it; its tree and author are preserved. */
+export let RewordRequestSchema = z.object({
+    action: z.literal("reword"),
+    objectId: oid,
+    branch,
+    title: z.string().trim().min(1),
+    message: z.string().default(""),
+    selectedRemote: z.string().optional(),
+})
+
 export let CompositionPreviewSchema = z.object({
     branches: z.array(z.string()),
     removed: z.array(z.string()),
@@ -53,3 +63,4 @@ export type CompositionRequest = z.infer<typeof CompositionRequestSchema>
 export type CompositionSource = z.infer<typeof CompositionSourceSchema>
 export type CompositionTarget = z.infer<typeof CompositionTargetSchema>
 export type CompositionPreview = z.infer<typeof CompositionPreviewSchema>
+export type RewordRequest = z.infer<typeof RewordRequestSchema>

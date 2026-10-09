@@ -455,7 +455,7 @@ function parseOperationArguments(command: OperationCommand["command"], commandAr
         return invalidOperationArgument(command, json, "A worktree request is required.", "--request")
     if ((command == "local" || command == "local-preview" || command == "local-transfer") && !localRequest)
         return invalidOperationArgument(command, json, "A local operation request is required.", "--request")
-    if (command == "local-transfer" && localRequest?.action != "compose")
+    if (command == "local-transfer" && localRequest?.action != "compose" && localRequest?.action != "reword")
         return invalidOperationArgument(command, json, "Choose a change transfer.", "--request")
 
     return {

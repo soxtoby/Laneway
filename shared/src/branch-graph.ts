@@ -145,6 +145,8 @@ export interface BranchHistoryCommit {
     authorEmail: string
     authoredAt: number
     subject: string
+    /** The message after its subject, without trailing blank lines. */
+    body?: string
     /** Reachable from one of the request's remote tips. */
     remote?: boolean
 }

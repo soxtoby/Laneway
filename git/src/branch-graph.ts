@@ -900,7 +900,9 @@ async function readHistoryPage(descriptor: RepositoryDescriptor, runner: GraphRu
             "--first-parent",
             `--skip=${offset}`,
             `--max-count=${limit + 1}`,
-            "--format=%H%x00%P%x00%aN%x00%aE%x00%at%x00%s",
+            // Bodies span lines, so records end in NUL as well and the fields are read in groups of seven.
+            "-z",
+            "--format=%H%x00%P%x00%aN%x00%aE%x00%at%x00%s%x00%b",
             request.tip,
             ...(request.baseTips.length > 0 ? ["--not", ...request.baseTips] : []),
         ]),
@@ -976,17 +978,21 @@ function parseStashes(output: string): StashRecord[] {
 }
 
 function parseHistory(output: string): BranchHistoryCommit[] {
-    return output.split("\n").filter(Boolean).map(line => {
-        let [objectId, parents, authorName, authorEmail, authoredAt, subject] = line.split("\0")
-        return {
+    let fields = output.split("\0")
+    let commits: BranchHistoryCommit[] = []
+    for (let index = 0; index + 6 < fields.length; index += 7) {
+        let [objectId, parents, authorName, authorEmail, authoredAt, subject, body] = fields.slice(index, index + 7)
+        commits.push({
             objectId,
             parentIds: parents.split(" ").filter(Boolean),
             authorName,
             authorEmail,
             authoredAt: Number(authoredAt),
             subject,
-        }
-    })
+            body: body.trimEnd(),
+        })
+    }
+    return commits
 }
 
 function effectiveIdentities(configured: AuthorIdentitySettings, effectiveEmail: string | undefined): AuthorIdentitySettings {

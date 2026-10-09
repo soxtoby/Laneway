@@ -154,7 +154,7 @@ export function registerOperationHandlers(repositories: OpenRepositories, engine
                 let request = LocalRequestSchema.parse(value)
                 let repository = repositories.worktreeRepository(repositoryId)
                 let requestArgs = ["--request", JSON.stringify(request)]
-                if (request.action == "compose") {
+                if (request.action == "compose" || request.action == "reword") {
                     requestDirectory = await mkdtemp(join(tmpdir(), "laneway-composition-request-"))
                     let requestPath = join(requestDirectory, "request.json")
                     await writeFile(requestPath, JSON.stringify(request))
@@ -165,7 +165,7 @@ export function registerOperationHandlers(repositories: OpenRepositories, engine
                     enginePath,
                     cwd: repository.descriptor.mainWorktree,
                     args: [
-                        token ? "local" : request.action == "compose" ? "local-transfer" : "local-preview",
+                        token ? "local" : request.action == "compose" || request.action == "reword" ? "local-transfer" : "local-preview",
                         ...requestArgs,
                         ...(token ? ["--expected", token] : []),
                         "--git-path",

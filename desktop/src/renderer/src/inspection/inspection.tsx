@@ -1,4 +1,4 @@
-import type { BranchGraph, BranchGraphBranchNode, BranchGraphVirtualBranch, BranchHistoryPage, ChangedFile, ChangesInventory, CompositionSource, DiffLayout, DiffSource, DiffView } from "@laneway/shared"
+import type { BranchGraph, BranchGraphBranchNode, BranchGraphVirtualBranch, BranchHistoryCommit, BranchHistoryPage, ChangedFile, ChangesInventory, CompositionSource, DiffLayout, DiffSource, DiffView } from "@laneway/shared"
 import { css, on, ref, type RemixNode } from "remix/ui"
 import * as accordion from "remix/ui/accordion/primitives"
 import { auxiliaryCloseButton, auxiliaryColumnFrame, auxiliaryColumnHeader, AuxiliaryColumns } from "../auxiliary-columns"
@@ -8,7 +8,8 @@ import { ConflictResolution } from "../conflict-resolution"
 import { EditableName } from "../editable-name"
 import type { NoticeState } from "../feedback"
 import { Icon } from "../icons"
-import { OverflowMenu } from "../overflow-menu"
+import { type OverflowAction, OverflowMenu } from "../overflow-menu"
+import { RewordForm } from "../reword"
 import { type BranchComparisonState, createBranchComparisons } from "./branch-comparison"
 import { columnItem, focusItem, isFileItem, parentItem, scrollBehavior, stepItem } from "./column-navigation"
 import { DiffControls } from "./diff-controls"
@@ -95,6 +96,8 @@ interface ColumnState {
     selectionRoot?: ColumnState
     composable?: Set<string>
     compositionKey?: string
+    /** The commit whose message is being edited in place. */
+    reword?: string
 }
 
 let changeFileList = css({
@@ -598,17 +601,7 @@ export function createInspection(options: Options) {
     let composition = createComposition({
         ...options,
         busyChanged: options.localBusyChanged,
-        async changed(repositoryId) {
-            for (let state of [...columns.values(), ...historyHosts.values()]) {
-                if (state.repositoryId == repositoryId) {
-                    state.wholeFiles.clear()
-                    for (let diff of state.diffs.values())
-                        diff.selection = undefined
-                }
-            }
-            await options.localChanged?.(repositoryId)
-            refresh()
-        },
+        changed: mutated,
         async resolve(repositoryId) {
             let result = await options.api.conflictOperation(repositoryId, { action: "list" })
             let first = result.ok ? result.result.conflicts.find(c => !c.suspended) : undefined
@@ -1156,6 +1149,7 @@ export function createInspection(options: Options) {
                                                             )}
                                                             {current.page?.commits.filter(commit => !state.conflictsOnly || commit.conflictId).map(commit => {
                                                                 let files = state.files.get(commit.objectId)
+                                                                let actions = commitActions(state, branch, commit)
                                                                 return (
                                                                     <accordion.ItemContext key={commit.objectId} value={commit.objectId}>
                                                                         <div
@@ -1261,20 +1255,32 @@ export function createInspection(options: Options) {
                                                                                         <Icon name="diff" size={14} />
                                                                                     </button>
                                                                                 )}
-                                                                                {files?.open && options.createBranchAt && (
+                                                                                {files?.open && actions.length > 0 && (
                                                                                     <OverflowMenu
                                                                                         label={`More actions for commit ${commit.subject}`}
                                                                                         title="More actions"
                                                                                         trigger={commitToolButton}
-                                                                                        actions={[{
-                                                                                            icon: "branch",
-                                                                                            label: "Create branch here…",
-                                                                                            run: () =>
-                                                                                                options.createBranchAt?.(state.repositoryId, commit.objectId),
-                                                                                        }]}
+                                                                                        actions={actions}
                                                                                     />
                                                                                 )}
                                                                             </h4>
+                                                                            {state.reword == commit.objectId && (
+                                                                                <RewordForm
+                                                                                    key={commit.objectId}
+                                                                                    api={options.api}
+                                                                                    repositoryId={repositoryId}
+                                                                                    branch={branch.preferredRef}
+                                                                                    commit={commit}
+                                                                                    selectedRemote={graph.selectedRemote}
+                                                                                    notify={options.notify}
+                                                                                    busyChanged={options.localBusyChanged}
+                                                                                    changed={() => mutated(repositoryId)}
+                                                                                    close={() => {
+                                                                                        state.reword = undefined
+                                                                                        update()
+                                                                                    }}
+                                                                                />
+                                                                            )}
                                                                             {composition.panel(repositoryId, {
                                                                                 kind: "commit",
                                                                                 objectId: commit.objectId,
@@ -2448,6 +2454,37 @@ export function createInspection(options: Options) {
                     void history(state, branch, true)
             }
         }
+    }
+
+    /** Drops selections that a history rewrite made stale, then re-reads the graph and every open worktree. */
+    async function mutated(repositoryId: string) {
+        for (let state of [...columns.values(), ...historyHosts.values()]) {
+            if (state.repositoryId == repositoryId) {
+                state.wholeFiles.clear()
+                for (let diff of state.diffs.values())
+                    diff.selection = undefined
+            }
+        }
+        await options.localChanged?.(repositoryId)
+        refresh()
+    }
+
+    /** A commit's overflow actions. Only a local branch's history can be reworded, and merge commits are not editable. */
+    function commitActions(state: ColumnState, branch: BranchGraphBranchNode, commit: BranchHistoryCommit): OverflowAction[] {
+        let actions: OverflowAction[] = []
+        if (!branch.remoteOnly && commit.parentIds.length == 1) {
+            actions.push({
+                icon: "pencil",
+                label: "Reword commit…",
+                run: () => {
+                    state.reword = commit.objectId
+                    update()
+                },
+            })
+        }
+        if (options.createBranchAt)
+            actions.push({ icon: "branch", label: "Create branch here…", run: () => options.createBranchAt?.(state.repositoryId, commit.objectId) })
+        return actions
     }
 
     // Any remote branch can publish this branch's commits, so moving any of them refreshes its history.

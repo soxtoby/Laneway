@@ -1,4 +1,4 @@
-import type { CompositionRequest, ConflictRequest, ConflictResult, LocalResult } from "@laneway/shared"
+import type { CompositionRequest, ConflictRequest, ConflictResult, LocalRequest, LocalResult } from "@laneway/shared"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
@@ -43,7 +43,7 @@ export function git(cwd: string, ...args: string[]) {
     return r.stdout.toString().trim()
 }
 
-export async function perform(path: string, request: CompositionRequest) {
+export async function perform(path: string, request: LocalRequest) {
     let p = await preview(path, request)
     let r = await executeOperationCommand({ command: "local", request, token: p.token, noWait: false }, path) as LocalResult
     if (r.status == "failed")
@@ -51,7 +51,7 @@ export async function perform(path: string, request: CompositionRequest) {
     return r
 }
 
-export async function preview(path: string, request: CompositionRequest) {
+export async function preview(path: string, request: LocalRequest) {
     return (await executeOperationCommand({ command: "local-preview", request, noWait: false }, path) as LocalResult).preview!
 }
 

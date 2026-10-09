@@ -1,10 +1,11 @@
 import { z } from "zod"
-import { CompositionPreviewSchema, CompositionRequestSchema } from "./composition"
+import { CompositionPreviewSchema, CompositionRequestSchema, RewordRequestSchema } from "./composition"
 
 let oid = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)
 
 export let LocalRequestSchema = z.discriminatedUnion("action", [
     CompositionRequestSchema,
+    RewordRequestSchema,
     z.object({
         action: z.literal("commit"),
         path: z.string(),

@@ -59,3 +59,15 @@ The same BI transfer benchmark, measured without trace logging:
 Independent cold reads matched incremental graph facts through the exact transfer, undo, and redo. A separate fresh-fixture recording measured 492 ms for graph refresh and 4.55 seconds for the complete transfer including Working Changes and verification. That recording's engine phase was 3.74 seconds; the full subsecond target remains unmet. Original BI stays read-only.
 
 The new explanation and recording are `.tmp/performance/incremental-report.html` and `exact-incremental.mp4`; benchmark data is in `graph-cache-before.json` and `graph-cache-final.json`. Earlier reports retain their original measurements.
+
+## Reword
+
+Rewording the second-to-last commit of a three-commit fixture took 5 to 7 seconds through the compiled engine. The cost was Git process launches, about 40 ms each on Windows, in a mostly sequential chain: the desktop invoked the engine twice (preview, then apply), each invocation captured the repository checkpoint over every registered worktree, and the apply re-prepared before reusing the persisted plan. One reword started 96 Git processes across the two invocations, and each extra linked worktree added about 50 more because a capture walks every worktree and ran five times. An ignored dependency tree made no measurable difference.
+
+Changes:
+
+- `local-transfer` accepts rewords and applies an uncontentious one in the same invocation. Published history, removed commits, and conflicts still return a preview that a confirmed `local` call applies. The immediate path skips the preparation's own checkpoint verification, because mutation re-verifies before changing refs.
+- Composed commits share one per-operation read of configuration, hooks, signing, and cleanup settings instead of re-reading them for every commit, and raw commit objects are read once per process.
+- Replay skips `merge-tree` when the new parent's tree equals the old parent's, which is every descendant of a reword, and worktree restoration skips it when the moved HEAD has the same tree. Draft commits remember their trees. A step's conflict-source draft is created only when an unresolved stack records the step. Checkouts are skipped for worktrees whose files and index are unchanged.
+
+Measured with `.tmp/diagnose/reword-bench.ts` on a fresh fixture with the compiled engine: Git launches per reword fell from 96 across two invocations to 56 in one, and wall time from 5–7 s to about 2 s, interleaved on the same machine while it was otherwise loaded. With three extra linked worktrees: 6.1 s to 4.1 s. The remaining cost is three checkpoint captures per call (preparation, pre-mutation verification, and the post-mutation expected state), the graph read, and about twenty sequential planning launches.

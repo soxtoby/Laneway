@@ -67,6 +67,7 @@ export function inspectionScenario() {
                     objectId: branch.tip,
                     parentIds: [graph.branches[0].tip],
                     subject: "Inspect changes",
+                    body: "Inspect every change.",
                     authorName: "Test",
                     authorEmail: "test@example.test",
                     authoredAt: 1788566400,
