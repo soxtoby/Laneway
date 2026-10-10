@@ -13,6 +13,7 @@ import { RewordForm } from "../reword"
 import { columnWorktree } from "../worktrees/worktree-columns"
 import { type BranchComparisonState, createBranchComparisons } from "./branch-comparison"
 import { columnItem, focusItem, isFileItem, parentItem, scrollBehavior, stepItem } from "./column-navigation"
+import { CommitMessage } from "./commit-message"
 import { DiffControls } from "./diff-controls"
 import { fileLabel, FileTree } from "./file-list"
 import { FileMenu } from "./file-menu"
@@ -327,7 +328,7 @@ let commitStickyHeading = css({
     position: "sticky",
     top: "var(--filter-height, 0px)",
     zIndex: 7,
-    height: "34px",
+    minHeight: "34px",
     display: "flex",
     alignItems: "center",
     paddingLeft: "22px",
@@ -453,7 +454,7 @@ let inspectCommit = css({
 })
 
 let commitHeading = css({
-    height: "100%",
+    alignSelf: "stretch",
     border: "0",
     background: "transparent",
     color: "var(--text)",
@@ -470,6 +471,7 @@ let commitHeading = css({
     textAlign: "left",
     // Keyboard focus scrolls the heading clear of the sticky filter bar.
     scrollMarginTop: "var(--filter-height, 0px)",
+    '&[aria-expanded="true"]': { paddingTop: "6px", paddingBottom: "6px" },
     '&[aria-expanded="true"] > span:first-child': {
         background: "var(--graph)",
     },
@@ -498,6 +500,7 @@ let commitHeadingSpan = css({
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+    '.commit-heading[aria-expanded="true"] &': { whiteSpace: "normal", overflowWrap: "anywhere" },
 })
 
 let mergeParent = css({
@@ -1167,6 +1170,16 @@ export function createInspection(options: Options) {
                                                                                 mix={[
                                                                                     disclosureHeading,
                                                                                     commitStickyHeading,
+                                                                                    ref((element, signal) => {
+                                                                                        let resize = new ResizeObserver(() => {
+                                                                                            element.parentElement?.style.setProperty(
+                                                                                                "--commit-heading-height",
+                                                                                                `${element.getBoundingClientRect().height}px`,
+                                                                                            )
+                                                                                        })
+                                                                                        resize.observe(element)
+                                                                                        signal.addEventListener("abort", () => resize.disconnect())
+                                                                                    }),
                                                                                     // Dropping near the row's top or bottom inserts beside the commit.
                                                                                     composition.target(repositoryId, {
                                                                                         kind: "commit",
@@ -1210,12 +1223,28 @@ export function createInspection(options: Options) {
                                                                                 <button
                                                                                     class="commit-heading"
                                                                                     type="button"
+                                                                                    title={commit.body ? `${commit.subject}\n\n${commit.body}` : commit.subject}
                                                                                     mix={[commitHeading, accordion.trigger()]}
                                                                                 >
                                                                                     <span aria-hidden="true" mix={commitNode} />
-                                                                                    <span mix={commitHeadingSpan}>
+                                                                                    <span class="commit-subject" mix={commitHeadingSpan}>
                                                                                         {commit.subject}
                                                                                     </span>
+                                                                                    {commit.body && !files?.open && (
+                                                                                        <span
+                                                                                            class="commit-message-indicator"
+                                                                                            role="img"
+                                                                                            aria-label="Has message body"
+                                                                                            mix={css({
+                                                                                                display: "inline-flex",
+                                                                                                flexShrink: 0,
+                                                                                                color: "var(--faint)",
+                                                                                                opacity: 0.65,
+                                                                                            })}
+                                                                                        >
+                                                                                            <Icon name="more" size={10} />
+                                                                                        </span>
+                                                                                    )}
                                                                                 </button>
                                                                                 {commit.conflictId && (
                                                                                     <button
@@ -1293,6 +1322,7 @@ export function createInspection(options: Options) {
                                                                             <div hidden={!files?.open} mix={accordion.content()}>
                                                                                 {files?.open && (
                                                                                     <>
+                                                                                        {commit.body && <CommitMessage body={commit.body} />}
                                                                                         {commit.parentIds.length > 1 && (
                                                                                             <label class="merge-parent" mix={mergeParent}>
                                                                                                 Compare parent<select
@@ -1614,7 +1644,7 @@ export function createInspection(options: Options) {
                                 }),
                             ]}
                         >
-                            <span>
+                            <span title={breakoutTitle(state, breakout)}>
                                 {breakoutTitle(state, breakout)}
                                 <small class="auxiliary-source">From {state.column.name}</small>
                             </span>

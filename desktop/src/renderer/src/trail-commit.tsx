@@ -74,7 +74,7 @@ export function createTrailCommits(options: { api: Window["laneway"]; update(): 
                     mix={column}
                 >
                     <header>
-                        <strong>{state.entry.subject}</strong>
+                        <strong title={state.entry.subject}>{state.entry.subject}</strong>
                         <button type="button" aria-label="Close commit diff" mix={on("click", actions.close)}>
                             <Icon name="close" size={15} />
                         </button>

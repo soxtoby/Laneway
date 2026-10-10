@@ -92,10 +92,15 @@ async function checkRenderer() {
     scenario.page.lines[1].text = `\tconst oldValue = 1 // ${"old content ".repeat(30)}`
     scenario.page.lines[2].text = `\tconst newValue = 2 // ${"new content ".repeat(60)}`
     let readHistory = scenario.api.readBranchHistory
+    let commitSubject = "Preserve uncommitted worktree changes when switching between branches in separate workspace columns"
+    let commitBody = "Keep each branch's changes attached to its original worktree.\n\nRestore those changes when returning to the branch."
     scenario.api.readBranchHistory = async (...args) => {
         let result = await readHistory(...args)
-        if (result.ok)
-            result.page.commits.push({ ...result.page.commits[0], objectId: "4".repeat(40), subject: "Another change" })
+        if (result.ok) {
+            result.page.commits[0].subject = commitSubject
+            result.page.commits[0].body = commitBody
+            result.page.commits.push({ ...result.page.commits[0], objectId: "4".repeat(40), subject: "Another change", body: undefined })
+        }
         return result
     }
     scenario.page.lines.push({ id: 3, kind: "notice", text: "\\ No newline at end of file", hunk: 0 })
@@ -268,11 +273,42 @@ async function checkRenderer() {
     })
     let branchPanel = element(".stack-branch > div")
     let branchExpanded = !element(".stack-branch").querySelector(".stack-heading") && !branchPanel.hidden
+    let collapsedCommit = element(".commit-heading")
+    let collapsedHeight = collapsedCommit.parentElement!.getBoundingClientRect().height
+    let commitTooltip = collapsedCommit.title == `${commitSubject}\n\n${commitBody}`
+        && collapsedCommit.querySelector<HTMLElement>(".commit-subject")!.scrollWidth
+            > collapsedCommit.querySelector<HTMLElement>(".commit-subject")!.clientWidth
+        && document.querySelectorAll<HTMLElement>(".commit-heading")[1].title == "Another change"
+    let indicator = element(".commit-message-indicator")
+    let commitBodyIndicator = indicator.getBoundingClientRect().width <= 12 && indicator.getBoundingClientRect().height <= 12
+        && !document.querySelectorAll(".commit-heading")[1].querySelector(".commit-message-indicator")
     element(".commit-heading").click()
     await settle()
     let commitTrigger = element(".commit-heading")
     let commitPanel = element(`#${CSS.escape(commitTrigger.getAttribute("aria-controls")!)}`)
     let commitExpanded = commitTrigger.getAttribute("aria-expanded") == "true" && !commitPanel.hidden
+    let commitSubjectSpan = commitTrigger.querySelector<HTMLElement>(".commit-subject")!
+    let commitMessage = element<HTMLParagraphElement>(".commit-message-body")
+    let messageToggle = element(".commit-message-toggle")
+    let expandedCommitMessage = commitTrigger.parentElement!.getBoundingClientRect().height > collapsedHeight
+        && getComputedStyle(commitSubjectSpan).whiteSpace == "normal"
+        && commitSubjectSpan.scrollWidth <= commitSubjectSpan.clientWidth
+        && !commitMessage.hidden
+        && messageToggle.getAttribute("aria-expanded") == "true"
+        && !commitTrigger.querySelector(".commit-message-indicator")
+        && commitMessage.textContent == commitBody
+        && getComputedStyle(commitMessage).whiteSpace == "pre-wrap"
+    messageToggle.click()
+    await settle()
+    let messagePreview = element(".commit-message-preview")
+    let descriptionPreview = commitMessage.hidden && messageToggle.getAttribute("aria-expanded") == "false"
+        && getComputedStyle(messagePreview).whiteSpace == "nowrap"
+        && getComputedStyle(messagePreview).textOverflow == "ellipsis"
+        && messagePreview.scrollWidth > messagePreview.clientWidth
+    messageToggle.click()
+    await settle()
+    let commitDescriptionCollapsible = descriptionPreview && !commitMessage.hidden && messageToggle.getAttribute("aria-expanded") == "true"
+        && !document.querySelector(".commit-message-preview")
     let commitNodes = [...document.querySelectorAll<HTMLElement>(".commit-heading > span:first-child")]
     let commitLine = getComputedStyle(commitTrigger.parentElement!, "::before")
     let fileLine = getComputedStyle(element(".inspect-commit .change-file"), "::before")
@@ -880,6 +916,10 @@ async function checkRenderer() {
         lightBackground,
         darkBackground,
         branchExpanded,
+        commitTooltip,
+        commitBodyIndicator,
+        commitDescriptionCollapsible,
+        expandedCommitMessage,
         commitExpanded,
         commitGraph,
         branchGraphConnected,

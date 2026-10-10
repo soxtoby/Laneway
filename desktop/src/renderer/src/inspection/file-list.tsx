@@ -21,7 +21,7 @@ let changeFile = css({
     // Rows stick to the top while scrolling, so hover and active tints are mixed into an opaque colour.
     "&:hover": { backgroundColor: "color-mix(in srgb, var(--text) 5%, var(--panel))" },
     ".inspect-commit &": {
-        top: "calc(var(--filter-height, 0px) + 34px)",
+        top: "calc(var(--filter-height, 0px) + var(--commit-heading-height, 34px))",
         zIndex: 6,
         paddingLeft: "28px",
     },
@@ -73,7 +73,7 @@ let changeFileButton = css({
     textAlign: "left",
     // Keyboard focus scrolls the row clear of the sticky headings above it.
     scrollMarginTop: "var(--filter-height, 0px)",
-    ".inspect-commit &": { scrollMarginTop: "calc(var(--filter-height, 0px) + 34px)" },
+    ".inspect-commit &": { scrollMarginTop: "calc(var(--filter-height, 0px) + var(--commit-heading-height, 34px))" },
     "&:hover": {
         background: "transparent",
     },

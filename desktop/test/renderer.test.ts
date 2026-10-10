@@ -1663,11 +1663,29 @@ describe("Working Changes inspection", () => {
         // Compared by identity: printing a mismatched Happy DOM element on failure is prohibitively slow.
         let focused = (element: Element | null | undefined) => expect(document.activeElement == element).toBe(true)
         let heading = column.querySelector<HTMLElement>(".commit-heading")!
+        expect(heading.title).toBe("Inspect changes\n\nInspect every change.")
+        expect(heading.querySelector("[aria-label='Has message body']")).not.toBeNull()
+        expect(column.querySelector(".commit-message-body")).toBeNull()
         heading.focus()
         // Right expands a collapsed commit, and Down then reaches its first file.
         press(heading, "ArrowRight")
         await flush(root)
         expect(heading.getAttribute("aria-expanded")).toBe("true")
+        expect(heading.querySelector("[aria-label='Has message body']")).toBeNull()
+        expect(column.querySelector(".commit-message-body")?.textContent).toBe("Inspect every change.")
+        let description = column.querySelector<HTMLParagraphElement>(".commit-message-body")!
+        let descriptionToggle = column.querySelector<HTMLButtonElement>(".commit-message-toggle")!
+        expect(description.hidden).toBe(false)
+        expect(descriptionToggle.getAttribute("aria-expanded")).toBe("true")
+        expect(column.querySelector(".commit-message-preview")).toBeNull()
+        click(descriptionToggle)
+        await flush(root)
+        expect(description.hidden).toBe(true)
+        expect(descriptionToggle.getAttribute("aria-expanded")).toBe("false")
+        expect(column.querySelector(".commit-message-preview")?.textContent).toBe("Inspect every change.")
+        click(descriptionToggle)
+        await flush(root)
+        expect(description.hidden).toBe(false)
         press(heading, "ArrowDown")
         let first = column.querySelector<HTMLButtonElement>(".inspect-commit [title='src/file.txt']")!
         focused(first)
@@ -1699,6 +1717,8 @@ describe("Working Changes inspection", () => {
         press(heading, "ArrowLeft")
         await flush(root)
         expect(heading.getAttribute("aria-expanded")).toBe("false")
+        expect(heading.querySelector("[aria-label='Has message body']")).not.toBeNull()
+        expect(column.querySelector(".commit-message-body")).toBeNull()
         press(heading, "ArrowDown")
         focused(base)
         press(heading, "ArrowRight")
