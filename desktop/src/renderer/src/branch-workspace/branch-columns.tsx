@@ -1,11 +1,11 @@
-import type { BranchGraph, BranchGraphBranchNode } from "@laneway/shared"
+import type { BranchGraph, BranchGraphBranchNode, BranchGraphWorktree } from "@laneway/shared"
 import type { RecoveryRequest, WorktreeRecovery } from "@laneway/shared"
 import { css, type Handle, on, type RemixNode } from "remix/ui"
 import type { createConflictResolution } from "../conflict-resolution"
 import { Icon } from "../icons"
 import type { createInspection } from "../inspection/inspection"
 import { baseName } from "../repository-rail"
-import { recoveryColumnId } from "../worktrees/worktree-columns"
+import { columnWorktree, recoveryColumnId } from "../worktrees/worktree-columns"
 import { WorktreeRecoveryPanel } from "../worktrees/worktree-recovery"
 import { branchDragType } from "./branch-graph-view"
 import type { RepositoryGraphState } from "./branch-workspace"
@@ -113,6 +113,7 @@ let collapsedColumnButton = css({
 
 let branchColumn = css({
     "&.collapsed": { minWidth: "52px", gridTemplateRows: "minmax(0, 1fr)" },
+    "&.missing:not(.collapsed)": { gridTemplateRows: "auto auto minmax(0, 1fr)" },
     position: "relative",
     width: `${defaultColumnWidth}px`,
     minWidth: "310px",
@@ -251,6 +252,7 @@ export function BranchColumns(
             branchMenu(branch: BranchGraphBranchNode, event: MouseEvent): void
             worktreePath(id: string): string | undefined
             worktreeControls(column: BranchGraph["branches"][number] | BranchGraph["virtualBranches"][number]): RemixNode
+            missingWorktreeControls(column: ColumnNode, worktree: BranchGraphWorktree): RemixNode
             dropBranch(columnId: string, branchRef: string): void
             close(branchId: string): void
             collapse(branchId: string): void
@@ -289,9 +291,12 @@ export function BranchColumns(
         return (
             <section class={`branch-columns ${props.state.maximizedBranchId ? "maximized" : ""}`} mix={branchColumns}>
                 {visible.map(column => {
+                    let worktree = column.kind == "recovery" ? undefined : columnWorktree(column, props.worktreePath(column.id))
                     let collapsed = props.state.collapsedColumnIds.includes(column.id)
                     let width = props.state.widths[column.id] ?? defaultColumnWidth
-                    let auxiliary = collapsed || column.kind == "recovery" ? null : props.inspection.breakout(props.repositoryId, column.id)
+                    let auxiliary = collapsed || column.kind == "recovery" || worktree?.missing
+                        ? null
+                        : props.inspection.breakout(props.repositoryId, column.id)
                     // Auxiliary columns join onto their source column's card.
                     let attached = Array.isArray(auxiliary) && auxiliary.length > 0
                     // A maximized column shares the space with its auxiliary columns, split by its own resizable width.
@@ -303,7 +308,9 @@ export function BranchColumns(
                     return [
                         <article
                             key={column.id}
-                            class={`branch-column ${collapsed ? "collapsed" : ""} ${attached ? "attached" : ""} ${split ? "split" : ""}`}
+                            class={`branch-column ${collapsed ? "collapsed" : ""} ${worktree?.missing ? "missing" : ""} ${attached ? "attached" : ""} ${
+                                split ? "split" : ""
+                            }`}
                             data-column-id={column.id}
                             style={{
                                 width: props.state.maximizedBranchId && !split ? "100%" : `${collapsed ? 52 : width}px`,
@@ -458,6 +465,7 @@ export function BranchColumns(
                                                 )}
                                             </div>
                                         </header>
+                                        {column.kind != "recovery" && worktree?.missing && props.missingWorktreeControls(column, worktree)}
                                         {column.kind == "recovery"
                                             ? (
                                                 <WorktreeRecoveryPanel
@@ -472,7 +480,7 @@ export function BranchColumns(
                                                 column,
                                                 props.graph,
                                                 props.worktreePath(column.id),
-                                                column.kind == "branch"
+                                                column.kind == "branch" && !worktree?.missing
                                                     ? props.conflicts.controls(props.repositoryId, column, props.worktreePath(column.id))
                                                     : undefined,
                                             )}
@@ -558,7 +566,7 @@ export function columnIdentity(column: ColumnNode | RecoveryColumnNode, worktree
     if (column.kind == "recovery")
         return { icon: "warning" as const, kind: "Worktree recovery", name: column.name, tone: toneWarning }
 
-    let worktree = column.kind == "branch" ? column.checkedOut.find(item => item.path == worktreePath) : column.worktree
+    let worktree = columnWorktree(column, worktreePath)
     if (worktree) {
         return worktree.main
             ? { icon: "folder" as const, kind: "Main worktree", name: worktree.name, tone: toneMain }

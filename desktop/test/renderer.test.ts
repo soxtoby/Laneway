@@ -171,6 +171,130 @@ test("failed recovery stays in its column across restart and reports its specifi
     }
 })
 
+test("missing worktrees show column actions and keep available history readable", async () => {
+    let scenario = inspectionScenario()
+    let branch = scenario.graph.branches[2]!
+    let worktree = { id: "missing", path: "D:/project.worktrees/missing", name: "missing", head: branch.tip, main: false, missing: true }
+    branch.checkedOut = [worktree]
+    let saved = scenario.saved()
+    saved.repositories[0]!.columns.push({
+        kind: "branch",
+        id: branch.id,
+        ref: branch.preferredRef,
+        lastSeenObjectId: branch.tip,
+        worktreePath: worktree.path,
+        width: 380,
+    })
+    await scenario.api.updateWorkspace(saved)
+    let workingReads: string[] = []
+    let readChanges = scenario.api.readChanges
+    scenario.api.readChanges = async (...args) => {
+        if (args[2].source.kind == "working")
+            workingReads.push(args[2].source.worktreePath)
+        return readChanges(...args)
+    }
+    let previews: WorktreeRequest[] = []
+    let chosenPaths: (string | undefined)[] = []
+    scenario.api.chooseDirectory = async path => {
+        chosenPaths.push(path)
+        return "D:/relocated/missing"
+    }
+    scenario.api.previewWorktree = async (_id, request) => {
+        previews.push(request)
+        return {
+            ok: true,
+            preview: {
+                request,
+                worktrees: [],
+                affected: [worktree.path],
+                ignored: [],
+                ignoredCount: 0,
+                dirty: false,
+                uniqueCommits: false,
+                populatedSubmodules: false,
+                token: "missing",
+            },
+        }
+    }
+    let view = render(scenario.api)
+    try {
+        await flush(view.root)
+        let column = view.container.querySelector<HTMLElement>(`[data-column-id='${branch.id}']`)!
+        expect(column.querySelector(".missing-worktree")?.textContent).toContain("Worktree directory missing")
+        expect(column.querySelector(".stack-branch")?.textContent).toContain("Inspect changes")
+        expect(column.querySelector(".working-changes")).toBeNull()
+        expect(workingReads).not.toContain(worktree.path)
+        expect(view.container.querySelector(".working-changes")).not.toBeNull()
+        click(button(column, "Repair"))
+        await flush(view.root)
+        expect(chosenPaths).toEqual([worktree.path])
+        expect(previews[0]).toEqual({ action: "repair", path: worktree.path, destination: "D:/relocated/missing" })
+        click(button(view.container.querySelector<HTMLElement>("dialog")!, "Cancel"))
+        await flush(view.root)
+        click(button(column, "Remove"))
+        await flush(view.root)
+        expect(previews[1]).toMatchObject({ action: "remove", path: worktree.path, preserve: true })
+        click(button(view.container.querySelector<HTMLElement>("dialog")!, "Cancel"))
+        await flush(view.root)
+        click(column.querySelector<HTMLElement>("[aria-label='Collapse other/team']")!)
+        await flush(view.root)
+        expect(column.textContent).toContain("Missing")
+        expect(workingReads).not.toContain(worktree.path)
+    } finally {
+        view.dispose()
+    }
+})
+
+test("a missing detached worktree resumes Working Changes after its directory returns", async () => {
+    let scenario = inspectionScenario()
+    let worktree = { id: "detached", path: "D:/project.worktrees/detached", name: "detached", head: "4".repeat(40), main: false, missing: true }
+    scenario.graph.virtualBranches.push({
+        kind: "virtual",
+        id: "virtual:detached",
+        name: "detached",
+        objectId: worktree.head,
+        worktree,
+        tooltip: "Detached worktree",
+    })
+    let workingReads: string[] = []
+    let readChanges = scenario.api.readChanges
+    scenario.api.readChanges = async (...args) => {
+        if (args[2].source.kind == "working")
+            workingReads.push(args[2].source.worktreePath)
+        return readChanges(...args)
+    }
+    let view = render(scenario.api)
+    try {
+        await flush(view.root)
+        let column = view.container.querySelector<HTMLElement>("[data-column-id='virtual:detached']")!
+        expect(button(column, "Repair").disabled).toBe(false)
+        expect(button(column, "Remove").disabled).toBe(false)
+        expect(column.querySelector(".working-changes")).toBeNull()
+        expect(workingReads).not.toContain(worktree.path)
+        worktree.missing = false
+        refreshGraph()
+        await flush(view.root)
+        expect(column.querySelector(".working-changes")).not.toBeNull()
+        expect(workingReads).toContain(worktree.path)
+        click(column.querySelector<HTMLElement>("[aria-label='Collapse detached']")!)
+        await flush(view.root)
+        worktree.missing = true
+        refreshGraph()
+        await flush(view.root)
+        expect(column.textContent).toContain("Missing")
+        let count = workingReads.filter(path => path == worktree.path).length
+        refreshGraph()
+        await flush(view.root)
+        expect(workingReads.filter(path => path == worktree.path)).toHaveLength(count)
+        click(column.querySelector<HTMLElement>("[aria-label='Expand detached']")!)
+        await flush(view.root)
+        expect(column.querySelector(".missing-worktree")).not.toBeNull()
+        expect(column.querySelector(".working-changes")).toBeNull()
+    } finally {
+        view.dispose()
+    }
+})
+
 test("worktree creation previews the destination and mutates only after confirmation", async () => {
     let scenario = inspectionScenario()
     let executions = 0, previews = 0

@@ -1,5 +1,6 @@
-import type { BranchGraph, WorktreePreview, WorktreeRequest } from "@laneway/shared"
+import type { BranchGraph, BranchGraphWorktree, WorktreePreview, WorktreeRequest } from "@laneway/shared"
 import { css, on, ref } from "remix/ui"
+import { MissingWorktreePanel } from "./missing-worktree"
 import { WorktreeControls } from "./worktree-controls"
 import type { Column } from "./worktree-controls"
 
@@ -90,6 +91,16 @@ export function createWorktreeActions(options: Options) {
                     column={column}
                     path={path}
                     graph={graph}
+                    busy={busy}
+                    prepare={request => prepare(id, request, column.id)}
+                    chooseDirectory={options.api.chooseDirectory}
+                />
+            )
+        },
+        missingControls(id: string, column: Column, worktree: BranchGraphWorktree) {
+            return (
+                <MissingWorktreePanel
+                    worktree={worktree}
                     busy={busy}
                     prepare={request => prepare(id, request, column.id)}
                     chooseDirectory={options.api.chooseDirectory}

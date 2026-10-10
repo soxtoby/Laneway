@@ -10,6 +10,7 @@ import type { NoticeState } from "../feedback"
 import { Icon } from "../icons"
 import { type OverflowAction, OverflowMenu } from "../overflow-menu"
 import { RewordForm } from "../reword"
+import { columnWorktree } from "../worktrees/worktree-columns"
 import { type BranchComparisonState, createBranchComparisons } from "./branch-comparison"
 import { columnItem, focusItem, isFileItem, parentItem, scrollBehavior, stepItem } from "./column-navigation"
 import { DiffControls } from "./diff-controls"
@@ -676,7 +677,10 @@ export function createInspection(options: Options) {
             if (!worktreePath)
                 return "Branch"
 
-            let files = stateFor(repositoryId, column, graph, worktreePath).files.get("working")
+            let state = stateFor(repositoryId, column, graph, worktreePath)
+            if (columnWorktree(column, worktreePath)?.missing)
+                return "Missing"
+            let files = state.files.get("working")
             if (files?.error)
                 return "Working Changes unavailable"
             if (!files?.inventory)
@@ -1752,6 +1756,8 @@ export function createInspection(options: Options) {
     }
 
     function stateFor(repositoryId: string, column: Column, graph: BranchGraph, worktreePath?: string) {
+        if (columnWorktree(column, worktreePath)?.missing)
+            worktreePath = undefined
         let id = key(repositoryId, column.id)
         let state = columns.get(id)
         if (!state || state.worktreePath != worktreePath) {

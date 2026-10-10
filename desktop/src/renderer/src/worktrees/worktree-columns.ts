@@ -1,5 +1,9 @@
 import type { BranchGraph, BranchGraphBranchNode, WorkspaceColumn, WorktreeRecovery } from "@laneway/shared"
 
+export function columnWorktree(column: BranchGraph["branches"][number] | BranchGraph["virtualBranches"][number], path?: string) {
+    return column.kind == "branch" ? column.checkedOut.find(worktree => worktree.path == path) : column.worktree
+}
+
 /** The Branch Node holding a local branch identity, which carries its Base relationships. */
 export function branchNodeFor(graph: BranchGraph, id: string) {
     return graph.branches.find(branch => branch.id == id || branch.localRefs.some(ref => `branch:${ref}` == id))

@@ -888,6 +888,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                     recover={(recovery, action) => void recoverWorktree(active.id, recovery, action)}
                                     worktreePath={id => backingPath(active.id, id)}
                                     worktreeControls={column => worktreeActions.controls(active.id, column, backingPath(active.id, column.id), graph)}
+                                    missingWorktreeControls={(column, worktree) => worktreeActions.missingControls(active.id, column, worktree)}
                                     dropBranch={(columnId, branchRef) => {
                                         let path = backingPath(active.id, columnId)
                                         if (path)

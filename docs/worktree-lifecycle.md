@@ -6,6 +6,7 @@ Behavior contract for [SOX-133](https://linear.app/soxtoby/issue/SOX-133/impleme
 
 - A branch-only column's header offers existing worktrees by name, path, and current branch, plus New worktree. It does not silently select a destination.
 - Worktree Backing occupies one compact row. Edit the directory name inline; the switch icon opens the existing searchable branch popup. Overflow contains removal, unlock, and repair actions as applicable; New worktree belongs only in a branch-only column's checkout picker. There is no collapsible worktree panel or commit-ID input.
+- A Missing Worktree shows Repair and Remove directly in its Workspace Column, with Working Changes hidden. Its available Active Stack history remains readable; collapsed columns show Missing. Repair locates the directory, and removal retains the existing preview and preservation checks. Locked worktrees must be unlocked before removal.
 - Opening a checked-out branch focuses its existing column. Explicitly switching another worktree to that branch, including dragging the branch onto its header, offers to move it and identifies both affected worktrees before confirmation. This revises SOX-109's occupied-branch drop behavior.
 - Moving a branch from worktree A to B stashes A's Working Changes against that branch, then leaves A clean and detached at its existing commit. The existing stash-before-checkout rule also applies to B's outgoing state.
 - Creating a new worktree for an already checked-out branch offers to move the branch into the new worktree using the same stash-and-detach behavior.
