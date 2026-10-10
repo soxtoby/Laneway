@@ -114,7 +114,7 @@ A durable record of intended and completed remote ref updates for one Publish, i
 _Avoid_: Publish undo, push log
 
 **Laneway Operation**:
-An immediate Git mutation recorded in a persistent linear undo/redo history. Undo and redo are transitions through eligible operations, not new operations themselves; a new operation after undo makes the abandoned redo path unavailable. Interrupted operations retain their starting Git state for restoration; unusual failures may require manual recovery. External repository changes may create a boundary beyond which replay is unsafe; files outside Git state, including ignored files, are outside undo.
+An immediate Git mutation recorded in a persistent linear undo/redo history. Undo and redo are transitions through eligible operations, not new operations themselves; a new operation after undo makes the abandoned redo path unavailable. Multi-step Laneway workflows retain their starting Git state for interruption recovery; unusual failures may require manual recovery. Native Git wrappers instead record operation-specific inverses after Git finishes, without a repository lock or interruption-recovery transaction around Git execution. Commit undo moves only the recorded ref; staging undo restores the index. External changes to affected state may make replay unsafe. Ignored files are outside workflow undo, but native stash undo includes them when explicitly stashed with `--all`.
 _Avoid_: Command, action
 
 **Operation History**:

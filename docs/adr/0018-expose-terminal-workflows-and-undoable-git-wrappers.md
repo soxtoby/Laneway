@@ -11,8 +11,14 @@ checks and explicit approval for published rewrites, removed commits, and confli
 
 `commit`, `stage`, `unstage`, `branch`, and `stash` are thin wrappers over system Git.
 They preserve Git arguments and semantics, including staged-only commits and the
-difference between stash apply and pop. Laneway adds locking, checkpoints, and
-undo/recovery; it does not reimplement Git's option parsing or commit behavior.
+difference between stash apply and pop. Undo uses operation-specific records:
+commit refs, staging indexes, branch refs/metadata, and stash entries/affected files.
+Git execution takes no Laneway repository lock and has no interruption-recovery
+transaction. Only the completed result's history write is coordinated. An
+interruption before that write may leave an unrecorded Git action. Undo validates
+the affected state and retains the objects it needs; commit undo leaves the index
+and working files alone. Complex Laneway workflows retain their checkpoint and
+recovery machinery. Laneway does not reimplement Git's option parsing or behavior.
 Native stdin remains available to Git and its editor. Global Laneway options precede
 wrapper commands to avoid consuming Git arguments or filenames.
 

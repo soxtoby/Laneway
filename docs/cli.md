@@ -22,12 +22,28 @@ lane stash apply                    # keeps the stash
 lane stash pop                      # drops it only on success
 ```
 
-The wrapper adds the repository lock, interruption recovery, and a Git checkpoint
-for Laneway undo/redo. Listing and other unchanged outcomes do not add an operation
-or abandon redo history. Failed commands keep Git's resulting state, including
-hook edits, and journal changes when there are any. Finish existing Git merge,
-rebase, cherry-pick, or revert operations before using these undoable commands.
-Ignored files remain outside undo; external Git changes can prevent replay.
+Undo records only the state relevant to each command:
+
+- Commit: previous/new HEAD. Undo moves the ref back, leaving the index and files
+  alone, like a soft reset. Amend restores the previous commit; undoing an initial
+  commit restores an unborn branch.
+- Stage/unstage: previous/new index, including unmerged entries. Explicit
+  `unstage --worktree` also records the files Git restores.
+- Branch: changed refs, branch configuration, reflogs, and renamed worktree HEADs.
+- Stash: changed stash entries, index, and files in the current worktree. Stash
+  objects and file contents needed for undo remain retained.
+
+Git runs without a Laneway repository lock or interruption-recovery transaction.
+A short lock coordinates recording the completed command in operation history.
+Interruption between Git finishing and that write can leave an unrecorded action;
+Laneway does not roll it back automatically. Undo/redo checks only the state it
+will change, preserving unrelated edits. Retained objects survive Git garbage
+collection.
+
+Listing and unchanged outcomes do not add an operation or abandon redo history.
+Failures preserve Git's exit code and resulting state. Commit-hook edits are not
+part of commit undo. Existing Git merges and rebases do not block the wrappers.
+Ignored files are included in stash undo when using `stash --all`.
 
 Put Laneway options **before** a Git wrapper command so all following arguments
 retain their Git meaning:

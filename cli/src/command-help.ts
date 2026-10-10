@@ -73,8 +73,8 @@ Laneway workflows:
   recovery-status  Inspect pending worktree recovery
 
 Run lane <command> --help for syntax. --version prints the engine version.
-Git wrappers preserve Git behavior; changed Git state is journaled for undo.
-Ignored files are outside undo. External changes can block replay.
+Git wrappers preserve Git behavior and record operation-specific undo.
+Undo checks affected state; unrelated edits are preserved.
 ${common}`
 }
 

@@ -105,14 +105,14 @@ test("native failures retain Git diagnostics and do not consume undo history", a
     expect(git(path, "show", "HEAD:README.md")).toBe("initial")
 })
 
-test("native hook failures preserve hook edits and make them undoable", async () => {
+test("native hook failures preserve hook edits without creating a commit undo entry", async () => {
     let path = await repository()
     await writeFile(join(path, ".git", "hooks", "pre-commit"), "#!/bin/sh\nprintf 'hook edit\\n' > README.md\nexit 1\n", { mode: 0o755 })
     let result = await lane(path, "commit", "--allow-empty", "-m", "Rejected")
     expect(result.exitCode).toBe(1)
     expect(await readFile(join(path, "README.md"), "utf8")).toBe("hook edit\n")
-    expect((await lane(path, "undo")).exitCode).toBe(0)
-    expect(await readFile(join(path, "README.md"), "utf8")).toBe("initial\n")
+    let history = await lane(path, "history", "--json")
+    expect(parseNdjson(history.stdout).at(-1)).toMatchObject({ total: 0 })
 })
 
 test("a conflicting native stash pop preserves the unmerged index across undo and redo", async () => {

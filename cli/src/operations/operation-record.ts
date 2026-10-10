@@ -2,6 +2,7 @@ import { OperationSummarySchema } from "@laneway/shared"
 import { z } from "zod"
 import { WorktreeStateSchema } from "../worktrees/worktree-state"
 import { GitCheckpointSchema } from "./git-checkpoint"
+import { NativeUndoSchema } from "./native-undo-record"
 import { OperationRuntimeError } from "./operation-contracts"
 
 let RefChangeSchema = z.object({
@@ -28,6 +29,7 @@ let StoredOperationContentSchema = OperationSummarySchema.extend({
     worktreeChanges: z.array(WorktreeChangeSchema),
     lifecycle: z.object({ before: WorktreeStateSchema, after: WorktreeStateSchema.optional() }).optional(),
     checkpoint: z.object({ restore: GitCheckpointSchema, expected: GitCheckpointSchema }).optional(),
+    nativeUndo: NativeUndoSchema.optional(),
 })
 
 let StoredOperationSchema = StoredOperationContentSchema.extend({

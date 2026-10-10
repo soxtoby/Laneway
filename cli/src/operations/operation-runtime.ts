@@ -13,12 +13,12 @@ import { dirname, join, resolve, sep } from "node:path"
 import { isFileExtraction } from "../composition/file-extraction"
 import { conflictMutation, conflictPaths, executeConflict, suspendWorkingConflicts } from "../conflicts/conflict-operations"
 import { LocalPreconditionError, mutateLocal, prepareLocal } from "../local-mutations"
-import { runNativeGit } from "../native-git"
 import { executePull, preparePull, type PullPreparation, type PullProgressReporter } from "../pull-latest"
 import { recoveryBackupPath } from "../worktrees/worktree-directory"
 import { mutateWorktree } from "../worktrees/worktree-mutations"
 import { relocateRemovedState, restoreWorktreeState, worktreeStateMatches, worktreeStateObjects } from "../worktrees/worktree-state"
 import { captureGitCheckpoint, checkpointIdentity, checkpointMatches, type GitCheckpoint, restoreGitCheckpoint, retainCheckpoint } from "./git-checkpoint"
+import { executeNativeGit, replayNativeUndo, validateNativeUndo } from "./native-undo"
 import { type CancellationSignal, OperationCancelledError, OperationRuntimeError } from "./operation-contracts"
 import { type JournalExecution, type JournalPhase, type RefChange, sealOperation, type StoredOperation, type WorktreeFingerprint } from "./operation-record"
 import { OperationStore } from "./operation-store"
@@ -74,34 +74,6 @@ class OperationRuntime {
         private readonly store: OperationStore,
         private readonly cancellation: CancellationSignal,
     ) {}
-
-    async git(args: string[], cwd: string, json: boolean): Promise<GitResult> {
-        let worktrees = (await readRegisteredWorktrees(this.repository)).filter(w => !w.missing)
-        for (let worktree of worktrees) {
-            for (let marker of ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply"]) {
-                if (await pathExists(join(worktree.gitDirectory, marker))) {
-                    throw new OperationRuntimeError(
-                        "operation.precondition-failed",
-                        "Finish the existing Git operation before using Laneway undoable commands.",
-                    )
-                }
-            }
-        }
-        let result: GitResult | undefined
-        let before = await captureGitCheckpoint(this.repository, worktrees.map(w => w.path), undefined, worktrees, undefined, true, true)
-        await this.applyCheckpoint(
-            worktrees.map(w => w.path),
-            `git.${args[0]}`,
-            `git ${args[0]}`,
-            async () => {
-                result = await runNativeGit(this.repository, args, cwd, json)
-                return new Set()
-            },
-            undefined,
-            before,
-        )
-        return result!
-    }
 
     async conflict(request: ConflictRequest, crashAfter?: JournalPhase): Promise<ConflictResult> {
         let changes = new Map<string, string | null>()
@@ -453,7 +425,9 @@ class OperationRuntime {
             })
         }
 
-        if (operation.checkpoint)
+        if (operation.nativeUndo)
+            await replayNativeUndo(this.repository, this.store, operation, "undo")
+        else if (operation.checkpoint)
             await this.restoreCheckpoint(operation, "undo", crashAfter)
         else
             await this.applyOperation(operation, "undo", [], crashAfter)
@@ -470,7 +444,9 @@ class OperationRuntime {
         if (!operation)
             throw new OperationRuntimeError("operation.history-corrupt", "Operation History has an invalid redo position.")
 
-        if (operation.checkpoint)
+        if (operation.nativeUndo)
+            await replayNativeUndo(this.repository, this.store, operation, "redo")
+        else if (operation.checkpoint)
             await this.restoreCheckpoint(operation, "redo", crashAfter)
         else
             await this.applyOperation(operation, "redo", [], crashAfter)
@@ -911,6 +887,9 @@ export async function executeOperationCommand(
     let repository = await connectRepository(cwd, gitPath)
     let store = new OperationStore(repository.descriptor.commonDirectory)
 
+    if (command.command == "git")
+        return executeNativeGit(repository, store, command.args, command.cwd, command.json, command.noWait, cancellation)
+
     // Fetching is network-bound and mutates only remote-tracking refs, so it runs before the mutation lock.
     let prepared: PullPreparation | undefined
     if (command.command == "pull") {
@@ -949,13 +928,17 @@ export async function executeOperationCommand(
             return runtime.recoveryStatus()
         if (command.command == "recover" && command.request)
             return runtime.resolveWorktreeRecovery(command.request, command.crashAfter)
+        if (command.command == "undo" || command.command == "redo") {
+            let history = await store.readHistory()
+            let next = history.operations[history.position - (command.command == "undo" ? 1 : 0)]
+            if (next?.nativeUndo)
+                return command.command == "undo" ? runtime.undo(command.crashAfter, command.worktreeBasename) : runtime.redo(command.crashAfter)
+        }
         let recovery = await runtime.recover(command.command != "recover")
         if (command.command == "recover")
             return recovery
 
         switch (command.command) {
-            case "git":
-                return runtime.git(command.args, command.cwd, command.json)
             case "pull":
                 return runtime.pull(prepared as Extract<PullPreparation, { kind: "prepared" }>, command.progress ?? (() => {}), command.crashAfter)
             case "conflict":
@@ -1084,6 +1067,9 @@ function validateOperationState(
 }
 
 async function validatePreconditions(repository: RepositoryGit, operation: StoredOperation, action: "apply" | "undo" | "redo", recaptureWorktrees = true) {
+    if (operation.nativeUndo)
+        return validateNativeUndo(repository, operation.nativeUndo, action == "undo" ? "undo" : "redo")
+
     let gitLockfiles = await findGitLockfiles(operation.gitCommonDirectory)
     if (!sameStrings(gitLockfiles, operation.expectedGitLockfiles))
         throw gitLockfileError(gitLockfiles)
