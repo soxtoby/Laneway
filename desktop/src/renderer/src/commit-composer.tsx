@@ -46,6 +46,12 @@ let composerStyle = css({
         cursor: "pointer",
     },
     "& .branch-stash-row:hover": { background: "color-mix(in srgb, var(--stash) 14%, var(--panel))" },
+    "& .branch-stash-row:has(> .branch-stash-toggle:focus-visible)": {
+        outline: "2px solid var(--ring)",
+        outlineOffset: "-2px",
+        borderRadius: "var(--radius)",
+    },
+    "& button.branch-stash-toggle:focus-visible": { outline: "none" },
     "& .branch-stash-toggle > svg:first-child": { color: "var(--faint)" },
     "& .branch-stash-toggle > svg:nth-child(2)": { color: "var(--stash-ink)" },
     "& .branch-stash-toggle svg": { flex: "0 0 auto" },
