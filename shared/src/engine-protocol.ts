@@ -4,6 +4,7 @@ import { LocalResultSchema } from "./local-operations"
 import { OperationHistoryResultSchema, OperationTransitionResultSchema, RecoveryResultSchema, TestMutationResultSchema, WorktreeResultSchema } from "./operation-history"
 import { PullResultSchema } from "./pull"
 import { RecoveryStatusResultSchema } from "./worktree-recovery"
+import { WorktreeListResultSchema } from "./worktrees"
 
 export let engineVersion = "0.1.0"
 
@@ -52,6 +53,16 @@ export let EchoResultSchema = z.object({
     message: z.string(),
 })
 
+export let GitResultSchema = z.object({
+    type: z.literal("result"),
+    command: z.literal("git"),
+    gitCommand: z.string(),
+    exitCode: z.number().int(),
+    stdout: z.string(),
+    stderr: z.string(),
+})
+export type GitResult = z.infer<typeof GitResultSchema>
+
 export let CancelledEventSchema = z.object({
     type: z.literal("cancelled"),
     command: z.string(),
@@ -68,10 +79,12 @@ export let ErrorEventSchema = z.object({
 export let EngineMessageSchema = z.union([
     ProgressEventSchema,
     EchoResultSchema,
+    GitResultSchema,
     OperationTransitionResultSchema,
     OperationHistoryResultSchema,
     TestMutationResultSchema,
     WorktreeResultSchema,
+    WorktreeListResultSchema,
     LocalResultSchema,
     ConflictResultSchema,
     PullResultSchema,

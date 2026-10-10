@@ -28,6 +28,8 @@ let WorktreeSchema = z.object({
     scope: z.array(z.string()).optional(),
     fingerprint: z.string(),
     stash: z.string().optional(),
+    index: z.string().optional(),
+    indexObjects: z.array(z.string()).optional(),
     submodules: z.array(z.object({
         path: z.string(),
         head: z.string(),
@@ -39,6 +41,7 @@ let WorktreeSchema = z.object({
 })
 export let GitCheckpointSchema = z.object({
     version: z.literal(1),
+    nativeGit: z.boolean().optional(),
     refs: z.record(z.string(), z.string()),
     worktrees: z.array(WorktreeSchema),
     metadata: z.string().nullable(),
@@ -55,7 +58,11 @@ export async function retainCheckpoint(repo: RepositoryGit, operation: string, .
         checkpoints.flatMap(
             c => [
                 ...Object.values(c.refs),
-                ...c.worktrees.flatMap(w => [w.head, w.stash, ...w.submodules.flatMap(s => [s.head, s.stash])].filter((id): id is string => Boolean(id))),
+                ...c.worktrees.flatMap(w =>
+                    [w.head, w.stash, w.index, ...(w.indexObjects ?? []), ...w.submodules.flatMap(s => [s.head, s.stash])].filter((id): id is string =>
+                        Boolean(id)
+                    )
+                ),
                 ...c.stashes.map(s => s.object),
             ],
         ),
@@ -126,6 +133,10 @@ export async function restoreGitCheckpoint(repo: RepositoryGit, source: GitCheck
                 await repo.command(to.path, ["checkout", "--detach", "--force", "--no-overwrite-ignore", base])
             if (to.stash)
                 await repo.command(to.path, ["stash", "apply", "--index", to.stash])
+            if (to.index) {
+                let indexPath = (await repo.command(to.path, ["rev-parse", "--git-path", "index"])).toString().trim()
+                await writeFile(resolve(to.path, indexPath), await repo.command(to.path, ["cat-file", "blob", to.index]))
+            }
             if (to.branchRef)
                 await repo.command(to.path, ["symbolic-ref", "HEAD", to.branchRef])
             for (let module of to.submodules) {
@@ -199,11 +210,12 @@ export async function captureGitCheckpoint(
     registered?: RegisteredWorktree[],
     scopes?: Map<string, string[]>,
     retain = true,
+    nativeGit = template?.nativeGit ?? false,
 ): Promise<GitCheckpoint> {
     let scoped = Boolean(scopes?.size || template?.worktrees.length && template.worktrees.every(w => w.scope))
     let [worktrees, refs, configuration, metadata, stashOutput] = await Promise.all([
         registered ?? readRegisteredWorktrees(repo),
-        readCheckpointRefs(repo),
+        readCheckpointRefs(repo, nativeGit),
         scoped ? { stdout: Buffer.alloc(0) } : repo.run(repo.descriptor.mainWorktree, ["config", "--null", "--get-regexp", "^branch\\."]),
         scoped ? null : readFile(join(repo.descriptor.commonDirectory, "laneway-local.json"), "utf8").catch(error => {
             if (error.code != "ENOENT")
@@ -231,9 +243,19 @@ export async function captureGitCheckpoint(
             submodules: [],
         }
         if (state.present) {
-            state.fingerprint = await workingFingerprint(repo, state)
-            if (retain && !scope)
-                state.stash = await saveWorkingChanges(repo, state)
+            let unmerged = scope || !nativeGit ? Buffer.alloc(0) : await repo.command(w.path, ["ls-files", "--unmerged", "-z"])
+            state.fingerprint = await workingFingerprint(repo, state, unmerged)
+            if (retain && !scope) {
+                if (unmerged.length) {
+                    // A stash cannot encode unmerged stages. Retain the index alongside the working snapshot.
+                    let indexPath = (await repo.command(w.path, ["rev-parse", "--git-path", "index"])).toString().trim()
+                    state.index = (await repo.command(w.path, ["hash-object", "-w", "--stdin"], await readFile(resolve(w.path, indexPath)))).toString().trim()
+                    state.indexObjects = (await repo.command(w.path, ["ls-files", "--stage", "-z"])).toString().split("\0")
+                        .filter(entry => entry && !entry.startsWith("160000 "))
+                        .map(entry => entry.split(" ")[1]!)
+                }
+                state.stash = await saveWorkingChanges(repo, state, Boolean(unmerged.length))
+            }
             if (!scope) {
                 for (let path of await populatedSubmodules(repo, w.path)) {
                     let head = (await repo.command(path, ["rev-parse", "HEAD"])).toString().trim()
@@ -280,6 +302,7 @@ export async function captureGitCheckpoint(
 
     return {
         version: 1,
+        ...(nativeGit ? { nativeGit } : {}),
         refs,
         worktrees: captured.sort((a, b) => a.id.localeCompare(b.id)),
         metadata,
@@ -294,12 +317,13 @@ export async function captureGitCheckpoint(
     }
 }
 
-export async function readCheckpointRefs(repo: RepositoryGit) {
+export async function readCheckpointRefs(repo: RepositoryGit, includeRemoteRefs = false) {
     let output = await repo.command(repo.descriptor.mainWorktree, [
         "for-each-ref",
         "--format=%(refname) %(objectname)",
         "refs/heads",
         "refs/tags",
+        ...(includeRemoteRefs ? ["refs/remotes"] : []),
         "refs/stash",
         "refs/laneway/conflicts/current",
         "refs/laneway/conflict-candidates",
@@ -312,11 +336,17 @@ export function checkpointIdentity(checkpoint: GitCheckpoint) {
         ...checkpoint,
         refs: Object.entries(checkpoint.refs).sort(),
         branchConfig: checkpoint.branchConfig.toSorted(([a], [b]) => a.localeCompare(b)),
-        worktrees: checkpoint.worktrees.map(w => ({ ...w, stash: undefined, submodules: w.submodules.map(s => ({ ...s, stash: undefined })) })),
+        worktrees: checkpoint.worktrees.map(w => ({
+            ...w,
+            stash: undefined,
+            index: undefined,
+            indexObjects: undefined,
+            submodules: w.submodules.map(s => ({ ...s, stash: undefined })),
+        })),
     })
 }
 
-export async function workingFingerprint(repo: RepositoryGit, w: Pick<Worktree, "path" | "scope">) {
+export async function workingFingerprint(repo: RepositoryGit, w: Pick<Worktree, "path" | "scope">, unmerged: Buffer = Buffer.alloc(0)) {
     let paths = w.scope ? ["--", ...w.scope] : []
     let [index, work, untracked] = await Promise.all([
         w.scope
@@ -327,6 +357,8 @@ export async function workingFingerprint(repo: RepositoryGit, w: Pick<Worktree, 
     ])
 
     let hash = createHash("sha256").update(index).update("\0").update(work)
+    if (unmerged.length)
+        hash.update("\0unmerged\0").update(unmerged)
     for (let name of untracked.toString().split("\0").filter(Boolean)) {
         let path = safePath(w.path, name),
             stat = await lstat(path).catch(error => {
@@ -344,22 +376,24 @@ export async function workingFingerprint(repo: RepositoryGit, w: Pick<Worktree, 
     return hash.digest("hex")
 }
 
-async function saveWorkingChanges(repo: RepositoryGit, w: Worktree) {
+async function saveWorkingChanges(repo: RepositoryGit, w: Worktree, unmerged = false) {
     let status = await repo.command(w.path, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])
     if (!status.length)
         return undefined
 
     // Git creates the tracked/index stash without clearing the user's working files.
     let head = w.head || await commit(repo, w.path, (await repo.command(w.path, ["mktree"], "")).toString().trim(), [])
-    let tracked = w.head ? (await repo.command(w.path, ["stash", "create"], undefined, identity)).toString().trim() : ""
+    let tracked = w.head && !unmerged ? (await repo.command(w.path, ["stash", "create"], undefined, identity)).toString().trim() : ""
     let untracked = (await repo.command(w.path, ["ls-files", "--others", "--exclude-standard", "-z"])).toString().split("\0").filter(Boolean)
     if (!untracked.length && tracked)
         return tracked
-    if (!untracked.length && !tracked && w.head)
+    if (!untracked.length && !tracked && w.head && !unmerged)
         return undefined
 
     let indexTree = tracked
         ? (await repo.command(w.path, ["rev-parse", `${tracked}^2^{tree}`])).toString().trim()
+        : unmerged
+        ? (await repo.command(w.path, ["rev-parse", `${head}^{tree}`])).toString().trim()
         : (await repo.command(w.path, ["write-tree"])).toString().trim()
     let indexCommit = tracked
         ? (await repo.command(w.path, ["rev-parse", `${tracked}^2`])).toString().trim()
@@ -373,10 +407,10 @@ async function saveWorkingChanges(repo: RepositoryGit, w: Worktree) {
             working = (await repo.command(w.path, ["rev-parse", `${tracked}^{tree}`])).toString().trim()
         else {
             await repo.command(w.path, ["read-tree", indexTree], undefined, env)
-            await repo.command(w.path, ["add", "-u"], undefined, env)
+            await repo.command(w.path, ["add", unmerged ? "-A" : "-u"], undefined, env)
             working = (await repo.command(w.path, ["write-tree"], undefined, env)).toString().trim()
         }
-        if (!untracked.length)
+        if (!untracked.length || unmerged)
             return commit(repo, w.path, working, [head, indexCommit])
         await repo.command(w.path, ["read-tree", "--empty"], undefined, env)
         await repo.command(w.path, ["--literal-pathspecs", "add", "--pathspec-from-file=-", "--pathspec-file-nul"], untracked.join("\0") + "\0", env)

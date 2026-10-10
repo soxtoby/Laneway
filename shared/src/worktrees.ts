@@ -15,18 +15,25 @@ export let WorktreeRequestSchema = z.discriminatedUnion("action", [
 ])
 export type WorktreeRequest = z.infer<typeof WorktreeRequestSchema>
 
-export interface RegisteredWorktree {
-    id: string
-    path: string
-    name: string
-    head: string
-    branchRef?: string
-    main: boolean
-    locked: boolean
-    lockReason?: string
-    missing: boolean
-    gitDirectory: string
-}
+export let RegisteredWorktreeSchema = z.object({
+    id: z.string(),
+    path: z.string(),
+    name: z.string(),
+    head: z.string(),
+    branchRef: z.string().optional(),
+    main: z.boolean(),
+    locked: z.boolean(),
+    lockReason: z.string().optional(),
+    missing: z.boolean(),
+    gitDirectory: z.string(),
+})
+export type RegisteredWorktree = z.infer<typeof RegisteredWorktreeSchema>
+
+export let WorktreeListResultSchema = z.object({
+    type: z.literal("result"),
+    command: z.literal("worktree-list"),
+    worktrees: z.array(RegisteredWorktreeSchema),
+})
 
 export interface WorktreePreview {
     request: WorktreeRequest

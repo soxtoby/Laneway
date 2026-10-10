@@ -66,6 +66,7 @@ _Avoid_: Worktree label
 
 **Laneway Engine**:
 The headless CLI executable, named `lane`, that performs coarse-grained, scriptable Laneway actions. The desktop application invokes one process per action; people and agents may invoke the same actions directly, while repository-entry mechanics need not be CLI commands.
+The public CLI uses ordinary arguments and help. Basic Git commands preserve Git behavior while participating in Laneway undo; the desktop also retains its snapshot-based request transport. See [the command reference](docs/cli.md).
 _Avoid_: Git service, daemon, utility process
 
 **Branch Graph**:

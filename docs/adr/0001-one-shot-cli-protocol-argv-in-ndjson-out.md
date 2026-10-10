@@ -11,3 +11,5 @@ The Laneway Engine is invoked as a fresh process per command by the GUI, people,
 ## Consequences
 
 Stable dotted error codes (`usage.invalid-argument`, `engine.internal`, …) plus exit codes (`0` ok / `1` failure / `2` usage / `3` cancelled) are the compatibility contract between callers and the Engine, owned by the shared package; they must change conservatively once external agent callers exist.
+
+The native Git wrappers introduced by [ADR 0018](0018-expose-terminal-workflows-and-undoable-git-wrappers.md) preserve Git's exit code after Git runs. Their `--json` result includes that code and Git's output; Laneway setup failures still use the Engine error contract.

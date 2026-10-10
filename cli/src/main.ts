@@ -7,6 +7,8 @@ import { type ConflictRequest, ConflictRequestSchema } from "@laneway/shared"
 import { type PullRequest, PullRequestSchema } from "@laneway/shared"
 import { type RecoveryRequest, RecoveryRequestSchema } from "@laneway/shared"
 import { readFileSync, statSync } from "node:fs"
+import { monitorCancellation } from "./command-cancellation"
+import { runCommandLine } from "./command-line"
 import { executeOperationCommand, type JournalPhase, OperationCancelledError, type OperationCommand, OperationRuntimeError } from "./operations/operation-runtime.ts"
 
 let args = process.argv.slice(2)
@@ -19,7 +21,10 @@ type ParsedOperationArguments =
     | { ok: true; json: boolean; gitPath?: string; command: OperationCommand }
     | { ok: false; json: boolean; error: ErrorEvent }
 
-if (args.length == 1 && args[0] == "--version")
+let commandLineExitCode = await runCommandLine(args)
+if (commandLineExitCode != undefined)
+    process.exitCode = commandLineExitCode
+else if (args.length == 1 && args[0] == "--version")
     console.log(`lane ${engineVersion}`)
 else if (args[0] == "echo") {
     let parsed = parseEchoArguments(args.slice(1))
@@ -162,7 +167,7 @@ async function echo(message: string, delayMs: number, json: boolean) {
     }
 }
 
-async function runOperationCommand(command: OperationCommand["command"], commandArguments: string[]) {
+async function runOperationCommand(command: Exclude<OperationCommand["command"], "git">, commandArguments: string[]) {
     let parsed = parseOperationArguments(command, commandArguments)
     if (!parsed.ok) {
         writeError(parsed.error, parsed.json)
@@ -261,64 +266,7 @@ function writeError(error: ErrorEvent, json: boolean) {
         console.log(JSON.stringify(error))
 }
 
-function monitorCancellation() {
-    let buffer = ""
-    let cancelled = false
-    let notifyWaiter: (() => void) | undefined
-    let reader = Bun.stdin.stream().getReader()
-    let decoder = new TextDecoder()
-
-    let readControls = async () => {
-        let complete = false
-        while (!complete && !cancelled) {
-            let { done, value } = await reader.read()
-            complete = done
-            if (!done) {
-                buffer += decoder.decode(value, { stream: true })
-
-                while (buffer.includes("\n") && !cancelled) {
-                    let newline = buffer.indexOf("\n")
-                    let line = buffer.slice(0, newline).trim()
-                    buffer = buffer.slice(newline + 1)
-
-                    if (line == "cancel") {
-                        cancelled = true
-                        notifyWaiter?.()
-                    }
-                }
-            }
-        }
-    }
-
-    void readControls()
-
-    return {
-        isCancelled() {
-            return cancelled
-        },
-        async wait(delayMs: number) {
-            if (cancelled)
-                return true
-
-            return new Promise<boolean>(resolveWait => {
-                let timer = setTimeout(() => {
-                    notifyWaiter = undefined
-                    resolveWait(false)
-                }, delayMs)
-                notifyWaiter = () => {
-                    clearTimeout(timer)
-                    notifyWaiter = undefined
-                    resolveWait(true)
-                }
-            })
-        },
-        dispose() {
-            void reader.cancel()
-        },
-    }
-}
-
-function parseOperationArguments(command: OperationCommand["command"], commandArguments: string[]): ParsedOperationArguments {
+function parseOperationArguments(command: Exclude<OperationCommand["command"], "git">, commandArguments: string[]): ParsedOperationArguments {
     let json = commandArguments.includes("--json")
     let noWait = commandArguments.includes("--no-wait")
     let value: string | undefined

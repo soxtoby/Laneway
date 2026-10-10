@@ -7,11 +7,13 @@ import type { LocalRequest, LocalResult } from "@laneway/shared"
 import type { ConflictRequest, ConflictResult } from "@laneway/shared"
 import type { BranchGraphReadOptions, PullRequest, PullResult } from "@laneway/shared"
 import type { RecoveryRequest, RecoveryStatusResult, WorktreeRecovery } from "@laneway/shared"
+import type { GitResult } from "@laneway/shared"
 import { lstat, readdir, readFile, readlink, rename, rm } from "node:fs/promises"
 import { dirname, join, resolve, sep } from "node:path"
 import { isFileExtraction } from "../composition/file-extraction"
 import { conflictMutation, conflictPaths, executeConflict, suspendWorkingConflicts } from "../conflicts/conflict-operations"
 import { LocalPreconditionError, mutateLocal, prepareLocal } from "../local-mutations"
+import { runNativeGit } from "../native-git"
 import { executePull, preparePull, type PullPreparation, type PullProgressReporter } from "../pull-latest"
 import { recoveryBackupPath } from "../worktrees/worktree-directory"
 import { mutateWorktree } from "../worktrees/worktree-mutations"
@@ -28,6 +30,7 @@ export type { JournalPhase } from "./operation-record"
 let fixtureRef = "refs/laneway/test/fixture"
 
 export type OperationCommand =
+    | { command: "git"; args: string[]; cwd: string; json: boolean; noWait: boolean }
     | { command: "conflict"; request: ConflictRequest; noWait: boolean; crashAfter?: JournalPhase }
     | {
         command: "pull"
@@ -54,6 +57,7 @@ export type OperationCommand =
     | { command: "recover"; noWait: boolean; request?: RecoveryRequest; crashAfter?: JournalPhase }
 
 export type OperationCommandResult =
+    | GitResult
     | TestMutationResult
     | OperationTransitionResult
     | OperationHistoryResult
@@ -70,6 +74,34 @@ class OperationRuntime {
         private readonly store: OperationStore,
         private readonly cancellation: CancellationSignal,
     ) {}
+
+    async git(args: string[], cwd: string, json: boolean): Promise<GitResult> {
+        let worktrees = (await readRegisteredWorktrees(this.repository)).filter(w => !w.missing)
+        for (let worktree of worktrees) {
+            for (let marker of ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply"]) {
+                if (await pathExists(join(worktree.gitDirectory, marker))) {
+                    throw new OperationRuntimeError(
+                        "operation.precondition-failed",
+                        "Finish the existing Git operation before using Laneway undoable commands.",
+                    )
+                }
+            }
+        }
+        let result: GitResult | undefined
+        let before = await captureGitCheckpoint(this.repository, worktrees.map(w => w.path), undefined, worktrees, undefined, true, true)
+        await this.applyCheckpoint(
+            worktrees.map(w => w.path),
+            `git.${args[0]}`,
+            `git ${args[0]}`,
+            async () => {
+                result = await runNativeGit(this.repository, args, cwd, json)
+                return new Set()
+            },
+            undefined,
+            before,
+        )
+        return result!
+    }
 
     async conflict(request: ConflictRequest, crashAfter?: JournalPhase): Promise<ConflictResult> {
         let changes = new Map<string, string | null>()
@@ -283,7 +315,7 @@ class OperationRuntime {
             throw error
         }
         let expected = await captureGitCheckpoint(this.repository, affected, before, undefined, undefined, false)
-        if ((kind.startsWith("local.") || kind.startsWith("pull.")) && checkpointIdentity(before) == checkpointIdentity(expected)) {
+        if ((kind.startsWith("local.") || kind.startsWith("pull.") || kind.startsWith("git.")) && checkpointIdentity(before) == checkpointIdentity(expected)) {
             await this.abortBeforeCommit(executionId, operation, "apply")
             return operation
         }
@@ -922,6 +954,8 @@ export async function executeOperationCommand(
             return recovery
 
         switch (command.command) {
+            case "git":
+                return runtime.git(command.args, command.cwd, command.json)
             case "pull":
                 return runtime.pull(prepared as Extract<PullPreparation, { kind: "prepared" }>, command.progress ?? (() => {}), command.crashAfter)
             case "conflict":
