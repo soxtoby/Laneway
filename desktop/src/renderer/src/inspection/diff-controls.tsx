@@ -24,17 +24,19 @@ export function DiffControls(
         let props = handle.props
         return (
             <div class="diff-controls" mix={diffToolbarDiv}>
-                {(["unified", "split"] as const).map(layout => (
-                    <button
-                        type="button"
-                        aria-label={layout == "unified" ? "Unified" : "Side by side"}
-                        title={layout == "unified" ? "Unified" : "Side by side"}
-                        aria-pressed={props.layout == layout}
-                        mix={[fileActionButton, on("click", () => props.setLayout(layout))]}
-                    >
-                        {diffIcon(layout)}
-                    </button>
-                ))}
+                <div class="diff-layout-toggle" role="group" aria-label="Diff layout" mix={diffLayoutToggle}>
+                    {(["unified", "split"] as const).map(layout => (
+                        <button
+                            type="button"
+                            aria-label={layout == "unified" ? "Unified" : "Side by side"}
+                            title={layout == "unified" ? "Unified" : "Side by side"}
+                            aria-pressed={props.layout == layout}
+                            mix={[fileActionButton, on("click", () => props.setLayout(layout))]}
+                        >
+                            {diffIcon(layout)}
+                        </button>
+                    ))}
+                </div>
                 <button
                     type="button"
                     aria-label="Show entire files"
@@ -81,3 +83,13 @@ function diffIcon(kind: "unified" | "split" | "breakout") {
         </svg>
     )
 }
+
+let diffLayoutToggle = css({
+    display: "inline-flex",
+    flexShrink: "0",
+    "& > button": { position: "relative", borderRadius: "0" },
+    "& > button:first-child": { borderRadius: "4px 0 0 4px" },
+    "& > button:last-child": { marginLeft: "-1px", borderRadius: "0 4px 4px 0" },
+    '& > button[aria-pressed="true"]': { zIndex: "1" },
+    "& > button:focus-visible": { zIndex: "2" },
+})
