@@ -493,6 +493,7 @@ export function CommitComposer(
                             value={stashLabel}
                             mix={on("input", event => {
                                 stashLabel = event.currentTarget.value
+                                update()
                             })}
                         />
                         <div class="commit-actions">
