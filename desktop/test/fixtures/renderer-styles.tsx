@@ -203,7 +203,7 @@ async function checkRenderer() {
     let metadata = element(".diff-summary")
     let metadataStyle = getComputedStyle(metadata)
     let balancedMetadata = metadataStyle.paddingTop == metadataStyle.paddingBottom
-        && Math.abs(metadata.getBoundingClientRect().bottom - diffShadow.querySelector("[data-separator]")!.getBoundingClientRect().top) <= 1
+        && Math.abs(metadata.getBoundingClientRect().bottom - diffShadow.querySelector("[data-line]")!.getBoundingClientRect().top) <= 1
     let deletion = diffShadow.querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!
     deletion.click()
     await settle()
@@ -377,9 +377,12 @@ async function checkRenderer() {
     let compactUnified = compactDiff.getBoundingClientRect().height < 150
     let inlineDiff = element(".inspect-commit .change-file").nextElementSibling == element(".inspect-commit .diff-inspector")
     let flatFiles = !document.querySelector(".inspect-commit .file-tree details")
-    compactDiff.shadowRoot!.querySelector<HTMLButtonElement>("[aria-label='Select hunk']")!.click()
+    compactDiff.shadowRoot!.querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1000']")!.click()
     await settle()
-    let hunkSelected = compactDiff.shadowRoot!.querySelectorAll(".diff-line.selected").length == 2
+    let lineSelected = compactDiff.shadowRoot!.querySelectorAll(".diff-line.selected").length == 1
+    let contextExpansion = compactDiff.shadowRoot!.querySelector<HTMLButtonElement>("[aria-label='Show 999 hidden lines']")!
+    let contextExpansionVisible = contextExpansion.getBoundingClientRect().width > 0
+        && contextExpansion.querySelector<SVGPathElement>("path")!.getBBox().height > 0
     let endingToggle = compactDiff.closest(".file-inspection")!.querySelector<HTMLButtonElement>("[aria-label='Show whitespace']")!
     let originalHeights = [...compactDiff.shadowRoot!.querySelectorAll("[data-line]")].map(line => line.getBoundingClientRect().height)
     endingToggle.click()
@@ -438,7 +441,7 @@ async function checkRenderer() {
     let stickyCommitOpaque = !getComputedStyle(stickyCommit.parentElement!).backgroundColor.startsWith("rgba")
     let stickyFileRow = Math.abs(stickyFile.getBoundingClientRect().top - stickyCommit.getBoundingClientRect().bottom) <= 1
     let compactFileControls = !secondFile.querySelector(".diff-toolbar")
-        && stickyFile.querySelectorAll(".diff-controls button").length == 5
+        && stickyFile.querySelectorAll(".diff-controls button").length == 4
         && [...stickyFile.querySelectorAll(".diff-controls button")].every(button => button.getBoundingClientRect().width <= 22)
     let code = longDiff.shadowRoot!.querySelector<HTMLElement>("[data-code]")!
     code.scrollLeft = code.scrollWidth
@@ -769,6 +772,10 @@ async function checkRenderer() {
         fileHistory.dispatchEvent(new Event("scroll"))
         await settle()
         historyAddedFileScroll &&= addedShadow.textContent!.includes("addedLine1 =")
+            && [...addedShadow.querySelectorAll("[data-code]")].every(pane => {
+                let first = pane.querySelector("[data-content] [data-line]")
+                return !first || first.getBoundingClientRect().top == pane.getBoundingClientRect().top
+            })
     }
     addedRow.querySelector<HTMLButtonElement>(".change-file > button[aria-expanded]")!.click()
     fileHistory.scrollTop = 40
@@ -870,7 +877,8 @@ async function checkRenderer() {
         expandedOnClick,
         pressLeavesFileUnselected,
         selectedOnClick,
-        hunkSelected,
+        lineSelected,
+        contextExpansionVisible,
         distinctLineEndings,
         endingsStayOnRow,
         endingRowsAligned,

@@ -3,6 +3,7 @@ import { css, on, type RemixNode } from "remix/ui"
 import { auxiliaryCloseButton, auxiliaryColumnFrame, auxiliaryColumnHeader } from "../auxiliary-columns"
 import { Icon } from "../icons"
 import { DiffLines } from "./diff"
+import { readDiffContext } from "./diff-context"
 import { DiffControls } from "./diff-controls"
 import { FileTree } from "./file-list"
 
@@ -226,6 +227,7 @@ export function createBranchComparisons(options: { api: Window["laneway"]; updat
                                                         showWhitespace={patch.showWhitespace ?? false}
                                                         selected={[]}
                                                         select={() => {}}
+                                                        readContext={(page, signal) => readDiffContext(options.api, state.repositoryId, page, signal)}
                                                     />
                                                     {patch.page.nextOffset != undefined && (
                                                         <button

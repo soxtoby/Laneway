@@ -45,6 +45,10 @@ let paths = {
 
 export type IconName = keyof typeof paths
 
+export function iconPath(name: IconName) {
+    return paths[name]
+}
+
 // The Hidden L mark from assets/brand/laneway.svg, drawn on its 64-unit canvas.
 let brandPath =
     "M20 8H24V48H44A4 4 0 0 0 44 40H34A2 2 0 0 1 32 38V12A4 4 0 0 1 36 8H44A12 12 0 0 1 56 20V44A12 12 0 0 1 44 56H20A12 12 0 0 1 8 44V20A12 12 0 0 1 20 8Z"

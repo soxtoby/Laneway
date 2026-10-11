@@ -1,16 +1,14 @@
 import type { DiffLayout, DiffLine, FileDiffPage } from "@laneway/shared"
-import { DiffHunksRenderer, wrapCoreCSS, wrapThemeCSS } from "@pierre/diffs"
+import { DiffHunksRenderer, type FileDiffLoadedChangedFiles, wrapCoreCSS, wrapThemeCSS } from "@pierre/diffs"
 import { css, type Handle, ref } from "remix/ui"
+import { iconPath } from "../icons"
+import { contextDiff, visibleDiffLines } from "./diff-context"
 import { pierrePatch } from "./diff-patch"
 
 /** Lookups built once per page so decorating rendered lines never scans the whole page. */
 interface LineIndex {
     /** Keyed by `addition:<new>`, `deletion:<old>`, `context:old:<old>` and `context:new:<new>`. */
     lines: Map<string, DiffLine>
-    /** Hunks in order of first appearance. */
-    hunks: number[]
-    /** Selectable line ids per hunk. */
-    hunkIds: Map<number, number[]>
 }
 
 let viewport = css({ overflow: "visible", userSelect: "text" })
@@ -39,6 +37,8 @@ let notice = css({ position: "static", height: "24px", font: "12px/24px var(--mo
 let diffCSS = `:host { --diffs-font-family: var(--mono); --diffs-font-size: 12px; --diffs-line-height: 24px;
         --diffs-scrollbar-gutter-override: 0px; }
     [data-code] { padding-top: 0; scrollbar-width: none; }
+    [data-separator=line-info-basic] { height: 24px; }
+    [data-content] [data-separator] [data-separator-wrapper] { display: flex; align-items: center; }
     [data-whitespace] { position: relative; }
     [data-whitespace]::before { position: absolute; left: 0; color: var(--muted); pointer-events: none; user-select: none; }
     [data-whitespace=space]::before { content: "·"; }
@@ -50,14 +50,21 @@ let diffCSS = `:host { --diffs-font-family: var(--mono); --diffs-font-size: 12px
     [data-whitespace=line-ending][data-ending=CRLF]::before { content: "↵"; }
     .selected { background: var(--accent-wash-strong) !important; }
     [data-gutter] button { all: unset; cursor: pointer; width: 100%; text-align: right; }
-    [data-gutter] button:focus-visible, .select-hunk:focus-visible { outline: 2px solid var(--accent); }
-    .select-hunk { font: inherit; width: 22px; height: 22px; padding: 0; margin-right: 6px; border: 0;
-        border-radius: 3px; background: transparent; color: inherit; cursor: pointer; }
-    .select-hunk:hover, .select-hunk[aria-pressed=true] { background: var(--accent-wash-strong); }
-    .select-hunk:disabled { opacity: .4; cursor: default; }`
+    [data-gutter] button:focus-visible, .expand-context:focus-visible { outline: 2px solid var(--accent); }
+    .expand-context { all: unset; display: inline-flex; align-items: center; gap: 6px; font: inherit; color: var(--muted);
+        cursor: pointer; border-radius: 3px; padding: 0 4px; }
+    .expand-context:hover { background: var(--accent-wash-strong); }
+    .expand-context:disabled { opacity: .4; cursor: default; }`
 
 export function DiffLines(
-    handle: Handle<{ page: FileDiffPage; layout: DiffLayout; showWhitespace: boolean; selected: number[]; select(ids: number[]): void }>,
+    handle: Handle<{
+        page: FileDiffPage
+        layout: DiffLayout
+        showWhitespace: boolean
+        selected: number[]
+        select(ids: number[]): void
+        readContext?(page: FileDiffPage, signal: AbortSignal): Promise<FileDiffLoadedChangedFiles>
+    }>,
 ) {
     let viewer: DiffHunksRenderer | undefined
     let shadow: ShadowRoot
@@ -69,6 +76,9 @@ export function DiffLines(
     let previous: FileDiffPage | undefined
     let diff: ReturnType<typeof pierrePatch>
     let index: LineIndex | undefined
+    let contextFiles: FileDiffLoadedChangedFiles | undefined
+    let contextRead: AbortController | undefined
+    let contextError: string | undefined
     let rendered = ""
     // What the rendered lines were last decorated for; decoration is skipped while this holds.
     let decorated = ""
@@ -87,6 +97,7 @@ export function DiffLines(
                 {page.lines.filter(line => line.kind == "notice" && !line.text.startsWith("\\ No newline")).map(line => (
                     <div class="diff-line notice" mix={notice}>{line.text}</div>
                 ))}
+                {contextError && <p role="alert" mix={notice}>{contextError}</p>}
                 <div
                     class={`pierre-diff diff-lines ${layout}`}
                     aria-label="Changed lines"
@@ -114,6 +125,7 @@ export function DiffLines(
                             })
                             resize.observe(element)
                             signal.addEventListener("abort", () => {
+                                contextRead?.abort()
                                 observer.disconnect()
                                 resize.disconnect()
                                 viewer?.cleanUp()
@@ -174,7 +186,14 @@ export function DiffLines(
         let { page, layout } = handle.props
 
         if (previous != page) {
-            diff = pierrePatch(page)
+            if (previous?.version != page.version || previous?.lines != page.lines) {
+                contextRead?.abort()
+                contextRead = undefined
+                contextFiles = undefined
+                contextError = undefined
+                viewer.setExpandedHunksMap(new Map())
+            }
+            diff = contextDiff(page, contextFiles)
             index = indexLines(page)
             previous = page
             rendered = ""
@@ -193,7 +212,8 @@ export function DiffLines(
             themeType: appearance,
             preferredHighlighter: "shiki-js",
             disableFileHeader: true,
-            hunkSeparators: "metadata",
+            hunkSeparators: "line-info-basic",
+            collapsedContextThreshold: 0,
             lineDiffType: "char",
             maxLineDiffLength: 10000,
         })
@@ -201,10 +221,7 @@ export function DiffLines(
             shadow.replaceChildren()
             return
         }
-        // File-wide counts include collapsed context before/between hunks.
-        let total = 0
-        for (let hunk of diff.hunks)
-            total += layout == "split" ? hunk.splitLineCount : hunk.unifiedLineCount
+        let total = visibleDiffLines(diff, layout, viewer.getExpandedHunksMap())
         let first = Math.min(start, Math.max(0, total - 60))
         let result = viewer.renderDiff(diff, { startingLine: first, totalLines: 80, bufferBefore: 0, bufferAfter: 0 })
         if (!result)
@@ -216,31 +233,16 @@ export function DiffLines(
         after.style.height = `${Math.max(0, total - first - 80) * 24}px`
         shadow.replaceChildren(before, astNode(viewer.renderFullAST(result)), after)
 
-        // Pierre omits a separator when a hunk starts at the beginning of the file.
-        // Keep its selection control available in that case too.
         for (let code of shadow.querySelectorAll<HTMLElement>("[data-code]")) {
-            for (let hunk of diff.hunks) {
-                if (hunk.collapsedBefore > 0)
-                    continue
-                let content = code.querySelector<HTMLElement>("[data-content]")!
-                let gutter = code.querySelector<HTMLElement>("[data-gutter]")!
-                let line = [...content.querySelectorAll<HTMLElement>("[data-line-index]")].find(element =>
-                    Number(element.dataset.lineIndex?.split(",")[layout == "split" ? 1 : 0])
-                        == (layout == "split" ? hunk.splitLineStart : hunk.unifiedLineStart)
-                )
-                if (!line)
-                    continue
-                let header = document.createElement("div")
-                header.dataset.separator = "metadata"
-                let wrapper = document.createElement("div")
-                wrapper.dataset.separatorWrapper = ""
-                wrapper.textContent = hunk.hunkSpecs ?? "Changes"
-                header.append(wrapper)
-                content.insertBefore(header, line)
-                let number = [...gutter.children].find(element => element.getAttribute("data-line-index") == line.dataset.lineIndex)
-                gutter.insertBefore(header.cloneNode(true), number ?? null)
-                for (let column of [content, gutter])
-                    column.style.gridRow = `span ${Number(column.style.gridRow.replace("span ", "")) + 1}`
+            let type = code.hasAttribute("data-deletions") ? "deletions" : code.hasAttribute("data-additions") ? "additions" : "unified"
+            let gaps = result.hunkData.filter(gap => gap.type == type)
+            for (let column of code.querySelectorAll<HTMLElement>("[data-content], [data-gutter]")) {
+                for (let [position, wrapper] of [...column.querySelectorAll<HTMLElement>("[data-separator-wrapper]")].entries()) {
+                    let gap = gaps[position]
+                    wrapper.dataset.hunkIndex = String(gap.hunkIndex)
+                    wrapper.dataset.hiddenLines = String(gap.lines)
+                    wrapper.replaceChildren()
+                }
             }
         }
 
@@ -249,6 +251,39 @@ export function DiffLines(
         decorate()
         measureScrollbar()
         syncHorizontal()
+    }
+
+    async function expandContext(position: number, count: number) {
+        if (!viewer || !diff || contextRead || !handle.props.readContext)
+            return
+
+        let page = handle.props.page
+        let controller = new AbortController()
+        contextRead = controller
+        contextError = undefined
+        render(true)
+        try {
+            if (!contextFiles) {
+                let files = await handle.props.readContext(page, AbortSignal.any([handle.signal, controller.signal]))
+                controller.signal.throwIfAborted()
+                if (handle.props.page.version != page.version || handle.props.page.lines != page.lines)
+                    controller.abort()
+                controller.signal.throwIfAborted()
+                contextFiles = files
+                diff = contextDiff(page, files)
+            }
+            // The last gap expands forward from the final hunk; earlier gaps expand from their start.
+            viewer.expandHunk(position, "up", count)
+        } catch (error) {
+            if (!controller.signal.aborted)
+                contextError = error instanceof Error ? error.message : String(error)
+        } finally {
+            if (contextRead == controller) {
+                contextRead = undefined
+                render(true)
+                void handle.update()
+            }
+        }
     }
 
     function syncHorizontal(source?: HTMLElement) {
@@ -294,7 +329,7 @@ export function DiffLines(
         if (decorated == stamp)
             return
         decorated = stamp
-        let { lines, hunks, hunkIds } = index
+        let { lines } = index
         if (handle.props.showWhitespace) {
             for (let line of shadow.querySelectorAll("[data-line]")) {
                 let walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT)
@@ -327,7 +362,13 @@ export function DiffLines(
                         ? `addition:${number}`
                         : `context:${line.closest("[data-deletions]") ? "old" : "new"}:${number}`,
                 )
-                let ending = `${source?.text.endsWith("\r") ? "CR" : ""}${line.nextElementSibling?.hasAttribute("data-no-newline") ? "" : "LF"}`
+                let text = source?.text ?? (!diff?.isPartial
+                    ? (line.closest("[data-deletions]") || kind.includes("deletion") ? diff?.deletionLines : diff?.additionLines)?.[number - 1]?.replace(
+                        /\n$/,
+                        "",
+                    )
+                    : undefined)
+                let ending = `${text?.endsWith("\r") ? "CR" : ""}${line.nextElementSibling?.hasAttribute("data-no-newline") ? "" : "LF"}`
                 if (ending && !line.querySelector("[data-whitespace=line-ending]")) {
                     let marker = document.createElement("span")
                     marker.dataset.whitespace = "line-ending"
@@ -351,32 +392,28 @@ export function DiffLines(
             }
         }
 
-        for (let header of shadow.querySelectorAll<HTMLElement>("[data-separator='metadata'] [data-separator-wrapper]")) {
-            if (header.closest("[data-gutter]") || !page.selectable)
+        for (let header of shadow.querySelectorAll<HTMLElement>("[data-separator-wrapper]")) {
+            if (header.closest("[data-gutter]"))
                 continue
-            let position = header.dataset.hunkIndex == undefined
-                ? diff?.hunks.findIndex(hunk => hunk.hunkSpecs == header.textContent) ?? -1
-                : Number(header.dataset.hunkIndex)
-            if (position < 0)
-                continue
-            header.dataset.hunkIndex = String(position)
-            let hunk = hunks[position]
-            let ids = hunkIds.get(hunk) ?? []
-            let button = header.querySelector("button")
-            if (!button) {
-                button = document.createElement("button")
-                button.type = "button"
-                button.className = "select-hunk"
-                button.textContent = "✓"
-                button.title = "Select hunk"
-                button.setAttribute("aria-label", "Select hunk")
-                header.prepend(button)
-            }
-            button.disabled = ids.length == 0 || page.nextOffset != undefined && page.lines.at(-1)?.hunk == hunk
-            button.setAttribute("aria-pressed", String(ids.length > 0 && ids.every(id => selected.includes(id))))
-            button.onclick = event => {
-                event.stopPropagation()
-                handle.props.select(ids)
+            let position = Number(header.dataset.hunkIndex)
+            let count = Number(header.dataset.hiddenLines ?? 0)
+            if (count > 0) {
+                let expand = header.querySelector<HTMLButtonElement>(".expand-context")
+                if (!expand) {
+                    expand = document.createElement("button")
+                    expand.type = "button"
+                    expand.className = "expand-context"
+                    expand.textContent = `${count} hidden ${count == 1 ? "line" : "lines"}`
+                    expand.setAttribute("aria-label", `Show ${expand.textContent}`)
+                    expand.prepend(expandContextIcon())
+                    expand.onclick = event => {
+                        event.stopPropagation()
+                        void expandContext(position, count)
+                    }
+                    header.append(expand)
+                }
+                expand.disabled = !!contextRead || !handle.props.readContext
+                expand.setAttribute("aria-busy", String(!!contextRead))
             }
         }
         for (let element of shadow.querySelectorAll<HTMLElement>("[data-line], [data-column-number]")) {
@@ -410,10 +447,32 @@ export function DiffLines(
     }
 }
 
+function expandContextIcon() {
+    let icon = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+    for (
+        let [name, value] of Object.entries({
+            "aria-hidden": "true",
+            width: "16",
+            height: "16",
+            viewBox: "0 0 16 16",
+            fill: "none",
+            stroke: "currentColor",
+            "stroke-width": "1.5",
+            "stroke-linecap": "round",
+            "stroke-linejoin": "round",
+        })
+    ) {
+        icon.setAttribute(name, value)
+    }
+    let path = document.createElementNS("http://www.w3.org/2000/svg", "path")
+    path.setAttribute("d", iconPath("expand-all"))
+    icon.append(path)
+
+    return icon
+}
+
 function indexLines(page: FileDiffPage): LineIndex {
     let lines = new Map<string, DiffLine>()
-    let hunks: number[] = []
-    let hunkIds = new Map<number, number[]>()
     let record = (key: string, line: DiffLine) => {
         if (!lines.has(key))
             lines.set(key, line)
@@ -426,20 +485,10 @@ function indexLines(page: FileDiffPage): LineIndex {
         else if (line.kind == "context") {
             record(`context:old:${line.oldLine}`, line)
             record(`context:new:${line.newLine ?? line.oldLine}`, line)
-        } else {
-            continue
         }
-        let ids = hunkIds.get(line.hunk)
-        if (!ids) {
-            ids = []
-            hunks.push(line.hunk)
-            hunkIds.set(line.hunk, ids)
-        }
-        if (line.kind != "context")
-            ids.push(line.id)
     }
 
-    return { lines, hunks, hunkIds }
+    return { lines }
 }
 
 // Apply Pierre's HAST through DOM/CSSOM APIs: HTML style attributes and style

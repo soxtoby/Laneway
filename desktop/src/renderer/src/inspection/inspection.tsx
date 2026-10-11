@@ -14,6 +14,7 @@ import { columnWorktree } from "../worktrees/worktree-columns"
 import { type BranchComparisonState, createBranchComparisons } from "./branch-comparison"
 import { columnItem, focusItem, isFileItem, parentItem, scrollBehavior, stepItem } from "./column-navigation"
 import { CommitMessage } from "./commit-message"
+import { readDiffContext } from "./diff-context"
 import { DiffControls } from "./diff-controls"
 import { fileLabel, FileTree } from "./file-list"
 import { FileMenu } from "./file-menu"
@@ -1501,7 +1502,7 @@ export function createInspection(options: Options) {
                             update()
                         },
                         files() {
-                            return fileList(host, commit.entry.objectId, host.files.get(commit.entry.objectId))
+                            return fileList(host, commit.entry.objectId, host.files.get(commit.entry.objectId), undefined, undefined, true)
                         },
                         parent(parentId) {
                             for (let child of auxiliary.descendants(auxiliaryColumn.id).filter(child => child.sourceId == auxiliaryColumn.id))
@@ -1896,6 +1897,7 @@ export function createInspection(options: Options) {
         files: FileState | undefined,
         stage?: (paths: string[], unstage: boolean) => void,
         resolution?: { files: ChangedFile[]; renderFile(file: ChangedFile): RemixNode },
+        diffColumn = false,
     ): RemixNode {
         if (!files)
             return null
@@ -1987,7 +1989,7 @@ export function createInspection(options: Options) {
                     leading={file => fileTransfer(state, group, file)}
                     controls={file => {
                         let diff = state.diffs.get(diffKey(group, file.path))
-                        return diff && !state.breakout ? renderDiffControls(state, diff) : null
+                        return diff && !state.breakout ? renderDiffControls(state, diff, diffColumn) : null
                     }}
                     diff={file => {
                         let diff = state.diffs.get(diffKey(group, file.path))
@@ -2138,7 +2140,7 @@ export function createInspection(options: Options) {
                                 <strong mix={diffToolbarStrong}>{fileLabel(diff.path)}</strong>
                             </button>
                         </FileMenu>
-                        {renderDiffControls(state, diff)}
+                        {renderDiffControls(state, diff, true)}
                     </header>
                 )}
                 {!collapsed && renderDiffContents(state, diff)}
@@ -2213,22 +2215,24 @@ export function createInspection(options: Options) {
             cancel(state, id)
     }
 
-    function renderDiffControls(state: ColumnState, diff: FileDiffState): RemixNode {
+    function renderDiffControls(state: ColumnState, diff: FileDiffState, diffColumn = false): RemixNode {
         return (
             <DiffControls
                 layout={state.transientLayout ?? options.layout(state.repositoryId, state.id)}
                 showWhitespace={diff.showWhitespace}
                 showEntireFiles={state.showEntireFiles ?? false}
-                toggleEntireFiles={() => {
-                    state.showEntireFiles = !state.showEntireFiles
-                    for (let open of state.diffs.values()) {
-                        open.notice = open.selection ? "Diff view changed. Change Selection cleared." : undefined
-                        open.selection = undefined
-                        open.page = undefined
-                        void readDiff(state, open)
+                toggleEntireFiles={diffColumn
+                    ? () => {
+                        state.showEntireFiles = !state.showEntireFiles
+                        for (let open of state.diffs.values()) {
+                            open.notice = open.selection ? "Diff view changed. Change Selection cleared." : undefined
+                            open.selection = undefined
+                            open.page = undefined
+                            void readDiff(state, open)
+                        }
+                        update()
                     }
-                    update()
-                }}
+                    : undefined}
                 setLayout={layout => {
                     if (state.auxiliaryId) {
                         state.transientLayout = layout
@@ -2547,6 +2551,7 @@ export function createInspection(options: Options) {
                 })}
                 changeView={view => changeView(state, diff, view)}
                 read={more => readDiff(state, diff, more)}
+                readContext={(page, signal) => readDiffContext(options.api, state.repositoryId, page, signal)}
                 select={ids => diffSession(state).select(diff, ids)}
                 clearSelection={() => {
                     diff.selection = undefined

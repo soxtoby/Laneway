@@ -1,4 +1,5 @@
-import type { ChangedFile, DiffLayout, DiffView } from "@laneway/shared"
+import type { ChangedFile, DiffLayout, DiffView, FileDiffPage } from "@laneway/shared"
+import type { FileDiffLoadedChangedFiles } from "@pierre/diffs"
 import { css, type Handle, on, type RemixNode } from "remix/ui"
 import { DiffLines } from "./diff"
 import type { FileDiffState } from "./inspection-diff-session"
@@ -170,6 +171,7 @@ export function InspectionDiffContents(
         selectionControl?: RemixNode
         changeView(view: DiffView): void
         read(more?: boolean): void
+        readContext(page: FileDiffPage, signal: AbortSignal): Promise<FileDiffLoadedChangedFiles>
         select(ids: number[]): void
         clearSelection(): void
         cancel(): void
@@ -224,6 +226,7 @@ export function InspectionDiffContents(
                             layout={layout}
                             showWhitespace={diff.showWhitespace}
                             selected={eligible ? diff.selection?.lineIds ?? [] : []}
+                            readContext={handle.props.readContext}
                             select={ids => {
                                 if (eligible)
                                     handle.props.select(ids)

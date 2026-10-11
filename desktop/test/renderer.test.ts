@@ -1,4 +1,4 @@
-import type { BranchGraph, ChangesResult, CompositionPreview, CompositionRequest, EntryProgress, EntryResult, FileDiffResult, LocalRequest, WorktreeRequest } from "@laneway/shared"
+import type { BranchGraph, ChangesResult, CompositionPreview, CompositionRequest, DiffLine, EntryProgress, EntryResult, FileDiffResult, LocalRequest, WorktreeRequest } from "@laneway/shared"
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { Window as HappyWindow } from "happy-dom"
 import type { createElement as createRemixElement, createRoot as createRemixRoot, VirtualRoot } from "remix/ui"
@@ -2220,7 +2220,7 @@ describe("Working Changes inspection", () => {
         expect(diffRoot(container).querySelectorAll(".diff-line.selected")).toHaveLength(1)
         click(rows[1])
         await flush(root)
-        click(diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select hunk']")!)
+        click(diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select addition line 1']")!)
         await flush(root)
         expect(diffRoot(container).querySelectorAll(".diff-line.selected")).toHaveLength(2)
         click(button(container, "Side by side"))
@@ -2264,6 +2264,86 @@ describe("Working Changes inspection", () => {
         expect(restarted.container.querySelector(".diff-lines.split")).not.toBeNull()
         expect(diffRoot(restarted.container).querySelector(".diff-line.selected")).toBeNull()
         restarted.dispose()
+    })
+
+    test("hidden-line counts reveal individual gaps and preserve selection across layouts", async () => {
+        let scenario = inspectionScenario()
+        scenario.page.lines = [
+            { id: 0, kind: "hunk", text: "@@ -4,3 +4,3 @@", hunk: 0 },
+            { id: 1, kind: "context", text: "line 4", oldLine: 4, newLine: 4, hunk: 0 },
+            { id: 2, kind: "deletion", text: "old 5", oldLine: 5, hunk: 0 },
+            { id: 3, kind: "addition", text: "new 5", newLine: 5, hunk: 0 },
+            { id: 4, kind: "context", text: "line 6", oldLine: 6, newLine: 6, hunk: 0 },
+            { id: 5, kind: "hunk", text: "@@ -12,3 +12,3 @@", hunk: 1 },
+            { id: 6, kind: "context", text: "line 12", oldLine: 12, newLine: 12, hunk: 1 },
+            { id: 7, kind: "deletion", text: "old 13", oldLine: 13, hunk: 1 },
+            { id: 8, kind: "addition", text: "new 13", newLine: 13, hunk: 1 },
+            { id: 9, kind: "context", text: "line 14", oldLine: 14, newLine: 14, hunk: 1 },
+        ]
+        let fullLines: DiffLine[] = [
+            { id: 0, kind: "hunk", text: "@@ -1,18 +1,18 @@", hunk: 0 },
+            ...Array.from({ length: 18 }, (_, index) => index + 1).flatMap<DiffLine>(number =>
+                [5, 13].includes(number)
+                    ? [{ id: number * 2, kind: "deletion", text: `old ${number}`, oldLine: number, hunk: 0 }, {
+                        id: number * 2 + 1,
+                        kind: "addition",
+                        text: `new ${number}`,
+                        newLine: number,
+                        hunk: 0,
+                    }]
+                    : [{ id: number * 2, kind: "context", text: `line ${number}`, oldLine: number, newLine: number, hunk: 0 }]
+            ),
+        ]
+        let fullReads = 0
+        let api: Window["laneway"] = {
+            ...scenario.api,
+            readFileDiff: async (...args) => {
+                let result = await scenario.api.readFileDiff(...args)
+                if (result.ok && args[2].entireFile) {
+                    fullReads++
+                    let offset = args[2].offset ?? 0
+                    result.page = {
+                        ...result.page,
+                        entireFile: true,
+                        version: "full",
+                        lines: fullLines.slice(offset, offset ? undefined : 7),
+                        nextOffset: offset ? undefined : 7,
+                    }
+                }
+                return result
+            },
+        }
+        let { container, root, dispose } = render(api)
+        try {
+            await flush(root)
+            click(container.querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
+            await flush(root)
+            let show = (count: number) => diffRoot(container).querySelector<HTMLButtonElement>(`[aria-label='Show ${count} hidden lines']`)!
+            expect(show(3).textContent).toBe("3 hidden lines")
+            expect(show(5).textContent).toBe("5 hidden lines")
+            expect(fullReads).toBe(0)
+            click(diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select addition line 5']")!)
+            await flush(root)
+            click(show(3))
+            await flush(root)
+            expect(diffRoot(container).querySelector("[data-line='1']")?.textContent?.trimEnd()).toBe("line 1")
+            expect(diffRoot(container).querySelector("[data-line='8']")).toBeNull()
+            expect(diffRoot(container).querySelector(".addition.selected")?.textContent?.trimEnd()).toBe("new 5")
+            click(button(container, "Side by side"))
+            await flush(root)
+            expect(show(5)).not.toBeNull()
+            click(show(5))
+            await flush(root)
+            expect(diffRoot(container).querySelector("[data-line='8']")?.textContent?.trimEnd()).toBe("line 8")
+            expect(diffRoot(container).querySelector("[data-line='16']")).toBeNull()
+            click(show(4))
+            await flush(root)
+            expect(diffRoot(container).querySelector("[data-line='18']")?.textContent?.trimEnd()).toBe("line 18")
+            expect(fullReads).toBe(2)
+            expect(diffRoot(container).querySelector(".addition.selected")?.textContent?.trimEnd()).toBe("new 5")
+        } finally {
+            dispose()
+        }
     })
 
     test("entire-file toolbar toggle reloads open diffs, separates cached views, and rejects superseded reads", async () => {
