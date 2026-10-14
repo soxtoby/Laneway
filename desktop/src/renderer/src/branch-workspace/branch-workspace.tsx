@@ -14,7 +14,7 @@ import { createWorktreeActions } from "../worktrees/worktree-actions"
 import { branchNodeFor, localIdentities, reconcileWorktreeColumns, recoveryColumnId, recoveryWorkspaceColumn, workspaceGraph } from "../worktrees/worktree-columns"
 import { BranchColumns, columnIdentity, columnKindIcon, defaultColumnWidth, recoveryNode } from "./branch-columns"
 import { graphRowHeight, type GraphRowLayout, layoutBranchGraph } from "./branch-graph-layout"
-import { BaseUnresolved, BranchRow, GraphError, GraphProgress, GraphRail, GraphSummary, SimpleNodeRow } from "./branch-graph-view"
+import { BranchRow, GraphError, GraphProgress, GraphRail, GraphSummary, SimpleNodeRow } from "./branch-graph-view"
 import { MarkerDetails } from "./branch-marker-details"
 import { canRebaseOnto, createBranchRebase, rebaseable } from "./branch-rebase"
 import { GraphSettings } from "./graph-settings"
@@ -39,7 +39,6 @@ export interface RepositoryGraphState {
     collapsedColumnIds: string[]
     collapsedBranchIds: string[]
     remoteRefreshed: boolean
-    baseCandidateSelections: Record<string, string>
     graphScrollTop: number
     graphViewportHeight: number
     widths: Record<string, number>
@@ -745,14 +744,6 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                 {graph && (
                                     <section class="graph-panel" aria-label="Branch Graph" mix={graphPanel}>
                                         <GraphSummary graph={graph} visibleCount={rowBranches.length} />
-                                        <BaseUnresolved
-                                            branches={visibleBranches}
-                                            selections={state.baseCandidateSelections}
-                                            choose={(branchId, candidateId) => {
-                                                state.baseCandidateSelections[branchId] = candidateId
-                                                void options.update()
-                                            }}
-                                        />
                                         <div
                                             class="graph-rows"
                                             role="listbox"
@@ -1412,12 +1403,6 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                     state.maximizedBranchId = undefined
                 if (!state.focusedColumnId || !state.openedBranchIds.includes(state.focusedColumnId))
                     state.focusedColumnId = state.openedBranchIds[0]
-                state.baseCandidateSelections = Object.fromEntries(
-                    Object.entries(state.baseCandidateSelections).filter(([branchId, candidateId]) => {
-                        let branch = result.graph.branches.find(candidate => candidate.id == branchId)
-                        return branch?.base.status == "ambiguous" && branch.base.candidates.some(candidate => candidate.branchId == candidateId)
-                    }),
-                )
                 // Hiding the selected node, by narrowing the graph or deleting the branch, clears Graph Selection.
                 if (
                     state.selectedId
@@ -1573,7 +1558,6 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                 ),
                 collapsedBranchIds: [],
                 remoteRefreshed: false,
-                baseCandidateSelections: {},
                 graphScrollTop: 0,
                 graphViewportHeight: 600,
             }

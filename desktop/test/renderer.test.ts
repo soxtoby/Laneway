@@ -1556,7 +1556,7 @@ describe("Working Changes inspection", () => {
         }
     })
 
-    test("pages unresolved branch commits before offering a continuation branch", async () => {
+    test("opens an ambiguous branch from the graph and chooses its base after paging commits", async () => {
         let scenario = inspectionScenario()
         let graphResult = await scenario.api.readBranchGraph((await scenario.api.getState()).workspace.activeRepositoryId!, false)
         if (!graphResult.ok)
@@ -1573,6 +1573,10 @@ describe("Working Changes inspection", () => {
                 tip: candidate.tip,
             })),
         }
+        branch.checkedOut = []
+        let saved = scenario.saved()
+        saved.repositories[0].columns = []
+        await scenario.api.updateWorkspace(saved)
         let requests: Parameters<Window["laneway"]["readBranchHistory"]>[1][] = []
         scenario.api.readBranchHistory = async (_repositoryId, request) => {
             requests.push(request)
@@ -1596,19 +1600,34 @@ describe("Working Changes inspection", () => {
         }
 
         let { container, root, dispose } = render(scenario.api)
-        await flush(root)
-        expect(requests[0]).toMatchObject({ limit: 50, baseTips: candidates.map(candidate => candidate.tip) })
-        expect(container.querySelector("[aria-label='Branch after feature/laneway']")).toBeNull()
-        click(button(container, "Load more"))
-        await flush(root)
-        let continuation = container.querySelector<HTMLSelectElement>("[aria-label='Branch after feature/laneway']")!
-        expect(continuation).not.toBeNull()
-        expect([...continuation.options].map(option => option.textContent)).toEqual(["Choose branch…", "main", "other/team"])
-        continuation.value = graph.branches[0].id
-        continuation.dispatchEvent(new Event("change", { bubbles: true }))
-        await flush(root)
-        expect(container.querySelector(".stack-heading")?.textContent).toContain("main")
-        dispose()
+        try {
+            await flush(root)
+            click(button(container, "Show Branch Graph"))
+            await flush(root)
+            let row = container.querySelector<HTMLElement>(`[data-node-id='${branch.id}']`)!
+            expect(row.textContent).toContain("Choose base")
+            click(button(row, "Open"))
+            await flush(root)
+            let column = container.querySelector<HTMLElement>(`[data-column-id='${branch.id}']`)!
+            expect(requests[0]).toMatchObject({ limit: 50, baseTips: candidates.map(candidate => candidate.tip) })
+            expect(column.querySelector("[aria-label='Base branch for feature/laneway']")).toBeNull()
+            click(button(column, "Load more"))
+            await flush(root)
+            let continuation = column.querySelector<HTMLSelectElement>("[aria-label='Base branch for feature/laneway']")!
+            expect(continuation).not.toBeNull()
+            expect([...continuation.options].map(option => option.textContent)).toEqual(["Choose base…", "main", "other/team"])
+            expect(continuation.value).toBe("")
+            continuation.value = candidates[1].id
+            continuation.dispatchEvent(new Event("change", { bubbles: true }))
+            await flush(root)
+            expect([...column.querySelectorAll(".stack-heading")].map(heading => heading.textContent)).toEqual(["other/team", "main"])
+            continuation.value = candidates[0].id
+            continuation.dispatchEvent(new Event("change", { bubbles: true }))
+            await flush(root)
+            expect([...column.querySelectorAll(".stack-heading")].map(heading => heading.textContent)).toEqual(["main"])
+        } finally {
+            dispose()
+        }
     })
 
     test("opens column filtering on demand and clears it with Escape", async () => {

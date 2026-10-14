@@ -1448,8 +1448,8 @@ export function createInspection(options: Options) {
                                                             )}
                                                             {current.page && current.page.nextOffset == undefined && branch.base.status == "ambiguous" && (
                                                                 <label class="base-continuation" mix={mergeParent}>
-                                                                    Continue with<select
-                                                                        aria-label={`Branch after ${branch.name}`}
+                                                                    Base branch<select
+                                                                        aria-label={`Base branch for ${branch.name}`}
                                                                         value={state.baseSelections.get(branch.id) ?? ""}
                                                                         mix={[
                                                                             parentForSelect,
@@ -1463,7 +1463,7 @@ export function createInspection(options: Options) {
                                                                             }),
                                                                         ]}
                                                                     >
-                                                                        <option value="">Choose branch…</option>
+                                                                        <option value="">Choose base…</option>
                                                                         {branch.base.candidates.map(candidate => (
                                                                             <option value={candidate.branchId}>{candidate.name}</option>
                                                                         ))}

@@ -26,48 +26,6 @@ let graphSummarySpan = css({
     },
 })
 
-let baseUnresolved = css({
-    padding: "7px 10px",
-    color: "var(--warning)",
-    borderBottom: "1px solid var(--line)",
-    background: "var(--warning-wash)",
-    fontSize: "12px",
-    lineHeight: "1.45",
-})
-
-let baseUnresolvedSummary = css({
-    cursor: "default",
-})
-
-let baseUnresolvedDiv = css({
-    marginTop: "6px",
-    display: "grid",
-    gridTemplateColumns: "minmax(80px, 1fr) 2fr",
-    alignItems: "center",
-    gap: "8px",
-})
-
-let baseUnresolvedSpan = css({
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "4px",
-})
-
-let baseUnresolvedButton = css({
-    minHeight: "24px",
-    padding: "0 7px",
-    color: "var(--text)",
-    border: "1px solid var(--line-strong)",
-    borderRadius: "4px",
-    background: "var(--control)",
-    fontSize: "12px",
-    "&.active": {
-        color: "var(--warning)",
-        borderColor: "var(--warning-edge)",
-        background: "var(--warning-wash)",
-    },
-})
-
 let graphRow = css({
     position: "relative",
     width: "100%",
@@ -306,41 +264,6 @@ export function GraphSummary(handle: Handle<{ graph: BranchGraph; visibleCount: 
     )
 }
 
-export function BaseUnresolved(
-    handle: Handle<{ branches: BranchGraphBranchNode[]; selections: Record<string, string>; choose(branchId: string, candidateId: string): void }>,
-) {
-    return () => {
-        let unresolved = handle.props.branches.filter(branch => branch.base.status == "ambiguous")
-        if (unresolved.length == 0)
-            return null
-        return (
-            <details class="base-unresolved" mix={baseUnresolved}>
-                <summary mix={baseUnresolvedSummary}>
-                    Base unresolved · {unresolved.length}
-                </summary>
-                {unresolved.map(branch => (
-                    <div mix={baseUnresolvedDiv}>
-                        <strong>{branch.name}</strong>
-                        <span mix={baseUnresolvedSpan}>
-                            {branch.base.status == "ambiguous"
-                                && branch.base.candidates.map(candidate => (
-                                    <button
-                                        type="button"
-                                        class={handle.props.selections[branch.id] == candidate.branchId ? "active" : ""}
-                                        title="Use for inspection only"
-                                        mix={[baseUnresolvedButton, on("click", () => handle.props.choose(branch.id, candidate.branchId))]}
-                                    >
-                                        {candidate.name}
-                                    </button>
-                                ))}
-                        </span>
-                    </div>
-                ))}
-            </details>
-        )
-    }
-}
-
 export function BranchRow(
     handle: Handle<
         {
@@ -414,6 +337,8 @@ export function BranchRow(
                         <small mix={branchCopySmall}>
                             {branch.primary
                                 ? "Primary"
+                                : branch.base.status == "ambiguous"
+                                ? "Choose base"
                                 : branch.merged
                                 ? "Merged"
                                 : branch.remoteOnly
