@@ -17,7 +17,7 @@ let composerStyle = css({
     },
     // Rows draw their own bottom rules; the card's edge replaces the last one. A trailing -1px pulls the
     // card's bottom up over that rule, whichever row is last, and the card's overflow clips it.
-    "& :is(.commit-card:not(.clean), .branch-stash[data-expanded=true])::after": { content: '""', display: "block", marginTop: "-1px" },
+    "& :is(.commit-card:not(.clean)[data-expanded=true], .branch-stash[data-expanded=true])::after": { content: '""', display: "block", marginTop: "-1px" },
     "& .branch-stash": { borderColor: "var(--stash-edge)" },
     "& .branch-stash > :not(.branch-stash-row)": { background: "color-mix(in srgb, var(--stash) 4%, var(--panel))" },
     "& .commit-card": { borderColor: "var(--accent-edge)" },
@@ -88,15 +88,38 @@ let composerStyle = css({
         justifyContent: "space-between",
         gap: "6px",
         minHeight: "38px",
-        padding: "0 6px 0 10px",
+        padding: "0 6px 0 0",
         background: "var(--accent-wash)",
         borderBottom: "1px solid var(--line)",
     },
-    "& .commit-header h3": { display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 600, margin: 0, marginRight: "auto" },
+    "& .commit-header h3": { flex: 1, minWidth: 0, fontSize: "13px", fontWeight: 600, margin: 0 },
     "& .commit-header h3 svg": { color: "var(--accent-hover)" },
+    "& button.working-changes-toggle": {
+        width: "100%",
+        minHeight: "38px",
+        display: "flex",
+        alignItems: "center",
+        gap: "6px",
+        padding: "0 0 0 10px",
+        border: 0,
+        borderRadius: 0,
+        background: "transparent",
+        color: "inherit",
+        font: "inherit",
+        textAlign: "left",
+        cursor: "pointer",
+    },
+    "& .working-changes-toggle svg": { flex: "0 0 auto" },
+    "& .working-changes-toggle > svg:first-child": { color: "var(--faint)" },
+    "& .commit-header:has(.working-changes-toggle:hover)": { background: "color-mix(in srgb, var(--accent) 14%, var(--panel))" },
+    "& .commit-header:has(.working-changes-toggle:focus-visible)": { outline: "2px solid var(--ring)", outlineOffset: "-2px" },
+    "& button.working-changes-toggle:focus-visible": { outline: "none" },
+    "& .commit-card[data-expanded=false] .commit-header": { borderBottom: 0 },
+    "& .commit-content[hidden]": { display: "none" },
     "& .commit-split[hidden]": { display: "none" },
     "& .commit-card.clean": { borderColor: "var(--line)" },
     "& .commit-card.clean .commit-header": { minHeight: "34px", borderBottom: 0, background: "transparent" },
+    "& .commit-card.clean .working-changes-toggle": { minHeight: "34px" },
     "& .commit-card.clean h3": { color: "var(--muted)", fontWeight: 500 },
     "& .commit-card.clean h3 svg": { color: "var(--faint)" },
     // Commit is a split button; its menu holds the rarer Working Changes operations.
@@ -136,7 +159,7 @@ let composerStyle = css({
     "& .commit-menu button": { width: "100%", border: 0, background: "transparent", textAlign: "left", padding: "6px 8px" },
     "& .commit-menu button:hover, & .commit-menu button:focus-visible": { background: "var(--hover)" },
     // The title and message share one field style; the fields sit inside the card, under its header.
-    "& .commit-card > :is(input, textarea), & label input, & select, & .commit-stash-form input": {
+    "& .commit-content > :is(input, textarea), & label input, & select, & .commit-stash-form input": {
         display: "block",
         width: "100%",
         height: "auto",
@@ -152,9 +175,9 @@ let composerStyle = css({
         lineHeight: "1.4",
     },
     // The title and message sit directly under the header, inset like the rows beneath them.
-    "& .commit-card > :is(input, textarea)": { width: "calc(100% - 16px)", margin: "8px 8px 0" },
-    "& .commit-card > :is(input, textarea):hover:not(:disabled)": { borderColor: "var(--faint)" },
-    "& .commit-card > textarea": { minHeight: "72px", resize: "vertical" },
+    "& .commit-content > :is(input, textarea)": { width: "calc(100% - 16px)", margin: "8px 8px 0" },
+    "& .commit-content > :is(input, textarea):hover:not(:disabled)": { borderColor: "var(--faint)" },
+    "& .commit-content > textarea": { minHeight: "72px", resize: "vertical" },
     // Low specificity so specific buttons, like the stash rows, can restyle it. The in-place name editor
     // styles its own button in an earlier layer, so it is left out here rather than overridden.
     "& button:where(:not(.composition-handle, .editable-name-button))": {
@@ -233,6 +256,7 @@ export function CommitComposer(
     }>,
 ) {
     let { props } = handle
+    let expanded = true
     let open = false, busy = false, loaded = false
     let draft: CommitDraft = { title: "", message: "", branch: "" }
     let preview: LocalPreview | undefined
@@ -314,11 +338,24 @@ export function CommitComposer(
                 )
             })}
             {/* A clean worktree collapses to one quiet row that still takes drops, so dragging doesn't shift the layout. */}
-            <div class={clean() ? "commit-card clean" : "commit-card"}>
+            <div class={clean() ? "commit-card clean" : "commit-card"} data-expanded={expanded ? "true" : "false"}>
                 <header class="commit-header">
                     <h3>
-                        <Icon name="folder" size={14} />
-                        {clean() ? "No Working Changes" : "Working Changes"}
+                        <button
+                            type="button"
+                            class="working-changes-toggle"
+                            aria-label={expanded ? "Collapse Working Changes" : "Expand Working Changes"}
+                            aria-expanded={expanded}
+                            aria-controls={`${handle.id}-changes`}
+                            mix={on("click", () => {
+                                expanded = !expanded
+                                update()
+                            })}
+                        >
+                            <Icon name={expanded ? "chevron-down" : "chevron-right"} size={12} />
+                            <Icon name="folder" size={14} />
+                            {clean() ? "No Working Changes" : "Working Changes"}
+                        </button>
                     </h3>
                     {props.openDiffColumn && (
                         <button
@@ -355,6 +392,7 @@ export function CommitComposer(
                             class="commit-open"
                             disabled={busy || props.blocked || !loaded || !files().length}
                             mix={on("click", () => {
+                                expanded = true
                                 open = true
                                 update()
                                 refreshInBackground()
@@ -383,6 +421,7 @@ export function CommitComposer(
                                         ref(node => node.focus()),
                                         on("click", () => {
                                             commitMenuOpen = false
+                                            expanded = true
                                             stashOpen = true
                                             update()
                                         }),
@@ -394,64 +433,117 @@ export function CommitComposer(
                         )}
                     </div>
                 </header>
-                {open
-                    ? (
-                        <>
-                            <input
-                                aria-label="Commit title"
-                                placeholder="Commit title (required)"
-                                value={draft.title}
-                                disabled={busy || props.blocked}
-                                mix={[
-                                    ref(element => element.focus()),
-                                    on("input", event => {
-                                        draft.title = event.currentTarget.value
+                <div id={`${handle.id}-changes`} class="commit-content" hidden={!expanded}>
+                    {open
+                        ? (
+                            <>
+                                <input
+                                    aria-label="Commit title"
+                                    placeholder="Commit title (required)"
+                                    value={draft.title}
+                                    disabled={busy || props.blocked}
+                                    mix={[
+                                        ref(element => element.focus()),
+                                        on("input", event => {
+                                            draft.title = event.currentTarget.value
+                                            hook = undefined
+                                            void save()
+                                            update()
+                                        }),
+                                    ]}
+                                />
+                                <textarea
+                                    aria-label="Commit message"
+                                    placeholder="Message (optional)"
+                                    rows={3}
+                                    value={draft.message}
+                                    disabled={busy || props.blocked}
+                                    mix={on("input", event => {
+                                        draft.message = event.currentTarget.value
                                         hook = undefined
                                         void save()
                                         update()
-                                    }),
-                                ]}
-                            />
-                            <textarea
-                                aria-label="Commit message"
-                                placeholder="Message (optional)"
-                                rows={3}
-                                value={draft.message}
-                                disabled={busy || props.blocked}
-                                mix={on("input", event => {
-                                    draft.message = event.currentTarget.value
-                                    hook = undefined
-                                    void save()
-                                    update()
-                                })}
-                            />
-                            <div class="commit-bulk-actions">
-                                <button
-                                    disabled={busy || props.blocked || !files().some(file => file.unstaged || file.untracked)}
-                                    mix={on("click", () =>
-                                        stage(
-                                            files().filter(file => file.unstaged || file.untracked).flatMap(file =>
-                                                file.oldPath ? [file.oldPath, file.path] : [file.path]
-                                            ),
-                                            false,
-                                        ))}
-                                >
-                                    Stage all
-                                </button>
-                                <button
-                                    disabled={busy || props.blocked || !staged().length}
-                                    mix={on("click", () => stage(staged().flatMap(file => file.oldPath ? [file.oldPath, file.path] : [file.path]), true))}
-                                >
-                                    Unstage all
-                                </button>
-                            </div>
+                                    })}
+                                />
+                                <div class="commit-bulk-actions">
+                                    <button
+                                        disabled={busy || props.blocked || !files().some(file => file.unstaged || file.untracked)}
+                                        mix={on("click", () =>
+                                            stage(
+                                                files().filter(file => file.unstaged || file.untracked).flatMap(file =>
+                                                    file.oldPath ? [file.oldPath, file.path] : [file.path]
+                                                ),
+                                                false,
+                                            ))}
+                                    >
+                                        Stage all
+                                    </button>
+                                    <button
+                                        disabled={busy || props.blocked || !staged().length}
+                                        mix={on("click", () => stage(staged().flatMap(file => file.oldPath ? [file.oldPath, file.path] : [file.path]), true))}
+                                    >
+                                        Unstage all
+                                    </button>
+                                </div>
+                                <div class="commit-actions">
+                                    <button
+                                        disabled={busy || props.blocked}
+                                        mix={on("click", () => {
+                                            open = false
+                                            hook = undefined
+                                            void save()
+                                            update()
+                                        })}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        class="commit-submit"
+                                        disabled={busy || props.blocked || !draft.title.trim() || !files().length || (!preview?.branch && !draft.branch.trim())
+                                            || Boolean(hook)}
+                                        mix={on("click", () => void act(commit))}
+                                    >
+                                        {busy ? "Working…" : staged().length ? `Commit staged (${staged().length})` : `Commit all changes (${files().length})`}
+                                    </button>
+                                </div>
+                            </>
+                        )
+                        : null}
+                    {hook && (
+                        <div class="commit-hook-review" role="alert">
+                            <strong>Hook changed files</strong>
+                            <ul>{hook.changedFiles?.map(path => <li>{path}</li>)}</ul>
+                            <p>Continue with the prepared commit, or cancel to review the changes.</p>
                             <div class="commit-actions">
                                 <button
                                     disabled={busy || props.blocked}
                                     mix={on("click", () => {
-                                        open = false
                                         hook = undefined
-                                        void save()
+                                        update()
+                                    })}
+                                >
+                                    Cancel
+                                </button>
+                                <button disabled={busy || props.blocked} mix={on("click", () => void act(commit))}>Continue commit</button>
+                            </div>
+                        </div>
+                    )}
+                    {stashOpen && (
+                        <div class="commit-stash-form">
+                            <input
+                                aria-label="Stash label"
+                                placeholder="Stash label (optional)"
+                                value={stashLabel}
+                                mix={on("input", event => {
+                                    stashLabel = event.currentTarget.value
+                                    update()
+                                })}
+                            />
+                            <div class="commit-actions">
+                                <button
+                                    disabled={busy || props.blocked}
+                                    mix={on("click", () => {
+                                        stashOpen = false
                                         update()
                                     })}
                                 >
@@ -459,81 +551,30 @@ export function CommitComposer(
                                 </button>
                                 <button
                                     class="commit-submit"
-                                    disabled={busy || props.blocked || !draft.title.trim() || !files().length || (!preview?.branch && !draft.branch.trim())
-                                        || Boolean(hook)}
-                                    mix={on("click", () => void act(commit))}
+                                    disabled={busy || props.blocked}
+                                    mix={on("click", () =>
+                                        void act(async () => {
+                                            await run({ action: "stash-create", path: props.path, label: stashLabel })
+                                            stashOpen = false
+                                        }))}
                                 >
-                                    {busy ? "Working…" : staged().length ? `Commit staged (${staged().length})` : `Commit all changes (${files().length})`}
+                                    Stash all changes
                                 </button>
                             </div>
+                        </div>
+                    )}
+                    {/* Staged files sit above the divider; the rest of Working Changes sits below it. */}
+                    {(staged().length > 0 || open) && (
+                        <>
+                            {props.renderFiles("staged", open ? stage : undefined)}
+                            <div class="staged-divider" role="separator" aria-label="Staged changes">
+                                <span>Staged · {staged().length}</span>
+                            </div>
                         </>
-                    )
-                    : null}
-                {hook && (
-                    <div class="commit-hook-review" role="alert">
-                        <strong>Hook changed files</strong>
-                        <ul>{hook.changedFiles?.map(path => <li>{path}</li>)}</ul>
-                        <p>Continue with the prepared commit, or cancel to review the changes.</p>
-                        <div class="commit-actions">
-                            <button
-                                disabled={busy || props.blocked}
-                                mix={on("click", () => {
-                                    hook = undefined
-                                    update()
-                                })}
-                            >
-                                Cancel
-                            </button>
-                            <button disabled={busy || props.blocked} mix={on("click", () => void act(commit))}>Continue commit</button>
-                        </div>
-                    </div>
-                )}
-                {stashOpen && (
-                    <div class="commit-stash-form">
-                        <input
-                            aria-label="Stash label"
-                            placeholder="Stash label (optional)"
-                            value={stashLabel}
-                            mix={on("input", event => {
-                                stashLabel = event.currentTarget.value
-                                update()
-                            })}
-                        />
-                        <div class="commit-actions">
-                            <button
-                                disabled={busy || props.blocked}
-                                mix={on("click", () => {
-                                    stashOpen = false
-                                    update()
-                                })}
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                class="commit-submit"
-                                disabled={busy || props.blocked}
-                                mix={on("click", () =>
-                                    void act(async () => {
-                                        await run({ action: "stash-create", path: props.path, label: stashLabel })
-                                        stashOpen = false
-                                    }))}
-                            >
-                                Stash all changes
-                            </button>
-                        </div>
-                    </div>
-                )}
-                {/* Staged files sit above the divider; the rest of Working Changes sits below it. */}
-                {(staged().length > 0 || open) && (
-                    <>
-                        {props.renderFiles("staged", open ? stage : undefined)}
-                        <div class="staged-divider" role="separator" aria-label="Staged changes">
-                            <span>Staged · {staged().length}</span>
-                        </div>
-                    </>
-                )}
-                {props.renderFiles("unstaged", open ? stage : undefined)}
-                {notice && <p role="status" class="commit-notice">{notice}</p>}
+                    )}
+                    {props.renderFiles("unstaged", open ? stage : undefined)}
+                    {notice && <p role="status" class="commit-notice">{notice}</p>}
+                </div>
             </div>
             {/* A detached worktree has no branch card below, so the branch its next commit creates stands in for one. */}
             {detached() && (
