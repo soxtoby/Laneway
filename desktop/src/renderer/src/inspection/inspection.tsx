@@ -18,6 +18,7 @@ import { readDiffContext } from "./diff-context"
 import { DiffControls } from "./diff-controls"
 import { fileLabel, FileTree } from "./file-list"
 import { FileMenu } from "./file-menu"
+import { readDiffImage } from "./image-diff"
 import { createDiffSession, type FileDiffState } from "./inspection-diff-session"
 import { InspectionDiffContents, inspectionMuted, inspectionProgress, selectionSummary } from "./inspection-diff-view"
 
@@ -2593,6 +2594,7 @@ export function createInspection(options: Options) {
                 changeView={view => changeView(state, diff, view)}
                 read={more => readDiff(state, diff, more)}
                 readContext={(page, signal) => readDiffContext(options.api, state.repositoryId, page, signal)}
+                readImage={(page, signal, fetchLfs) => readDiffImage(options.api, state.repositoryId, page, signal, fetchLfs)}
                 select={ids => diffSession(state).select(diff, ids)}
                 clearSelection={() => {
                     diff.selection = undefined

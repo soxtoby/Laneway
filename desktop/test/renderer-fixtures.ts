@@ -195,6 +195,7 @@ export function fakeLaneway(overrides: Partial<Window["laneway"]> = {}): Window[
         transitionOperation: async () => ({ ok: true }),
         readChanges: async () => ({ ok: false, error: { code: "git.command-failed", message: "Changes unavailable" } }),
         readFileDiff: async () => ({ ok: false, error: { code: "git.command-failed", message: "Diff unavailable" } }),
+        readFileImage: async () => ({ ok: false, error: { code: "git.command-failed", message: "Image unavailable" } }),
         cancelInspection: async () => false,
         readFileHistory: async () => ({ ok: true, page: { entries: [] } }),
         openRepository: async () => ({ ok: false, error: { code: "git.cancelled", message: "Cancelled" } }),

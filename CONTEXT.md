@@ -157,6 +157,10 @@ _Avoid_: Diff Workspace Column
 A transient auxiliary column that breaks a worktree's whole Working Changes diff out from its source Workspace Column, scrolled to the chosen file; choosing another file scrolls to it instead of replacing the column. Closing it or restarting Laneway returns the source column to inline diff.
 _Avoid_: Diff Column, Commit Diff Column
 
+**Image Diff**:
+The picture view of a changed raster image inside any file diff, in place of text lines. An added or removed image shows that one picture; a changed image compares both versions side by side, with a swipe divider, as an onion-skin fade, or as a difference blend, and the chosen mode persists for the session. Git LFS pointers show the image, downloading the object through Git LFS when the local store lacks it. SVG keeps its text diff.
+_Avoid_: Binary diff, image preview
+
 **Working Changes**:
 The uncommitted, non-ignored changes belonging to one worktree. Before checkout changes, Laneway stores them in an ordinary Git stash associated with the old branch and exposes that stash as a Branch Marker. When Worktree Backing transfers between open columns, the old column keeps them visible as Stashed Working Changes. Ordinary commits use Git's staged snapshot when present, otherwise all Working Changes; transfers to arbitrary destinations use Change Selection.
 _Avoid_: Staged changes, unstaged changes

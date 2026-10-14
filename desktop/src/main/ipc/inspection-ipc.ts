@@ -1,5 +1,5 @@
 import type { BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, RepositoryGraphSettings } from "@laneway/shared"
-import { ChangesRequestSchema, type ChangesResult, FileDiffRequestSchema, type FileDiffResult, FileHistoryRequestSchema, type FileHistoryResult } from "@laneway/shared"
+import { ChangesRequestSchema, type ChangesResult, FileDiffRequestSchema, type FileDiffResult, FileHistoryRequestSchema, type FileHistoryResult, FileImageRequestSchema, type FileImageResult } from "@laneway/shared"
 import { ipcMain } from "electron"
 import { runEngineCommand } from "../engine"
 import type { OpenRepositories } from "../repositories"
@@ -41,6 +41,18 @@ export function registerInspectionHandlers(repositories: OpenRepositories, engin
 
             try {
                 return { ok: true, page: await repositories.readFileDiff(repositoryId, requestId, request.data) }
+            } catch (error) {
+                return { ok: false, error: entryError(error) }
+            }
+        })
+
+        ipcMain.handle("changes:image", async (_event, repositoryId: unknown, requestId: unknown, value: unknown): Promise<FileImageResult> => {
+            let request = FileImageRequestSchema.safeParse(value)
+            if (typeof repositoryId != "string" || typeof requestId != "string" || !request.success)
+                return { ok: false, error: { code: "git.command-failed", message: "Invalid image request." } }
+
+            try {
+                return { ok: true, page: await repositories.readFileImage(repositoryId, requestId, request.data) }
             } catch (error) {
                 return { ok: false, error: entryError(error) }
             }

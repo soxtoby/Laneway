@@ -1,7 +1,8 @@
-import type { ChangedFile, DiffLayout, DiffView, FileDiffPage } from "@laneway/shared"
+import type { ChangedFile, DiffLayout, DiffView, FileDiffPage, FileImagePage } from "@laneway/shared"
 import type { FileDiffLoadedChangedFiles } from "@pierre/diffs"
 import { css, type Handle, on, type RemixNode } from "remix/ui"
 import { DiffLines } from "./diff"
+import { ImageDiff, isImagePath, visibleSummary } from "./image-diff"
 import type { FileDiffState } from "./inspection-diff-session"
 
 let diffViews = css({
@@ -172,6 +173,7 @@ export function InspectionDiffContents(
         changeView(view: DiffView): void
         read(more?: boolean): void
         readContext(page: FileDiffPage, signal: AbortSignal): Promise<FileDiffLoadedChangedFiles>
+        readImage(page: FileDiffPage, signal: AbortSignal, fetchLfs?: boolean): Promise<FileImagePage>
         select(ids: number[]): void
         clearSelection(): void
         cancel(): void
@@ -180,6 +182,8 @@ export function InspectionDiffContents(
     return () => {
         let { diff, eligible, layout } = handle.props
         let page = diff.page && !eligible ? { ...diff.page, selectable: false } : diff.page
+        let image = page != undefined && isImagePath(page.file.path)
+        let summary = page ? visibleSummary(page) : []
 
         return (
             <>
@@ -211,27 +215,31 @@ export function InspectionDiffContents(
                 )}
                 {page && (
                     <>
-                        {page.summary.map(text => (
+                        {summary.map(text => (
                             <p class="diff-summary" mix={diffSummary}>
                                 {text}
                             </p>
                         ))}
-                        {page.lines.length == 0 && page.summary.length == 0 && (
+                        {!image && page.lines.length == 0 && page.summary.length == 0 && (
                             <p class="inspection-muted" mix={inspectionMuted}>
                                 No net content difference in this view.
                             </p>
                         )}
-                        <DiffLines
-                            page={page}
-                            layout={layout}
-                            showWhitespace={diff.showWhitespace}
-                            selected={eligible ? diff.selection?.lineIds ?? [] : []}
-                            readContext={handle.props.readContext}
-                            select={ids => {
-                                if (eligible)
-                                    handle.props.select(ids)
-                            }}
-                        />
+                        {image
+                            ? <ImageDiff page={page} read={handle.props.readImage} />
+                            : (
+                                <DiffLines
+                                    page={page}
+                                    layout={layout}
+                                    showWhitespace={diff.showWhitespace}
+                                    selected={eligible ? diff.selection?.lineIds ?? [] : []}
+                                    readContext={handle.props.readContext}
+                                    select={ids => {
+                                        if (eligible)
+                                            handle.props.select(ids)
+                                    }}
+                                />
+                            )}
                         {eligible && diff.selection && (
                             <div class="selection-summary" role="status" mix={selectionSummary}>
                                 {handle.props.selectionControl}

@@ -80,9 +80,37 @@ export interface ChangeSelection {
     rename: boolean
 }
 
+export interface FileImageRequest {
+    source: DiffSource
+    path: string
+    view?: DiffView
+    inventoryVersion?: string
+    /** Download Git LFS objects that are not in the local store instead of reporting them as `lfs`. */
+    fetchLfs?: boolean
+}
+
+/** One version of an image. An `lfs` side is a pointer whose object has not been downloaded yet. */
+export type ImageContent =
+    | { state: "ready"; bytes: Uint8Array; size: number }
+    | { state: "lfs"; size: number }
+    | { state: "unavailable"; reason: string }
+
+export interface FileImagePage {
+    source: DiffSource
+    file: ChangedFile
+    view: DiffView
+    version: string
+    /** Absent when the file was added, or when the view shows one conflict stage. */
+    old?: ImageContent
+    /** Absent when the file was deleted. */
+    new?: ImageContent
+}
+
 export type ChangesResult = { ok: true; inventory: ChangesInventory } | { ok: false; error: EntryError }
 
 export type FileDiffResult = { ok: true; page: FileDiffPage } | { ok: false; error: EntryError }
+
+export type FileImageResult = { ok: true; page: FileImagePage } | { ok: false; error: EntryError }
 
 export let DiffSourceSchema = z.discriminatedUnion("kind", [
     z.object({
@@ -118,4 +146,12 @@ export let FileDiffRequestSchema = z.object({
     offset: z.number().int().nonnegative().optional(),
     inventoryVersion: z.string().optional(),
     expectedVersion: z.string().optional(),
+})
+
+export let FileImageRequestSchema = z.object({
+    source: DiffSourceSchema,
+    path: z.string().min(1),
+    view: z.enum(["combined", "staged", "unstaged", "base", "ours", "theirs"]).optional(),
+    inventoryVersion: z.string().optional(),
+    fetchLfs: z.boolean().optional(),
 })

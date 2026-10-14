@@ -1,5 +1,5 @@
 import type { Appearance, AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryDefaults, EntryProgress, EntryResult, GitSettingsState, RepositoryGraphSettings, Workspace } from "@laneway/shared"
-import type { ChangesRequest, ChangesResult, FileDiffRequest, FileDiffResult } from "@laneway/shared"
+import type { ChangesRequest, ChangesResult, FileDiffRequest, FileDiffResult, FileImageRequest, FileImageResult } from "@laneway/shared"
 import type { WorktreeActionResult, WorktreePreviewResult, WorktreeRequest } from "@laneway/shared"
 import type { CommitDraft, LocalActionResult, LocalRequest } from "@laneway/shared"
 import type { ConflictActionResult, ConflictRequest } from "@laneway/shared"
@@ -44,6 +44,7 @@ declare global {
             readChanges(repositoryId: string, requestId: string, request: ChangesRequest): Promise<ChangesResult>
             readFileHistory(repositoryId: string, requestId: string, request: FileHistoryRequest): Promise<FileHistoryResult>
             readFileDiff(repositoryId: string, requestId: string, request: FileDiffRequest): Promise<FileDiffResult>
+            readFileImage(repositoryId: string, requestId: string, request: FileImageRequest): Promise<FileImageResult>
             cancelInspection(repositoryId: string, requestId: string): Promise<boolean>
             getState(): Promise<AppState>
             openRepository(): Promise<EntryResult>

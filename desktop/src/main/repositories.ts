@@ -1,6 +1,6 @@
 import { GitError, type GitInstallation, type GitTask, inferCloneDirectoryName, initializeRepository, openRepository, type RepositoryGit, selectGit, startCloneRepository } from "@laneway/git"
 import { defaultSettingsPath, readSettings, SettingsError, WorkspaceStateError, writeSettings } from "@laneway/settings"
-import type { Appearance, AuthorIdentitySettings, BranchGraph, BranchGraphReadOptions, BranchHistoryPage, BranchHistoryRequest, ChangesRequest, EntryError, FileDiffRequest, GitSettingsState, RepositoryGraphSettings, RepositoryInfo } from "@laneway/shared"
+import type { Appearance, AuthorIdentitySettings, BranchGraph, BranchGraphReadOptions, BranchHistoryPage, BranchHistoryRequest, ChangesRequest, EntryError, FileDiffRequest, FileImageRequest, GitSettingsState, RepositoryGraphSettings, RepositoryInfo } from "@laneway/shared"
 import type { FileHistoryRequest } from "@laneway/shared"
 import { resolve } from "node:path"
 import { watchRepository } from "./repository-watcher"
@@ -170,6 +170,10 @@ export class OpenRepositories {
 
     readFileDiff(repositoryId: string, requestId: string, request: FileDiffRequest) {
         return this.trackInspection(repositoryId, requestId, () => this.requireRepository(repositoryId).git.startReadFileDiff(request))
+    }
+
+    readFileImage(repositoryId: string, requestId: string, request: FileImageRequest) {
+        return this.trackInspection(repositoryId, requestId, () => this.requireRepository(repositoryId).git.startReadFileImage(request))
     }
 
     cancelInspection(repositoryId: string, requestId: string) {

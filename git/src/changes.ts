@@ -1,6 +1,6 @@
-import type { ChangedFile, ChangesInventory, ChangesRequest, DiffSource, FileDiffPage, FileDiffRequest } from "@laneway/shared"
+import type { ChangedFile, ChangesInventory, ChangesRequest, DiffSource, FileDiffPage, FileDiffRequest, FileImagePage, FileImageRequest, ImageContent } from "@laneway/shared"
 import { createHash } from "node:crypto"
-import { lstat, realpath } from "node:fs/promises"
+import { lstat, readFile, realpath } from "node:fs/promises"
 import { isAbsolute, relative, resolve, sep } from "node:path"
 import { GitError, type GitTask, redactGitText, type RepositoryDescriptor } from "./index"
 import { patchCollector } from "./patch-collector"
@@ -64,6 +64,20 @@ export function startFileDiffRead(
 ): GitTask<FileDiffPage> {
     let reader = operation(start)
     return { cancel: reader.cancel, result: fileDiff(descriptor, reader, request, cache) }
+}
+
+/** Images above this size are reported as unavailable rather than sent to the renderer. */
+export let imageSizeLimit = 20 * 1024 * 1024
+
+export function startFileImageRead(
+    descriptor: RepositoryDescriptor,
+    start: StartCommand,
+    request: FileImageRequest,
+    cache?: ChangesReadCache,
+    limit = imageSizeLimit,
+): GitTask<FileImagePage> {
+    let reader = operation(start)
+    return { cancel: reader.cancel, result: fileImage(descriptor, reader, request, cache, limit) }
 }
 
 function operation(start: StartCommand) {
@@ -234,6 +248,171 @@ async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, reques
         summary,
         selectable: selectable && !collected.binary && !collected.oversized,
     }
+}
+
+async function fileImage(
+    descriptor: RepositoryDescriptor,
+    reader: Reader,
+    request: FileImageRequest,
+    cache: ChangesReadCache | undefined,
+    limit: number,
+): Promise<FileImagePage> {
+    validatePath(request.path)
+    let cached = request.inventoryVersion ? cache?.get(snapshotKey(request.source, request.inventoryVersion)) : undefined
+    let snapshot = cached ?? await readSnapshot(descriptor, reader, { source: request.source })
+    let { cwd, headId } = snapshot
+    let source = snapshot.inventory.source
+    let file = changedFile(snapshot.inventory.files, request.path)
+    let view = request.view ?? "combined"
+    let stage = { base: 1, ours: 2, theirs: 3 }[view as "base" | "ours" | "theirs"]
+    if (source.kind != "working" && view != "combined" || stage && !file.conflicted)
+        throw new GitError("git.command-failed", "This comparison is unavailable for the selected file.")
+
+    let oldPath = file.oldPath ?? file.path
+    let store: ImageStore = { reader, cwd, commonDirectory: descriptor.commonDirectory, limit, fetchLfs: request.fetchLfs == true }
+    let blob = (object: string, path: string) => readImageBlob(store, object, path)
+    let worktree = () => readWorktreeImage(store, file.path)
+    let sides: { old?: ImageContent; new?: ImageContent } = {}
+
+    if (source.kind == "comparison") {
+        sides.old = file.oldMode != "000000" ? await blob(`${source.fromObjectId}:${oldPath}`, oldPath) : undefined
+        sides.new = file.newMode != "000000" ? await blob(`${source.toObjectId}:${file.path}`, file.path) : undefined
+    } else if (source.kind == "commit") {
+        sides.old = source.parentId && file.oldMode != "000000" ? await blob(`${source.parentId}:${oldPath}`, oldPath) : undefined
+        sides.new = file.newMode != "000000" ? await blob(`${source.objectId}:${file.path}`, file.path) : undefined
+    } else {
+        let inHead = Boolean(headId) && !file.untracked && file.oldMode != "000000"
+        let inWorktree = file.untracked || file.newMode != "000000"
+        let indexStages = view == "combined" ? [] : await stagesOf(reader, cwd, file.path)
+        if (stage)
+            sides.new = indexStages.includes(stage) ? await blob(`:${stage}:${file.path}`, file.path) : undefined
+        else if (view == "staged") {
+            sides.old = inHead ? await blob(`${headId}:${oldPath}`, oldPath) : undefined
+            sides.new = indexStages.includes(0) ? await blob(`:0:${file.path}`, file.path) : undefined
+        } else if (view == "unstaged") {
+            sides.old = indexStages.includes(0) ? await blob(`:0:${file.path}`, file.path) : undefined
+            sides.new = inWorktree ? await worktree() : undefined
+        } else {
+            sides.old = inHead ? await blob(`${headId}:${oldPath}`, oldPath) : undefined
+            sides.new = inWorktree ? await worktree() : undefined
+        }
+    }
+    reader.check()
+
+    let identity = [sides.old, sides.new].map(side => side?.state == "ready" ? hash(Buffer.from(side.bytes).toString("base64")) : JSON.stringify(side))
+    return {
+        source,
+        file,
+        view,
+        version: hash(JSON.stringify(source) + JSON.stringify(file) + headId + view + identity.join()),
+        ...sides,
+    }
+}
+
+async function stagesOf(reader: Reader, cwd: string, path: string) {
+    let output = await reader.run(cwd, ["ls-files", "--stage", "-z", "--", path])
+    return output.split("\0").filter(Boolean).map(record => Number(record.split("\t")[0].split(" ")[2]))
+}
+
+interface ImageStore {
+    reader: Reader
+    cwd: string
+    commonDirectory: string
+    limit: number
+    fetchLfs: boolean
+}
+
+async function readImageBlob(store: ImageStore, object: string, path: string): Promise<ImageContent> {
+    let bytes = await collectOutput(store, ["cat-file", "blob", object])
+    return bytes ? imageContent(store, bytes, path) : oversized(store.limit)
+}
+
+async function readWorktreeImage(store: ImageStore, path: string): Promise<ImageContent> {
+    await safeFile(store.cwd, path)
+    let absolute = resolve(store.cwd, path)
+    let stat = await lstat(absolute)
+    return stat.size > store.limit ? oversized(store.limit) : imageContent(store, await readFile(absolute), path)
+}
+
+// A Git LFS pointer stands in for the image. Its object comes from the local LFS store when present; downloading
+// it is a separate, explicitly requested read so the first read stays quick and offline.
+async function imageContent(store: ImageStore, bytes: Buffer, path: string): Promise<ImageContent> {
+    let pointer = lfsPointer(bytes)
+    if (!pointer)
+        return ready(bytes)
+    if (pointer.size > store.limit)
+        return oversized(store.limit)
+
+    let stored = await readLfsObject(store.commonDirectory, pointer.oid)
+    if (stored)
+        return ready(stored)
+    else if (store.fetchLfs)
+        return fetchLfsObject(store, bytes, path)
+    else
+        return { state: "lfs", size: pointer.size }
+}
+
+async function readLfsObject(commonDirectory: string, oid: string) {
+    try {
+        return await readFile(resolve(commonDirectory, "lfs", "objects", oid.slice(0, 2), oid.slice(2, 4), oid))
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code != "ENOENT")
+            throw error
+        return undefined
+    }
+}
+
+// Smudging through git-lfs downloads the object into the local store, so later reads find it there.
+async function fetchLfsObject(store: ImageStore, pointer: Buffer, path: string): Promise<ImageContent> {
+    try {
+        let bytes = await collectOutput(store, ["lfs", "smudge", "--", path], pointer.toString("utf8"))
+        if (!bytes)
+            return oversized(store.limit)
+        else if (lfsPointer(bytes))
+            return { state: "unavailable", reason: "Git LFS could not download this image." }
+        else
+            return ready(bytes)
+    } catch (error) {
+        if (!(error instanceof GitError) || error.code != "git.command-failed")
+            throw error
+        return { state: "unavailable", reason: /not a git command/i.test(error.message) ? "Install Git LFS to show this image." : error.message }
+    }
+}
+
+/** Streams a command's output up to the size limit; `undefined` means the limit was exceeded. */
+async function collectOutput(store: ImageStore, args: string[], input?: string) {
+    let chunks: Buffer[] = []
+    let length = 0
+    await store.reader.run(
+        store.cwd,
+        args,
+        chunk => {
+            length += chunk.length
+            if (length <= store.limit)
+                chunks.push(chunk)
+        },
+        [0],
+        input,
+    )
+    return length > store.limit ? undefined : Buffer.concat(chunks)
+}
+
+function ready(bytes: Buffer): ImageContent {
+    return { state: "ready", bytes: new Uint8Array(bytes), size: bytes.length }
+}
+
+function lfsPointer(bytes: Buffer) {
+    if (bytes.length > 1024 || !bytes.subarray(0, 8).equals(Buffer.from("version ")))
+        return undefined
+
+    let text = bytes.toString("utf8")
+    let oid = /^oid sha256:([0-9a-f]{64})$/m.exec(text)
+    let size = /^size (\d+)$/m.exec(text)
+    return text.startsWith("version https://git-lfs.github.com/spec/v1\n") && oid && size ? { oid: oid[1], size: Number(size[1]) } : undefined
+}
+
+function oversized(limit: number): ImageContent {
+    return { state: "unavailable", reason: `This image is larger than ${Math.round(limit / 1024 / 1024)} MB.` }
 }
 
 function snapshotKey(source: DiffSource, version: string) {

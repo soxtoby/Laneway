@@ -6,6 +6,7 @@ import { DiffLines } from "./diff"
 import { readDiffContext } from "./diff-context"
 import { DiffControls } from "./diff-controls"
 import { FileTree } from "./file-list"
+import { ImageDiff, isImagePath, readDiffImage, visibleSummary } from "./image-diff"
 
 export interface BranchComparisonState {
     kind: "comparison"
@@ -224,15 +225,25 @@ export function createBranchComparisons(options: { api: Window["laneway"]; updat
                                             )}
                                             {patch.page && (
                                                 <>
-                                                    {patch.page.summary.map(text => <p>{text}</p>)}
-                                                    <DiffLines
-                                                        page={patch.page}
-                                                        layout={state.layout}
-                                                        showWhitespace={patch.showWhitespace ?? false}
-                                                        selected={[]}
-                                                        select={() => {}}
-                                                        readContext={(page, signal) => readDiffContext(options.api, state.repositoryId, page, signal)}
-                                                    />
+                                                    {visibleSummary(patch.page).map(text => <p>{text}</p>)}
+                                                    {isImagePath(file.path)
+                                                        ? (
+                                                            <ImageDiff
+                                                                page={patch.page}
+                                                                read={(page, signal, fetchLfs) =>
+                                                                    readDiffImage(options.api, state.repositoryId, page, signal, fetchLfs)}
+                                                            />
+                                                        )
+                                                        : (
+                                                            <DiffLines
+                                                                page={patch.page}
+                                                                layout={state.layout}
+                                                                showWhitespace={patch.showWhitespace ?? false}
+                                                                selected={[]}
+                                                                select={() => {}}
+                                                                readContext={(page, signal) => readDiffContext(options.api, state.repositoryId, page, signal)}
+                                                            />
+                                                        )}
                                                     {patch.page.nextOffset != undefined && (
                                                         <button
                                                             type="button"
