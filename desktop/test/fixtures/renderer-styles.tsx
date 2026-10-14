@@ -711,6 +711,15 @@ async function checkRenderer() {
         && !!comparisonHeader.querySelector("[aria-label='Close column']")
         && !!comparisonHeader.querySelector("[aria-label='Filter files']")
         && !comparisonHeader.querySelector(".column-worktree")
+    // A heading longer than the column truncates with an ellipsis and keeps the header's controls in reach.
+    let comparisonHeading = element(`${comparisonSelector} > header h2`)
+    comparisonHeading.textContent = "origin/master → origin/jun/2026.09-docs-with-a-very-long-branch-name"
+    await settle()
+    let comparisonHeadingTruncates = comparisonHeading.scrollWidth > comparisonHeading.clientWidth
+        && getComputedStyle(comparisonHeading).textOverflow == "ellipsis"
+        && comparisonHeader.querySelector("[aria-label='Close column']")!.getBoundingClientRect().right <= comparison.getBoundingClientRect().right
+        && comparisonHeading.getAttribute("title") == "main → feature/laneway"
+    comparisonHeading.textContent = "main → feature/laneway"
     comparisonRow.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 500, clientY: 180 }))
     await settle()
     element("[aria-label='File actions'] [role='menuitem']").click()
@@ -846,6 +855,7 @@ async function checkRenderer() {
         comparisonControls,
         comparisonStickyRow,
         comparisonColumnHeader,
+        comparisonHeadingTruncates,
         contextMenuCompact,
         comparisonSharedRows,
         comparisonRefreshStable,

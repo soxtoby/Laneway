@@ -123,6 +123,8 @@ let branchColumn = css({
     flex: "0 0 auto",
     display: "grid",
     gridTemplateRows: "auto minmax(0, 1fr)",
+    // A long heading truncates rather than widening the header past the column's controls.
+    gridTemplateColumns: "minmax(0, 1fr)",
     overflow: "hidden",
     // The card edge is a shadow ring so the column's content box starts at its left edge.
     border: "0",
@@ -151,6 +153,7 @@ let branchColumn = css({
 
 let branchColumnHeader = css({
     position: "relative",
+    minWidth: "0",
     minHeight: "46px",
     padding: "0 6px 0 0",
     display: "flex",
@@ -434,7 +437,7 @@ export function BranchColumns(
                                                 )
                                             })()}
                                             {(column.kind == "recovery" || !props.worktreePath(column.id)) && (
-                                                <h2 title={column.kind == "comparison" ? column.description : undefined} mix={branchColumnH2}>
+                                                <h2 title={column.name} mix={branchColumnH2}>
                                                     {column.name}
                                                 </h2>
                                             )}
@@ -572,7 +575,7 @@ export function columnIdentity(column: ColumnNode | RecoveryColumnNode, worktree
     if (column.kind == "recovery")
         return { icon: "warning" as const, kind: "Worktree recovery", name: column.name, tone: toneWarning }
     if (column.kind == "comparison")
-        return { icon: "compare" as const, kind: "Branch comparison", name: column.name, tone: toneComparison }
+        return { icon: "compare" as const, kind: column.description, name: column.name, tone: toneComparison }
 
     let worktree = columnWorktree(column, worktreePath)
     if (worktree) {

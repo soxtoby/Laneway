@@ -1404,7 +1404,7 @@ describe("Branch Comparison", () => {
         expect(column).not.toBeNull()
         expect(column.previousElementSibling?.previousElementSibling).toBe(source)
         expect(column.querySelector("h2")?.textContent).toBe(`${main.name} → ${feature.name}`)
-        expect(column.querySelector(".column-kind")?.getAttribute("title")).toBe("Branch comparison")
+        expect(column.querySelector("h2")?.getAttribute("title")).toBe(`${main.name} → ${feature.name}`)
         expect(document.activeElement).toBe(column)
         expect(requested).toEqual([{
             kind: "refs",
@@ -1465,7 +1465,7 @@ describe("Branch Comparison", () => {
         await flush(root)
         let comparison = container.querySelector<HTMLElement>("[data-column-id^='comparison:']")!
         expect(comparison).not.toBeNull()
-        expect(comparison.querySelector("h2")?.getAttribute("title")).toBe(`Changes on ${feature.name} since it left ${main.name}`)
+        expect(comparison.querySelector(".column-kind")?.getAttribute("title")).toBe(`Changes on ${feature.name} since it left ${main.name}`)
         expect(comparison.querySelector("[aria-label='Filter files']")).not.toBeNull()
         expect(comparison.querySelector("[aria-label='Maximize column']")).not.toBeNull()
         expect(comparison.querySelector(".column-worktree")).toBeNull()
