@@ -1,4 +1,4 @@
-import type { BranchGraph, ChangesResult, CompositionPreview, CompositionRequest, DiffLine, DiffSource, EntryProgress, EntryResult, FileDiffResult, LocalRequest, WorktreeRequest } from "@laneway/shared"
+import type { BranchGraph, ChangesResult, CompositionPreview, CompositionRequest, DiffLine, DiffSource, EntryProgress, EntryResult, FileDiffResult, LocalRequest, Workspace, WorktreeRequest } from "@laneway/shared"
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { Window as HappyWindow } from "happy-dom"
 import type { createElement as createRemixElement, createRoot as createRemixRoot, VirtualRoot } from "remix/ui"
@@ -704,12 +704,20 @@ describe("Remix repository entry renderer", () => {
         await flush(root)
         expect(container.querySelector(".branch-column")?.textContent).toContain("feature/laneway")
 
+        click(container.querySelector<HTMLElement>(`[data-node-id='${main.id}']`)!)
+        container.querySelector(".graph-rows")!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }))
+        root.flush()
+        expect(container.querySelector(`[data-node-id='${graph.branches[1].id}']`)).toBeNull()
         window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }))
         root.flush()
         expect(container.querySelector(".command-lens")?.textContent).toContain("Search open repositories and branches.")
         input(container.querySelector<HTMLInputElement>("[aria-label='Command Lens search']")!, "laneway")
         root.flush()
         expect(container.querySelector(".lens-results")?.textContent).toContain("feature/laneway")
+        click(container.querySelector<HTMLButtonElement>(".lens-results button")!)
+        await flush(root)
+        expect(container.querySelector(".graph-row.selected")?.getAttribute("data-node-id")).toBe(graph.branches[1].id)
+        expect(container.querySelectorAll(".branch-column")).toHaveLength(1)
         dispose()
     })
 
@@ -750,8 +758,103 @@ describe("Remix repository entry renderer", () => {
         root.flush()
         expect(container.querySelectorAll(".graph-row").length).toBeLessThan(30)
         expect(container.querySelector(".graph-row svg path[d='M 13 0 V 40']")).not.toBeNull()
+        click(button(container, "Command Lens"))
+        await flush(root)
+        input(container.querySelector<HTMLInputElement>("[aria-label='Command Lens search']")!, "feature/119")
+        root.flush()
+        click(container.querySelector<HTMLButtonElement>(".lens-results button")!)
+        await flush(root)
+        expect(container.querySelector(".graph-row.selected")?.getAttribute("data-node-id")).toBe("branch:refs/heads/feature/119")
+        expect(rows.scrollTop).toBeGreaterThan(1600)
+        expect(document.activeElement == rows).toBe(true)
+        expect(button(container, "Show all").getAttribute("aria-pressed")).toBe("false")
+        expect(container.querySelector(".branch-column")).toBeNull()
+
+        click(button(container, "Command Lens"))
+        await flush(root)
+        input(container.querySelector<HTMLInputElement>("[aria-label='Command Lens search']")!, "feature/0")
+        root.flush()
+        click(container.querySelector<HTMLButtonElement>(".lens-results button")!)
+        await flush(root)
+        expect(container.querySelector(".graph-row.selected")?.getAttribute("data-node-id")).toBe("branch:refs/heads/feature/0")
+        expect(rows.scrollTop).toBe(0)
         dispose()
     })
+
+    for (let selectAnother of [false, true]) {
+        test(`Command Lens finds a filtered branch in another repository and ${selectAnother ? "preserves a newer selection" : "reveals it"} after a pending read`, async () => {
+            let first = repositoryInfo("D:\\Source\\first")
+            let second = repositoryInfo("D:\\Source\\second")
+            let graph = branchGraph(second.id)
+            let [main, feature] = graph.branches
+            let remote = {
+                ...feature,
+                id: "branch:refs/remotes/origin/hidden",
+                name: "origin/hidden",
+                preferredRef: "refs/remotes/origin/hidden",
+                refs: ["refs/remotes/origin/hidden"],
+                aliases: ["origin/hidden"],
+                localRefs: [],
+                remoteRefs: ["refs/remotes/origin/hidden"],
+                tip: "4".repeat(40),
+                remoteOnly: true,
+                involvement: "uninvolved" as const,
+            }
+            let everything = {
+                ...graph,
+                branches: [...graph.branches, remote],
+                history: [{ objectId: remote.tip, lineId: remote.id, parentIds: [main.tip] }, ...graph.history],
+            }
+            let workspace: Workspace = {
+                ...openedWorkspace(first),
+                repositories: [...openedWorkspace(first).repositories, ...openedWorkspace(second).repositories],
+            }
+            let finishRefresh: () => void = () => {}
+            let refresh = new Promise<void>(resolve => finishRefresh = resolve)
+            let waiting = false
+            let api = fakeLaneway({
+                getState: async () => ({ ...appState(), workspace }),
+                updateWorkspace: async next => workspace = next,
+                selectRepository: async id => workspace = { ...workspace, activeRepositoryId: id },
+                readBranchGraph: async (repositoryId, refreshRemote, allBranches) => {
+                    if (repositoryId == first.id)
+                        return { ok: true, graph: branchGraph(first.id) }
+                    if (refreshRemote) {
+                        waiting = true
+                        await refresh
+                    }
+                    return { ok: true, graph: allBranches ? everything : graph }
+                },
+            })
+            let { container, root, dispose } = render(api)
+            try {
+                await flush(root)
+                click(button(container, "Command Lens"))
+                root.flush()
+                input(container.querySelector<HTMLInputElement>("[aria-label='Command Lens search']")!, remote.name)
+                await flush(root)
+                expect(container.querySelector(".lens-results")?.textContent).toContain(remote.name)
+                expect(button(container, "Show all").getAttribute("aria-pressed")).toBe("false")
+                click(container.querySelector<HTMLButtonElement>(".lens-results button")!)
+                await flush(root)
+                expect(waiting).toBe(true)
+                if (selectAnother) {
+                    click(container.querySelector<HTMLElement>(`[data-node-id='${feature.id}']`)!)
+                    root.flush()
+                }
+                finishRefresh()
+                await flush(root)
+                expect(workspace.activeRepositoryId).toBe(second.id)
+                expect(button(container, "Show relevant").getAttribute("aria-pressed")).toBe("true")
+                expect(container.querySelector(".graph-row.selected")?.getAttribute("data-node-id")).toBe(selectAnother ? feature.id : remote.id)
+                expect(container.querySelector(".graph-sidebar")?.classList.contains("collapsed")).toBe(false)
+                expect(container.querySelector(".branch-column")).toBeNull()
+            } finally {
+                finishRefresh()
+                dispose()
+            }
+        })
+    }
 
     test("background refreshes leave the Branch Graph header still", async () => {
         let repository = repositoryInfo("D:\\Source\\refresh-graph")

@@ -22,6 +22,7 @@ import { createLocalBranchActions } from "./local-branch-actions"
 
 export interface RepositoryGraphState {
     graph?: BranchGraph
+    lensGraph?: BranchGraph
     worktreeRecoveries: WorktreeRecovery[]
     recoveryBusy?: string
     recoveryErrors: Record<string, string>
@@ -30,6 +31,7 @@ export interface RepositoryGraphState {
     error?: string
     showAll: boolean
     selectedId?: string
+    pendingGraphBranchId?: string
     openedBranchIds: string[]
     maximizedBranchId?: string
     showSettings: boolean
@@ -323,7 +325,7 @@ let graphPanel = css({
     minWidth: "0",
     minHeight: "0",
     display: "grid",
-    gridTemplateRows: "auto auto minmax(0, 1fr) auto",
+    gridTemplateRows: "auto minmax(0, 1fr) auto",
     background: "var(--panel)",
 })
 
@@ -983,6 +985,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
 
     function toggleAll(repositoryId: string) {
         let state = stateFor(repositoryId)
+        state.pendingGraphBranchId = undefined
         state.showAll = !state.showAll
         // A read already in flight finishes with the previous choice; it re-reads once it notices the change.
         void read(repositoryId, false, false)
@@ -990,6 +993,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
 
     function selectMarker(repositoryId: string, branchId: string, marker: BranchGraphMarker) {
         let state = stateFor(repositoryId)
+        state.pendingGraphBranchId = undefined
         state.selectedId = branchId
         state.marker = marker
         if (marker.kind == "stash") {
@@ -1142,6 +1146,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             let nextIndex = index < 0 && delta < 0 ? nodeIds.length - 1 : Math.max(0, Math.min(nodeIds.length - 1, index + delta))
             if (nodeIds[nextIndex]) {
                 let nextId = nodeIds[nextIndex]
+                state.pendingGraphBranchId = undefined
                 state.selectedId = nextId
                 let nodeIndex = rows.findIndex(row => row.node.id == nextId)
                 if (nodeIndex >= 0) {
@@ -1176,6 +1181,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
 
     function openBranch(repositoryId: string, branchId: string) {
         let state = stateFor(repositoryId)
+        state.pendingGraphBranchId = undefined
         if (!state.openedBranchIds.includes(branchId))
             state.openedBranchIds.push(branchId)
         state.collapsedColumnIds = state.collapsedColumnIds.filter(id => id != branchId)
@@ -1212,16 +1218,55 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             await options.selectRepository(result.repositoryId)
         activeRepositoryId = result.repositoryId
         if (result.kind == "branch") {
-            stateFor(result.repositoryId).graphCollapsed = false
-            selectNode(result.repositoryId, result.nodeId)
+            let state = stateFor(result.repositoryId)
+            state.graphCollapsed = false
+            state.pendingGraphBranchId = result.nodeId
+            if (!state.graph || !branchNodeFor(state.graph, result.nodeId)) {
+                state.showAll = true
+                void read(result.repositoryId, false, false)
+            }
         }
         closeLens()
         await options.update()
-        document.querySelector<HTMLElement>(".graph-rows")?.focus()
+        document.querySelector<HTMLElement>(".graph-rows")?.focus({ preventScroll: true })
+        await revealPendingGraphBranch(result.repositoryId)
+    }
+
+    async function revealPendingGraphBranch(repositoryId: string) {
+        let state = stateFor(repositoryId)
+        let graph = state.graph
+        let branchId = state.pendingGraphBranchId
+        let branch = graph && branchId && branchNodeFor(graph, branchId)
+        if (!graph || !branch || !branchId || repositoryId != activeRepositoryId)
+            return
+
+        let ancestors = new Set<string>()
+        while (branch?.base.status == "known" && !ancestors.has(branch.base.branchId)) {
+            ancestors.add(branch.base.branchId)
+            branch = branchNodeFor(graph, branch.base.branchId)
+        }
+        state.collapsedBranchIds = state.collapsedBranchIds.filter(id => !ancestors.has(id))
+        let branches = branchesForDisplay(graph, state.collapsedBranchIds).flatMap(branch => localIdentities(graph, branch))
+        let index = layoutBranchGraph(graph, branches).rows.findIndex(row => row.node.id == branchId)
+        if (index >= 0) {
+            state.pendingGraphBranchId = undefined
+            state.selectedId = branchId
+            state.marker = undefined
+            state.graphScrollTop = index * graphRowHeight
+            await options.update()
+            if (repositoryId == activeRepositoryId && state.selectedId == branchId) {
+                let rows = document.querySelector<HTMLElement>(".graph-rows")
+                if (rows) {
+                    rows.scrollTop = state.graphScrollTop
+                    rows.focus({ preventScroll: true })
+                }
+            }
+        }
     }
 
     function selectNode(repositoryId: string, nodeId: string) {
         let state = stateFor(repositoryId)
+        state.pendingGraphBranchId = undefined
         state.selectedId = nodeId
         state.marker = undefined
         void options.update()
@@ -1295,8 +1340,10 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         lensOpen = true
         lensQuery = ""
         for (let repository of currentWorkspace?.repositories ?? []) {
-            if (repository.status == "available")
-                void ensure(repository.id, false)
+            if (repository.status == "available") {
+                stateFor(repository.id).lensGraph = undefined
+                void read(repository.id, false, true)
+            }
         }
         void options.update()
     }
@@ -1423,6 +1470,13 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                 }
 
                 await persist(repositoryId)
+                if (lensOpen && !options.signal.aborted) {
+                    let search = allBranches ? result : await options.api.readBranchGraph(repositoryId, false, true)
+                    if (search.ok) {
+                        state.lensGraph = search.graph
+                        changed = true
+                    }
+                }
             } else if (result.error.code != "git.cancelled") {
                 changed = true
                 let refreshedWorkspace = (await options.api.getState()).workspace
@@ -1452,6 +1506,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                 column?.focus({ preventScroll: true })
                 column?.scrollIntoView({ block: "nearest", inline: "nearest" })
             }
+            await revealPendingGraphBranch(repositoryId)
         }
     }
 
@@ -1636,7 +1691,8 @@ function lensResults(workspace: Workspace, states: Map<string, RepositoryGraphSt
                 score: repoScore,
             })
         }
-        let graph = states.get(repository.id)?.graph
+        let state = states.get(repository.id)
+        let graph = state?.lensGraph ?? state?.graph
         for (let branch of graph ? workspaceGraph(graph).branches : []) {
             let score = Math.max(...[branch.name, ...branch.aliases].map(value => textScore(value, needle)))
             if (score > 0)
