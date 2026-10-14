@@ -484,6 +484,16 @@ async function checkRenderer() {
     // Header controls stay clear of the column's overlay scrollbar.
     let breakoutScrollbarClear = [element("[aria-label='Close diff column']"), element(".inspection-breakout .diff-toolbar button:last-of-type")]
         .every(control => breakout.getBoundingClientRect().right - control.getBoundingClientRect().right >= 12)
+    // The diff column ends in its own divider, which resizes it in place.
+    let breakoutDivider = breakout.nextElementSibling as HTMLElement
+    press(breakoutDivider, "ArrowRight")
+    await settle()
+    let breakoutResizable = breakoutDivider.matches(".column-divider:not(.attached)") && getComputedStyle(breakoutDivider).cursor == "col-resize"
+        && breakout.getBoundingClientRect().width == 630
+        && breakoutDivider.getBoundingClientRect().left == breakout.getBoundingClientRect().right
+    breakoutDivider.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))
+    await settle()
+    breakoutResizable &&= breakout.getBoundingClientRect().width == 620
     let inlineDiffsHiddenAfterBreakout = !document.querySelector(".branch-column .diff-inspector")
     // The diff column holds the whole commit and opens scrolled to the broken-out file, its toolbar right under the header.
     let breakoutFile = (path: string) => breakout.querySelector<HTMLElement>(`[data-diff-path='${path}']`)!
@@ -531,7 +541,8 @@ async function checkRenderer() {
     let splitDiff = element(".inspection-breakout")
     let splitEnd = splitColumns.getBoundingClientRect().right - parseFloat(getComputedStyle(splitColumns).paddingRight)
     let splitFits = () => splitColumns.scrollWidth <= splitColumns.clientWidth && Math.abs(splitDiff.getBoundingClientRect().right - splitEnd) <= 1
-    let splitAtRest = breakoutSource.getBoundingClientRect().width == sourceWidth && splitFits()
+    // The diff column takes the rest of the space, so nothing follows it to resize.
+    let splitAtRest = breakoutSource.getBoundingClientRect().width == sourceWidth && splitFits() && splitDiff.nextElementSibling == null
     let splitDivider = element<HTMLElement>(`[data-column-id="${breakoutSource.dataset.columnId}"] + .column-divider`)
     press(splitDivider, "End")
     await settle()
@@ -901,6 +912,7 @@ async function checkRenderer() {
         breakoutDiffScroll,
         auxiliarySourceVisible,
         maximizedSplit,
+        breakoutResizable,
         breakoutScrollbarClear,
         breakoutStickyTop,
         inlineDiffsHiddenAfterBreakout,

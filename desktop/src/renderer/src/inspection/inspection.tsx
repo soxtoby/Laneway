@@ -1,7 +1,8 @@
 import type { BranchGraph, BranchGraphBranchNode, BranchGraphVirtualBranch, BranchHistoryCommit, BranchHistoryPage, ChangedFile, ChangesInventory, ComparisonRef, CompositionSource, DiffLayout, DiffSource, DiffView } from "@laneway/shared"
 import { css, on, ref, type RemixNode } from "remix/ui"
 import * as accordion from "remix/ui/accordion/primitives"
-import { auxiliaryCloseButton, auxiliaryColumnFrame, auxiliaryColumnHeader, AuxiliaryColumns } from "../auxiliary-columns"
+import { auxiliaryCloseButton, auxiliaryColumnFrame, auxiliaryColumnHeader, AuxiliaryColumns, defaultAuxiliaryColumnWidth } from "../auxiliary-columns"
+import { ColumnDivider } from "../column-divider"
 import { CommitComposer } from "../commit-composer"
 import { compositionStyles, createComposition } from "../composition"
 import { ConflictResolution } from "../conflict-resolution"
@@ -575,9 +576,11 @@ let bodySelectionSummaryButton = css({
     },
 })
 
+let minimumBreakoutWidth = 380
+
 let inspectionBreakout = css({
     ...auxiliaryColumnFrame,
-    minWidth: "380px",
+    minWidth: `${minimumBreakoutWidth}px`,
     "& .auxiliary-source": { display: "block", fontSize: "10px", color: "var(--muted)" },
 })
 
@@ -1496,12 +1499,13 @@ export function createInspection(options: Options) {
             let state = columns.get(key(repositoryId, columnId))
             if (!state)
                 return null
-            return auxiliary.descendants(key(repositoryId, columnId)).map(auxiliaryColumn => {
+            let descendants = auxiliary.descendants(key(repositoryId, columnId))
+            let renderAuxiliaryColumn = (auxiliaryColumn: (typeof descendants)[number]): RemixNode => {
                 if (auxiliaryColumn.value.kind == "trail-commit") {
                     let commit = auxiliaryColumn.value
                     let host = historyHosts.get(commit)!
                     host.graph = state.graph
-                    return trailCommits.render(commit, auxiliaryColumn.id, auxiliaryColumn.sourceId, {
+                    return trailCommits.render(commit, auxiliaryColumn.id, auxiliaryColumn.sourceId, auxiliaryColumn.width, {
                         close() {
                             auxiliary.close(auxiliaryColumn.id)
                             update()
@@ -1526,7 +1530,7 @@ export function createInspection(options: Options) {
                     let host = historyHosts.get(history)!
                     host.composable = new Set(history.error ? [] : history.page?.entries.filter(entry => entry.composable).map(entry => entry.objectId))
                     host.graph = state.graph
-                    return histories.render(history, auxiliaryColumn.id, auxiliaryColumn.sourceId, {
+                    return histories.render(history, auxiliaryColumn.id, auxiliaryColumn.sourceId, auxiliaryColumn.width, {
                         commit(entry) {
                             openTrailCommit(host, auxiliaryColumn.id, entry)
                         },
@@ -1618,6 +1622,7 @@ export function createInspection(options: Options) {
                         data-auxiliary-id={auxiliaryColumn.id}
                         data-source-column-id={columnId}
                         tabIndex={-1}
+                        style={{ width: `${auxiliaryColumn.width}px` }}
                         mix={inspectionBreakout}
                         aria-label={`${state.column.name} diff`}
                     >
@@ -1707,6 +1712,31 @@ export function createInspection(options: Options) {
                         </div>
                     </aside>
                 )
+            }
+
+            let maximized = options.maximized(repositoryId) != undefined
+            // Each auxiliary column is followed by a divider that resizes it, except the last beside a maximized column,
+            // which takes the remaining space.
+            return descendants.flatMap((auxiliaryColumn, index) => {
+                let last = index == descendants.length - 1
+                let divider = maximized && last
+                    ? null
+                    : (
+                        <ColumnDivider
+                            key={`${auxiliaryColumn.id}:divider`}
+                            id={auxiliaryColumn.id}
+                            label="Resize auxiliary column"
+                            width={auxiliaryColumn.width}
+                            defaultWidth={defaultAuxiliaryColumnWidth}
+                            minWidth={auxiliaryColumn.value.kind == "diff" ? minimumBreakoutWidth : undefined}
+                            attached={!last}
+                            resize={(_, width) => {
+                                auxiliaryColumn.width = Math.round(width)
+                                update()
+                            }}
+                        />
+                    )
+                return [renderAuxiliaryColumn(auxiliaryColumn), divider]
             })
         },
     }
@@ -2341,7 +2371,7 @@ export function createInspection(options: Options) {
             scrollBreakout(state, current)
             return
         }
-        closeBreakout(state)
+        // Assigning over the current breakout replaces its column in place, keeping the column's width.
         let breakout: BreakoutState = {
             kind: "diff",
             group,

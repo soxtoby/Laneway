@@ -1,6 +1,7 @@
 import type { BranchGraph, BranchGraphBranchNode, BranchGraphWorktree } from "@laneway/shared"
 import type { RecoveryRequest, WorktreeRecovery } from "@laneway/shared"
 import { css, type Handle, on, type RemixNode } from "remix/ui"
+import { ColumnDivider } from "../column-divider"
 import type { createConflictResolution } from "../conflict-resolution"
 import { Icon } from "../icons"
 import { type ComparisonColumnNode, comparisonNode } from "../inspection/comparison-columns"
@@ -220,29 +221,6 @@ let columnCollapseButton = css({
         outline: "2px solid var(--ring)",
         outlineOffset: "-2px",
     },
-})
-
-// The divider sits in the gap after its column, clear of the column's scrollbar; its negative margins cancel
-// the extra flex gap it would otherwise add.
-let columnDivider = css({
-    position: "relative",
-    zIndex: "2",
-    flex: "0 0 var(--gutter)",
-    alignSelf: "stretch",
-    margin: "0 calc(-1 * var(--gutter))",
-    cursor: "col-resize",
-    "&:focus-visible": {
-        outline: "2px solid var(--ring)",
-        outlineOffset: "0",
-    },
-    // Between a column and its auxiliary columns, the divider is the seam of their shared card: it carries the card's
-    // outline across the gap and still resizes the column.
-    "&.attached": {
-        borderInline: "1px solid var(--line)",
-        background: "var(--panel-deep)",
-        boxShadow: "0 -1px 0 var(--line-strong), 0 1px 0 var(--line-strong)",
-    },
-    "&.attached:hover, &.attached:focus-visible": { background: "var(--accent-wash-strong)" },
 })
 
 export function BranchColumns(
@@ -497,7 +475,15 @@ export function BranchColumns(
                                 )}
                         </article>,
                         !collapsed && (!props.state.maximizedBranchId || split) && (
-                            <ColumnDivider key={`${column.id}:divider`} branchId={column.id} width={width} attached={attached} resize={props.resize} />
+                            <ColumnDivider
+                                key={`${column.id}:divider`}
+                                id={column.id}
+                                label="Resize branch column"
+                                width={width}
+                                defaultWidth={defaultColumnWidth}
+                                attached={attached}
+                                resize={props.resize}
+                            />
                         ),
                         auxiliary,
                     ]
@@ -506,64 +492,6 @@ export function BranchColumns(
             </section>
         )
     }
-}
-
-function ColumnDivider(handle: Handle<{ branchId: string; width: number; attached: boolean; resize(branchId: string, width: number): void }>) {
-    // Sizes the column ahead of the resize and returns its new width. A split column is capped to keep its auxiliary
-    // columns in view, so its width is read back rather than assumed.
-    let applyWidth = (divider: HTMLElement, width: number) => {
-        let column = divider.previousElementSibling as HTMLElement | null
-        width = Math.max(310, width)
-        if (column)
-            column.style.width = `${width}px`
-
-        return column?.classList.contains("split") ? column.getBoundingClientRect().width : width
-    }
-    return () => (
-        <div
-            class={`column-divider ${handle.props.attached ? "attached" : ""}`}
-            role="separator"
-            tabIndex={0}
-            aria-label="Resize branch column"
-            aria-orientation="vertical"
-            aria-valuemin={310}
-            aria-valuemax={2000}
-            aria-valuenow={Math.round(handle.props.width)}
-            mix={[
-                columnDivider,
-                on("keydown", event => {
-                    let step = event.shiftKey ? 50 : 10
-                    let width = event.key == "ArrowLeft" || event.key == "ArrowRight"
-                        ? handle.props.width + (event.key == "ArrowLeft" ? -step : step)
-                        : event.key == "Home"
-                        ? 310
-                        : event.key == "End"
-                        ? document.querySelector<HTMLElement>(".graph-layout")?.clientWidth ?? 1180
-                        : undefined
-                    if (width != undefined) {
-                        event.preventDefault()
-                        handle.props.resize(handle.props.branchId, applyWidth(event.currentTarget, width))
-                    }
-                }),
-                on("pointerdown", event => {
-                    event.preventDefault()
-                    let startX = event.clientX
-                    let startWidth = handle.props.width
-                    let divider = event.currentTarget
-                    let move = (next: PointerEvent) => applyWidth(divider, startWidth + next.clientX - startX)
-                    let end = (next: PointerEvent) => {
-                        window.removeEventListener("pointermove", move)
-                        window.removeEventListener("pointerup", end)
-                        handle.props.resize(handle.props.branchId, applyWidth(divider, startWidth + next.clientX - startX))
-                    }
-                    window.addEventListener("pointermove", move)
-                    window.addEventListener("pointerup", end, { once: true })
-                }),
-                on("dblclick", event => handle.props.resize(handle.props.branchId, applyWidth(event.currentTarget, defaultColumnWidth))),
-            ]}
-        >
-        </div>
-    )
 }
 
 export function recoveryNode(recovery?: WorktreeRecovery): RecoveryColumnNode | undefined {

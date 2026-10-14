@@ -57,7 +57,7 @@ export function createTrailCommits(options: { api: Window["laneway"]; update(): 
             cancel(state)
             states.delete(state)
         },
-        render(state: TrailCommitState, id: string, sourceId: string, actions: {
+        render(state: TrailCommitState, id: string, sourceId: string, width: number, actions: {
             close(): void
             files(): RemixNode
             parent(parentId: string): void
@@ -71,6 +71,7 @@ export function createTrailCommits(options: { api: Window["laneway"]; update(): 
                     data-auxiliary-id={id}
                     data-source-column-id={sourceId}
                     tabIndex={-1}
+                    style={{ width: `${width}px` }}
                     mix={column}
                 >
                     <header>

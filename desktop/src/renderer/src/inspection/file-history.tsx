@@ -94,7 +94,7 @@ export function createFileHistories(
             cancel(state)
             states.delete(state)
         },
-        render(state: FileHistoryState, id: string, sourceId: string, actions: {
+        render(state: FileHistoryState, id: string, sourceId: string, width: number, actions: {
             close(): void
             open(source: FileHistorySource, path: string): void
             toggle(entry?: FileHistoryEntry): void
@@ -112,6 +112,7 @@ export function createFileHistories(
                     data-source-column-id={sourceId}
                     aria-label={`History of ${state.path}`}
                     tabIndex={-1}
+                    style={{ width: `${width}px` }}
                     mix={historyColumn}
                 >
                     <header>

@@ -7,6 +7,8 @@ export interface AuxiliaryColumn<T> {
     dispose(): void
 }
 
+export let defaultAuxiliaryColumnWidth = 620
+
 /** Session-only source tree. Root order belongs to Workspace State. */
 export class AuxiliaryColumns<T> {
     private readonly roots = new Set<string>()
@@ -19,7 +21,7 @@ export class AuxiliaryColumns<T> {
         this.roots.add(id)
     }
 
-    open(sourceId: string, identity: string, create: () => { value: T; dispose(): void }, width = 620) {
+    open(sourceId: string, identity: string, create: () => { value: T; dispose(): void }, width = defaultAuxiliaryColumnWidth) {
         if (!this.roots.has(sourceId) && !this.columns.has(sourceId))
             throw new Error("The auxiliary column source is unavailable.")
 
@@ -64,21 +66,22 @@ export class AuxiliaryColumns<T> {
 
 /**
  * Auxiliary columns extend their source column's card: square where they join it, rounded at the card's far end.
- * They keep a fixed width, except beside a maximized column, where they share the space it leaves.
+ * Each keeps its own resizable width, set inline, except the last beside a maximized column, which takes the space
+ * the others leave.
  */
 export let auxiliaryColumnFrame = {
-    flex: "0 0 620px",
+    flex: "0 0 auto",
+    width: `${defaultAuxiliaryColumnWidth}px`,
     overflow: "auto",
     background: "var(--panel)",
     borderRadius: "0 var(--radius-card) var(--radius-card) 0",
     boxShadow: "0 0 0 1px var(--line-strong), var(--card-shadow)",
     "&:focus-visible": { outline: "2px solid var(--ring)", outlineOffset: "-2px" },
-    // Auxiliary columns opened from one another sit flush, split by the edge they share.
-    "[data-auxiliary-id] + &": { marginLeft: "calc(-1 * var(--gutter))" },
-    "&:has(+ [data-auxiliary-id])": { borderRadius: "0" },
+    // Auxiliary columns opened from one another sit flush, split by the divider they share.
+    "&:has(+ .column-divider + [data-auxiliary-id])": { borderRadius: "0" },
     // Without its source column, it starts the row itself.
     ".branch-columns > &:first-child": { borderTopLeftRadius: "var(--radius-card)", borderBottomLeftRadius: "var(--radius-card)" },
-    ".branch-columns.maximized > &": { flex: "1 1 0", minWidth: "310px" },
+    ".branch-columns.maximized > &:not(:has(+ .column-divider))": { flex: "1 1 0", minWidth: "310px" },
 }
 
 /** Matches the branch column header, so the header band runs on across the join. */
