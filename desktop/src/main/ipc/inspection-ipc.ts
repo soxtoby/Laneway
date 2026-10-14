@@ -54,30 +54,33 @@ export function registerInspectionHandlers(repositories: OpenRepositories, engin
     }
 
     function registerGraphHandlers() {
-        ipcMain.handle("graph:read", async (_event, request: { repositoryId?: unknown; refreshRemote?: unknown }): Promise<BranchGraphResult> => {
-            if (typeof request?.repositoryId != "string")
-                return { ok: false, error: { code: "git.command-failed", message: "Choose a repository." } }
+        ipcMain.handle(
+            "graph:read",
+            async (_event, request: { repositoryId?: unknown; refreshRemote?: unknown; allBranches?: unknown }): Promise<BranchGraphResult> => {
+                if (typeof request?.repositoryId != "string")
+                    return { ok: false, error: { code: "git.command-failed", message: "Choose a repository." } }
 
-            try {
-                let read = await repositories.startBranchGraph(request.repositoryId, request.refreshRemote === true)
-                let repository = repositories.worktreeRepository(request.repositoryId)
-                let [graph, output] = await Promise.all([
-                    read.result,
-                    runEngineCommand({
-                        enginePath,
-                        cwd: repository.descriptor.mainWorktree,
-                        args: ["recovery-status", "--git-path", repository.descriptor.git.path],
-                    }).result,
-                ])
-                let recovery = output.messages.find(message => message.type == "result" && message.command == "recovery-status")
-                if (output.exitCode || !recovery || recovery.command != "recovery-status")
-                    throw new Error(output.messages.find(message => message.type == "error")?.message ?? "Could not read worktree recovery.")
+                try {
+                    let read = await repositories.startBranchGraph(request.repositoryId, request.refreshRemote === true, request.allBranches === true)
+                    let repository = repositories.worktreeRepository(request.repositoryId)
+                    let [graph, output] = await Promise.all([
+                        read.result,
+                        runEngineCommand({
+                            enginePath,
+                            cwd: repository.descriptor.mainWorktree,
+                            args: ["recovery-status", "--git-path", repository.descriptor.git.path],
+                        }).result,
+                    ])
+                    let recovery = output.messages.find(message => message.type == "result" && message.command == "recovery-status")
+                    if (output.exitCode || !recovery || recovery.command != "recovery-status")
+                        throw new Error(output.messages.find(message => message.type == "error")?.message ?? "Could not read worktree recovery.")
 
-                return { ok: true, graph, worktreeRecoveries: recovery.worktrees }
-            } catch (error) {
-                return { ok: false, error: entryError(error) }
-            }
-        })
+                    return { ok: true, graph, worktreeRecoveries: recovery.worktrees }
+                } catch (error) {
+                    return { ok: false, error: entryError(error) }
+                }
+            },
+        )
 
         ipcMain.handle(
             "graph:cancel",

@@ -1,4 +1,4 @@
-import type { AvailableOpenRepository, BranchGraph, BranchGraphBranchNode, BranchGraphMarker, RepositoryGraphSettings, Workspace, WorkspaceColumn } from "@laneway/shared"
+import type { AvailableOpenRepository, BranchGraph, BranchGraphMarker, RepositoryGraphSettings, Workspace, WorkspaceColumn } from "@laneway/shared"
 import type { DiffLayout } from "@laneway/shared"
 import type { RecoveryRequest, WorktreeRecovery } from "@laneway/shared"
 import { css, on, ref, type RemixNode } from "remix/ui"
@@ -572,7 +572,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             let graph = state.graph
             // Rows show each local branch identity, so every branch sharing a tip can be opened, dragged, and dropped on.
             let identities = graph && workspaceGraph(graph)
-            let visibleBranches = graph ? branchesForDisplay(graph, state.showAll, state.collapsedBranchIds) : []
+            let visibleBranches = graph ? branchesForDisplay(graph, state.collapsedBranchIds) : []
             let rowBranches = graph ? visibleBranches.flatMap(branch => localIdentities(graph, branch)) : []
             let layout = graph ? layoutBranchGraph(graph, rowBranches) : { rows: [], width: 26 }
             let selectableIds = layout.rows.map(row => row.node.id)
@@ -702,13 +702,17 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                     {/* The repository is named by the rail and its main worktree column, so the title stays generic. */}
                                     <h1 mix={graphToolbarH1}>Branch Graph</h1>
                                     <div class="graph-actions" mix={graphActions}>
+                                        {/* The Engine reads the default set or every branch, so the toggle re-reads rather than filtering rows. */}
                                         <button
                                             type="button"
                                             class={state.showAll ? "active" : ""}
                                             aria-pressed={state.showAll}
+                                            title={state.showAll
+                                                ? "Show local, Involved, Primary, and pattern-matched remote branches"
+                                                : "Show every branch, including unrelated remote branches"}
                                             mix={[graphActionsButton, on("click", () => toggleAll(active.id))]}
                                         >
-                                            {state.showAll ? "Involved only" : "Show all"}
+                                            {state.showAll ? "Show relevant" : "Show all"}
                                         </button>
                                         <button
                                             type="button"
@@ -1018,14 +1022,8 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
     function toggleAll(repositoryId: string) {
         let state = stateFor(repositoryId)
         state.showAll = !state.showAll
-        if (
-            !state.showAll && state.graph && state.selectedId
-            && !branchesForDisplay(state.graph, false, state.collapsedBranchIds)
-                .some(branch => localIdentities(state.graph!, branch).some(identity => identity.id == state.selectedId))
-        ) {
-            state.selectedId = undefined
-        }
-        void options.update()
+        // A read already in flight finishes with the previous choice; it re-reads once it notices the change.
+        void read(repositoryId, false, false)
     }
 
     function selectMarker(repositoryId: string, branchId: string, marker: BranchGraphMarker) {
@@ -1377,8 +1375,9 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         if (!quiet)
             await options.update()
 
+        let allBranches = state.showAll
         try {
-            let result = await options.api.readBranchGraph(repositoryId, refreshRemote)
+            let result = await options.api.readBranchGraph(repositoryId, refreshRemote, allBranches)
             if (result.ok) {
                 let recoveries = result.worktreeRecoveries ?? []
                 if (
@@ -1457,6 +1456,15 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                         return branch?.base.status == "ambiguous" && branch.base.candidates.some(candidate => candidate.branchId == candidateId)
                     }),
                 )
+                // Hiding the selected node, by narrowing the graph or deleting the branch, clears Graph Selection.
+                if (
+                    state.selectedId
+                    && !result.graph.branches.some(branch => localIdentities(result.graph, branch).some(identity => identity.id == state.selectedId))
+                    && !result.graph.tags.some(tag => tag.id == state.selectedId)
+                    && !result.graph.virtualBranches.some(branch => branch.id == state.selectedId)
+                ) {
+                    state.selectedId = undefined
+                }
 
                 if (removedColumns.length > 0) {
                     options.notify({
@@ -1485,6 +1493,8 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             state.refreshing = false
             if (changedWhileReading.delete(repositoryId) && repositoryId == activeRepositoryId)
                 void read(repositoryId, false, true)
+            else if (state.showAll != allBranches)
+                void read(repositoryId, false, false)
             if (changed || !state.focusRestored)
                 await options.update()
             if (!state.focusRestored && state.focusedColumnId) {
@@ -1612,32 +1622,11 @@ function windowNodes(nodes: GraphRowLayout[], scrollTop: number, viewportHeight:
     }
 }
 
-function branchesForDisplay(graph: BranchGraph, showAll: boolean, collapsedBranchIds: string[]) {
-    let branches: BranchGraphBranchNode[]
-    if (showAll)
-        branches = graph.branches
-    else {
-        let structural = new Set(
-            graph.branches.filter(branch => branch.primary || branch.checkedOut.length > 0 || branch.involvement == "involved").map(branch => branch.id),
-        )
-        let changed = true
-        while (changed) {
-            changed = false
-            for (let branch of graph.branches.filter(branch => structural.has(branch.id))) {
-                let baseIds = branch.base.status == "known" ? [branch.base.branchId] : branch.base.candidates.map(candidate => candidate.branchId)
-                for (let id of baseIds) {
-                    if (!structural.has(id)) {
-                        structural.add(id)
-                        changed = true
-                    }
-                }
-            }
-        }
-        branches = graph.branches.filter(branch => structural.has(branch.id))
-    }
+// The Engine already chose which branches form the graph; only collapsed Base chains hide rows here.
+function branchesForDisplay(graph: BranchGraph, collapsedBranchIds: string[]) {
     let collapsed = new Set(collapsedBranchIds)
 
-    return branches.filter(branch => {
+    return graph.branches.filter(branch => {
         let parent = branch.base.status == "known" ? branch.base.branchId : undefined
         let visited = new Set<string>()
         while (parent && !visited.has(parent)) {

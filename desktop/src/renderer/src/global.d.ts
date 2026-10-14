@@ -64,7 +64,7 @@ declare global {
             setAuthorIdentities(settings: AuthorIdentitySettings): Promise<GitSettingsState>
             openSettingsFile(): Promise<string>
             setAppearance(appearance: Appearance): Promise<Appearance>
-            readBranchGraph(repositoryId: string, refreshRemote?: boolean): Promise<BranchGraphResult>
+            readBranchGraph(repositoryId: string, refreshRemote?: boolean, allBranches?: boolean): Promise<BranchGraphResult>
             cancelBranchGraph(repositoryId: string): Promise<boolean>
             readBranchHistory(repositoryId: string, history: BranchHistoryRequest): Promise<BranchHistoryResult>
             cancelBranchHistory(repositoryId: string): Promise<boolean>

@@ -357,6 +357,52 @@ describe("Branch Graph and lazy history", () => {
         expect(history.commits.map(commit => commit.objectId)).not.toContain(sideTip)
     })
 
+    test("keeps the Primary Branch as Base for a branch it has moved past", async () => {
+        let repository = await temporaryDirectory("laneway-graph-passed-")
+        expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
+        await commitFile(repository, "README.md", "initial\n", "Initial")
+        let fork = gitText(repository, "rev-parse", "HEAD")
+        await commitFile(repository, "second.txt", "second\n", "Second")
+        // A local branch left on the main line after its work was fast-forwarded into main.
+        expect(runGit(repository, "branch", "merged/behind").exitCode).toBe(0)
+        let behindTip = gitText(repository, "rev-parse", "HEAD")
+        await commitFile(repository, "third.txt", "third\n", "Third")
+        let mainTip = gitText(repository, "rev-parse", "HEAD")
+        // Someone else's remote-only branches forked beneath the stale tip; they must not become its Base candidates.
+        for (let name of ["other/one", "other/two"]) {
+            expect(runGit(repository, "checkout", "-q", "-b", name, fork).exitCode).toBe(0)
+            expect(runGit(repository, "-c", "user.email=other@example.invalid", "commit", "--quiet", "--allow-empty", "-m", `Other ${name}`).exitCode).toBe(0)
+            expect(runGit(repository, "update-ref", `refs/remotes/upstream/${name}`, gitText(repository, "rev-parse", "HEAD")).exitCode).toBe(0)
+            expect(runGit(repository, "checkout", "-q", "main").exitCode).toBe(0)
+            expect(runGit(repository, "branch", "-D", name).exitCode).toBe(0)
+        }
+        expect(runGit(repository, "remote", "add", "upstream", ".").exitCode).toBe(0)
+        expect(runGit(repository, "update-ref", "refs/remotes/upstream/main", mainTip).exitCode).toBe(0)
+        expect(runGit(repository, "symbolic-ref", "refs/remotes/upstream/HEAD", "refs/remotes/upstream/main").exitCode).toBe(0)
+        expect(runGit(repository, "config", "branch.main.remote", "upstream").exitCode).toBe(0)
+        expect(runGit(repository, "config", "branch.main.merge", "refs/heads/main").exitCode).toBe(0)
+
+        let opened = await openRepository(repository)
+        let options = { authorIdentities: { primary: "laneway@example.invalid", secondary: [] }, selectedRemote: "upstream", remotePatterns: [] }
+        let graph = await opened.startReadBranchGraph(options).result
+        let behind = graph.branches.find(candidate => candidate.name == "merged/behind")!
+        expect(behind.tip).toBe(behindTip)
+        expect(behind.base).toMatchObject({ status: "known", ref: "refs/heads/main", tip: mainTip })
+        expect(behind.merged).toBe(true)
+        expect(graph.branches.map(branch => branch.name).sort()).toEqual(["main", "merged/behind"])
+
+        let everything = await opened.startReadBranchGraph({ ...options, allBranches: true }).result
+        expect(everything.branches.map(branch => branch.name).sort()).toEqual(["main", "merged/behind", "upstream/other/one", "upstream/other/two"])
+        for (let name of ["upstream/other/one", "upstream/other/two"]) {
+            let other = everything.branches.find(candidate => candidate.name == name)!
+            expect(other.remoteOnly).toBe(true)
+            expect(other.involvement).toBe("uninvolved")
+            expect(other.base).toMatchObject({ status: "known", ref: "refs/heads/main" })
+        }
+    })
+
     test("reads a many-branch graph in under one second", async () => {
         let repository = await temporaryDirectory("laneway-graph-performance-")
         expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)

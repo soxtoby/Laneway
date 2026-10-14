@@ -223,6 +223,7 @@ function graphOptionsKey(options: BranchGraphReadOptions) {
         authorIdentities: options.authorIdentities,
         selectedRemote: options.selectedRemote,
         remotePatterns: options.remotePatterns,
+        allBranches: options.allBranches == true,
     })
 }
 
@@ -374,7 +375,8 @@ async function buildGraph(
     let patterns = options.remotePatterns.map(globPattern)
     let included = new Set(
         branches.filter(branch =>
-            !branch.remoteOnly
+            options.allBranches
+            || !branch.remoteOnly
             || branch.primary
             || branch.involvement == "involved"
             || branch.remoteRefs.some(ref => patterns.some(pattern => pattern.test(shortRef(ref))))
@@ -581,9 +583,16 @@ function createBranches(refs: RefRecord[], worktrees: BranchGraphWorktree[], pri
 
 function inferBases(branches: MutableBranch[], candidates: MutableBranch[], topology: GraphTopology) {
     let mergeBasesByBranch = new Map<MutableBranch, Array<{ candidate: MutableBranch; objectId: string }>>()
+    let primary = candidates.find(candidate => candidate.primary)
     for (let branch of branches) {
         if (branch.primary) {
             branch.base = { status: "unknown", candidates: [] }
+            continue
+        }
+        // A branch the Primary Branch already reaches has no unique commits, so the Primary Branch is its Base.
+        // Candidates reaching its tip are otherwise skipped, which would leave only unrelated siblings forked beneath it.
+        if (primary && topology.isAncestor(branch.tip, primary.tip)) {
+            branch.base = knownBase(primary)
             continue
         }
         mergeBasesByBranch.set(branch, topology.mergeBases(branch, candidates))

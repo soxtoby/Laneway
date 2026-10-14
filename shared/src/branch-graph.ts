@@ -123,6 +123,8 @@ export interface BranchGraphReadOptions {
     authorIdentities: AuthorIdentitySettings
     selectedRemote?: string
     remotePatterns: string[]
+    /** Include every branch, not only local, Involved, Primary, pattern-matched, and Base branches. */
+    allBranches?: boolean
     refreshRemote?: boolean
 }
 

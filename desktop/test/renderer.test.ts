@@ -627,16 +627,37 @@ describe("Remix repository entry renderer", () => {
     test("separates graph selection, branch opening, filtering, and Command Lens navigation", async () => {
         let repository = repositoryInfo("D:\\Source\\graph-project")
         let graph = branchGraph(repository.id)
+        // The Engine only adds someone else's remote-only branch when every branch is requested.
+        let [main, , team] = graph.branches
+        let remoteOnly = {
+            ...team,
+            id: "branch:refs/remotes/origin/other/remote",
+            name: "origin/other/remote",
+            preferredRef: "refs/remotes/origin/other/remote",
+            refs: ["refs/remotes/origin/other/remote"],
+            aliases: ["origin/other/remote"],
+            localRefs: [],
+            remoteRefs: ["refs/remotes/origin/other/remote"],
+            tip: "4".repeat(40),
+            remoteOnly: true,
+        }
+        let everything = {
+            ...graph,
+            branches: [...graph.branches, remoteOnly],
+            history: [{ objectId: remoteOnly.tip, lineId: remoteOnly.id, parentIds: [main.tip] }, ...graph.history],
+        }
         let api = fakeLaneway({
             getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
-            readBranchGraph: async () => ({ ok: true, graph }),
+            readBranchGraph: async (_repositoryId, _refreshRemote, allBranches) => ({ ok: true, graph: allBranches ? everything : graph }),
             selectRepository: async () => openedWorkspace(repository),
         })
         let { container, root, dispose } = render(api)
 
         await flush(root)
         expect(container.textContent).toContain("feature/laneway")
-        expect(container.textContent).not.toContain("other/team")
+        // Local branches show by default, however uninvolved; unrelated remote branches wait for "Show all".
+        expect(container.textContent).toContain("other/team")
+        expect(container.textContent).not.toContain("origin/other/remote")
         expect(container.querySelector(".graph-row svg path")).not.toBeNull()
         // The rail starts as the collapsed icon strip.
         expect(container.querySelector(".shell")?.classList.contains("rail-collapsed")).toBe(true)
@@ -663,8 +684,9 @@ describe("Remix repository entry renderer", () => {
         expect(container.querySelector(".rail-heading")?.textContent?.replace(/\s+/g, " ").trim()).toBe("Open repositories")
 
         click(button(container, "Show all"))
-        root.flush()
-        expect(container.textContent).toContain("other/team")
+        await flush(root)
+        expect(container.textContent).toContain("origin/other/remote")
+        expect(button(container, "Show relevant").getAttribute("aria-pressed")).toBe("true")
 
         // Graph rows drag onto columns, so pressing one must leave the native drag free to start; the click selects.
         let feature = container.querySelector<HTMLElement>("[data-node-id='branch:refs/heads/feature/laneway']")!

@@ -75,6 +75,8 @@ async function checkRenderer() {
     scenario.api.readBranchGraph = async (...args) => {
         let result = await readGraph(...args)
         if (result.ok) {
+            // The rewritten history below covers main and feature only, so the third local branch stays out of this graph.
+            result.graph.branches = result.graph.branches.slice(0, 2)
             let [main, feature] = result.graph.branches
             if (holdComparison)
                 main.tip = "a".repeat(40)

@@ -50,7 +50,8 @@ contextBridge.exposeInMainWorld("laneway", {
     setAuthorIdentities: (settings: AuthorIdentitySettings) => ipcRenderer.invoke("settings:author-identities", settings),
     openSettingsFile: () => ipcRenderer.invoke("settings:open-file"),
     setAppearance: (appearance: Appearance) => ipcRenderer.invoke("settings:appearance", { appearance }),
-    readBranchGraph: (repositoryId: string, refreshRemote = false) => ipcRenderer.invoke("graph:read", { repositoryId, refreshRemote }),
+    readBranchGraph: (repositoryId: string, refreshRemote = false, allBranches = false) =>
+        ipcRenderer.invoke("graph:read", { repositoryId, refreshRemote, allBranches }),
     cancelBranchGraph: (repositoryId: string) => ipcRenderer.invoke("graph:cancel", { repositoryId }),
     readBranchHistory: (repositoryId: string, history: BranchHistoryRequest) => ipcRenderer.invoke("graph:history", { repositoryId, history }),
     cancelBranchHistory: (repositoryId: string) => ipcRenderer.invoke("graph:history-cancel", { repositoryId }),

@@ -92,7 +92,7 @@ export class OpenRepositories {
         return graphSettings
     }
 
-    async startBranchGraph(repositoryId: string, refreshRemote = false) {
+    async startBranchGraph(repositoryId: string, refreshRemote = false, allBranches = false) {
         let repository = this.requireRepository(repositoryId)
         let settings = await readSettings(this.settingsPath)
         let graphSettings = settings.repositories?.[repositoryId] ?? { remotePatterns: [] }
@@ -100,6 +100,7 @@ export class OpenRepositories {
             authorIdentities: settings.authorIdentities ?? { secondary: [] },
             selectedRemote: graphSettings.selectedRemote,
             remotePatterns: graphSettings.remotePatterns,
+            allBranches,
             refreshRemote,
         }
 

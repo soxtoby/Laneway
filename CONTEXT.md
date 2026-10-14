@@ -70,7 +70,7 @@ The public CLI uses ordinary arguments and help. Basic Git commands preserve Git
 _Avoid_: Git service, daemon, utility process
 
 **Branch Graph**:
-A graph of visible lines of work whose edges place branches relative to their Base Branches. It shows Involved Branches, the Primary Branch, their Base chains, checked-out branches, detached worktree heads, and required remote Base candidates by default; the user may show other branches, while merged inactive branches remain normally hidden.
+A graph of visible lines of work whose edges place branches relative to their Base Branches. It shows local branches, Involved Branches, the Primary Branch, remote branches matching the repository's remote patterns, their Base chains, and detached worktree heads by default; the user may show every branch instead. The Engine decides which branches form the graph; the renderer only collapses Base chains.
 _Avoid_: Commit graph
 
 **Graph Selection**:
