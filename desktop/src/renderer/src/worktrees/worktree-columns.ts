@@ -1,7 +1,7 @@
 import type { BranchGraph, BranchGraphBranchNode, WorkspaceColumn, WorktreeRecovery } from "@laneway/shared"
 
-export function columnWorktree(column: BranchGraph["branches"][number] | BranchGraph["virtualBranches"][number], path?: string) {
-    return column.kind == "branch" ? column.checkedOut.find(worktree => worktree.path == path) : column.worktree
+export function columnWorktree(column: BranchGraph["branches"][number] | BranchGraph["virtualBranches"][number] | { kind: "comparison" }, path?: string) {
+    return column.kind == "branch" ? column.checkedOut.find(worktree => worktree.path == path) : column.kind == "virtual" ? column.worktree : undefined
 }
 
 /** The Branch Node holding a local branch identity, which carries its Base relationships. */
@@ -14,7 +14,8 @@ export function reconcileWorktreeColumns(columns: WorkspaceColumn[], graph: Bran
     let nodes = [...graph.branches, ...graph.virtualBranches]
     let replacements = new Map<string, string | undefined>()
     let retained = new Set<string>()
-    for (let column of columns.filter(column => column.worktreePath)) {
+    let backed = columns.filter((column): column is Exclude<WorkspaceColumn, { kind: "comparison" }> => column.kind != "comparison" && !!column.worktreePath)
+    for (let column of backed) {
         let current = nodes.find(node => {
             let worktrees = node.kind == "branch" ? node.checkedOut : [node.worktree]
             return worktrees.some(worktree =>
@@ -35,6 +36,11 @@ export function reconcileWorktreeColumns(columns: WorkspaceColumn[], graph: Bran
     for (let column of columns) {
         if (!replacements.has(column.id) && retained.has(column.id))
             continue
+        // Comparison columns name refs, not worktrees, so they pass through untouched.
+        if (column.kind == "comparison") {
+            result.push(column)
+            continue
+        }
         let id = replacements.has(column.id) ? replacements.get(column.id) : column.id
         if (!id)
             continue

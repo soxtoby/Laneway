@@ -105,7 +105,7 @@ export class RepositoryGit {
     }
 
     private withConflictComparison<T extends { source: DiffSource }, R>(request: T, start: (prepared: T) => GitTask<R>): GitTask<R> {
-        if (request.source.kind != "branches")
+        if (request.source.kind != "refs")
             return start(request)
 
         let source = request.source

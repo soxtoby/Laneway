@@ -3,6 +3,7 @@ import type { RecoveryRequest, WorktreeRecovery } from "@laneway/shared"
 import { css, type Handle, on, type RemixNode } from "remix/ui"
 import type { createConflictResolution } from "../conflict-resolution"
 import { Icon } from "../icons"
+import { type ComparisonColumnNode, comparisonNode } from "../inspection/comparison-columns"
 import type { createInspection } from "../inspection/inspection"
 import { baseName } from "../repository-rail"
 import { columnWorktree, recoveryColumnId } from "../worktrees/worktree-columns"
@@ -12,7 +13,7 @@ import type { RepositoryGraphState } from "./branch-workspace"
 
 export let defaultColumnWidth = 380
 
-export type ColumnNode = BranchGraph["branches"][number] | BranchGraph["virtualBranches"][number]
+export type ColumnNode = BranchGraph["branches"][number] | BranchGraph["virtualBranches"][number] | ComparisonColumnNode
 
 export type RecoveryColumnNode = { kind: "recovery"; id: string; name: string; recovery: WorktreeRecovery }
 
@@ -23,6 +24,8 @@ let toneWorktree = css({ color: "var(--ok)" })
 let toneBranch = css({ color: "var(--focus)" })
 
 let toneWarning = css({ color: "var(--warning)" })
+
+let toneComparison = css({ color: "var(--muted)" })
 
 export let columnKindIcon = css({
     flex: "0 0 auto",
@@ -252,7 +255,7 @@ export function BranchColumns(
             branchMenu(branch: BranchGraphBranchNode, event: MouseEvent): void
             worktreePath(id: string): string | undefined
             worktreeControls(column: BranchGraph["branches"][number] | BranchGraph["virtualBranches"][number]): RemixNode
-            missingWorktreeControls(column: ColumnNode, worktree: BranchGraphWorktree): RemixNode
+            missingWorktreeControls(column: Exclude<ColumnNode, ComparisonColumnNode>, worktree: BranchGraphWorktree): RemixNode
             dropBranch(columnId: string, branchRef: string): void
             close(branchId: string): void
             collapse(branchId: string): void
@@ -270,8 +273,9 @@ export function BranchColumns(
         let columns = props.state.openedBranchIds.map(id =>
             props.graph.branches.find(branch => branch.id == id) ?? props.graph.virtualBranches.find(branch => branch.id == id)
                 ?? recoveryNode(props.state.worktreeRecoveries.find(item => recoveryColumnId(item) == id))
+                ?? (props.state.comparisons[id] && comparisonNode(id, props.state.comparisons[id], props.graph))
         ).filter(column => column != undefined)
-        let unavailable = props.inspection.unavailableComparisonSources(props.repositoryId, props.graph)
+        let unavailable = props.inspection.unavailableSources(props.repositoryId)
         if (columns.length == 0 && unavailable.length == 0) {
             return (
                 <section class="column-empty" mix={columnEmpty}>
@@ -399,7 +403,7 @@ export function BranchColumns(
                                                         props.commitMove(source)
                                                     else {
                                                         let branch = event.dataTransfer?.getData(branchDragType)
-                                                        if (branch && column.kind != "recovery")
+                                                        if (branch && column.kind != "recovery" && column.kind != "comparison")
                                                             props.dropBranch(column.id, branch)
                                                     }
                                                 }),
@@ -430,12 +434,13 @@ export function BranchColumns(
                                                 )
                                             })()}
                                             {(column.kind == "recovery" || !props.worktreePath(column.id)) && (
-                                                <h2 mix={branchColumnH2}>
+                                                <h2 title={column.kind == "comparison" ? column.description : undefined} mix={branchColumnH2}>
                                                     {column.name}
                                                 </h2>
                                             )}
-                                            {column.kind != "recovery" && props.worktreeControls(column)}
+                                            {column.kind != "recovery" && column.kind != "comparison" && props.worktreeControls(column)}
                                             <div mix={branchColumnActions}>
+                                                {column.kind == "comparison" && props.inspection.diffColumnControl(props.repositoryId, column, props.graph)}
                                                 {column.kind != "recovery"
                                                     && props.inspection.conflictFilter(props.repositoryId, column, props.graph, props.worktreePath(column.id))}
                                                 {column.kind != "recovery" && props.inspection.filterControl(
@@ -465,7 +470,8 @@ export function BranchColumns(
                                                 )}
                                             </div>
                                         </header>
-                                        {column.kind != "recovery" && worktree?.missing && props.missingWorktreeControls(column, worktree)}
+                                        {column.kind != "recovery" && column.kind != "comparison" && worktree?.missing
+                                            && props.missingWorktreeControls(column, worktree)}
                                         {column.kind == "recovery"
                                             ? (
                                                 <WorktreeRecoveryPanel
@@ -565,6 +571,8 @@ export function recoveryNode(recovery?: WorktreeRecovery): RecoveryColumnNode | 
 export function columnIdentity(column: ColumnNode | RecoveryColumnNode, worktreePath: string | undefined) {
     if (column.kind == "recovery")
         return { icon: "warning" as const, kind: "Worktree recovery", name: column.name, tone: toneWarning }
+    if (column.kind == "comparison")
+        return { icon: "compare" as const, kind: "Branch comparison", name: column.name, tone: toneComparison }
 
     let worktree = columnWorktree(column, worktreePath)
     if (worktree) {

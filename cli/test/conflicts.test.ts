@@ -329,7 +329,9 @@ test("multiple branch boundaries and a dependent stack restack together", async 
     expect(graph.branches.find(b => b.name == "topic")!.tip).not.toBe(before)
     expect(graph.branches.find(b => b.name == "lower")!.unresolved).toBeDefined()
 
-    let comparison = await repo.startReadChanges({ source: { kind: "branches", fromRef: "refs/heads/main", toRef: "refs/heads/topic" } }).result
+    let comparison = await repo.startReadChanges({
+        source: { kind: "refs", from: { kind: "branch", ref: "refs/heads/main" }, to: { kind: "branch", ref: "refs/heads/topic" } },
+    }).result
 
     expect(comparison.source).toEqual({ kind: "comparison", fromObjectId: base, toObjectId: graph.branches.find(b => b.name == "topic")!.tip })
 

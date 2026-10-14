@@ -1,4 +1,4 @@
-import type { BranchGraph, ChangesResult, CompositionPreview, CompositionRequest, DiffLine, EntryProgress, EntryResult, FileDiffResult, LocalRequest, WorktreeRequest } from "@laneway/shared"
+import type { BranchGraph, ChangesResult, CompositionPreview, CompositionRequest, DiffLine, DiffSource, EntryProgress, EntryResult, FileDiffResult, LocalRequest, WorktreeRequest } from "@laneway/shared"
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { Window as HappyWindow } from "happy-dom"
 import type { createElement as createRemixElement, createRoot as createRemixRoot, VirtualRoot } from "remix/ui"
@@ -1354,195 +1354,106 @@ test("hidden Branch Graph still shows the first read's progress and failure", as
 })
 
 describe("Branch Comparison", () => {
-    test("rejects obsolete inventories and cancels only affected requests", async () => {
-        let { createBranchComparisons } = await import("../src/renderer/src/inspection/branch-comparison")
-        let graph = branchGraph("repo")
-        let [main, feature, other] = graph.branches
-        let pending = new Map<string, (result: ChangesResult) => void>()
-        let cancelled: string[] = []
-        let signal = new AbortController().signal
-        let comparisons = createBranchComparisons({
-            api: fakeLaneway({
-                readChanges: async (_repo, id) => new Promise<ChangesResult>(resolve => pending.set(id, resolve)),
-                cancelInspection: async (_repo, id) => {
-                    cancelled.push(id)
-                    return true
-                },
-            }),
-            update: async () => signal,
-            signal,
-        })
-        comparisons.activate("repo")
-        let first = comparisons.create("repo", feature, main, graph)
-        let sibling = comparisons.create("repo", other, main, graph)
-        let [oldId, siblingId] = [...pending.keys()]
-        feature.tip = "a".repeat(40)
-        comparisons.refresh("repo", graph)
-        expect(cancelled).toContain(oldId)
-        expect(cancelled).not.toContain(siblingId)
-        let freshId = [...pending.keys()].at(-1)!
-        let result = (version: string): ChangesResult => ({
-            ok: true,
-            inventory: { source: { kind: "comparison", fromObjectId: feature.tip, toObjectId: main.tip }, version, files: [], parents: [] },
-        })
-        pending.get(freshId)!(result("fresh"))
-        await new Promise(resolve => setTimeout(resolve, 0))
-        pending.get(oldId)!(result("obsolete"))
-        await new Promise(resolve => setTimeout(resolve, 0))
-        expect(first.inventory?.version).toBe("fresh")
-        comparisons.dispose(sibling)
-        expect(cancelled).toContain(siblingId)
-        pending.get(siblingId)!(result("closed"))
-        await new Promise(resolve => setTimeout(resolve, 0))
-        expect(sibling.inventory).toBeUndefined()
-        comparisons.dispose(first)
-    })
-    test("opens ordered comparisons through a context menu, pages files lazily, reuses identities and refreshes moved tips", async () => {
+    test("opens a column beside its source, reads diffs lazily, breaks them out, follows moved tips and persists", async () => {
         let scenario = inspectionScenario()
-        let graphResult = await scenario.api.readBranchGraph("repository")
-        if (!graphResult.ok)
-            throw new Error("Fixture graph unavailable")
-        let graph = graphResult.graph
-        let [main, feature] = graph.branches
+        let [main, feature] = scenario.graph.branches
         let inventories = 0, patches = 0
-        let requested: string[] = []
-        let api = {
-            ...scenario.api,
-            readChanges: async (...args: Parameters<Window["laneway"]["readChanges"]>): Promise<ChangesResult> => {
-                let request = args[2]
-                if (request.source.kind != "branches" && request.source.kind != "comparison")
-                    return scenario.api.readChanges(...args)
-                inventories++
-                let anchor = request.source
-                if (
-                    anchor.kind == "branches"
-                    && (!graph.branches.some(branch => branch.preferredRef == anchor.fromRef)
-                        || !graph.branches.some(branch => branch.preferredRef == anchor.toRef))
-                ) {
-                    return { ok: false, error: { code: "git.command-failed", message: "Compared branch unavailable" } }
-                }
-                let source = anchor.kind == "branches"
-                    ? {
-                        kind: "comparison" as const,
-                        fromObjectId: graph.branches.find(branch => branch.preferredRef == anchor.fromRef)!.tip,
-                        toObjectId: main.tip,
-                    }
-                    : anchor
-                if (anchor.kind == "branches") {
-                    requested.push(`${anchor.fromRef} -> ${anchor.toRef}`)
-                    if (!graph.branches.some(branch => branch.preferredRef == anchor.toRef))
-                        return { ok: false, error: { code: "git.command-failed", message: "Compared branch unavailable" } }
-                }
-                return {
-                    ok: true,
-                    inventory: {
-                        source,
-                        version: main.tip,
-                        parents: [],
-                        files: [{ ...scenario.page.file, path: request.offset ? "later.txt" : "file.txt" }],
-                        ...(request.offset ? {} : { nextOffset: 1 }),
-                    },
-                }
-            },
-            readFileDiff: async (...args: Parameters<Window["laneway"]["readFileDiff"]>) => {
-                if (args[2].source.kind != "comparison")
-                    return scenario.api.readFileDiff(...args)
-                patches++
-                return {
-                    ok: true as const,
-                    page: {
-                        ...scenario.page,
-                        source: args[2].source,
-                        version: main.tip,
-                        selectable: false,
-                        file: { ...scenario.page.file, path: args[2].path },
-                    },
-                }
-            },
+        let requested: Extract<DiffSource, { kind: "refs" }>[] = []
+        let readChanges = scenario.api.readChanges
+        scenario.api.readChanges = async (...args) => {
+            let request = args[2]
+            if (request.source.kind != "refs")
+                return readChanges(...args)
+            inventories++
+            requested.push(request.source)
+            return {
+                ok: true,
+                inventory: {
+                    source: { kind: "comparison", fromObjectId: main.tip, toObjectId: feature.tip },
+                    version: `${main.tip}:${feature.tip}`,
+                    parents: [],
+                    files: [{ ...scenario.page.file, path: "src/file.txt" }],
+                },
+            }
         }
-        let { container, root, dispose } = render(api)
+        let readFileDiff = scenario.api.readFileDiff
+        scenario.api.readFileDiff = async (...args) => {
+            let request = args[2]
+            if (request.source.kind != "comparison")
+                return readFileDiff(...args)
+            patches++
+            return {
+                ok: true,
+                page: {
+                    ...scenario.page,
+                    source: request.source,
+                    version: request.inventoryVersion ?? "",
+                    selectable: false,
+                    file: { ...scenario.page.file, path: request.path },
+                },
+            }
+        }
+        let { container, root, dispose } = render(scenario.api)
         await flush(root)
-        let chooseComparison = async () => {
-            container.querySelector<HTMLElement>(`[data-node-id='${feature.id}']`)!.dispatchEvent(
-                new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 50 }),
-            )
-            await flush(root)
-            click(container.querySelector<HTMLButtonElement>("[role='menuitem']")!)
-            await flush(root)
-            input(container.querySelector<HTMLInputElement>("[aria-label='Command Lens search']")!, main.name)
-            await flush(root)
-            click(container.querySelector<HTMLButtonElement>(".lens-results button")!)
-            await flush(root)
-        }
-        await chooseComparison()
-        let comparison = container.querySelector<HTMLElement>(".branch-comparison")!
-        expect(comparison).not.toBeNull()
-        expect(comparison.previousElementSibling?.previousElementSibling?.classList.contains("branch-column")).toBe(true)
-        expect(comparison.textContent).toContain(`${feature.name} → ${main.name}`)
-        expect(document.activeElement).toBe(comparison)
-        expect(requested).toEqual([`${feature.preferredRef} -> ${main.preferredRef}`])
+        let source = container.querySelector<HTMLElement>(`[data-column-id='${feature.id}']`)!
+        let compare = source.querySelector<HTMLButtonElement>(".branch-compare")!
+        let comparison = () => container.querySelector<HTMLElement>("[data-column-id^='comparison:']")!
+        click(compare)
+        await flush(root)
+        let column = comparison()
+        expect(column).not.toBeNull()
+        expect(column.previousElementSibling?.previousElementSibling).toBe(source)
+        expect(column.querySelector("h2")?.textContent).toBe(`${main.name} → ${feature.name}`)
+        expect(column.querySelector(".column-kind")?.getAttribute("title")).toBe("Branch comparison")
+        expect(document.activeElement).toBe(column)
+        expect(requested).toEqual([{
+            kind: "refs",
+            from: { kind: "merge-base", ref: main.preferredRef, withRef: feature.preferredRef },
+            to: { kind: "branch", ref: feature.preferredRef },
+        }])
         expect(patches).toBe(0)
-        let id = comparison.dataset.auxiliaryId
-        click(container.querySelector<HTMLButtonElement>(".branch-column [title='src/file.txt']")!)
-        await flush(root)
-        click(container.querySelector<HTMLButtonElement>("[aria-label='Break out diff']")!)
-        await flush(root)
-        expect(container.querySelector(".inspection-breakout")?.nextElementSibling).toBe(comparison)
-        click(container.querySelector<HTMLButtonElement>("[aria-label='Close diff column']")!)
-        await flush(root)
-        expect(container.querySelector(".branch-comparison")).toBe(comparison)
-        await chooseComparison()
-        expect(container.querySelectorAll(".branch-comparison")).toHaveLength(1)
-        expect(container.querySelector<HTMLElement>(".branch-comparison")!.dataset.auxiliaryId).toBe(id)
-        expect(inventories).toBe(1)
-        click(button(comparison, "Load more files"))
-        await flush(root)
-        expect(comparison.querySelectorAll(".file-tree .change-file")).toHaveLength(2)
-        click(comparison.querySelector<HTMLButtonElement>(".change-file button[aria-expanded]")!)
+        expect(column.querySelectorAll(".branch-comparison .change-file")).toHaveLength(1)
+        // Comparisons are read-only, so files offer no whole-file selection.
+        expect(column.querySelector("input[type='checkbox']")).toBeNull()
+        click(column.querySelector<HTMLButtonElement>(".change-file button[aria-expanded]")!)
         await flush(root)
         expect(patches).toBe(1)
-        expect(comparison.querySelector(".pierre-diff")).not.toBeNull()
-        expect(scenario.saved().repositories[0].columns).toHaveLength(1)
+        expect(column.querySelector(".pierre-diff")).not.toBeNull()
+        let openDiffColumn = column.querySelector<HTMLButtonElement>("header [aria-label='Open diff column']")!
+        expect(openDiffColumn.disabled).toBe(false)
+        // Both the header control and a file's own control open the column's whole diff.
+        for (let opener of ["header [aria-label='Open diff column']", "[aria-label='Break out diff']"]) {
+            click(column.querySelector<HTMLButtonElement>(opener)!)
+            await flush(root)
+            expect(column.nextElementSibling?.nextElementSibling?.classList.contains("inspection-breakout")).toBe(true)
+            expect(container.querySelector(".inspection-breakout header span")?.textContent).toContain(`${main.name} → ${feature.name}`)
+            expect(openDiffColumn.getAttribute("aria-pressed")).toBe("true")
+            click(container.querySelector<HTMLButtonElement>("[aria-label='Close diff column']")!)
+            await flush(root)
+            expect(container.querySelector(".inspection-breakout")).toBeNull()
+        }
+        let saved = scenario.saved().repositories[0].columns
+        expect(saved.map(column => column.kind)).toEqual(["branch", "comparison"])
+        expect(saved[1]).toMatchObject({ id: column.dataset.columnId, from: requested[0].from, to: requested[0].to })
+        click(compare)
+        await flush(root)
+        expect(container.querySelectorAll("[data-column-id^='comparison:']")).toHaveLength(1)
+        expect(inventories).toBe(1)
         main.tip = "a".repeat(40)
         refreshGraph()
         await flush(root)
-        expect(inventories).toBe(3)
+        expect(inventories).toBe(2)
         expect(patches).toBe(2)
-        expect(comparison.querySelector("header strong")?.getAttribute("title")).toContain("aaaaaaaa")
-        graph.branches = graph.branches.filter(branch => branch != main)
-        refreshGraph()
+        click(comparison().querySelector<HTMLButtonElement>("[aria-label='Close column']")!)
         await flush(root)
-        expect(comparison.textContent).toContain("Showing the last comparison")
-        graph.branches = [...graph.branches.filter(branch => branch != feature), main]
-        refreshGraph()
-        await flush(root)
-        let orphaned = container.querySelector<HTMLElement>(".branch-comparison")!
-        expect(orphaned).not.toBeNull()
-        expect(orphaned.textContent).toContain("Showing the last comparison")
-        click(button(orphaned, "Compare with…"))
-        await flush(root)
-        input(container.querySelector<HTMLInputElement>("[aria-label='Command Lens search']")!, "other/team")
-        await flush(root)
-        click(container.querySelector<HTMLButtonElement>(".lens-results button")!)
-        await flush(root)
-        expect(container.querySelectorAll(".branch-comparison")).toHaveLength(1)
-        expect(container.querySelector(".branch-comparison")?.textContent).toContain("other/team → main")
-        click(container.querySelector<HTMLButtonElement>("[aria-label='Close comparison']")!)
-        await flush(root)
-        expect(container.querySelector(".branch-comparison")).toBeNull()
+        expect(container.querySelector("[data-column-id^='comparison:']")).toBeNull()
+        expect(scenario.saved().repositories[0].columns).toHaveLength(1)
         dispose()
     })
 
     test("compares a column branch with its base from its heading, but offers nothing for the base itself", async () => {
         let scenario = inspectionScenario()
         let [main, feature] = scenario.graph.branches
-        let requested: string[] = []
-        let readChanges = scenario.api.readChanges
-        scenario.api.readChanges = async (...args) => {
-            if (args[2].source.kind == "branches")
-                requested.push(`${args[2].source.fromRef} -> ${args[2].source.toRef}${args[2].source.mergeBase ? " from merge base" : ""}`)
-            return readChanges(...args)
-        }
         let { container, root, dispose } = render(scenario.api)
         await flush(root)
         let column = container.querySelector<HTMLElement>(".branch-column")!
@@ -1552,17 +1463,12 @@ describe("Branch Comparison", () => {
         expect(column.querySelector(".stack-heading")?.parentElement?.querySelector(".branch-compare")).toBeNull()
         click(compare[0])
         await flush(root)
-        let comparison = container.querySelector<HTMLElement>(".branch-comparison")!
+        let comparison = container.querySelector<HTMLElement>("[data-column-id^='comparison:']")!
         expect(comparison).not.toBeNull()
-        expect(comparison.dataset.sourceColumnId).toBe(feature.id)
-        expect(comparison.textContent).toContain(`${main.name} → ${feature.name}`)
-        expect(comparison.querySelector(".comparison-merge-base")?.textContent).toBe("from merge base")
-        expect(document.activeElement).toBe(comparison)
-        expect(requested).toEqual([`${main.preferredRef} -> ${feature.preferredRef} from merge base`])
-        click(compare[0])
-        await flush(root)
-        expect(container.querySelectorAll(".branch-comparison")).toHaveLength(1)
-        expect(requested).toHaveLength(1)
+        expect(comparison.querySelector("h2")?.getAttribute("title")).toBe(`Changes on ${feature.name} since it left ${main.name}`)
+        expect(comparison.querySelector("[aria-label='Filter files']")).not.toBeNull()
+        expect(comparison.querySelector("[aria-label='Maximize column']")).not.toBeNull()
+        expect(comparison.querySelector(".column-worktree")).toBeNull()
         dispose()
     })
 })

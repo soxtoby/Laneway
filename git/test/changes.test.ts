@@ -1,3 +1,4 @@
+import type { ComparisonRef, DiffSource } from "@laneway/shared"
 import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -24,14 +25,14 @@ describe("branch tip comparisons", () => {
             await writeFile(resolve(path, "file.txt"), "main\n")
             git(path, "commit", "-qam", "main change")
 
-            let source = { kind: "branches" as const, fromRef: "refs/heads/main", toRef: "refs/heads/feature" }
+            let source = branches("refs/heads/main", "refs/heads/feature")
             let inventory = await api.startReadChanges({ source }).result
             expect(inventory.source.kind).toBe("comparison")
             let page = await api.startReadFileDiff({ source: inventory.source, inventoryVersion: inventory.version, path: "file.txt" }).result
             expect(changed(page.lines)).toEqual([["deletion", "main"], ["addition", "feature"]])
             expect(page.selectable).toBe(false)
 
-            let reversed = await api.startReadFileDiff({ source: { ...source, fromRef: source.toRef, toRef: source.fromRef }, path: "file.txt" }).result
+            let reversed = await api.startReadFileDiff({ source: branches("refs/heads/feature", "refs/heads/main"), path: "file.txt" }).result
             expect(changed(reversed.lines)).toEqual([["deletion", "feature"], ["addition", "main"]])
 
             await writeFile(resolve(path, "file.txt"), "new main\n")
@@ -58,17 +59,29 @@ describe("branch tip comparisons", () => {
         await writeFile(resolve(path, "file.txt"), "main\n")
         git(path, "commit", "-qam", "main change")
 
-        let source = { kind: "branches" as const, fromRef: "refs/heads/main", toRef: "refs/heads/feature", mergeBase: true }
+        let feature: ComparisonRef = { kind: "branch", ref: "refs/heads/feature" }
+        let source: DiffSource = { kind: "refs", from: { kind: "merge-base", ref: "refs/heads/main", withRef: "refs/heads/feature" }, to: feature }
         let inventory = await api.startReadChanges({ source }).result
         expect(inventory.source).toEqual({ kind: "comparison", fromObjectId: mergeBase, toObjectId: git(path, "rev-parse", "feature").trim() })
         expect(inventory.files.map(file => file.path)).toEqual(["feature.txt"])
 
-        let tips = await api.startReadChanges({ source: { ...source, mergeBase: false } }).result
+        let tips = await api.startReadChanges({ source: branches("refs/heads/main", "refs/heads/feature") }).result
         expect(tips.files.map(file => file.path).sort()).toEqual(["feature.txt", "file.txt"])
+
+        let fromCommit = await api.startReadChanges({ source: { kind: "refs", from: { kind: "commit", objectId: mergeBase }, to: feature } }).result
+        expect(fromCommit.source).toEqual(inventory.source)
+        await expect(api.startReadChanges({ source: { kind: "refs", from: { kind: "commit", objectId: "main" }, to: feature } }).result).rejects.toThrow(
+            "object IDs",
+        )
 
         git(path, "checkout", "-q", "--orphan", "unrelated")
         git(path, "commit", "-qm", "unrelated root")
-        await expect(api.startReadChanges({ source: { ...source, toRef: "refs/heads/unrelated" } }).result).rejects.toThrow("share no history")
+        let unrelated: DiffSource = {
+            kind: "refs",
+            from: { kind: "merge-base", ref: "refs/heads/main", withRef: "refs/heads/unrelated" },
+            to: { kind: "branch", ref: "refs/heads/unrelated" },
+        }
+        await expect(api.startReadChanges({ source: unrelated }).result).rejects.toThrow("share no history")
     })
 
     test("pages file inventory, preserves rename and binary evidence, and ignores Working Changes", async () => {
@@ -82,7 +95,7 @@ describe("branch tip comparisons", () => {
         await writeFile(resolve(path, "untracked.txt"), "working only\n")
         let status = git(path, "status", "--porcelain=v2")
 
-        let source = { kind: "branches" as const, fromRef: "refs/heads/before", toRef: "refs/heads/main" }
+        let source = branches("refs/heads/before", "refs/heads/main")
         let first = await api.startReadChanges({ source }).result
         expect(first.files).toHaveLength(200)
         expect(first.nextOffset).toBe(200)
@@ -96,11 +109,15 @@ describe("branch tip comparisons", () => {
         expect(binary.summary).toContain("Binary content changed.")
         expect(git(path, "status", "--porcelain=v2")).toBe(status)
 
-        let empty = await api.startReadChanges({ source: { ...source, fromRef: source.toRef } }).result
+        let empty = await api.startReadChanges({ source: branches("refs/heads/main", "refs/heads/main") }).result
         expect(empty.files).toEqual([])
-        await expect(api.startReadChanges({ source: { ...source, fromRef: "refs/heads/main~1" } }).result).rejects.toThrow()
+        await expect(api.startReadChanges({ source: branches("refs/heads/main~1", "refs/heads/main") }).result).rejects.toThrow()
     })
 })
+
+function branches(fromRef: string, toRef: string): DiffSource {
+    return { kind: "refs", from: { kind: "branch", ref: fromRef }, to: { kind: "branch", ref: toRef } }
+}
 
 describe("Working Changes and committed diff reads", () => {
     test("entire-file context includes both ends and remains paged and version checked", async () => {

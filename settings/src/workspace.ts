@@ -1,4 +1,4 @@
-import type { DiffLayout, ObjectFormat, Workspace, WorkspaceColumn } from "@laneway/shared"
+import type { ComparisonRef, DiffLayout, ObjectFormat, Workspace, WorkspaceColumn } from "@laneway/shared"
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, resolve } from "node:path"
@@ -199,12 +199,8 @@ function parseColumn(value: unknown, restoring = false): WorkspaceColumn | undef
         return undefined
 
     let record = value as Record<string, unknown>
-    if (
-        !nonEmptyString(record.id) || !nonEmptyString(record.lastSeenObjectId) || typeof record.width != "number" || !Number.isFinite(record.width)
-        || record.width < 310
-    ) {
+    if (!nonEmptyString(record.id) || typeof record.width != "number" || !Number.isFinite(record.width) || record.width < 310)
         return undefined
-    }
 
     let diffLayout = record.diffLayout == "split" || record.diffLayout == "unified" ? record.diffLayout as DiffLayout : undefined
     let worktreePath = nonEmptyString(record.worktreePath) ? record.worktreePath : undefined
@@ -217,32 +213,53 @@ function parseColumn(value: unknown, restoring = false): WorkspaceColumn | undef
         return undefined
     }
 
-    if (record.kind == "branch" && nonEmptyString(record.ref)) {
+    let presentation = {
+        id: record.id,
+        width: record.width,
+        ...(record.collapsed === true ? { collapsed: true } : {}),
+        ...(diffLayout ? { diffLayout } : {}),
+    }
+    if (record.kind == "comparison") {
+        let from = parseComparisonRef(record.from), to = parseComparisonRef(record.to)
+        return from && to ? { kind: "comparison", ...presentation, from, to } : undefined
+    } else if (!nonEmptyString(record.lastSeenObjectId))
+        return undefined
+    else if (record.kind == "branch" && nonEmptyString(record.ref)) {
         return {
             kind: "branch",
-            id: record.id,
+            ...presentation,
             ref: record.ref,
             lastSeenObjectId: record.lastSeenObjectId,
-            width: record.width,
-            ...(record.collapsed === true ? { collapsed: true } : {}),
-            ...(diffLayout ? { diffLayout } : {}),
             ...(worktreePath ? { worktreePath } : {}),
             ...(worktreeId ? { worktreeId } : {}),
         }
     } else if (record.kind == "virtual" && nonEmptyString(record.worktreePath)) {
         return {
             kind: "virtual",
-            id: record.id,
+            ...presentation,
             worktreePath: record.worktreePath,
             ...(worktreeId ? { worktreeId } : {}),
             lastSeenObjectId: record.lastSeenObjectId,
-            width: record.width,
-            ...(record.collapsed === true ? { collapsed: true } : {}),
-            ...(diffLayout ? { diffLayout } : {}),
         }
     } else {
         return undefined
     }
+}
+
+function parseComparisonRef(value: unknown): ComparisonRef | undefined {
+    if (!value || typeof value != "object" || Array.isArray(value))
+        return undefined
+
+    let record = value as Record<string, unknown>
+    let branchRef = (candidate: unknown): candidate is string => nonEmptyString(candidate) && /^refs\/(heads|remotes)\/.+/.test(candidate)
+    if (record.kind == "commit" && nonEmptyString(record.objectId) && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(record.objectId))
+        return { kind: "commit", objectId: record.objectId }
+    else if (record.kind == "branch" && branchRef(record.ref))
+        return { kind: "branch", ref: record.ref }
+    else if (record.kind == "merge-base" && branchRef(record.ref) && branchRef(record.withRef))
+        return { kind: "merge-base", ref: record.ref, withRef: record.withRef }
+    else
+        return undefined
 }
 
 function nonEmptyString(value: unknown): value is string {

@@ -1,4 +1,4 @@
-import type { ChangedFile, ChangesInventory, ChangesRequest, DiffSource, FileDiffPage, FileDiffRequest, FileImagePage, FileImageRequest, ImageContent } from "@laneway/shared"
+import type { ChangedFile, ChangesInventory, ChangesRequest, ComparisonRef, DiffSource, FileDiffPage, FileDiffRequest, FileImagePage, FileImageRequest, ImageContent } from "@laneway/shared"
 import { createHash } from "node:crypto"
 import { lstat, readFile, realpath } from "node:fs/promises"
 import { isAbsolute, relative, resolve, sep } from "node:path"
@@ -146,7 +146,7 @@ async function fileDiff(descriptor: RepositoryDescriptor, reader: Reader, reques
 
     let custom = attrs.get("diff") && !["unspecified", "set"].includes(attrs.get("diff")!)
     let transformed = ["filter", "working-tree-encoding"].some(name => attrs.has(name) && !["unspecified", "unset"].includes(attrs.get(name)!))
-    let selectable = source.kind != "comparison" && source.kind != "branches" && ["combined", "staged", "unstaged"].includes(view) && !file.conflicted
+    let selectable = source.kind != "comparison" && source.kind != "refs" && ["combined", "staged", "unstaged"].includes(view) && !file.conflicted
         && !file.oldPath
         && ![file.oldMode, file.newMode].some(mode => mode == "120000" || mode == "160000")
 
@@ -422,26 +422,14 @@ function snapshotKey(source: DiffSource, version: string) {
 async function readSnapshot(descriptor: RepositoryDescriptor, reader: Reader, request: ChangesRequest): Promise<ChangesSnapshot> {
     let cwd = await directory(descriptor, reader, request.source)
 
-    if (request.source.kind == "branches" || request.source.kind == "comparison") {
-        let source = request.source
-        if (source.kind == "branches") {
-            for (let ref of [source.fromRef, source.toRef]) {
-                if (!/^refs\/(heads|remotes)\/.+/.test(ref))
-                    throw new GitError("git.command-failed", "Choose a branch ref.")
-                await reader.run(cwd, ["check-ref-format", ref])
+    if (request.source.kind == "refs" || request.source.kind == "comparison") {
+        let source: DiffSource = request.source.kind == "refs"
+            ? {
+                kind: "comparison",
+                fromObjectId: await resolveComparisonRef(descriptor, reader, cwd, request.source.from),
+                toObjectId: await resolveComparisonRef(descriptor, reader, cwd, request.source.to),
             }
-            let refs = await reader.run(cwd, ["for-each-ref", "--format=%(refname) %(objectname)", "--", source.fromRef, source.toRef])
-            let tips = new Map(refs.trim().split("\n").map(line => line.trim().split(" ") as [string, string]))
-            let fromObjectId = tips.get(source.fromRef), toObjectId = tips.get(source.toRef)
-            if (!fromObjectId || !toObjectId)
-                throw new GitError("git.command-failed", "A compared branch is unavailable. Retarget or close this comparison.")
-            if (source.mergeBase) {
-                fromObjectId = (await reader.run(cwd, ["merge-base", fromObjectId, toObjectId], undefined, [0, 1])).trim()
-                if (!fromObjectId)
-                    throw new GitError("git.command-failed", "The compared branches share no history.")
-            }
-            source = { kind: "comparison", fromObjectId, toObjectId }
-        }
+            : request.source
 
         let output = await reader.run(cwd, [
             "diff-tree",
@@ -528,7 +516,7 @@ async function readSnapshot(descriptor: RepositoryDescriptor, reader: Reader, re
 }
 
 async function directory(descriptor: RepositoryDescriptor, reader: Reader, source: DiffSource) {
-    if (source.kind == "branches" || source.kind == "comparison") {
+    if (source.kind == "refs" || source.kind == "comparison") {
         if (source.kind == "comparison") {
             oid(descriptor, source.fromObjectId)
             oid(descriptor, source.toObjectId)
@@ -550,6 +538,36 @@ async function directory(descriptor: RepositoryDescriptor, reader: Reader, sourc
     if (!paths.some(candidate => equalPath(candidate, path)))
         throw new GitError("git.invalid-root", "The worktree is no longer registered in this repository.")
     return path
+}
+
+async function resolveComparisonRef(descriptor: RepositoryDescriptor, reader: Reader, cwd: string, ref: ComparisonRef): Promise<string> {
+    if (ref.kind == "commit") {
+        oid(descriptor, ref.objectId)
+        return ref.objectId
+    } else if (ref.kind == "branch")
+        return (await branchTips(reader, cwd, [ref.ref]))[0]
+    else {
+        let [base, tip] = await branchTips(reader, cwd, [ref.ref, ref.withRef])
+        let mergeBase = (await reader.run(cwd, ["merge-base", base, tip], undefined, [0, 1])).trim()
+        if (!mergeBase)
+            throw new GitError("git.command-failed", "The compared branches share no history.")
+        return mergeBase
+    }
+}
+
+async function branchTips(reader: Reader, cwd: string, refs: string[]) {
+    for (let ref of refs) {
+        if (!/^refs\/(heads|remotes)\/.+/.test(ref))
+            throw new GitError("git.command-failed", "Choose a branch ref.")
+        await reader.run(cwd, ["check-ref-format", ref])
+    }
+    let output = await reader.run(cwd, ["for-each-ref", "--format=%(refname) %(objectname)", "--", ...refs])
+    let tips = new Map(output.trim().split("\n").map(line => line.trim().split(" ") as [string, string]))
+    let objectIds = refs.map(ref => tips.get(ref))
+    if (objectIds.some(objectId => !objectId))
+        throw new GitError("git.command-failed", "A compared branch is unavailable. Close this comparison.")
+
+    return objectIds as string[]
 }
 
 async function readAttributes(reader: Reader, cwd: string, source: DiffSource, files: ChangedFile[]) {

@@ -114,3 +114,31 @@ test("interrupted removal retains column presentation without a Git registration
         columns: [{ id: branch.id, worktreeId: "recreated-registration", width: 460, collapsed: true, diffLayout: "split" }],
     })
 })
+
+test("comparison columns keep their place and refs through reconciliation", () => {
+    let graph = branchGraph("repo")
+    let [main, feature] = graph.branches
+    let comparison: WorkspaceColumn = {
+        kind: "comparison",
+        id: "comparison:main..feature",
+        from: { kind: "merge-base", ref: main.preferredRef, withRef: feature.preferredRef },
+        to: { kind: "branch", ref: feature.preferredRef },
+        width: 400,
+        diffLayout: "split",
+    }
+    let result = reconcileWorktreeColumns(
+        [{ kind: "branch", id: main.id, ref: main.preferredRef, lastSeenObjectId: main.tip, width: 380 }, comparison, {
+            kind: "branch",
+            id: feature.id,
+            ref: feature.preferredRef,
+            lastSeenObjectId: feature.tip,
+            width: 380,
+        }],
+        graph,
+        comparison.id,
+    )
+
+    expect(result.columns.map(column => column.id)).toEqual([main.id, comparison.id, feature.id])
+    expect(result.columns[1]).toEqual(comparison)
+    expect(result.focused).toBe(comparison.id)
+})

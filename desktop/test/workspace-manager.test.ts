@@ -81,6 +81,15 @@ describe("Workspace manager", () => {
             { ...column, worktreePath: 42 },
             { ...column, worktreePath: " " },
             { ...column, kind: "virtual", worktreePath: "" },
+            { kind: "comparison", id: "comparison:x", width: 470, from: { kind: "branch", ref: "main" }, to: { kind: "branch", ref: "refs/heads/main" } },
+            { kind: "comparison", id: "comparison:x", width: 470, from: { kind: "commit", objectId: "main" }, to: { kind: "branch", ref: "refs/heads/main" } },
+            {
+                kind: "comparison",
+                id: "comparison:x",
+                width: 470,
+                from: { kind: "merge-base", ref: "refs/heads/main" },
+                to: { kind: "branch", ref: "refs/heads/main" },
+            },
         ]
         let invalid = [
             null,
@@ -102,6 +111,18 @@ describe("Workspace manager", () => {
             expect(await readFile(statePath, "utf8")).toBe(disk)
         }
         expect(await new WorkspaceManager(new OpenRepositories(settingsPath), statePath).load()).toEqual(before)
+
+        let comparison = {
+            kind: "comparison" as const,
+            id: "comparison:main..topic",
+            width: 470,
+            from: { kind: "merge-base" as const, ref: "refs/heads/main", withRef: "refs/heads/topic" },
+            to: { kind: "branch" as const, ref: "refs/heads/topic" },
+            diffLayout: "split" as const,
+        }
+        await manager.update({ ...presentation, repositories: [{ ...repository, columns: [column, comparison] }] })
+        expect(manager.snapshot().repositories[0].columns[1]).toEqual(comparison)
+        expect((await new WorkspaceManager(new OpenRepositories(settingsPath), statePath).load()).repositories[0].columns[1]).toEqual(comparison)
     })
 
     test("retains unavailable repositories and their layout", async () => {

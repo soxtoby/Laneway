@@ -21,7 +21,7 @@ The global keyboard-first search and navigation surface. Selecting a branch loca
 _Avoid_: Command palette, branch switcher
 
 **Workspace Column**:
-A resizable view of an Active Stack ending at one branch. It may be branch-only, or worktree-backed with Working Changes; every Registered Worktree retains a column that can be collapsed in place; branch-only columns can be closed. Removing a worktree removes its column. Collapsing preserves column order and expanded width.
+A resizable view of an Active Stack ending at one branch, or a Branch Comparison Column. A stack column may be branch-only, or worktree-backed with Working Changes; every Registered Worktree retains a column that can be collapsed in place; branch-only and comparison columns can be closed. Removing a worktree removes its column. Collapsing preserves column order and expanded width.
 _Avoid_: Worktree column
 
 **Workspace State**:
@@ -233,10 +233,14 @@ _Avoid_: Agent Workspace, AI chat
 An AI-assisted Laneway Operation that may split, squash, reorder, and reword commits in the focused Active Stack while preserving its final tree and branch membership. It reorganizes existing changes but does not author source changes. Laneway owns replay and feeds resulting Git conflicts through the same AI Run; unresolved failures remain an Unresolved Stack.
 _Avoid_: Restack, AI refactoring
 
+**Comparison Ref**:
+One end of a Branch Comparison: a commit, a branch identity that follows its tip, or the merge base of two branch identities. A branch's whole set of changes against its Base Branch runs from the merge base of the two to the branch itself.
+_Avoid_: Revision, commit-ish
+
 **Branch Comparison**:
-An ordered live diff from one branch identity to another, recomputed when either tip moves. It may start from the two branches' merge base instead of the first branch's tip, which shows a branch's whole set of changes against its Base Branch. It follows an explicit Laneway branch rename; an external replacement requires user confirmation. A branch's individual changes are inspected by expanding its commits.
+An ordered live diff from one Comparison Ref to another, recomputed when a branch involved in either ref moves. It follows an explicit Laneway branch rename; an external replacement requires user confirmation. A branch's individual changes are inspected by expanding its commits.
 _Avoid_: Three-dot diff
 
 **Branch Comparison Column**:
-A read-only source-linked auxiliary column showing a Branch Comparison between two branch identities. Unique commits remain part of the compared branch's Active Stack.
-_Avoid_: Comparison Workspace Column, Three-dot Diff Column
+A read-only Workspace Column showing a Branch Comparison. It is filtered, maximized, and broken out into a diff column like any Workspace Column, and persists in Workspace State by its refs. Unique commits remain part of the compared branch's Active Stack.
+_Avoid_: Comparison auxiliary column, Three-dot Diff Column

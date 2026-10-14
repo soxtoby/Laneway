@@ -1,33 +1,45 @@
-import type { BranchGraph, BranchHistoryPage, BranchHistoryRequest, DiffSource } from "@laneway/shared"
+import type { BranchGraph, BranchHistoryPage, BranchHistoryRequest, ComparisonRef, DiffSource } from "@laneway/shared"
 import { conflictStateRef, readConflictState, temporaryBranchPrefix } from "./conflicts"
 import type { RepositoryGit } from "./index"
 
-export async function conflictComparisonSource(repo: RepositoryGit, source: Extract<DiffSource, { kind: "branches" }>): Promise<DiffSource> {
+/** Resolves a comparison whose branches sit in an unresolved stack to the stack's provisional tips. */
+export async function conflictComparisonSource(repo: RepositoryGit, source: Extract<DiffSource, { kind: "refs" }>): Promise<DiffSource> {
     let state = await readConflictState(repo).catch(() => undefined)
-    if (!state?.stacks.some(s => s.branches.some(b => b.ref == source.fromRef || b.ref == source.toRef)))
+    let refs = [source.from, source.to].flatMap(branchRefs)
+    if (!state?.stacks.some(s => s.branches.some(b => refs.includes(b.ref))))
         return source
 
-    let tips = await Promise.all([source.fromRef, source.toRef].map(async ref => {
+    let tip = async (ref: string) => {
         if (!/^refs\/(heads|remotes)\/.+/.test(ref))
             throw new Error("Choose a branch ref.")
         await repo.command(repo.descriptor.mainWorktree, ["check-ref-format", ref])
         let actual = await repo.resolveRef(ref)
         if (!actual)
-            throw new Error("A compared branch is unavailable. Retarget or close this comparison.")
+            throw new Error("A compared branch is unavailable. Close this comparison.")
 
         let stack = state.stacks.find(s => s.branches.some(b => b.ref == ref))
         let boundary = stack?.branches.find(b => b.ref == ref)
         return boundary ? boundary == stack!.branches.at(-1) ? await repo.resolveRef(stack!.temporaryRef) ?? boundary.current : boundary.current : actual
-    }))
-
-    if (source.mergeBase) {
-        let result = await repo.run(repo.descriptor.mainWorktree, ["merge-base", tips[0], tips[1]])
-        let mergeBase = result.stdout.toString().trim()
-        if (result.exitCode != 0 || !mergeBase)
-            throw new Error("The compared branches share no history.")
-        return { kind: "comparison", fromObjectId: mergeBase, toObjectId: tips[1] }
     }
-    return { kind: "comparison", fromObjectId: tips[0], toObjectId: tips[1] }
+    let resolve = async (ref: ComparisonRef) => {
+        if (ref.kind == "commit")
+            return ref.objectId
+        else if (ref.kind == "branch")
+            return tip(ref.ref)
+        else {
+            let result = await repo.run(repo.descriptor.mainWorktree, ["merge-base", await tip(ref.ref), await tip(ref.withRef)])
+            let mergeBase = result.stdout.toString().trim()
+            if (result.exitCode != 0 || !mergeBase)
+                throw new Error("The compared branches share no history.")
+            return mergeBase
+        }
+    }
+
+    return { kind: "comparison", fromObjectId: await resolve(source.from), toObjectId: await resolve(source.to) }
+}
+
+function branchRefs(ref: ComparisonRef) {
+    return ref.kind == "commit" ? [] : ref.kind == "branch" ? [ref.ref] : [ref.ref, ref.withRef]
 }
 
 export async function projectConflictGraph(repo: RepositoryGit, graph: BranchGraph) {

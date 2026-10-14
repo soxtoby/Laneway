@@ -1,4 +1,4 @@
-import type { AvailableOpenRepository, BranchGraph, BranchGraphMarker, RepositoryGraphSettings, Workspace, WorkspaceColumn } from "@laneway/shared"
+import type { AvailableOpenRepository, BranchGraph, BranchGraphMarker, ComparisonRef, RepositoryGraphSettings, Workspace, WorkspaceColumn } from "@laneway/shared"
 import type { DiffLayout } from "@laneway/shared"
 import type { RecoveryRequest, WorktreeRecovery } from "@laneway/shared"
 import { css, on, ref, type RemixNode } from "remix/ui"
@@ -6,6 +6,7 @@ import { CommandLens } from "../command-lens"
 import { createConflictResolution } from "../conflict-resolution"
 import { errorMessage, type NoticeState } from "../feedback"
 import { Icon } from "../icons"
+import { comparisonColumnId, comparisonNode, renameComparisonRef } from "../inspection/comparison-columns"
 import { createInspection } from "../inspection/inspection"
 import { createPullLatest, type PullControl } from "../pull-latest"
 import { baseName, RepositoryRail } from "../repository-rail"
@@ -49,6 +50,8 @@ export interface RepositoryGraphState {
     draggingBranchId?: string
     focusRestored: boolean
     diffLayouts: Record<string, DiffLayout>
+    /** Open Branch Comparison Columns by column id. */
+    comparisons: Record<string, { from: ComparisonRef; to: ComparisonRef }>
     contextMenu?: { branchId: string; x: number; y: number }
 }
 
@@ -373,20 +376,21 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
     let lensInput: HTMLInputElement | undefined
     let restoreFocus: HTMLElement | null = null
     let currentWorkspace: Workspace | undefined
-    let comparisonSource: { repositoryId: string; fromRef: string; replaceId?: string; chooseFrom?: boolean; chooseFirst?: boolean } | undefined
     let worktreeActions = createWorktreeActions({
         api: options.api,
         update: options.update,
         completed: async (repositoryId, request, columnId) => {
             let repository = options.workspace().repositories.find(item => item.id == repositoryId)
             let destination = repository?.columns.find(item => item.id == columnId)
-            if (request.action == "switch" && destination && !destination.worktreePath) {
-                let source = repository?.columns.find(item => item.worktreePath == request.path)
+            if (request.action == "switch" && destination && destination.kind != "comparison" && !destination.worktreePath) {
+                let source = repository?.columns.find(item => item.kind != "comparison" && item.worktreePath == request.path)
                 destination.worktreePath = request.path
-                destination.worktreeId = source?.worktreeId
-                if (source) {
-                    source.worktreePath = undefined
-                    source.worktreeId = undefined
+                if (source?.kind != "comparison") {
+                    destination.worktreeId = source?.worktreeId
+                    if (source) {
+                        source.worktreePath = undefined
+                        source.worktreeId = undefined
+                    }
                 }
             }
             await read(repositoryId, false, false)
@@ -411,7 +415,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         },
         createBranchAt: (repositoryId, commit) => localBranches.atCommit(repositoryId, commit),
         renameBranch: (repositoryId, name, newName) => localBranches.perform(repositoryId, { action: "branch-rename", name, newName }),
-        compareWith,
+        openComparison,
         layout: (repositoryId, columnId) => stateFor(repositoryId).diffLayouts[columnId] ?? "unified",
         saveLayout: (repositoryId, columnId, layout) => {
             stateFor(repositoryId).diffLayouts[columnId] = layout
@@ -442,6 +446,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                         column.ref = `refs/heads/${request.newName}`
                     }
                 }
+                renameComparisons(state, repository?.columns ?? [], `refs/heads/${request.name}`, `refs/heads/${request.newName}`)
                 inspection.renameBranch(repositoryId, `refs/heads/${request.name}`, `refs/heads/${request.newName}`)
             }
             await read(repositoryId, false, false)
@@ -612,22 +617,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                                 }),
                             ]}
                         >
-                            <div role="menu" aria-label="Branch actions">
-                                <button
-                                    type="button"
-                                    role="menuitem"
-                                    mix={[
-                                        ref(button => button.focus()),
-                                        on("click", () => {
-                                            let branch = workspaceGraph(graph).branches.find(branch => branch.id == state.contextMenu?.branchId)
-                                            state.contextMenu = undefined
-                                            if (branch)
-                                                compareWith(active.id, branch.preferredRef)
-                                        }),
-                                    ]}
-                                >
-                                    Compare with…
-                                </button>
+                            <div role="menu" aria-label="Branch actions" mix={ref(menu => menu.querySelector<HTMLElement>("[role='menuitem']")?.focus())}>
                                 {(() => {
                                     let branch = workspaceGraph(graph).branches.find(branch => branch.id == state.contextMenu?.branchId)
                                     return branch && rebaseable(branch) && (
@@ -921,6 +911,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             let columns = state.openedBranchIds.map(id =>
                 graph.branches.find(branch => branch.id == id) ?? graph.virtualBranches.find(branch => branch.id == id)
                     ?? recoveryNode(state.worktreeRecoveries.find(item => recoveryColumnId(item) == id))
+                    ?? (state.comparisons[id] && comparisonNode(id, state.comparisons[id], graph))
             ).filter(column => column != undefined)
             if (columns.length == 0)
                 return null
@@ -969,28 +960,8 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                 return null
             return (
                 <CommandLens
-                    prompt={comparisonSource
-                        ? comparisonSource.chooseFirst
-                            ? "Choose replacement source branch"
-                            : `${comparisonSource.chooseFrom ? "Choose replacement source to compare to" : "Compare with"} ${
-                                comparisonSource.fromRef.replace(/^refs\/(heads|remotes)\//, "")
-                            }`
-                        : undefined}
                     query={lensQuery}
-                    results={comparisonSource
-                        ? (lensGraph(comparisonSource.repositoryId)?.branches ?? [])
-                            .filter(branch => branch.preferredRef != comparisonSource!.fromRef
-                                && branch.name.toLocaleLowerCase().includes(lensQuery.trim().toLocaleLowerCase())
-                            )
-                            .map(branch => ({
-                                kind: "branch" as const,
-                                repositoryId: comparisonSource!.repositoryId,
-                                nodeId: branch.id,
-                                label: branch.name,
-                                detail: branch.preferredRef,
-                                score: 1,
-                            }))
-                        : lensResults(workspace, states, activeRepositoryId, lensQuery)}
+                    results={lensResults(workspace, states, activeRepositoryId, lensQuery)}
                     inputRef={node => lensInput = node}
                     setQuery={value => {
                         lensQuery = value
@@ -1046,6 +1017,7 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         }
         let index = state.openedBranchIds.indexOf(branchId)
         state.openedBranchIds = state.openedBranchIds.filter(id => id != branchId)
+        delete state.comparisons[branchId]
         if (state.maximizedBranchId == branchId)
             state.maximizedBranchId = undefined
         if (state.focusedColumnId == branchId)
@@ -1240,38 +1212,6 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
     }
 
     async function activateLensResult(result: LensResult) {
-        if (comparisonSource) {
-            let request = comparisonSource
-            let state = stateFor(request.repositoryId)
-            let graph = lensGraph(request.repositoryId)
-            if (request.chooseFirst) {
-                let branch = graph?.branches.find(branch => branch.id == result.nodeId)
-                if (branch) {
-                    comparisonSource = { repositoryId: request.repositoryId, fromRef: branch.preferredRef, replaceId: request.replaceId }
-                    lensQuery = ""
-                    await options.update()
-                }
-                return
-            }
-            let fixedNode = graph?.branches.find(branch => branch.refs.includes(request.fromRef))
-            let fixed = fixedNode ? { ...fixedNode, preferredRef: request.fromRef } : undefined
-            let selected = graph?.branches.find(branch => branch.id == result.nodeId)
-            let from = request.chooseFrom ? selected : fixed
-            let to = request.chooseFrom ? fixed : selected
-            if (!from || !to || !graph)
-                return
-            lensOpen = false
-            comparisonSource = undefined
-            if (!state.openedBranchIds.includes(from.id))
-                state.openedBranchIds.push(from.id)
-            state.collapsedColumnIds = state.collapsedColumnIds.filter(id => id != from.id)
-            state.maximizedBranchId = undefined
-            state.widths[from.id] ??= defaultColumnWidth
-            state.focusedColumnId = from.id
-            await persist(request.repositoryId)
-            inspection.openComparison(request.repositoryId, from, to, graph, request.replaceId, backingPath(request.repositoryId, from.id))
-            return
-        }
         if (result.kind == "command") {
             moveColumn(result.repositoryId, result.nodeId, result.delta)
             closeLens()
@@ -1314,25 +1254,46 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         })
     }
 
-    function lensGraph(repositoryId: string) {
-        let graph = stateFor(repositoryId).graph
-        return graph && workspaceGraph(graph)
-    }
-
     function closeLens() {
         lensOpen = false
-        comparisonSource = undefined
         void options.update().then(() => restoreFocus?.focus())
     }
 
-    function compareWith(repositoryId: string, fromRef: string, replaceId?: string, toRef?: string) {
-        let chooseFrom = !!toRef && !stateFor(repositoryId).graph?.branches.some(branch => branch.refs.includes(fromRef))
-        let chooseFirst = chooseFrom && !stateFor(repositoryId).graph?.branches.some(branch => branch.refs.includes(toRef!))
-        comparisonSource = { repositoryId, fromRef: chooseFirst ? "" : chooseFrom ? toRef! : fromRef, replaceId, chooseFrom, chooseFirst }
-        openLens()
-        restoreFocus = replaceId
-            ? document.querySelector<HTMLElement>(`[data-auxiliary-id="${replaceId}"]`)
-            : document.querySelector<HTMLElement>(".graph-rows")
+    /** Opens, or focuses, the Branch Comparison Column from `from` to `to`, placing a new one beside its source column. */
+    function openComparison(repositoryId: string, sourceColumnId: string, from: ComparisonRef, to: ComparisonRef) {
+        let state = stateFor(repositoryId)
+        let id = comparisonColumnId(from, to)
+        state.comparisons[id] = { from, to }
+        if (!state.openedBranchIds.includes(id))
+            state.openedBranchIds.splice(state.openedBranchIds.indexOf(sourceColumnId) + 1, 0, id)
+        state.collapsedColumnIds = state.collapsedColumnIds.filter(column => column != id)
+        state.focusedColumnId = id
+        state.widths[id] ??= defaultColumnWidth
+        state.maximizedBranchId = undefined
+        void persist(repositoryId).then(() => options.update()).then(() =>
+            [...document.querySelectorAll<HTMLElement>("[data-column-id]")].find(column => column.dataset.columnId == id)?.focus()
+        )
+    }
+
+    function renameComparisons(state: RepositoryGraphState, columns: WorkspaceColumn[], oldRef: string, newRef: string) {
+        for (let [id, comparison] of Object.entries(state.comparisons)) {
+            let renamed = { from: renameComparisonRef(comparison.from, oldRef, newRef), to: renameComparisonRef(comparison.to, oldRef, newRef) }
+            let newId = comparisonColumnId(renamed.from, renamed.to)
+            if (newId != id) {
+                delete state.comparisons[id]
+                state.comparisons[newId] = renamed
+                state.openedBranchIds = state.openedBranchIds.map(candidate => candidate == id ? newId : candidate)
+                state.collapsedColumnIds = state.collapsedColumnIds.map(candidate => candidate == id ? newId : candidate)
+                if (state.focusedColumnId == id)
+                    state.focusedColumnId = newId
+                state.widths[newId] = state.widths[id] ?? defaultColumnWidth
+                state.diffLayouts[newId] = state.diffLayouts[id] ?? "unified"
+                for (let column of columns) {
+                    if (column.id == id && column.kind == "comparison")
+                        Object.assign(column, { id: newId, ...renamed })
+                }
+            }
+        }
     }
 
     function openLens() {
@@ -1390,12 +1351,13 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                 state.worktreeRecoveries = recoveries
                 let columns = workspaceGraph(result.graph)
                 let validColumnIds = new Set(
-                    [...columns.branches, ...columns.virtualBranches].map(branch => branch.id).concat(recoveries.map(recoveryColumnId)),
+                    [...columns.branches, ...columns.virtualBranches].map(branch => branch.id)
+                        .concat(recoveries.map(recoveryColumnId), Object.keys(state.comparisons)),
                 )
                 let removedColumns = state.openedBranchIds.filter(id => !validColumnIds.has(id) && !id.startsWith("recovery:"))
                 let previousPatterns = state.graph?.remotePatterns.join(", ")
                 state.graph = result.graph
-                state.openedBranchIds.push(...inspection.refreshComparisons(repositoryId, columns))
+                state.openedBranchIds.push(...inspection.refresh(repositoryId, columns))
                 if (refreshRemote)
                     state.remoteRefreshed = true
                 // Quiet refreshes must not wipe a draft the user is still typing into the settings panel.
@@ -1538,14 +1500,25 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                 }]
             }
             let virtual = state.graph!.virtualBranches.find(candidate => candidate.id == id)
-
-            return virtual
-                ? [{
+            if (virtual) {
+                return [{
                     kind: "virtual" as const,
                     id,
                     worktreePath: virtual.worktree.path,
                     worktreeId: virtual.worktree.id,
                     lastSeenObjectId: virtual.objectId,
+                    width: state.widths[id] ?? defaultColumnWidth,
+                    collapsed: state.collapsedColumnIds.includes(id),
+                    diffLayout: state.diffLayouts[id] ?? "unified",
+                }]
+            }
+            let comparison = state.comparisons[id]
+
+            return comparison
+                ? [{
+                    kind: "comparison" as const,
+                    id,
+                    ...comparison,
                     width: state.widths[id] ?? defaultColumnWidth,
                     collapsed: state.collapsedColumnIds.includes(id),
                     diffLayout: state.diffLayouts[id] ?? "unified",
@@ -1570,8 +1543,8 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         if (virtual)
             return virtual.worktree.path
         let branch = graph && workspaceGraph(graph).branches.find(branch => branch.id == columnId)
-        let saved = options.workspace().repositories.find(repository => repository.id == repositoryId)?.columns.find(column => column.id == columnId)
-            ?.worktreePath
+        let column = options.workspace().repositories.find(repository => repository.id == repositoryId)?.columns.find(column => column.id == columnId)
+        let saved = column?.kind == "comparison" ? undefined : column?.worktreePath
 
         return branch?.checkedOut.find(worktree => worktree.path == saved)?.path ?? (branch?.checkedOut.length == 1 ? branch.checkedOut[0].path : undefined)
     }
@@ -1595,6 +1568,9 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                 patterns: "",
                 graphCollapsed: true,
                 collapsedColumnIds: saved?.columns.filter(column => column.collapsed).map(column => column.id) ?? [],
+                comparisons: Object.fromEntries(
+                    saved?.columns.flatMap(column => column.kind == "comparison" ? [[column.id, { from: column.from, to: column.to }]] : []) ?? [],
+                ),
                 collapsedBranchIds: [],
                 remoteRefreshed: false,
                 baseCandidateSelections: {},

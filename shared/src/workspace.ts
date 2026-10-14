@@ -1,4 +1,4 @@
-import { type DiffLayout } from "./changes"
+import { type ComparisonRef, type DiffLayout } from "./changes"
 
 export type ObjectFormat = "sha1" | "sha256"
 
@@ -44,7 +44,18 @@ export interface VirtualBranchWorkspaceColumn {
     width: number
 }
 
-export type WorkspaceColumn = BranchWorkspaceColumn | VirtualBranchWorkspaceColumn
+/** A Branch Comparison Column. Its refs are identities, so the comparison stays live across restarts. */
+export interface ComparisonWorkspaceColumn {
+    collapsed?: boolean
+    diffLayout?: DiffLayout
+    kind: "comparison"
+    id: string
+    from: ComparisonRef
+    to: ComparisonRef
+    width: number
+}
+
+export type WorkspaceColumn = BranchWorkspaceColumn | VirtualBranchWorkspaceColumn | ComparisonWorkspaceColumn
 
 export interface AvailableOpenRepository {
     status: "available"

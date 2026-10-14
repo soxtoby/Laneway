@@ -1,4 +1,4 @@
-import type { BranchGraph, BranchGraphBranchNode, BranchGraphVirtualBranch, BranchHistoryCommit, BranchHistoryPage, ChangedFile, ChangesInventory, CompositionSource, DiffLayout, DiffSource, DiffView } from "@laneway/shared"
+import type { BranchGraph, BranchGraphBranchNode, BranchGraphVirtualBranch, BranchHistoryCommit, BranchHistoryPage, ChangedFile, ChangesInventory, ComparisonRef, CompositionSource, DiffLayout, DiffSource, DiffView } from "@laneway/shared"
 import { css, on, ref, type RemixNode } from "remix/ui"
 import * as accordion from "remix/ui/accordion/primitives"
 import { auxiliaryCloseButton, auxiliaryColumnFrame, auxiliaryColumnHeader, AuxiliaryColumns } from "../auxiliary-columns"
@@ -11,18 +11,18 @@ import { Icon } from "../icons"
 import { type OverflowAction, OverflowMenu } from "../overflow-menu"
 import { RewordForm } from "../reword"
 import { columnWorktree } from "../worktrees/worktree-columns"
-import { type BranchComparisonState, createBranchComparisons } from "./branch-comparison"
 import { columnItem, focusItem, isFileItem, parentItem, scrollBehavior, stepItem } from "./column-navigation"
 import { CommitMessage } from "./commit-message"
+import { type ComparisonColumnNode, comparisonHistorySource, comparisonKey } from "./comparison-columns"
 import { readDiffContext } from "./diff-context"
 import { DiffControls } from "./diff-controls"
 import { fileLabel, FileTree } from "./file-list"
-import { FileMenu } from "./file-menu"
+import { type FileAction, FileMenu } from "./file-menu"
 import { readDiffImage } from "./image-diff"
 import { createDiffSession, type FileDiffState } from "./inspection-diff-session"
 import { InspectionDiffContents, inspectionMuted, inspectionProgress, selectionSummary } from "./inspection-diff-view"
 
-type Column = BranchGraphBranchNode | BranchGraphVirtualBranch
+type Column = BranchGraphBranchNode | BranchGraphVirtualBranch | ComparisonColumnNode
 interface Options {
     api: Window["laneway"]
     update(): Promise<AbortSignal>
@@ -30,7 +30,8 @@ interface Options {
     notify(notice: NoticeState): () => void
     layout(repositoryId: string, columnId: string): DiffLayout
     saveLayout(repositoryId: string, columnId: string, layout: DiffLayout): void
-    compareWith(repositoryId: string, fromRef: string, replaceId?: string, toRef?: string): void
+    /** Opens the Branch Comparison Column from `from` to `to` beside the column `sourceColumnId`. */
+    openComparison(repositoryId: string, sourceColumnId: string, from: ComparisonRef, to: ComparisonRef): void
     localChanged?(repositoryId: string): Promise<void>
     localBusyChanged?(busy: boolean): void
     recoveryBlocked?(repositoryId: string): boolean
@@ -102,6 +103,8 @@ interface ColumnState {
     compositionKey?: string
     /** The commit whose message is being edited in place. */
     reword?: string
+    /** The compared tips a comparison column last read, so a moved branch re-reads it. */
+    comparisonKey?: string
 }
 
 let changeFileList = css({
@@ -263,7 +266,8 @@ let filterToggleButton = css({
     color: "var(--muted)",
     cursor: "pointer",
     "&:hover": { background: "var(--control-hover)", color: "var(--text)" },
-    '&[aria-expanded="true"]': { background: "var(--accent-wash)", color: "var(--accent)" },
+    '&[aria-expanded="true"], &[aria-pressed="true"]': { background: "var(--accent-wash)", color: "var(--accent)" },
+    "&:disabled": { opacity: "0.45", cursor: "default" },
 })
 
 let filterChangedFilesInput = css({
@@ -595,9 +599,8 @@ export function createInspection(options: Options) {
     let diffSessions = new WeakMap<ColumnState, ReturnType<typeof createDiffSession>>()
     let navigationHighlight: Animation | undefined
     let columns = new Map<string, ColumnState>()
-    let auxiliary = new AuxiliaryColumns<BreakoutState | BranchComparisonState | FileHistoryState | TrailCommitState>()
+    let auxiliary = new AuxiliaryColumns<BreakoutState | FileHistoryState | TrailCommitState>()
     let trailCommits = createTrailCommits(options)
-    let comparisons = createBranchComparisons(options)
     let histories = createFileHistories({
         ...options,
         composition(history) {
@@ -667,7 +670,6 @@ export function createInspection(options: Options) {
     window.addEventListener("focus", refresh)
     let visibility = () => {
         if (document.visibilityState != "visible") {
-            comparisons.activate()
             histories.suspend()
             trailCommits.suspend()
             for (let host of historyHosts.values())
@@ -675,7 +677,6 @@ export function createInspection(options: Options) {
             for (let state of columns.values())
                 suspend(state)
         } else {
-            comparisons.activate(activeRepositoryId)
             refresh()
             for (let state of columns.values()) {
                 if (state.repositoryId == activeRepositoryId)
@@ -697,10 +698,11 @@ export function createInspection(options: Options) {
             refresh()
         },
         renameBranch(repositoryId: string, oldRef: string, newRef: string) {
-            comparisons.renameBranch(repositoryId, oldRef, newRef)
             histories.renameBranch(repositoryId, oldRef, newRef)
         },
         workingSummary(repositoryId: string, column: Column, graph: BranchGraph, worktreePath?: string) {
+            if (column.kind == "comparison")
+                return "Comparison"
             if (!worktreePath)
                 return "Branch"
 
@@ -778,6 +780,30 @@ export function createInspection(options: Options) {
                     focusItem(parent)
             }
         },
+        /** A comparison column's header control for its whole diff, mirroring the Working Changes one. */
+        diffColumnControl(repositoryId: string, column: ComparisonColumnNode, graph: BranchGraph): RemixNode {
+            let state = stateFor(repositoryId, column, graph)
+            return (
+                <button
+                    type="button"
+                    aria-label="Open diff column"
+                    title="Open diff column"
+                    aria-pressed={!!state.breakout}
+                    disabled={!state.files.get("comparison")?.inventory?.files.some(file => !file.ignored)}
+                    mix={[
+                        filterToggleButton,
+                        on("click", () => {
+                            if (state.breakout)
+                                focusBreakout(state)
+                            else
+                                void showBreakout(state, "comparison")
+                        }),
+                    ]}
+                >
+                    <Icon name="diff" size={14} />
+                </button>
+            )
+        },
         conflictFilter(repositoryId: string, column: Column, graph: BranchGraph, worktreePath?: string): RemixNode {
             let state = stateFor(repositoryId, column, graph, worktreePath)
             if (column.kind != "branch" || !column.unresolved && !state.conflictsOnly)
@@ -850,7 +876,6 @@ export function createInspection(options: Options) {
             }
         },
         activate(repositoryId?: string) {
-            comparisons.activate(repositoryId)
             if (activeRepositoryId != repositoryId) {
                 histories.suspend()
                 trailCommits.suspend()
@@ -871,9 +896,10 @@ export function createInspection(options: Options) {
         retain(repositoryId: string, ids: string[], graph?: BranchGraph) {
             for (let [id, state] of columns) {
                 if (state.repositoryId == repositoryId && !ids.includes(state.id)) {
+                    // A closed comparison column is gone for good; a branch column whose branch vanished keeps its histories.
                     if (
-                        graph && ![...graph.branches, ...graph.virtualBranches].some(branch => branch.id == state.id)
-                        && auxiliary.descendants(id).some(column => column.value.kind == "comparison" || column.value.kind == "history")
+                        graph && state.column.kind != "comparison" && ![...graph.branches, ...graph.virtualBranches].some(branch => branch.id == state.id)
+                        && auxiliary.descendants(id).some(column => column.value.kind == "history")
                     ) {
                         if (!state.unavailable) {
                             state.unavailable = true
@@ -889,6 +915,18 @@ export function createInspection(options: Options) {
         },
         body(repositoryId: string, column: Column, graph: BranchGraph, worktreePath?: string, conflictControls?: RemixNode): RemixNode {
             let state = stateFor(repositoryId, column, graph, worktreePath)
+            if (column.kind == "comparison") {
+                let files = state.files.get("comparison")
+                return (
+                    <div class={`column-inspection ${state.filterOpen ? "filter-open" : ""}`} mix={[columnInspection, compositionStyles]}>
+                        {renderFilters(state)}
+                        <section class="branch-comparison" aria-label={column.description}>
+                            {files?.loading && !files.inventory && <p role="status" mix={inspectionMuted}>Reading comparison…</p>}
+                            {fileList(state, "comparison", files, undefined, undefined, true)}
+                        </section>
+                    </div>
+                )
+            }
             let stack: BranchGraphBranchNode[] = []
             let branch = column.kind == "branch" ? column : undefined
             while (branch && !stack.some(item => item.id == branch!.id)) {
@@ -906,48 +944,7 @@ export function createInspection(options: Options) {
             return (
                 <div class={`column-inspection ${state.filterOpen ? "filter-open" : ""}`} mix={[columnInspection, compositionStyles]}>
                     {conflictControls}
-                    {state.filterOpen && (
-                        <div class="inspection-filters" mix={inspectionFilters}>
-                            <input
-                                aria-label="Filter changed files"
-                                placeholder="Filter files…"
-                                value={state.filter}
-                                mix={[
-                                    filterChangedFilesInput,
-                                    ref(element => {
-                                        state.filterInput = element
-                                    }),
-                                    on("input", event => {
-                                        state.filter = event.currentTarget.value
-                                        filterChanged(state)
-                                    }),
-                                ]}
-                            />
-                            <select
-                                aria-label="Filter change status"
-                                value={state.status}
-                                mix={[
-                                    filterChangeStatusSelect,
-                                    on("change", event => {
-                                        state.status = event.currentTarget.value
-                                        filterChanged(state)
-                                    }),
-                                ]}
-                            >
-                                {["all", "added", "modified", "deleted", "renamed", "copied", "type changed", "conflicted"].map(status => (
-                                    <option value={status}>{status}</option>
-                                ))}
-                            </select>
-                            <button
-                                type="button"
-                                aria-label="Close file filter"
-                                title="Close and clear filter (Escape)"
-                                mix={[filterToggleButton, on("click", () => closeFilter(state))]}
-                            >
-                                <Icon name="close" size={13} />
-                            </button>
-                        </div>
-                    )}
+                    {renderFilters(state)}
                     {state.worktreePath && (
                         <section
                             class="working-changes"
@@ -1071,7 +1068,16 @@ export function createInspection(options: Options) {
                                         class="branch-compare"
                                         aria-label={`Compare ${branch.name} with ${base.name}`}
                                         title={`Show every change on ${branch.name} since it left ${base.name}`}
-                                        mix={[branchCompareButton, on("click", () => openComparisonBeside(state, base, branch, { mergeBase: true }))]}
+                                        mix={[
+                                            branchCompareButton,
+                                            on("click", () =>
+                                                options.openComparison(
+                                                    repositoryId,
+                                                    state.id,
+                                                    { kind: "merge-base", ref: base.preferredRef, withRef: branch.preferredRef },
+                                                    { kind: "branch", ref: branch.preferredRef },
+                                                )),
+                                        ]}
                                     >
                                         <Icon name="diff" size={14} />
                                     </button>
@@ -1474,30 +1480,17 @@ export function createInspection(options: Options) {
                 </div>
             )
         },
-        refreshComparisons(repositoryId: string, graph: BranchGraph) {
-            comparisons.refresh(repositoryId, graph)
+        /** Follows a Branch Graph read; returns unavailable columns whose branches are back. */
+        refresh(repositoryId: string, graph: BranchGraph) {
             histories.refresh(repositoryId)
             return [...columns.values()].filter(state =>
                 state.repositoryId == repositoryId && state.unavailable
                 && graph.branches.some(branch => branch.id == state.id)
             ).map(state => state.id)
         },
-        unavailableComparisonSources(repositoryId: string, graph: BranchGraph) {
-            return [...columns.values()].filter(state =>
-                state.repositoryId == repositoryId
-                && ![...graph.branches, ...graph.virtualBranches].some(branch => branch.id == state.id)
-                && auxiliary.descendants(key(repositoryId, state.id)).some(column => column.value.kind == "comparison" || column.value.kind == "history")
-            ).map(state => state.id)
-        },
-        openComparison(
-            repositoryId: string,
-            from: BranchGraphBranchNode,
-            to: BranchGraphBranchNode,
-            graph: BranchGraph,
-            replaceId?: string,
-            worktreePath?: string,
-        ) {
-            openComparisonBeside(stateFor(repositoryId, from, graph, worktreePath), from, to, { replaceId })
+        /** Closed columns kept alive because File History Columns still hang off them. */
+        unavailableSources(repositoryId: string) {
+            return [...columns.values()].filter(state => state.repositoryId == repositoryId && state.unavailable).map(state => state.id)
         },
         breakout(repositoryId: string, columnId: string): RemixNode {
             let state = columns.get(key(repositoryId, columnId))
@@ -1612,25 +1605,6 @@ export function createInspection(options: Options) {
                             }
                         },
                     })
-                }
-                if (auxiliaryColumn.value.kind == "comparison") {
-                    let comparison = auxiliaryColumn.value
-                    return comparisons.render(
-                        comparison,
-                        auxiliaryColumn.id,
-                        columnId,
-                        () => {
-                            auxiliary.close(auxiliaryColumn.id)
-                            void options.update().then(signal => {
-                                if (!signal.aborted) {
-                                    ;(Array.from(document.querySelectorAll<HTMLElement>(".branch-column"))
-                                        .find(element => element.dataset.columnId == columnId) ?? document.querySelector<HTMLElement>(".graph-rows"))?.focus()
-                                }
-                            })
-                        },
-                        () => options.compareWith(repositoryId, comparison.fromRef, auxiliaryColumn.id, comparison.toRef),
-                        (source, path) => openHistory(state, auxiliaryColumn.id, source, path),
-                    )
                 }
                 let breakout = auxiliaryColumn.value
                 let files = state.files.get(breakout.group)
@@ -1856,6 +1830,13 @@ export function createInspection(options: Options) {
                         void history(created, column)
                 })
             }
+            if (column.kind == "comparison") {
+                state.comparisonKey = comparisonKey(graph, column.from, column.to)
+                queueMicrotask(() => {
+                    if (created.alive)
+                        void readFiles(created, "comparison", { kind: "refs", from: column.from, to: column.to })
+                })
+            }
             if (worktreePath) {
                 queueMicrotask(() => {
                     if (created.alive)
@@ -1866,6 +1847,14 @@ export function createInspection(options: Options) {
         state.column = column
         state.graph = graph
         state.unavailable = false
+        if (column.kind == "comparison" && state.comparisonKey != comparisonKey(graph, column.from, column.to)) {
+            state.comparisonKey = comparisonKey(graph, column.from, column.to)
+            let owner = state
+            queueMicrotask(() => {
+                if (owner.alive && owner.repositoryId == activeRepositoryId)
+                    void readFiles(owner, "comparison", { kind: "refs", from: column.from, to: column.to }, true)
+            })
+        }
         for (let [id, current] of state.history) {
             let branch = graph.branches.find(branch => branch.id == id)
             if (!branch || current.key == branchHistoryKey(state, branch))
@@ -1885,6 +1874,51 @@ export function createInspection(options: Options) {
         }
 
         return state
+    }
+
+    function renderFilters(state: ColumnState): RemixNode {
+        return state.filterOpen && (
+            <div class="inspection-filters" mix={inspectionFilters}>
+                <input
+                    aria-label="Filter changed files"
+                    placeholder="Filter files…"
+                    value={state.filter}
+                    mix={[
+                        filterChangedFilesInput,
+                        ref(element => {
+                            state.filterInput = element
+                        }),
+                        on("input", event => {
+                            state.filter = event.currentTarget.value
+                            filterChanged(state)
+                        }),
+                    ]}
+                />
+                <select
+                    aria-label="Filter change status"
+                    value={state.status}
+                    mix={[
+                        filterChangeStatusSelect,
+                        on("change", event => {
+                            state.status = event.currentTarget.value
+                            filterChanged(state)
+                        }),
+                    ]}
+                >
+                    {["all", "added", "modified", "deleted", "renamed", "copied", "type changed", "conflicted"].map(status => (
+                        <option value={status}>{status}</option>
+                    ))}
+                </select>
+                <button
+                    type="button"
+                    aria-label="Close file filter"
+                    title="Close and clear filter (Escape)"
+                    mix={[filterToggleButton, on("click", () => closeFilter(state))]}
+                >
+                    <Icon name="close" size={13} />
+                </button>
+            </div>
+        )
     }
 
     function toggleHistory(state: ColumnState, branch: BranchGraphBranchNode) {
@@ -1944,7 +1978,13 @@ export function createInspection(options: Options) {
         return (
             <section
                 class="change-file-list"
-                aria-label={group == "working-staged" ? "Staged files" : group.startsWith("working") ? "Working Changes files" : "Commit files"}
+                aria-label={group == "working-staged"
+                    ? "Staged files"
+                    : group.startsWith("working")
+                    ? "Working Changes files"
+                    : group == "comparison"
+                    ? "Compared files"
+                    : "Commit files"}
                 mix={[changeFileList, staging]}
             >
                 {staging && group == "working-staged" && !visible.length && (
@@ -1976,26 +2016,17 @@ export function createInspection(options: Options) {
                 )}
                 {files.inventory && !group.startsWith("working-") && !all.some(file => !file.ignored) && (
                     <p class="inspection-muted" mix={inspectionMuted}>
-                        {group == "working" ? "No Working Changes" : "No changes against this parent"}
+                        {group == "working"
+                            ? "No Working Changes"
+                            : group == "comparison"
+                            ? "No differences in this comparison"
+                            : "No changes against this parent"}
                     </p>
                 )}
                 <FileTree
                     renderFile={state.selectingConflicts ? undefined : resolution?.renderFile}
                     hideStagedBadge={group.startsWith("working-")}
-                    actions={file => [{
-                        label: "File history",
-                        run: () =>
-                            openHistory(
-                                state,
-                                state.auxiliaryId ?? key(state.repositoryId, state.id),
-                                files.source.kind == "working"
-                                    ? { kind: "worktree", worktreePath: files.source.worktreePath }
-                                    : files.source.kind == "commit"
-                                    ? { kind: "commit", objectId: files.source.objectId }
-                                    : { kind: "branch", ref: state.column.kind == "branch" ? state.column.preferredRef : "" },
-                                file.path,
-                            ),
-                    }]}
+                    actions={file => historyActions(state, files.source, file)}
                     flat
                     filter={state.filter}
                     files={visible}
@@ -2083,6 +2114,32 @@ export function createInspection(options: Options) {
         })
     }
 
+    function historyActions(state: ColumnState, source: DiffSource, file: ChangedFile): FileAction[] {
+        let sourceId = state.auxiliaryId ?? key(state.repositoryId, state.id)
+        if (source.kind == "refs" && state.column.kind == "comparison") {
+            let column = state.column
+            return [{
+                label: `History in ${column.fromName}`,
+                run: () => openHistory(state, sourceId, comparisonHistorySource(column.from), file.oldPath ?? file.path),
+            }, { label: `History in ${column.toName}`, run: () => openHistory(state, sourceId, comparisonHistorySource(column.to), file.path) }]
+        }
+
+        return [{
+            label: "File history",
+            run: () =>
+                openHistory(
+                    state,
+                    sourceId,
+                    source.kind == "working"
+                        ? { kind: "worktree", worktreePath: source.worktreePath }
+                        : source.kind == "commit"
+                        ? { kind: "commit", objectId: source.objectId }
+                        : { kind: "branch", ref: state.column.kind == "branch" ? state.column.preferredRef : "" },
+                    file.path,
+                ),
+        }]
+    }
+
     function clearGroup(state: ColumnState, group: string, prefix = "") {
         for (let diff of state.diffs.values()) {
             if (diff.group == group && diff.path.startsWith(prefix))
@@ -2163,30 +2220,6 @@ export function createInspection(options: Options) {
                 {!collapsed && renderDiffContents(state, diff)}
             </section>
         )
-    }
-
-    /**
-     * Opens, or focuses, the comparison column from `from` to `to` beside the column `owner` renders.
-     * `mergeBase` compares from the branches' merge base instead of `from`'s tip.
-     */
-    function openComparisonBeside(
-        owner: ColumnState,
-        from: BranchGraphBranchNode,
-        to: BranchGraphBranchNode,
-        { replaceId, mergeBase = false }: { replaceId?: string; mergeBase?: boolean } = {},
-    ) {
-        let identity = JSON.stringify(["comparison", from.preferredRef, to.preferredRef, mergeBase])
-        let column = auxiliary.open(key(owner.repositoryId, owner.id), identity, () => {
-            let value = comparisons.create(owner.repositoryId, from, to, owner.graph, mergeBase)
-            return { value, dispose: () => comparisons.dispose(value) }
-        })
-        if (replaceId && replaceId != column.id)
-            auxiliary.close(replaceId)
-        auxiliary.focusedId = column.id
-        void options.update().then(signal => {
-            if (!signal.aborted)
-                document.querySelector<HTMLElement>(`[data-auxiliary-id="${column.id}"]`)?.focus()
-        })
     }
 
     function openHistory(owner: ColumnState, sourceId: string, source: FileHistorySource, path: string) {
@@ -2700,6 +2733,9 @@ export function createInspection(options: Options) {
     }
 
     function selectable(state: ColumnState, group: string) {
+        if (group == "comparison")
+            return false
+
         return !state.auxiliaryId || group == "working"
             || state.compositionKey == JSON.stringify(compositionFor(state)) && !!state.composable?.has(group)
     }

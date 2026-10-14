@@ -3,11 +3,18 @@ import { type EntryError } from "./workspace"
 
 export type DiffLayout = "unified" | "split"
 
+/** One end of a Branch Comparison. Branch identities follow their tips, so a comparison between them stays live. */
+export type ComparisonRef =
+    | { kind: "commit"; objectId: string }
+    | { kind: "branch"; ref: string }
+    /** The merge base of `ref` and `withRef`, so a diff from here to `withRef` shows only `withRef`'s own changes. */
+    | { kind: "merge-base"; ref: string; withRef: string }
+
 export type DiffSource =
     | { kind: "working"; worktreePath: string }
     | { kind: "commit"; objectId: string; parentId?: string }
-    /** `mergeBase` starts the diff at the branches' merge base instead of `fromRef`'s tip, so only `toRef`'s own changes show. */
-    | { kind: "branches"; fromRef: string; toRef: string; mergeBase?: boolean }
+    /** Resolves to a `comparison` between the refs' current object IDs. */
+    | { kind: "refs"; from: ComparisonRef; to: ComparisonRef }
     | { kind: "comparison"; fromObjectId: string; toObjectId: string }
 
 export interface ChangedFile {
@@ -112,24 +119,20 @@ export type FileDiffResult = { ok: true; page: FileDiffPage } | { ok: false; err
 
 export type FileImageResult = { ok: true; page: FileImagePage } | { ok: false; error: EntryError }
 
+let objectIdSchema = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)
+let branchRefSchema = z.string().regex(/^refs\/(heads|remotes)\/.+/)
+
+export let ComparisonRefSchema = z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("commit"), objectId: objectIdSchema }),
+    z.object({ kind: z.literal("branch"), ref: branchRefSchema }),
+    z.object({ kind: z.literal("merge-base"), ref: branchRefSchema, withRef: branchRefSchema }),
+])
+
 export let DiffSourceSchema = z.discriminatedUnion("kind", [
-    z.object({
-        kind: z.literal("branches"),
-        fromRef: z.string().regex(/^refs\/(heads|remotes)\/.+/),
-        toRef: z.string().regex(/^refs\/(heads|remotes)\/.+/),
-        mergeBase: z.boolean().optional(),
-    }),
-    z.object({
-        kind: z.literal("comparison"),
-        fromObjectId: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/),
-        toObjectId: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/),
-    }),
+    z.object({ kind: z.literal("refs"), from: ComparisonRefSchema, to: ComparisonRefSchema }),
+    z.object({ kind: z.literal("comparison"), fromObjectId: objectIdSchema, toObjectId: objectIdSchema }),
     z.object({ kind: z.literal("working"), worktreePath: z.string().min(1) }),
-    z.object({
-        kind: z.literal("commit"),
-        objectId: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/),
-        parentId: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/).optional(),
-    }),
+    z.object({ kind: z.literal("commit"), objectId: objectIdSchema, parentId: objectIdSchema.optional() }),
 ])
 
 export let ChangesRequestSchema = z.object({

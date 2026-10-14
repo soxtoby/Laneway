@@ -172,7 +172,7 @@ export class WorkspaceManager {
             ...repository,
             focusedColumnId: repository.focusedColumnId,
             open: true,
-            anchors: [...new Set(repository.columns.map(column => column.lastSeenObjectId))],
+            anchors: [...new Set(repository.columns.flatMap(column => column.kind == "comparison" ? [] : [column.lastSeenObjectId]))],
         }))
         for (let stored of this.stored.repositories.filter(repository => !openIds.has(repository.id)))
             ordered.push({ ...stored, open: false })

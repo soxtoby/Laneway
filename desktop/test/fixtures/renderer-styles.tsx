@@ -64,10 +64,10 @@ async function checkRenderer() {
     }
     let readChanges = scenario.api.readChanges
     scenario.api.readChanges = async (...args) => {
-        if (holdComparison && args[2].source.kind == "branches")
+        if (holdComparison && args[2].source.kind == "refs")
             await new Promise<void>(resolve => finishComparison = resolve)
         let result = await readChanges(...args)
-        if (result.ok && args[2].source.kind == "branches")
+        if (result.ok && args[2].source.kind == "refs")
             result.inventory.source = { kind: "comparison", fromObjectId: "2".repeat(40), toObjectId: "1".repeat(40) }
         return result
     }
@@ -659,34 +659,33 @@ async function checkRenderer() {
     let menuBounds = element("dialog[aria-label='Branch actions']").getBoundingClientRect()
     let contextMenuCompact = menuBounds.width < 180
         && menuBounds.height <= document.querySelectorAll('[aria-label="Branch actions"] [role="menuitem"]').length * 34 + 16
-    element("[role='menuitem']").click()
+    // Closing the menu by clicking its backdrop leaves the column strip as it was.
+    element("dialog[aria-label='Branch actions']").dispatchEvent(new MouseEvent("click", { bubbles: true }))
     await settle()
-    let comparisonSearch = element<HTMLInputElement>("[aria-label='Command Lens search']")
-    comparisonSearch.value = "main"
-    comparisonSearch.dispatchEvent(new Event("input", { bubbles: true }))
+    element(".branch-column .branch-compare").click()
     await settle()
-    element(".lens-results button").click()
-    await settle()
-    let comparison = element(".branch-comparison")
-    let comparisonContextMenu = document.activeElement == comparison && comparison.textContent!.includes("feature/laneway → main")
-        && !comparison.querySelector(".comparison-context") && comparison.previousElementSibling?.previousElementSibling?.classList.contains("branch-column")
+    let comparisonSelector = "[data-column-id^='comparison:']"
+    let comparison = element(comparisonSelector)
+    let comparisonOpened = document.activeElement == comparison && comparison.textContent!.includes("main → feature/laneway")
+        && comparison.previousElementSibling?.previousElementSibling?.classList.contains("branch-column")
     let comparisonLazy = !comparison.querySelector(".pierre-diff")
-    let comparisonRow = element(".branch-comparison .change-file")
+    let comparisonRow = element(`${comparisonSelector} .change-file`)
     let comparisonSharedRows = comparisonRow.getBoundingClientRect().height <= 31
         && !!comparisonRow.querySelector(".file-status svg")
-        && getComputedStyle(element(".branch-comparison .file-folder")).textOverflow == "ellipsis"
-    element(".branch-comparison .change-file button[aria-expanded]").click()
+        && getComputedStyle(element(`${comparisonSelector} .file-folder`)).textOverflow == "ellipsis"
+    element(`${comparisonSelector} .change-file button[aria-expanded]`).click()
     await settle()
+    let comparisonInspection = element(`${comparisonSelector} .column-inspection`)
     let comparisonPatch = !!comparison.querySelector(".pierre-diff")?.shadowRoot?.querySelector("[data-line]")
-    let comparisonGeometry = comparison.getBoundingClientRect().width >= 620 && comparison.scrollWidth == comparison.clientWidth
+    let comparisonGeometry = comparison.getBoundingClientRect().width >= 310 && comparisonInspection.scrollWidth == comparisonInspection.clientWidth
     let rowTop = comparisonRow.getBoundingClientRect().top
-    let patchTop = element(".comparison-patch").getBoundingClientRect().top
+    let patchTop = element(`${comparisonSelector} .diff-inspector`).getBoundingClientRect().top
     holdComparison = true
     window.dispatchEvent(new Event("focus"))
     await settle()
     let refreshStable = () =>
         comparisonRow.getBoundingClientRect().top == rowTop
-        && element(".comparison-patch").getBoundingClientRect().top == patchTop
+        && element(`${comparisonSelector} .diff-inspector`).getBoundingClientRect().top == patchTop
         && !comparison.querySelector("[role='status']")
     let comparisonRefreshStable = refreshStable()
     finishComparison!()
@@ -695,22 +694,23 @@ async function checkRenderer() {
     holdComparison = false
     finishComparisonPatch!()
     await settle()
-    element(".branch-comparison [aria-label='Side by side']").click()
+    element(`${comparisonSelector} [aria-label='Side by side']`).click()
     await settle()
-    let comparisonSplit = element(".branch-comparison [aria-label='Side by side']").getAttribute("aria-pressed") == "true"
-    element(".branch-comparison [aria-label='Unified']").click()
-    element(".branch-comparison [aria-label='Show whitespace']").click()
+    let comparisonSplit = element(`${comparisonSelector} [aria-label='Side by side']`).getAttribute("aria-pressed") == "true"
+    element(`${comparisonSelector} [aria-label='Unified']`).click()
+    element(`${comparisonSelector} [aria-label='Show whitespace']`).click()
     await settle()
     let comparisonControls = comparisonSplit
-        && element(".branch-comparison [aria-label='Unified']").getAttribute("aria-pressed") == "true"
-        && element(".branch-comparison [aria-label='Show whitespace']").getAttribute("aria-pressed") == "true"
-    let header = element(".branch-comparison > header")
-    let headerTop = header.getBoundingClientRect().top
-    comparison.scrollTop = 80
-    await settle()
-    let comparisonStickyHeader = getComputedStyle(header).position == "sticky" && header.getBoundingClientRect().top == headerTop
-    let comparisonHeaderOnlyClose = header.querySelectorAll("button").length == 1
-        && header.querySelector("button")?.getAttribute("aria-label") == "Close comparison"
+        && element(`${comparisonSelector} [aria-label='Unified']`).getAttribute("aria-pressed") == "true"
+        && element(`${comparisonSelector} [aria-label='Show whitespace']`).getAttribute("aria-pressed") == "true"
+    // File rows stick under the column header while their diff scrolls, like any Workspace Column's.
+    let comparisonStickyRow = getComputedStyle(comparisonRow).position == "sticky"
+        && comparisonRow.getBoundingClientRect().top >= comparisonInspection.getBoundingClientRect().top
+    let comparisonHeader = element(`${comparisonSelector} > header`)
+    let comparisonColumnHeader = !!comparisonHeader.querySelector("[aria-label='Maximize column']")
+        && !!comparisonHeader.querySelector("[aria-label='Close column']")
+        && !!comparisonHeader.querySelector("[aria-label='Filter files']")
+        && !comparisonHeader.querySelector(".column-worktree")
     comparisonRow.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 500, clientY: 180 }))
     await settle()
     element("[aria-label='File actions'] [role='menuitem']").click()
@@ -802,9 +802,9 @@ async function checkRenderer() {
     element(".file-history [aria-label='Close file history']").click()
     await settle()
     let historyTrailClosed = !document.querySelector(".file-history, .trail-commit")
-    element("[aria-label='Close comparison']").click()
+    element(`${comparisonSelector} [aria-label='Close column']`).click()
     await settle()
-    let comparisonClosed = !document.querySelector(".branch-comparison")
+    let comparisonClosed = !document.querySelector(comparisonSelector)
     ;[...element("[data-node-id='branch:refs/heads/main']").querySelectorAll("button")].find(button => button.textContent == "Open")!.click()
     await settle()
     element(".column-worktree [aria-label='Check out branch']").click()
@@ -844,14 +844,14 @@ async function checkRenderer() {
         historyAddedFileScroll,
         historyTrailClosed,
         comparisonControls,
-        comparisonStickyHeader,
-        comparisonHeaderOnlyClose,
+        comparisonStickyRow,
+        comparisonColumnHeader,
         contextMenuCompact,
         comparisonSharedRows,
         comparisonRefreshStable,
         comparisonPatchRefreshStable,
         graphScrollDrift,
-        comparisonContextMenu,
+        comparisonOpened,
         comparisonLazy,
         comparisonPatch,
         comparisonGeometry,

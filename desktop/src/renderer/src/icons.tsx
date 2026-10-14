@@ -38,6 +38,8 @@ let paths = {
     fork: "M4 2v4a3 3 0 0 0 3 3h2a3 3 0 0 0 3-3V2M8 9v5",
     document: "M3 2h7l3 3v9H3zM10 2v3h3M5 8h6M5 11h6",
     diff: "M8 2v5M5.5 4.5h5M5.5 12h5",
+    // Two refs with the direction of the comparison between them.
+    compare: "M3 2.5v11M13 2.5v11M5.5 8h5M8.5 5.5 11 8l-2.5 2.5",
     pencil: "M3 13l.5-3L11 2.5l2.5 2.5L6 12.5zM10.25 3.25l2.5 2.5",
     // A head with no branch line above it: the node and its history, cut off from any ref.
     detached: "M5.5 9a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0M8 11.5V15M8 1.5v1M8 4.5v1.5",

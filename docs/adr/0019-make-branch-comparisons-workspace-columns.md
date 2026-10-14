@@ -1,0 +1,3 @@
+# Make Branch Comparisons Workspace Columns
+
+ADR-0010 made the Branch Comparison Column a transient auxiliary column beside its source, which left it with its own file list and diff rendering and without the maximize, filter, and diff-column behavior that Workspace Columns get from the shared inspection path. A comparison names two Comparison Refs rather than disposable Git evidence, so it now persists as a Workspace Column kind, inserted beside the column it was opened from, and reuses the column file list, diff reads, and broken-out diff column. File History, Commit Diff, and broken-out diff columns stay transient under ADR-0010.
