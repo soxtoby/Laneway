@@ -20,6 +20,13 @@ export async function conflictComparisonSource(repo: RepositoryGit, source: Extr
         return boundary ? boundary == stack!.branches.at(-1) ? await repo.resolveRef(stack!.temporaryRef) ?? boundary.current : boundary.current : actual
     }))
 
+    if (source.mergeBase) {
+        let result = await repo.run(repo.descriptor.mainWorktree, ["merge-base", tips[0], tips[1]])
+        let mergeBase = result.stdout.toString().trim()
+        if (result.exitCode != 0 || !mergeBase)
+            throw new Error("The compared branches share no history.")
+        return { kind: "comparison", fromObjectId: mergeBase, toObjectId: tips[1] }
+    }
     return { kind: "comparison", fromObjectId: tips[0], toObjectId: tips[1] }
 }
 

@@ -1532,6 +1532,39 @@ describe("Branch Comparison", () => {
         expect(container.querySelector(".branch-comparison")).toBeNull()
         dispose()
     })
+
+    test("compares a column branch with its base from its heading, but offers nothing for the base itself", async () => {
+        let scenario = inspectionScenario()
+        let [main, feature] = scenario.graph.branches
+        let requested: string[] = []
+        let readChanges = scenario.api.readChanges
+        scenario.api.readChanges = async (...args) => {
+            if (args[2].source.kind == "branches")
+                requested.push(`${args[2].source.fromRef} -> ${args[2].source.toRef}${args[2].source.mergeBase ? " from merge base" : ""}`)
+            return readChanges(...args)
+        }
+        let { container, root, dispose } = render(scenario.api)
+        await flush(root)
+        let column = container.querySelector<HTMLElement>(".branch-column")!
+        let compare = column.querySelectorAll<HTMLButtonElement>(".branch-compare")
+        expect([...compare].map(control => control.getAttribute("aria-label"))).toEqual([`Compare ${feature.name} with ${main.name}`])
+        expect(compare[0].closest(".composition-branch-target")).not.toBeNull()
+        expect(column.querySelector(".stack-heading")?.parentElement?.querySelector(".branch-compare")).toBeNull()
+        click(compare[0])
+        await flush(root)
+        let comparison = container.querySelector<HTMLElement>(".branch-comparison")!
+        expect(comparison).not.toBeNull()
+        expect(comparison.dataset.sourceColumnId).toBe(feature.id)
+        expect(comparison.textContent).toContain(`${main.name} → ${feature.name}`)
+        expect(comparison.querySelector(".comparison-merge-base")?.textContent).toBe("from merge base")
+        expect(document.activeElement).toBe(comparison)
+        expect(requested).toEqual([`${main.preferredRef} -> ${feature.preferredRef} from merge base`])
+        click(compare[0])
+        await flush(root)
+        expect(container.querySelectorAll(".branch-comparison")).toHaveLength(1)
+        expect(requested).toHaveLength(1)
+        dispose()
+    })
 })
 
 describe("Working Changes inspection", () => {

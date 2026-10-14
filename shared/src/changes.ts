@@ -6,7 +6,8 @@ export type DiffLayout = "unified" | "split"
 export type DiffSource =
     | { kind: "working"; worktreePath: string }
     | { kind: "commit"; objectId: string; parentId?: string }
-    | { kind: "branches"; fromRef: string; toRef: string }
+    /** `mergeBase` starts the diff at the branches' merge base instead of `fromRef`'s tip, so only `toRef`'s own changes show. */
+    | { kind: "branches"; fromRef: string; toRef: string; mergeBase?: boolean }
     | { kind: "comparison"; fromObjectId: string; toObjectId: string }
 
 export interface ChangedFile {
@@ -84,7 +85,12 @@ export type ChangesResult = { ok: true; inventory: ChangesInventory } | { ok: fa
 export type FileDiffResult = { ok: true; page: FileDiffPage } | { ok: false; error: EntryError }
 
 export let DiffSourceSchema = z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("branches"), fromRef: z.string().regex(/^refs\/(heads|remotes)\/.+/), toRef: z.string().regex(/^refs\/(heads|remotes)\/.+/) }),
+    z.object({
+        kind: z.literal("branches"),
+        fromRef: z.string().regex(/^refs\/(heads|remotes)\/.+/),
+        toRef: z.string().regex(/^refs\/(heads|remotes)\/.+/),
+        mergeBase: z.boolean().optional(),
+    }),
     z.object({
         kind: z.literal("comparison"),
         fromObjectId: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/),

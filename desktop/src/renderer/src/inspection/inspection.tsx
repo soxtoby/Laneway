@@ -416,6 +416,28 @@ let commitToolButton = css({
     },
 })
 
+// Sits at the far edge of a branch heading, flush with the card, and stays transparent so the heading's tint runs under it.
+let branchCompareButton = css({
+    marginLeft: "auto",
+    width: "32px",
+    minHeight: "34px",
+    alignSelf: "stretch",
+    flex: "0 0 32px",
+    display: "grid",
+    placeItems: "center",
+    padding: 0,
+    border: "0",
+    borderRadius: "0",
+    background: "transparent",
+    color: "var(--muted)",
+    cursor: "pointer",
+    ".composition-branch-target > &": { marginRight: "-12px" },
+    "&:hover": {
+        background: "color-mix(in srgb, var(--text) 8%, transparent)",
+        color: "var(--text)",
+    },
+})
+
 let stackHeadingName = css({
     display: "inline-flex",
     alignItems: "center",
@@ -1040,6 +1062,19 @@ export function createInspection(options: Options) {
                             {stack.map((branch, branchIndex) => {
                                 let current = state.history.get(branch.id)
                                 let columnBranch = branch.id == column.id
+                                // The branch at the bottom of the stack has no base in the column, so only the branches above it compare.
+                                let base = stack[branchIndex + 1]
+                                let compareWithBase = base && (
+                                    <button
+                                        type="button"
+                                        class="branch-compare"
+                                        aria-label={`Compare ${branch.name} with ${base.name}`}
+                                        title={`Show every change on ${branch.name} since it left ${base.name}`}
+                                        mix={[branchCompareButton, on("click", () => openComparisonBeside(state, base, branch, { mergeBase: true }))]}
+                                    >
+                                        <Icon name="diff" size={14} />
+                                    </button>
+                                )
                                 return (
                                     <accordion.ItemContext key={branch.id} value={branch.id}>
                                         <section class={branch.published ? "stack-branch remote" : "stack-branch"} mix={[stackBranch, accordion.item()]}>
@@ -1070,6 +1105,7 @@ export function createInspection(options: Options) {
                                                             />
                                                         )
                                                         : branch.name}
+                                                    {compareWithBase}
                                                 </div>
                                             )}
                                             {/* Remote-only branches can't receive transfers, but still get a heading. */}
@@ -1077,6 +1113,7 @@ export function createInspection(options: Options) {
                                                 <div class="composition-branch-target">
                                                     <Icon name="branch" size={14} />
                                                     {branch.name}
+                                                    {compareWithBase}
                                                 </div>
                                             )}
                                             {composition.panel(repositoryId, { kind: "branch", branch: branch.preferredRef, tip: branch.tip })}
@@ -1115,6 +1152,7 @@ export function createInspection(options: Options) {
                                                             )}
                                                         </span>
                                                     </button>
+                                                    {compareWithBase}
                                                 </h3>
                                             )}
                                             {!branch.remoteOnly
@@ -1458,19 +1496,7 @@ export function createInspection(options: Options) {
             replaceId?: string,
             worktreePath?: string,
         ) {
-            stateFor(repositoryId, from, graph, worktreePath)
-            let sourceId = key(repositoryId, from.id)
-            let column = auxiliary.open(sourceId, JSON.stringify(["comparison", from.preferredRef, to.preferredRef]), () => {
-                let value = comparisons.create(repositoryId, from, to, graph)
-                return { value, dispose: () => comparisons.dispose(value) }
-            })
-            if (replaceId && replaceId != column.id)
-                auxiliary.close(replaceId)
-            auxiliary.focusedId = column.id
-            void options.update().then(signal => {
-                if (!signal.aborted)
-                    document.querySelector<HTMLElement>(`[data-auxiliary-id="${column.id}"]`)?.focus()
-            })
+            openComparisonBeside(stateFor(repositoryId, from, graph, worktreePath), from, to, { replaceId })
         },
         breakout(repositoryId: string, columnId: string): RemixNode {
             let state = columns.get(key(repositoryId, columnId))
@@ -2136,6 +2162,30 @@ export function createInspection(options: Options) {
                 {!collapsed && renderDiffContents(state, diff)}
             </section>
         )
+    }
+
+    /**
+     * Opens, or focuses, the comparison column from `from` to `to` beside the column `owner` renders.
+     * `mergeBase` compares from the branches' merge base instead of `from`'s tip.
+     */
+    function openComparisonBeside(
+        owner: ColumnState,
+        from: BranchGraphBranchNode,
+        to: BranchGraphBranchNode,
+        { replaceId, mergeBase = false }: { replaceId?: string; mergeBase?: boolean } = {},
+    ) {
+        let identity = JSON.stringify(["comparison", from.preferredRef, to.preferredRef, mergeBase])
+        let column = auxiliary.open(key(owner.repositoryId, owner.id), identity, () => {
+            let value = comparisons.create(owner.repositoryId, from, to, owner.graph, mergeBase)
+            return { value, dispose: () => comparisons.dispose(value) }
+        })
+        if (replaceId && replaceId != column.id)
+            auxiliary.close(replaceId)
+        auxiliary.focusedId = column.id
+        void options.update().then(signal => {
+            if (!signal.aborted)
+                document.querySelector<HTMLElement>(`[data-auxiliary-id="${column.id}"]`)?.focus()
+        })
     }
 
     function openHistory(owner: ColumnState, sourceId: string, source: FileHistorySource, path: string) {

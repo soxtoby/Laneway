@@ -47,6 +47,30 @@ describe("branch tip comparisons", () => {
         })
     }
 
+    test("compares from the merge base, so the base branch's later commits stay out of the diff", async () => {
+        let { path, api } = await repository()
+        let mergeBase = git(path, "rev-parse", "HEAD").trim()
+        git(path, "checkout", "-qb", "feature")
+        await writeFile(resolve(path, "feature.txt"), "feature\n")
+        git(path, "add", ".")
+        git(path, "commit", "-qm", "feature change")
+        git(path, "checkout", "main")
+        await writeFile(resolve(path, "file.txt"), "main\n")
+        git(path, "commit", "-qam", "main change")
+
+        let source = { kind: "branches" as const, fromRef: "refs/heads/main", toRef: "refs/heads/feature", mergeBase: true }
+        let inventory = await api.startReadChanges({ source }).result
+        expect(inventory.source).toEqual({ kind: "comparison", fromObjectId: mergeBase, toObjectId: git(path, "rev-parse", "feature").trim() })
+        expect(inventory.files.map(file => file.path)).toEqual(["feature.txt"])
+
+        let tips = await api.startReadChanges({ source: { ...source, mergeBase: false } }).result
+        expect(tips.files.map(file => file.path).sort()).toEqual(["feature.txt", "file.txt"])
+
+        git(path, "checkout", "-q", "--orphan", "unrelated")
+        git(path, "commit", "-qm", "unrelated root")
+        await expect(api.startReadChanges({ source: { ...source, toRef: "refs/heads/unrelated" } }).result).rejects.toThrow("share no history")
+    })
+
     test("pages file inventory, preserves rename and binary evidence, and ignores Working Changes", async () => {
         let { path, api } = await repository()
         git(path, "branch", "before")

@@ -230,7 +230,7 @@ An AI-assisted Laneway Operation that may split, squash, reorder, and reword com
 _Avoid_: Restack, AI refactoring
 
 **Branch Comparison**:
-An ordered live diff from one branch identity to another, recomputed when either tip moves. It follows an explicit Laneway branch rename; an external replacement requires user confirmation. A branch's unique changes are inspected by expanding its commits.
+An ordered live diff from one branch identity to another, recomputed when either tip moves. It may start from the two branches' merge base instead of the first branch's tip, which shows a branch's whole set of changes against its Base Branch. It follows an explicit Laneway branch rename; an external replacement requires user confirmation. A branch's individual changes are inspected by expanding its commits.
 _Avoid_: Three-dot diff
 
 **Branch Comparison Column**:

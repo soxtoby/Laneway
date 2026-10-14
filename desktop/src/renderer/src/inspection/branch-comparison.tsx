@@ -14,6 +14,8 @@ export interface BranchComparisonState {
     toRef: string
     fromName: string
     toName: string
+    /** Diff from the branches' merge base rather than `fromRef`'s tip, so only `toRef`'s own changes show. */
+    mergeBase: boolean
     fingerprint: string
     inventory?: ChangesInventory
     patches: Map<string, { page?: FileDiffPage; loading: boolean; error?: string; requestId?: string; showWhitespace?: boolean }>
@@ -65,7 +67,7 @@ export function createBranchComparisons(options: { api: Window["laneway"]; updat
         }))
 
     return {
-        create(repositoryId: string, from: BranchGraphBranchNode, to: BranchGraphBranchNode, graph: BranchGraph) {
+        create(repositoryId: string, from: BranchGraphBranchNode, to: BranchGraphBranchNode, graph: BranchGraph, mergeBase = false) {
             let state: BranchComparisonState = {
                 kind: "comparison",
                 repositoryId,
@@ -73,6 +75,7 @@ export function createBranchComparisons(options: { api: Window["laneway"]; updat
                 toRef: to.preferredRef,
                 fromName: from.name,
                 toName: to.name,
+                mergeBase,
                 fingerprint: fingerprint(graph, from.preferredRef, to.preferredRef),
                 patches: new Map(),
                 generation: 0,
@@ -137,7 +140,7 @@ export function createBranchComparisons(options: { api: Window["laneway"]; updat
                     data-auxiliary-id={id}
                     data-source-column-id={sourceId}
                     tabIndex={-1}
-                    aria-label={`Compare ${state.fromName} to ${state.toName}`}
+                    aria-label={state.mergeBase ? `Changes on ${state.toName} since it left ${state.fromName}` : `Compare ${state.fromName} to ${state.toName}`}
                     mix={comparison}
                 >
                     <header>
@@ -148,6 +151,7 @@ export function createBranchComparisons(options: { api: Window["laneway"]; updat
                         >
                             {state.fromName} → {state.toName}
                         </strong>
+                        {state.mergeBase && <small class="comparison-merge-base">from merge base</small>}
                         <button type="button" aria-label="Close comparison" mix={on("click", close)}>
                             <Icon name="close" size={15} />
                         </button>
@@ -301,7 +305,7 @@ export function createBranchComparisons(options: { api: Window["laneway"]; updat
                 requestId,
                 more
                     ? { source: state.inventory!.source, offset: state.inventory!.nextOffset }
-                    : { source: { kind: "branches", fromRef: state.fromRef, toRef: state.toRef } },
+                    : { source: { kind: "branches", fromRef: state.fromRef, toRef: state.toRef, ...(state.mergeBase ? { mergeBase: true } : {}) } },
             )
             if (!current(state, generation))
                 return

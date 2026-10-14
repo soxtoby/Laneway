@@ -256,6 +256,11 @@ async function readSnapshot(descriptor: RepositoryDescriptor, reader: Reader, re
             let fromObjectId = tips.get(source.fromRef), toObjectId = tips.get(source.toRef)
             if (!fromObjectId || !toObjectId)
                 throw new GitError("git.command-failed", "A compared branch is unavailable. Retarget or close this comparison.")
+            if (source.mergeBase) {
+                fromObjectId = (await reader.run(cwd, ["merge-base", fromObjectId, toObjectId], undefined, [0, 1])).trim()
+                if (!fromObjectId)
+                    throw new GitError("git.command-failed", "The compared branches share no history.")
+            }
             source = { kind: "comparison", fromObjectId, toObjectId }
         }
 
