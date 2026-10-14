@@ -1,6 +1,7 @@
 import type { BranchGraphMarker, ChangesInventory, CommitDraft, LocalPreview, LocalRequest, LocalResult } from "@laneway/shared"
 import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 import { EditableName } from "./editable-name"
+import type { NoticeState } from "./feedback"
 import { Icon } from "./icons"
 import { fileActionButton } from "./inspection/file-list"
 
@@ -216,6 +217,8 @@ export function CommitComposer(
         /** `stage` is given only while the commit form is open; dropping files on a list calls it for that list's direction. */
         renderFiles(view: "unstaged" | "staged", stage?: (files: string[], unstage: boolean) => void): RemixNode
         changed(refreshGraph?: boolean): Promise<void>
+        /** Outcomes go to the app toast; errors stay inline under the files. */
+        notify(notice: NoticeState): () => void
         busyChanged?(busy: boolean): void
         blocked?: boolean
         showIgnored: boolean
@@ -591,8 +594,8 @@ export function CommitComposer(
             open = false
             draft = { title: "", message: "", branch: "" }
             await save()
-            notice = result.message ?? "Commit created."
-            await props.changed()
+            // A post-commit hook failure is reported in the message and deserves to stay until dismissed.
+            props.notify({ code: "commit.created", message: result.message ?? "Commit created.", transient: !result.message })
         }
     }
 
@@ -614,8 +617,8 @@ export function CommitComposer(
             refreshInBackground()
             throw new Error(response.error.message)
         }
-        // Only stash operations change what the Branch Graph shows; commits refresh it themselves.
-        await props.changed(request.action.startsWith("stash"))
+        // Only stashes and performed commits change what the Branch Graph shows; staging just moves files.
+        await props.changed(request.action.startsWith("stash") || request.action == "commit" && response.result.status == "performed")
         refreshInBackground()
         if (response.result.status == "failed") {
             await props.changed()

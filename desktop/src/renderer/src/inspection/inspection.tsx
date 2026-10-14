@@ -939,6 +939,7 @@ export function createInspection(options: Options) {
                                 blocked={options.recoveryBlocked?.(repositoryId)}
                                 virtual={column.kind != "branch"}
                                 unborn={column.kind == "virtual" && /^0+$/.test(column.objectId)}
+                                notify={options.notify}
                                 busyChanged={options.localBusyChanged}
                                 inventory={state.files.get("working")?.inventory}
                                 openDiffColumn={() => showWorkingBreakout(state)}
@@ -1431,22 +1432,6 @@ export function createInspection(options: Options) {
                             })}
                         </div>
                     </accordion.Context>
-                    {state.wholeFiles.size > 0 && (
-                        <div class="selection-summary" mix={selectionSummary}>
-                            {state.wholeFiles.size} files selected<button
-                                type="button"
-                                mix={[
-                                    bodySelectionSummaryButton,
-                                    on("click", () => {
-                                        state.wholeFiles.clear()
-                                        update()
-                                    }),
-                                ]}
-                            >
-                                Clear files
-                            </button>
-                        </div>
-                    )}
                 </div>
             )
         },
@@ -1909,6 +1894,8 @@ export function createInspection(options: Options) {
             ...(resolution?.files.filter(file => !inventory.some(existing => existing.path == file.path)) ?? []),
         ]
         let visible = all.filter(file => !file.ignored && matchesFilter(state, file))
+        // Checked files all belong to one list, so the count belongs beside its checkboxes.
+        let selected = [...state.wholeFiles.keys()].filter(id => id.startsWith(`${group}:`)).length
         let expanded = state.breakout
             ? new Set(state.breakout.group == group && state.breakout.focus ? [state.breakout.focus] : [])
             : new Set([...state.diffs.values()].filter(diff => diff.group == group).map(diff => diff.path))
@@ -2018,19 +2005,22 @@ export function createInspection(options: Options) {
                         }
                         : undefined}
                 />
-                {state.auxiliaryId && state.wholeFiles.size > 0 && (
-                    <p role="status">
-                        {state.wholeFiles.size} files selected
+                {selected > 0 && (
+                    <div class="selection-summary" role="status" mix={selectionSummary}>
+                        {selected} of {visible.length} selected
                         <button
                             type="button"
-                            mix={on("click", () => {
-                                state.wholeFiles.clear()
-                                update()
-                            })}
+                            mix={[
+                                bodySelectionSummaryButton,
+                                on("click", () => {
+                                    state.wholeFiles.clear()
+                                    update()
+                                }),
+                            ]}
                         >
-                            Clear files
+                            Clear
                         </button>
-                    </p>
+                    </div>
                 )}
                 {group == "working" && state.showIgnored && (
                     <details>
@@ -2358,9 +2348,10 @@ export function createInspection(options: Options) {
             if (state.breakout && (state.breakout.group == group || group == "working" && state.breakout.group.startsWith("working-")))
                 populateBreakout(state, state.breakout)
 
+            // Working Changes are checked in their staged and unstaged views, which share this inventory.
             if (previous && previous != result.inventory.version) {
                 for (let id of state.wholeFiles.keys()) {
-                    if (id.startsWith(`${group}:`))
+                    if (id.startsWith(`${group}:`) || group == "working" && id.startsWith("working-"))
                         state.wholeFiles.delete(id)
                 }
             }

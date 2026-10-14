@@ -2799,11 +2799,18 @@ test("commit composer reveals staging controls, retains cancelled drafts, and co
         expect(draft.title).toBe("Keep snapshot")
         click(button(view.container, "Commit…"))
         await flush(view.root)
+        // A checked file is summarized beside its own list, and the commit that removes it clears the selection.
+        click(view.container.querySelector<HTMLInputElement>('[aria-label="Staged files"] [aria-label="Select file src/file.txt"]')!)
+        await flush(view.root)
+        expect(view.container.querySelector('[aria-label="Staged files"] .selection-summary')!.textContent).toContain("1 of 1 selected")
         click(button(view.container, "Commit staged (1)"))
         await flush(view.root)
         expect(mutations).toEqual(["stage", "commit"])
         expect(draft.title).toBe("")
         expect(view.container.querySelector('[aria-label="Commit title"]')).toBeNull()
+        expect(view.container.querySelector(".selection-summary")).toBeNull()
+        expect(view.container.querySelector(".commit-notice")).toBeNull()
+        expect(view.container.querySelector(".notice:not([hidden])")!.textContent).toContain("Commit created.")
     } finally {
         view.dispose()
     }

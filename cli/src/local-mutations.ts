@@ -237,7 +237,13 @@ export async function mutateLocal(
             env[`GIT_${role}_DATE`] = identity[3]
         }
 
-        let hookRun = (args: string[]) => repository.command(path, ["hook", "run", "--ignore-missing", ...args], undefined, env)
+        // Snapshotting every worktree file to see what hooks changed costs seconds in a large
+        // repository, so a repository without commit hooks skips the hooks and the snapshots.
+        let hooks = await installedHooks(repository, path, ["pre-commit", "prepare-commit-msg", "commit-msg", "post-commit"])
+        let hookRun = async (name: string, ...args: string[]) => {
+            if (hooks.has(name))
+                await repository.command(path, ["hook", "run", "--ignore-missing", name, ...args], undefined, env)
+        }
         let preparedMessage: string
         if (request.acceptHooks) {
             if (
@@ -252,13 +258,13 @@ export async function mutateLocal(
             if (!preview.staged)
                 await run(["add", "--all"])
             let initialTree = await text(repository, path, ["write-tree"])
-            let initialFiles = await captureHookFiles(repository, [path])
-            await hookRun(["pre-commit"])
+            let initialFiles = hooks.size ? await captureHookFiles(repository, [path]) : undefined
+            await hookRun("pre-commit")
             let gitDirectory = await text(repository, path, ["rev-parse", "--absolute-git-dir"])
             let messagePath = join(gitDirectory, "COMMIT_EDITMSG")
             await writeFile(messagePath, `${request.title}\n\n${request.message}\n`)
-            await hookRun(["prepare-commit-msg", "--", messagePath, "message"])
-            await hookRun(["commit-msg", "--", messagePath])
+            await hookRun("prepare-commit-msg", "--", messagePath, "message")
+            await hookRun("commit-msg", "--", messagePath)
 
             let cleanup = (await repository.run(path, ["config", "--get", "commit.cleanup"])).stdout.toString().trim() || "whitespace"
             let rawMessage = await readFile(messagePath, "utf8")
@@ -266,18 +272,21 @@ export async function mutateLocal(
                 ? rawMessage
                 : (await run(["stripspace", ...(cleanup == "strip" ? ["--strip-comments"] : [])], rawMessage)).toString()
 
-            let afterHooks = await captureHookFiles(repository, [path])
-            if (JSON.stringify(afterHooks.refs) != JSON.stringify(initialFiles.refs))
-                throw new LocalPreconditionError("A ref changed while commit hooks ran. Its state was preserved for recovery.")
-            let changedFiles = afterHooks.roots.filter(root => root.kind == "working").flatMap(root => {
-                let original = initialFiles.roots.find(item => item.path == root.path)
-                return [...new Set([...root.files.map(file => file.name), ...(original?.files.map(file => file.name) ?? [])])].filter(name =>
-                    root.files.find(file => file.name == name)?.object != original?.files.find(file => file.name == name)?.object
-                    || root.files.find(file => file.name == name)?.mode != original?.files.find(file => file.name == name)?.mode
-                )
-            })
+            let changedFiles: string[] = []
+            if (initialFiles) {
+                let afterHooks = await captureHookFiles(repository, [path])
+                if (JSON.stringify(afterHooks.refs) != JSON.stringify(initialFiles.refs))
+                    throw new LocalPreconditionError("A ref changed while commit hooks ran. Its state was preserved for recovery.")
+                changedFiles = afterHooks.roots.filter(root => root.kind == "working").flatMap(root => {
+                    let original = initialFiles.roots.find(item => item.path == root.path)
+                    return [...new Set([...root.files.map(file => file.name), ...(original?.files.map(file => file.name) ?? [])])].filter(name =>
+                        root.files.find(file => file.name == name)?.object != original?.files.find(file => file.name == name)?.object
+                        || root.files.find(file => file.name == name)?.mode != original?.files.find(file => file.name == name)?.mode
+                    )
+                })
+            }
 
-            let tree = await text(repository, path, ["write-tree"])
+            let tree = initialFiles ? await text(repository, path, ["write-tree"]) : initialTree
             if (tree != initialTree) {
                 let indexChanges = (await run(["diff", "--name-only", "-z", initialTree, tree])).toString().split("\0").filter(Boolean)
                 for (let file of indexChanges) {
@@ -313,12 +322,21 @@ export async function mutateLocal(
 
         await saveMetadata(repository, data)
 
-        let post = await repository.run(path, ["hook", "run", "--ignore-missing", "post-commit"], undefined, env)
-        if (post.exitCode)
-            result.message = `Commit created, but the post-commit hook failed: ${post.stderr.toString().trim()}`
+        if (hooks.has("post-commit")) {
+            let post = await repository.run(path, ["hook", "run", "--ignore-missing", "post-commit"], undefined, env)
+            if (post.exitCode)
+                result.message = `Commit created, but the post-commit hook failed: ${post.stderr.toString().trim()}`
+        }
     }
 
     return result
+}
+/** Hook files present in the worktree's hooks directory, honoring core.hooksPath like Git does. */
+async function installedHooks(repository: RepositoryGit, path: string, names: string[]) {
+    let directory = resolve(path, await text(repository, path, ["rev-parse", "--git-path", "hooks"]))
+    let present = await Promise.all(names.map(name => pathExists(join(directory, name))))
+
+    return new Set(names.filter((_, index) => present[index]))
 }
 async function saveMetadata(repository: RepositoryGit, value: LocalMetadata) {
     let path = join(repository.descriptor.commonDirectory, "laneway-local.json")

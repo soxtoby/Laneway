@@ -388,6 +388,8 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
 
     function notify(nextNotice: NoticeState) {
         notice = nextNotice
+        // Callers that have already finished their own refresh still need the toast to appear.
+        void handle.update()
         // Withdraws this notice only if nothing has replaced it since.
         return () => {
             if (notice == nextNotice)
