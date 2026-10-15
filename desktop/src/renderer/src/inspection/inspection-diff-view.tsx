@@ -2,7 +2,7 @@ import type { ChangedFile, DiffLayout, DiffView, FileDiffPage, FileImagePage } f
 import type { FileDiffLoadedChangedFiles } from "@pierre/diffs"
 import { css, type Handle, on, type RemixNode } from "remix/ui"
 import { DiffLines } from "./diff"
-import { ImageDiff, isImagePath, visibleSummary } from "./image-diff"
+import { ImageDiff, type ImageDiffMode, isImagePath, visibleSummary } from "./image-diff"
 import type { FileDiffState } from "./inspection-diff-session"
 
 let diffViews = css({
@@ -169,6 +169,7 @@ export function InspectionDiffContents(
         diff: FileDiffState
         eligible: boolean
         layout: DiffLayout
+        imageMode: ImageDiffMode
         selectionControl?: RemixNode
         changeView(view: DiffView): void
         read(more?: boolean): void
@@ -226,7 +227,7 @@ export function InspectionDiffContents(
                             </p>
                         )}
                         {image
-                            ? <ImageDiff page={page} read={handle.props.readImage} />
+                            ? <ImageDiff page={page} mode={handle.props.imageMode} read={handle.props.readImage} />
                             : (
                                 <DiffLines
                                     page={page}

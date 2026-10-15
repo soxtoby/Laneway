@@ -1,7 +1,10 @@
 import type { ChangeSelection, DiffSource, DiffView, FileDiffPage } from "@laneway/shared"
+import type { ImageDiffMode } from "./image-diff"
 
 export interface FileDiffState {
     showWhitespace: boolean
+    /** How a changed picture is compared; unset until chosen, when the session's preferred mode applies. */
+    imageMode?: ImageDiffMode
     group: string
     path: string
     view: DiffView

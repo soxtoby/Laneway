@@ -19,7 +19,7 @@ import { readDiffContext } from "./diff-context"
 import { DiffControls } from "./diff-controls"
 import { fileLabel, FileTree } from "./file-list"
 import { type FileAction, FileMenu } from "./file-menu"
-import { readDiffImage } from "./image-diff"
+import { isComparableImage, isImagePath, preferredImageMode, readDiffImage, rememberImageMode } from "./image-diff"
 import { createDiffSession, type FileDiffState } from "./inspection-diff-session"
 import { InspectionDiffContents, inspectionMuted, inspectionProgress, selectionSummary } from "./inspection-diff-view"
 
@@ -2349,6 +2349,17 @@ export function createInspection(options: Options) {
                     diff.showWhitespace = !diff.showWhitespace
                     update()
                 }}
+                image={isImagePath(diff.path)
+                    ? {
+                        mode: diff.imageMode ?? preferredImageMode(),
+                        comparable: diff.page ? isComparableImage(diff.page.file) : true,
+                        setMode: mode => {
+                            diff.imageMode = mode
+                            rememberImageMode(mode)
+                            update()
+                        },
+                    }
+                    : undefined}
                 breakout={!state.breakout && !state.auxiliaryId
                     ? () => void showBreakout(state, diff.group, diff.path)
                     : undefined}
@@ -2646,6 +2657,7 @@ export function createInspection(options: Options) {
                 diff={diff}
                 eligible={selectable(state, diff.group)}
                 layout={state.transientLayout ?? options.layout(state.repositoryId, state.id)}
+                imageMode={diff.imageMode ?? preferredImageMode()}
                 selectionControl={page && diff.selection && transferSource(state, page.source) && composition.source({
                     repositoryId: state.repositoryId,
                     selectedRemote: state.graph.selectedRemote,

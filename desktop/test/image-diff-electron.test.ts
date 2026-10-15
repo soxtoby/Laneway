@@ -43,6 +43,22 @@ test("image diffs decode and compare pictures under the production CSP", async (
         expect(result.captions).toContain("Old · 120 × 80")
         expect(result.captions).toContain("New · 160 × 100")
         expect(result.swipe.clip).toContain("inset(0px 0px 0px 50%)")
+
+        // The enlarged picture fits the viewer, which leaves 24px around it and 16px inside, then shows every pixel at 1:1.
+        let viewer = result.viewer
+        expect(viewer.error, viewer.text).toBeUndefined()
+        expect(viewer).toMatchObject({ closed: true, fit: { open: true }, stacked: { open: true, layers: 2 } })
+        let available = viewer.window.width - 48 - 2 - 32
+        expect(viewer.window.width).toBeLessThan(1200)
+        expect(viewer.fit.width).toBeWithin(available - 2, available + 1)
+        expect(viewer.fit.height).toBeWithin(available / 4 - 2, available / 4 + 3)
+        expect(viewer.actual.width).toBeWithin(1600, 1603)
+        expect(viewer.actual.height).toBeWithin(400, 403)
+        expect(viewer.old.width).toBeWithin(1200, 1203)
+        expect(viewer.old.caption).toContain("Old · 1200 × 300")
+        // The zoom chosen for one viewer carries over to the next.
+        expect(viewer.stacked.kept).toBeWithin(1600, 1603)
+        expect(viewer.stacked.width).toBeWithin(available - 2, available + 1)
     } finally {
         if (!resolve(directory).startsWith(resolve(tmpdir()) + sep))
             throw new Error("Invalid test path")

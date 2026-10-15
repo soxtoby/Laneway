@@ -1,5 +1,6 @@
-import type { FileDiffPage, FileImagePage, ImageContent } from "@laneway/shared"
-import { css, type Handle, on } from "remix/ui"
+import type { ChangedFile, FileDiffPage, FileImagePage, ImageContent } from "@laneway/shared"
+import { css, type Handle, on, ref } from "remix/ui"
+import { Icon } from "../icons"
 
 export type ImageDiffMode = "side-by-side" | "swipe" | "onion" | "difference"
 
@@ -21,13 +22,21 @@ let mimeTypes: Record<string, string> = {
     avif: "image/avif",
 }
 
-let modes: { mode: ImageDiffMode; label: string }[] = [{ mode: "side-by-side", label: "Side by side" }, { mode: "swipe", label: "Swipe" }, {
+export let imageModes: { mode: ImageDiffMode; label: string }[] = [{ mode: "side-by-side", label: "Side by side" }, { mode: "swipe", label: "Swipe" }, {
     mode: "onion",
     label: "Onion skin",
 }, { mode: "difference", label: "Difference" }]
 
 // Remembered for the session so every changed image opens in the last chosen mode.
 let preferredMode: ImageDiffMode = "side-by-side"
+
+export function preferredImageMode() {
+    return preferredMode
+}
+
+export function rememberImageMode(mode: ImageDiffMode) {
+    preferredMode = mode
+}
 
 // Git's notices about binary content and LFS filters only say that text tools do not apply, which the pictures make obvious.
 let binaryNotices = new Set([
@@ -39,6 +48,11 @@ let binaryNotices = new Set([
 /** Files shown as pictures instead of text lines. SVG keeps its text diff. */
 export function isImagePath(path: string) {
     return extension(path) in mimeTypes
+}
+
+/** Whether a changed picture has an old and a new version to compare, as far as its status can tell. */
+export function isComparableImage(file: Pick<ChangedFile, "path" | "status">) {
+    return isImagePath(file.path) && file.status != "added" && file.status != "deleted"
 }
 
 /** The diff notices still worth showing above a file's pictures, such as renames and mode changes. */
@@ -78,9 +92,15 @@ interface Side {
     failed?: boolean
 }
 
+type Zoom = "fit" | "actual"
+
+/** What the enlarged viewer shows: one version on its own, or the current stacked comparison. */
+type Viewer = { kind: "single"; side: "old" | "new" } | { kind: "stacked" }
+
 export function ImageDiff(
     handle: Handle<{
         page: FileDiffPage
+        mode: ImageDiffMode
         read(page: FileDiffPage, signal: AbortSignal, fetchLfs?: boolean): Promise<FileImagePage>
     }>,
 ) {
@@ -89,19 +109,21 @@ export function ImageDiff(
     let image: FileImagePage | undefined
     let error: string | undefined
     let sides = { old: {} as Side, new: {} as Side }
-    let mode = preferredMode
     let position = 0.5
     let opacity = 0.5
+    let viewer: Viewer | undefined
+    let zoom: Zoom = "fit"
     handle.signal.addEventListener("abort", () => {
         reading?.abort()
         release()
     })
 
     return () => {
-        let { page } = handle.props
+        let { page, mode } = handle.props
         let key = JSON.stringify([page.source, page.file.path, page.view, page.version])
         if (loaded != key) {
             loaded = key
+            viewer = undefined
             handle.queueTask(() => load(page))
         }
 
@@ -111,29 +133,14 @@ export function ImageDiff(
             <div class="image-diff" mix={imageDiff}>
                 {error && <p role="alert" mix={notice}>{error}</p>}
                 {!image && !error && <p role="status" mix={notice}>Reading images…</p>}
-                {comparable && (
-                    <div class="image-modes" role="group" aria-label="Image comparison" mix={modeBar}>
-                        {modes.map(choice => (
-                            <button
-                                type="button"
-                                aria-pressed={mode == choice.mode}
-                                mix={[
-                                    modeButton,
-                                    on("click", () => {
-                                        mode = preferredMode = choice.mode
-                                        handle.update()
-                                    }),
-                                ]}
-                            >
-                                {choice.label}
-                            </button>
-                        ))}
+                {comparable && shown != "side-by-side" && (
+                    <div class="image-tools" role="group" aria-label="Image comparison" mix={toolBar}>
                         {shown == "swipe" && (
                             <button
                                 type="button"
                                 aria-label={position > 0.5 ? "Show new image" : "Show old image"}
                                 mix={[
-                                    modeButton,
+                                    toolButton,
                                     on("click", () => {
                                         position = position > 0.5 ? 0 : 1
                                         handle.update()
@@ -160,9 +167,13 @@ export function ImageDiff(
                                 />
                             </label>
                         )}
+                        <button type="button" aria-label="Enlarge comparison" title="Enlarge" mix={[toolButton, on("click", () => open({ kind: "stacked" }))]}>
+                            <Icon name="maximize" size={13} />
+                        </button>
                     </div>
                 )}
                 {image && (shown == "side-by-side" ? renderSideBySide(image) : renderStacked(shown))}
+                {viewer && renderViewer(viewer, shown)}
             </div>
         )
     }
@@ -171,22 +182,23 @@ export function ImageDiff(
         let both = page.old && page.new
         return (
             <div class="image-sides" style={{ gridTemplateColumns: both ? "minmax(0, 1fr) minmax(0, 1fr)" : "minmax(0, 1fr)" }} mix={sideBySide}>
-                {page.old && renderFigure(sides.old, both ? "Old" : undefined)}
-                {page.new && renderFigure(sides.new, both ? "New" : undefined)}
+                {page.old && renderFigure("old", both ? "Old" : undefined)}
+                {page.new && renderFigure("new", both ? "New" : undefined)}
             </div>
         )
     }
 
-    function renderFigure(side: Side, title?: string) {
+    function renderFigure(which: "old" | "new", title?: string) {
+        let side = sides[which]
         return (
             <figure mix={figure}>
-                {renderImage(side, title ?? "Image")}
+                {renderImage(side, title ?? "Image", () => open({ kind: "single", side: which }))}
                 <figcaption mix={caption}>{title ? `${title} · ${describe(side)}` : describe(side)}</figcaption>
             </figure>
         )
     }
 
-    function renderImage(side: Side, alt: string) {
+    function renderImage(side: Side, alt: string, enlarge: () => void) {
         let content = side.content
         if (content?.state == "unavailable")
             return <div class="image-unavailable" mix={unavailable}>{content.reason}</div>
@@ -194,11 +206,27 @@ export function ImageDiff(
             return <div class="image-downloading" role="status" mix={unavailable}>Downloading from Git LFS…</div>
         else if (side.failed)
             return <div class="image-unavailable" mix={unavailable}>Could not display this image.</div>
-        else
-            return <img src={side.url} alt={alt} mix={picture} />
+        else {
+            return (
+                <button type="button" aria-label={`Enlarge ${alt.toLowerCase()}`} title="Enlarge" mix={[enlargeButton, on("click", enlarge)]}>
+                    <img src={side.url} alt={alt} mix={picture} />
+                </button>
+            )
+        }
     }
 
     function renderStacked(shown: Exclude<ImageDiffMode, "side-by-side">) {
+        return (
+            <div class="image-stacked" mix={stacked}>
+                {renderStage(shown)}
+                <p mix={caption}>Old · {describe(sides.old)} → New · {describe(sides.new)}</p>
+            </div>
+        )
+    }
+
+    // The stage is sized from the pictures' natural dimensions so both layers scale together. Enlarged, it either
+    // fits the window or shows every pixel and scrolls.
+    function renderStage(shown: Exclude<ImageDiffMode, "side-by-side">, enlarged?: Zoom) {
         let known = [sides.old, sides.new].every(side => side.width && side.height)
         let widest = Math.max(sides.old.width ?? 0, sides.new.width ?? 0)
         let tallest = Math.max(sides.old.height ?? 0, sides.new.height ?? 0)
@@ -208,43 +236,141 @@ export function ImageDiff(
             : shown == "onion"
             ? { opacity: String(opacity) }
             : { mixBlendMode: "difference" }
+        let width = enlarged == "fit" ? `min(${widest}px, calc(100% - 2px), calc(var(--viewer-height) * ${widest / tallest}))` : `${widest}px`
+        let size = known ? { width, aspectRatio: `${widest} / ${tallest}`, ...(enlarged == "actual" ? { maxWidth: "none" } : {}) } : {}
+        let clickable = shown != "swipe" && !enlarged
 
         return (
-            <div class="image-stacked" mix={stacked}>
-                <div
-                    class={`image-stage ${shown}`}
-                    tabIndex={shown == "swipe" ? 0 : undefined}
-                    aria-label={shown == "swipe" ? "Swipe between old and new image" : undefined}
-                    style={known ? { width: `${widest}px`, aspectRatio: `${widest} / ${tallest}` } : {}}
-                    mix={[
-                        stage,
-                        on("pointerdown", event => {
-                            if (shown == "swipe") {
-                                event.currentTarget.setPointerCapture(event.pointerId)
-                                swipeTo(event)
-                            }
-                        }),
-                        on("pointermove", event => {
-                            if (shown == "swipe" && event.buttons & 1)
-                                swipeTo(event)
-                        }),
-                        on("keydown", event => {
-                            let step = { ArrowLeft: -0.05, ArrowRight: 0.05, Home: -1, End: 1 }[event.key]
-                            if (shown == "swipe" && step != undefined) {
-                                event.preventDefault()
-                                position = Math.min(1, Math.max(0, position + step))
-                                handle.update()
-                            }
-                        }),
-                    ]}
-                >
-                    <img src={sides.old.url} alt="Old image" style={known ? { width: span(sides.old) } : { position: "static" }} mix={layer} />
-                    <img src={sides.new.url} alt="New image" style={{ width: span(sides.new), ...overlay }} mix={layer} />
-                    {shown == "swipe" && <div class="image-divider" style={{ left: `${position * 100}%` }} mix={divider} />}
-                </div>
-                <p mix={caption}>Old · {describe(sides.old)} → New · {describe(sides.new)}</p>
+            <div
+                class={`image-stage ${shown}`}
+                tabIndex={shown == "swipe" || clickable ? 0 : undefined}
+                role={clickable ? "button" : undefined}
+                aria-label={shown == "swipe" ? "Swipe between old and new image" : clickable ? "Enlarge comparison" : undefined}
+                title={clickable ? "Enlarge" : undefined}
+                style={size}
+                mix={[
+                    stage,
+                    on("pointerdown", event => {
+                        if (shown == "swipe") {
+                            event.currentTarget.setPointerCapture(event.pointerId)
+                            swipeTo(event)
+                        }
+                    }),
+                    on("pointermove", event => {
+                        if (shown == "swipe" && event.buttons & 1)
+                            swipeTo(event)
+                    }),
+                    on("click", () => {
+                        if (clickable)
+                            open({ kind: "stacked" })
+                    }),
+                    on("keydown", event => {
+                        let step = { ArrowLeft: -0.05, ArrowRight: 0.05, Home: -1, End: 1 }[event.key]
+                        if (shown == "swipe" && step != undefined) {
+                            event.preventDefault()
+                            position = Math.min(1, Math.max(0, position + step))
+                            handle.update()
+                        } else if (clickable && (event.key == "Enter" || event.key == " ")) {
+                            event.preventDefault()
+                            open({ kind: "stacked" })
+                        }
+                    }),
+                ]}
+            >
+                <img src={sides.old.url} alt="Old image" style={known ? { width: span(sides.old) } : { position: "static" }} mix={layer} />
+                <img src={sides.new.url} alt="New image" style={{ width: span(sides.new), ...overlay }} mix={layer} />
+                {shown == "swipe" && <div class="image-divider" style={{ left: `${position * 100}%` }} mix={divider} />}
             </div>
         )
+    }
+
+    function renderViewer(target: Viewer, shown: ImageDiffMode) {
+        let { page } = handle.props
+        let both = image?.old && image.new
+        let single = target.kind == "single" ? target.side : undefined
+        let side = single ? sides[single] : undefined
+        let title = single
+            ? `${both ? `${single == "old" ? "Old" : "New"} · ` : ""}${describe(side!)}`
+            : `Old · ${describe(sides.old)} → New · ${describe(sides.new)}`
+        return (
+            <dialog
+                class="image-viewer"
+                aria-label={`${page.file.path} enlarged`}
+                mix={[
+                    viewerDialog,
+                    ref(element => element.showModal()),
+                    on("close", () => {
+                        viewer = undefined
+                        handle.update()
+                    }),
+                ]}
+            >
+                <header mix={viewerBar}>
+                    <span mix={viewerTitle} title={page.file.path}>{page.file.path}</span>
+                    <span mix={viewerCaption}>{title}</span>
+                    {single && both && (
+                        <div role="group" aria-label="Version" mix={viewerGroup}>
+                            {(["old", "new"] as const).map(which => (
+                                <button
+                                    type="button"
+                                    aria-pressed={single == which}
+                                    mix={[
+                                        toolButton,
+                                        on("click", () => {
+                                            viewer = { kind: "single", side: which }
+                                            handle.update()
+                                        }),
+                                    ]}
+                                >
+                                    {which == "old" ? "Old" : "New"}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                    <div role="group" aria-label="Zoom" mix={viewerGroup}>
+                        {([["fit", "Fit to window"], ["actual", "Actual size"]] as const).map(([choice, label]) => (
+                            <button
+                                type="button"
+                                aria-label={label}
+                                title={label}
+                                aria-pressed={zoom == choice}
+                                mix={[
+                                    viewerIconButton,
+                                    on("click", () => {
+                                        zoom = choice
+                                        handle.update()
+                                    }),
+                                ]}
+                            >
+                                {zoomIcon(choice)}
+                            </button>
+                        ))}
+                    </div>
+                    <button
+                        type="button"
+                        aria-label="Close"
+                        title="Close"
+                        mix={[viewerIconButton, on("click", event => event.currentTarget.closest("dialog")?.close())]}
+                    >
+                        <Icon name="close" size={14} />
+                    </button>
+                </header>
+                <div class="image-viewer-body" mix={viewerBody}>
+                    {single
+                        ? side?.url && !side.failed
+                            ? <img src={side.url} alt={`${single == "old" ? "Old" : "New"} image`} class={zoom} mix={viewerPicture} />
+                            : <div class="image-unavailable" mix={unavailable}>Could not display this image.</div>
+                        : shown == "side-by-side"
+                        ? <div class="image-unavailable" mix={unavailable}>Could not display this comparison.</div>
+                        : renderStage(shown, zoom)}
+                </div>
+            </dialog>
+        )
+    }
+
+    function open(target: Viewer) {
+        viewer = target
+        handle.update()
     }
 
     function swipeTo(event: PointerEvent & { currentTarget: HTMLElement }) {
@@ -303,6 +429,17 @@ export function ImageDiff(
         }
         sides = { old: {}, new: {} }
     }
+}
+
+// Corner brackets closing in on a picture, and a 1:1 ratio for every pixel.
+function zoomIcon(zoom: Zoom) {
+    return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+            {zoom == "fit"
+                ? <path d="M5.5 2H2v3.5M10.5 2H14v3.5M2 10.5V14h3.5M14 10.5V14h-3.5M5 5.5h6v5H5z" />
+                : <path d="M3 5l2-2v10M11 5l2-2v10M8 6.5v.01M8 9.5v.01" />}
+        </svg>
+    )
 }
 
 function objectSide(content: ImageContent | undefined, path: string): Side {
@@ -364,9 +501,13 @@ let imageDiff = css({ padding: "4px 10px 10px" })
 
 let notice = css({ margin: 0, padding: "4px 0", color: "var(--muted)", fontSize: "12px" })
 
-let modeBar = css({ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px", padding: "4px 0 8px" })
+let toolBar = css({ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px", padding: "4px 0 8px" })
 
-let modeButton = css({
+let toolButton = css({
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: "22px",
     border: "1px solid var(--line)",
     background: "var(--control)",
     color: "var(--text)",
@@ -377,6 +518,9 @@ let modeButton = css({
     fontSize: "11px",
     '&[aria-pressed="true"]': { background: "var(--accent-wash-strong)", borderColor: "var(--accent-edge)" },
     "&:hover": { background: "var(--control-hover)" },
+    // The viewer's version toggle sits beside its icon buttons and highlights like them.
+    ".image-viewer &": { minHeight: "28px", fontSize: "12px", padding: "3px 10px" },
+    '.image-viewer &[aria-pressed="true"]': { color: "var(--focus)", background: "var(--focus-wash)", borderColor: "var(--focus-edge)" },
 })
 
 let sliderLabel = css({ display: "inline-flex", alignItems: "center", gap: "6px", marginLeft: "4px", fontSize: "11px", color: "var(--muted)" })
@@ -385,6 +529,16 @@ let sliderLabel = css({ display: "inline-flex", alignItems: "center", gap: "6px"
 let sideBySide = css({ display: "grid", gridAutoFlow: "column", gridTemplateRows: "auto auto", gap: "0 10px", alignItems: "end" })
 
 let figure = css({ display: "contents" })
+
+let enlargeButton = css({
+    display: "block",
+    maxWidth: "100%",
+    padding: 0,
+    border: 0,
+    background: "transparent",
+    cursor: "zoom-in",
+    "&:focus-visible": { outline: "2px solid var(--focus)", outlineOffset: "1px" },
+})
 
 let picture = css({ ...checkerboard, display: "block", maxWidth: "100%", height: "auto", border: "1px solid var(--line)" })
 
@@ -412,6 +566,7 @@ let stage = css({
     overflow: "hidden",
     "&.swipe": { cursor: "col-resize", touchAction: "none" },
     "&.difference": { backgroundImage: "none", backgroundColor: "#000" },
+    "&[role=button]": { cursor: "zoom-in" },
     "&:focus-visible": { outline: "2px solid var(--focus)" },
 })
 
@@ -426,4 +581,87 @@ let divider = css({
     background: "var(--accent)",
     boxShadow: "0 0 0 1px rgb(0 0 0 / 40%)",
     pointerEvents: "none",
+})
+
+// The viewer fills the window below the title bar, clear of the window controls; the global dialog sizing is for forms.
+let viewerDialog = css({
+    "--viewer-bar": "44px",
+    "--viewer-top": "calc(env(titlebar-area-height, 0px) + 24px)",
+    "--viewer-height": "calc(100vh - var(--viewer-top) - 24px - 2px - var(--viewer-bar) - 32px)",
+    width: "calc(100vw - 48px)",
+    height: "calc(100vh - var(--viewer-top) - 24px)",
+    maxWidth: "none",
+    maxHeight: "none",
+    boxSizing: "border-box",
+    margin: "var(--viewer-top) auto 0",
+    padding: 0,
+    border: "1px solid var(--line-strong)",
+    borderRadius: "8px",
+    boxShadow: "var(--shadow-dialog)",
+    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
+    background: "var(--panel-deep)",
+    "&:not([open])": { display: "none" },
+})
+
+let viewerBar = css({
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    height: "var(--viewer-bar)",
+    boxSizing: "border-box",
+    padding: "0 10px 0 14px",
+    borderBottom: "1px solid var(--line)",
+    background: "var(--panel)",
+    fontSize: "11px",
+})
+
+let viewerTitle = css({ font: "600 15px var(--mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 })
+
+let viewerIconButton = css({
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "28px",
+    height: "28px",
+    padding: 0,
+    border: "1px solid var(--line)",
+    background: "var(--control)",
+    color: "var(--text)",
+    borderRadius: "3px",
+    cursor: "pointer",
+    '&[aria-pressed="true"]': { color: "var(--focus)", background: "var(--focus-wash)", borderColor: "var(--focus-edge)" },
+    "&:hover": { background: "var(--control-hover)" },
+})
+
+let viewerCaption = css({ flex: 1, minWidth: 0, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" })
+
+let viewerGroup = css({
+    display: "inline-flex",
+    flexShrink: 0,
+    "& > button": { borderRadius: 0 },
+    "& > button:first-child": { borderRadius: "3px 0 0 3px" },
+    "& > button:last-child": { marginLeft: "-1px", borderRadius: "0 3px 3px 0" },
+    '& > button[aria-pressed="true"]': { zIndex: 1 },
+    "& > button:focus-visible": { zIndex: 2 },
+})
+
+// Pictures centre when they fit and scroll from their top-left corner when they do not.
+let viewerBody = css({
+    flex: 1,
+    minHeight: 0,
+    display: "flex",
+    overflow: "auto",
+    padding: "16px",
+    boxSizing: "border-box",
+    "& > *": { margin: "auto", flexShrink: 0 },
+})
+
+let viewerPicture = css({
+    ...checkerboard,
+    display: "block",
+    boxSizing: "border-box",
+    border: "1px solid var(--line)",
+    "&.fit": { maxWidth: "100%", maxHeight: "var(--viewer-height)", objectFit: "contain" },
 })

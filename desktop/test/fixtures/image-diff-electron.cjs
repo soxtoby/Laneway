@@ -9,6 +9,9 @@ app.whenReady().then(async () => {
         show: Boolean(screenshots),
         width: 900,
         height: 600,
+        // The app's hidden title bar with overlaid window controls, which the enlarged viewer must stay clear of.
+        titleBarStyle: "hidden",
+        titleBarOverlay: process.platform == "darwin" ? undefined : { height: 47 },
         webPreferences: { sandbox: true, contextIsolation: true, backgroundThrottling: false },
     })
     let messages = []
@@ -27,7 +30,24 @@ app.whenReady().then(async () => {
         let result = await window.webContents.executeJavaScript(
             "(async () => { try { return await window.imageDiffChecks() } catch (error) { return { error: error.stack, text: document.body.innerText } } })()",
         )
-        writeFileSync(join(directory, "result.json"), JSON.stringify({ ...result, messages }))
+        // Pictures wider than the window show the difference between fitting and 1:1.
+        let large = { old: picture(1200, 300, 100).toString("base64"), new: picture(1600, 400, 150).toString("base64") }
+        await window.webContents.executeJavaScript(`window.mountImageDiff(${JSON.stringify(large)})`)
+        if (screenshots) {
+            await window.webContents.executeJavaScript(`document.querySelector("[aria-label='Enlarge new']").click()`)
+            await new Promise(resolve => setTimeout(resolve, 300))
+            writeFileSync(join(screenshots, "viewer-fit.png"), (await window.webContents.capturePage()).toPNG())
+            await window.webContents.executeJavaScript(`document.querySelector("dialog [aria-label='Actual size']").click()`)
+            await new Promise(resolve => setTimeout(resolve, 300))
+            writeFileSync(join(screenshots, "viewer-actual.png"), (await window.webContents.capturePage()).toPNG())
+            await window.webContents.executeJavaScript(`document.querySelector("dialog [aria-label='Fit to window']").click()`)
+            await window.webContents.executeJavaScript(`document.querySelector("dialog").close()`)
+            await new Promise(resolve => setTimeout(resolve, 300))
+        }
+        let viewer = await window.webContents.executeJavaScript(
+            "(async () => { try { return await window.imageViewerChecks() } catch (error) { return { error: error.stack, text: document.body.innerText } } })()",
+        )
+        writeFileSync(join(directory, "result.json"), JSON.stringify({ ...result, viewer, messages }))
         app.quit()
     } catch (error) {
         writeFileSync(join(directory, "result.json"), JSON.stringify({ error: String(error), messages }))

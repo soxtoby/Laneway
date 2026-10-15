@@ -1,6 +1,7 @@
 import type { DiffLayout } from "@laneway/shared"
 import { css, type Handle, on } from "remix/ui"
 import { fileActionButton } from "./file-list"
+import { type ImageDiffMode, imageModes } from "./image-diff"
 
 let diffToolbarDiv = css({
     marginLeft: "auto",
@@ -17,11 +18,15 @@ export function DiffControls(
         setLayout(layout: DiffLayout): void
         toggleWhitespace(): void
         toggleEntireFiles?(): void
+        /** Pictures swap the text layout controls for their comparison modes. */
+        image?: ImageControls
         breakout?(): void
     }>,
 ) {
     return () => {
         let props = handle.props
+        if (props.image)
+            return renderImageControls(props.image, props.breakout)
         return (
             <div class="diff-controls" mix={diffToolbarDiv}>
                 <div class="diff-layout-toggle" role="group" aria-label="Diff layout" mix={diffLayoutToggle}>
@@ -69,6 +74,79 @@ export function DiffControls(
             </div>
         )
     }
+}
+
+export interface ImageControls {
+    mode: ImageDiffMode
+    /** Added and deleted pictures have nothing to compare, so they offer no modes. */
+    comparable: boolean
+    setMode(mode: ImageDiffMode): void
+}
+
+function renderImageControls(image: ImageControls, breakout?: () => void) {
+    return (
+        <div class="diff-controls" mix={diffToolbarDiv}>
+            {image.comparable && (
+                <div class="image-mode-toggle" role="group" aria-label="Image comparison mode" mix={diffLayoutToggle}>
+                    {imageModes.map(choice => (
+                        <button
+                            type="button"
+                            aria-label={choice.label}
+                            title={choice.label}
+                            aria-pressed={image.mode == choice.mode}
+                            mix={[fileActionButton, on("click", () => image.setMode(choice.mode))]}
+                        >
+                            {imageModeIcon(choice.mode)}
+                        </button>
+                    ))}
+                </div>
+            )}
+            {breakout && (
+                <button type="button" aria-label="Break out diff" title="Break out diff" mix={[fileActionButton, on("click", breakout)]}>
+                    {diffIcon("breakout")}
+                </button>
+            )}
+        </div>
+    )
+}
+
+// Solid and outlined shapes stay distinct at toolbar size where thin frames blur together.
+function imageModeIcon(mode: ImageDiffMode) {
+    let shapes = {
+        // A solid picture beside an outlined one.
+        "side-by-side": (
+            <>
+                <path d="M1.5 3h5.5v10H1.5z" fill="currentColor" stroke="none" />
+                <path d="M9 3h5.5v10H9z" />
+            </>
+        ),
+        // A picture half revealed by a divider that stretches past its frame.
+        swipe: (
+            <>
+                <path d="M2 3h6v10H2z" fill="currentColor" stroke="none" />
+                <path d="M2 3h12v10H2zM8 1v14" />
+            </>
+        ),
+        // An outlined picture laid over a solid one.
+        onion: (
+            <>
+                <path d="M2 2h8v8H2z" fill="currentColor" stroke="none" />
+                <path d="M6 6h8v8H6z" />
+            </>
+        ),
+        // Two discs with their overlap picked out.
+        difference: (
+            <>
+                <path d="M8 4.54A4 4 0 0 1 8 11.46A4 4 0 0 1 8 4.54z" fill="currentColor" stroke="none" />
+                <path d="M2 8a4 4 0 1 0 8 0a4 4 0 1 0-8 0M6 8a4 4 0 1 0 8 0a4 4 0 1 0-8 0" />
+            </>
+        ),
+    }
+    return (
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            {shapes[mode]}
+        </svg>
+    )
 }
 
 function diffIcon(kind: "unified" | "split" | "breakout") {
