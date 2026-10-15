@@ -43,6 +43,8 @@ let paths = {
     pencil: "M3 13l.5-3L11 2.5l2.5 2.5L6 12.5zM10.25 3.25l2.5 2.5",
     // A head with no branch line above it: the node and its history, cut off from any ref.
     detached: "M5.5 9a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0M8 11.5V15M8 1.5v1M8 4.5v1.5",
+    copy: "M6 6h7.5v7.5H6zM10 6V2.5H2.5V10H6",
+    check: "M3 8.5l3.5 3.5L13 4.5",
 } as const
 
 export type IconName = keyof typeof paths
@@ -51,7 +53,7 @@ export function iconPath(name: IconName) {
     return paths[name]
 }
 
-// The Hidden L mark from assets/brand/laneway.svg, drawn on its 64-unit canvas.
+// The Hidden L mark from assets/brand/laneway-icon.svg, fitted to its 48-unit canvas.
 let brandPath =
     "M20 8H24V48H44A4 4 0 0 0 44 40H34A2 2 0 0 1 32 38V12A4 4 0 0 1 36 8H44A12 12 0 0 1 56 20V44A12 12 0 0 1 44 56H20A12 12 0 0 1 8 44V20A12 12 0 0 1 20 8Z"
 
@@ -75,16 +77,10 @@ export function Icon(handle: Handle<{ name: IconName; size?: number }>) {
     )
 }
 
-// `plain` drops the app-icon block so the mark sits directly on light or dark chrome.
-export function BrandMark(handle: Handle<{ size: number; plain?: boolean }>) {
+export function BrandMark(handle: Handle<{ size: number }>) {
     return () => (
-        <svg aria-hidden="true" width={handle.props.size} height={handle.props.size} viewBox="0 0 64 64" fill="none">
-            {!handle.props.plain && <rect width="64" height="64" rx="14" fill="var(--brand-block)" />}
-            <path
-                transform={handle.props.plain ? undefined : "translate(8 8) scale(.75)"}
-                fill={handle.props.plain ? "var(--accent)" : "var(--brand-mark)"}
-                d={brandPath}
-            />
+        <svg aria-hidden="true" width={handle.props.size} height={handle.props.size} viewBox="8 8 48 48" fill="none">
+            <path fill="var(--accent)" d={brandPath} />
         </svg>
     )
 }

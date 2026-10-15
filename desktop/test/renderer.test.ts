@@ -41,6 +41,7 @@ beforeAll(async () => {
         "HTMLPreElement",
         "Document",
         "SVGElement",
+        "navigator",
     ]
     browserGlobal.window = browserWindow
     browserGlobal.document = browserWindow.document
@@ -1818,7 +1819,7 @@ describe("Working Changes inspection", () => {
         focused(heading)
         // Up from the commit reaches the last Working Changes row.
         press(heading, "ArrowUp")
-        let working = [...column.querySelectorAll<HTMLElement>(".working-changes .change-file > button")]
+        let working = [...column.querySelectorAll<HTMLElement>(".working-changes .change-file > button[aria-expanded]")]
         expect(working.length).toBeGreaterThan(0)
         focused(working.at(-1))
         // Down past the last file reaches the base branch's heading, where the sequence ends.
@@ -2707,6 +2708,44 @@ test("sparse File History fills a page of matching commits, stays lazy, and reta
         await flush(root)
         expect(container.querySelector(".file-history")).toBeNull()
         expect(cursors.at(-1)).toBe("5".repeat(40))
+    } finally {
+        dispose()
+    }
+})
+
+test("file rows copy their path from a hover button and from the context menu", async () => {
+    let scenario = inspectionScenario()
+    let { container, root, dispose } = render(scenario.api)
+    try {
+        await flush(root)
+        let row = container.querySelector<HTMLElement>(".change-file")!
+        let copy = row.querySelector<HTMLButtonElement>(".copy-path")!
+        expect(copy.getAttribute("aria-label")).toBe("Copy relative path of src/file.txt")
+        expect(row.querySelector("button[aria-expanded]")!.contains(copy)).toBe(false)
+        click(copy)
+        await flush(root)
+        expect(await navigator.clipboard.readText()).toBe("src/file.txt")
+        expect(copy.hasAttribute("data-copied")).toBe(true)
+        expect(row.querySelector("button[aria-expanded]")!.getAttribute("aria-expanded")).toBe("false")
+
+        let menu = async (label: string) => {
+            row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 50, clientY: 50 }))
+            await flush(root)
+            let dialog = container.querySelector<HTMLElement>("dialog[aria-label='File actions']")!
+            expect([...dialog.querySelectorAll("button")].map(item => item.textContent?.trim())).toEqual([
+                "File history",
+                "Copy full path",
+                "Copy relative path",
+                "Copy file name",
+            ])
+            expect(dialog.querySelector("hr")).not.toBeNull()
+            click(button(dialog, label))
+            await flush(root)
+            return navigator.clipboard.readText()
+        }
+        expect(await menu("Copy full path")).toBe("D:\\Source\\inspection\\src\\file.txt")
+        expect(await menu("Copy file name")).toBe("file.txt")
+        expect(await menu("Copy relative path")).toBe("src/file.txt")
     } finally {
         dispose()
     }

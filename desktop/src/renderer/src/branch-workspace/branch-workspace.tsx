@@ -416,6 +416,10 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
         },
         createBranchAt: (repositoryId, commit) => localBranches.atCommit(repositoryId, commit),
         renameBranch: (repositoryId, name, newName) => localBranches.perform(repositoryId, { action: "branch-rename", name, newName }),
+        mainWorktree: repositoryId => {
+            let repository = options.workspace().repositories.find(item => item.id == repositoryId)
+            return repository?.status == "available" ? repository.info.mainWorktree : undefined
+        },
         openComparison,
         layout: (repositoryId, columnId) => stateFor(repositoryId).diffLayouts[columnId] ?? "unified",
         saveLayout: (repositoryId, columnId, layout) => {

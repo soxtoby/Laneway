@@ -1,5 +1,8 @@
 import type { ChangedFile } from "@laneway/shared"
 import { css, type Handle, on, type RemixNode } from "remix/ui"
+import { Icon } from "../icons"
+import { type FileAction, FileMenu } from "./file-menu"
+import { copyPathActions, copyText } from "./file-paths"
 
 let filterMatch = css({
     color: "var(--text)",
@@ -68,7 +71,9 @@ let changeFileButton = css({
     display: "flex",
     alignItems: "center",
     gap: "6px",
-    width: "100%",
+    // Natural width keeps the copy button beside the name; the row itself takes clicks on the space after it.
+    flex: "0 1 auto",
+    maxWidth: "100%",
     minWidth: "0",
     textAlign: "left",
     // Keyboard focus scrolls the row clear of the sticky headings above it.
@@ -147,8 +152,37 @@ let fileName = css({
 
 let stagedBadge = css({
     color: "var(--muted)",
-    marginLeft: "auto",
     fontSize: "10px",
+})
+
+let changeFileTrailing = css({
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    flex: "0 0 auto",
+    marginLeft: "auto",
+})
+
+// Hidden until the row is hovered, so the name stays uncluttered; focus and a fresh copy keep it visible.
+let copyPathButton = css({
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flex: "0 0 auto",
+    width: "18px",
+    height: "18px",
+    padding: 0,
+    border: 0,
+    borderRadius: "3px",
+    background: "transparent",
+    color: "var(--muted)",
+    cursor: "pointer",
+    opacity: 0,
+    ".change-file:hover &": { opacity: 1 },
+    ".diff-file-menu:hover &": { opacity: 1 },
+    "&:focus-visible": { opacity: 1 },
+    "&[data-copied]": { opacity: 1, color: "var(--ok)" },
+    "&:hover": { background: "var(--control-hover)", color: "var(--text)" },
 })
 
 let fileTreeSummary = css({
@@ -158,12 +192,13 @@ let fileTreeSummary = css({
     overflowWrap: "anywhere",
     cursor: "pointer",
 })
-import { type FileAction, FileMenu } from "./file-menu"
 
 export function FileTree(
     handle: Handle<
         {
             files: ChangedFile[]
+            /** The worktree the files live in, enabling "Copy full path". */
+            root?: string
             renderFile?(file: ChangedFile): RemixNode
             actions?(file: ChangedFile): FileAction[]
             flat?: boolean
@@ -208,6 +243,8 @@ export function FileTree(
                         key={file.path}
                         actions={props.actions?.(file) ?? []}
                         title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
+                        path={file.path}
+                        root={props.root}
                         expanded={props.expanded.has(file.path)}
                         checked={props.checked?.has(`${props.prefix}:${file.path}`) ?? false}
                         checkLabel={`Select file ${file.path}`}
@@ -223,6 +260,10 @@ export function FileTree(
                                     {changeIcon(file.conflicted ? "conflicted" : file.status)}
                                 </span>
                                 {fileLabel(file.path, props.flat || !!file.oldPath, file.oldPath, props.filter)}
+                            </>
+                        }
+                        trailing={(file.staged && !props.hideStagedBadge || file.submodule) && (
+                            <>
                                 {file.staged && !props.hideStagedBadge && (
                                     <small class="staged-badge" mix={stagedBadge}>
                                         staged
@@ -230,7 +271,7 @@ export function FileTree(
                                 )}
                                 {file.submodule && <small>submodule</small>}
                             </>
-                        }
+                        )}
                     >
                         {props.diff(file)}
                     </InspectionItem>
@@ -272,9 +313,15 @@ export function InspectionItem(
         class?: string
         title: string
         label: RemixNode
+        /** The repository-relative path a copy button and copy menu items describe; rows without one are not files. */
+        path?: string
+        /** The worktree the file lives in, enabling "Copy full path". */
+        root?: string
         expanded: boolean
         actions: FileAction[]
         leading?: RemixNode
+        /** Badges shown after the name, pushed to the right edge of the row. */
+        trailing?: RemixNode
         controls?: RemixNode
         children?: RemixNode
         checked?: boolean
@@ -285,9 +332,20 @@ export function InspectionItem(
 ) {
     return () => {
         let props = handle.props
+        let actions = props.path ? [...props.actions, ...copyPathActions(props.path, props.root)] : props.actions
         return (
-            <FileMenu class={`file-inspection ${props.class ?? ""}`} actions={props.actions}>
-                <div class={`change-file ${props.expanded ? "active" : ""}`} mix={changeFile}>
+            <FileMenu class={`file-inspection ${props.class ?? ""}`} actions={actions}>
+                <div
+                    class={`change-file ${props.expanded ? "active" : ""}`}
+                    mix={[
+                        changeFile,
+                        // The name button only spans its text, so the rest of the row still chooses the file.
+                        on("click", event => {
+                            if (event.target == event.currentTarget)
+                                props.choose?.()
+                        }),
+                    ]}
+                >
                     {props.leading}
                     {props.check && (
                         <input
@@ -306,12 +364,45 @@ export function InspectionItem(
                     >
                         {props.label}
                     </button>
+                    {props.path && <CopyPathButton path={props.path} />}
+                    {props.trailing && <span mix={changeFileTrailing}>{props.trailing}</span>}
                     {props.controls}
                 </div>
                 {props.children}
             </FileMenu>
         )
     }
+}
+
+/** A quiet button beside a file name that copies its repository-relative path; it only shows while the row is hovered or focused. */
+export function CopyPathButton(handle: Handle<{ path: string }>) {
+    let copied = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    handle.signal.addEventListener("abort", () => clearTimeout(timer))
+    return () => (
+        <button
+            type="button"
+            class="copy-path"
+            aria-label={`Copy relative path of ${handle.props.path}`}
+            title={copied ? "Copied" : "Copy relative path"}
+            data-copied={copied ? "" : undefined}
+            mix={[
+                copyPathButton,
+                on("click", () =>
+                    void copyText(handle.props.path).then(() => {
+                        copied = true
+                        clearTimeout(timer)
+                        timer = setTimeout(() => {
+                            copied = false
+                            void handle.update()
+                        }, 1500)
+                        void handle.update()
+                    })),
+            ]}
+        >
+            <Icon name={copied ? "check" : "copy"} size={12} />
+        </button>
+    )
 }
 
 function changeIcon(status: string) {

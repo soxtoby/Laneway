@@ -211,7 +211,7 @@ export function LanewayHeader(
         return (
             <header class="masthead" mix={masthead}>
                 <div class="brand" mix={brand}>
-                    <BrandMark size={24} plain />
+                    <BrandMark size={24} />
                     <span mix={brandName}>Laneway</span>
                 </div>
                 <div class="masthead-center" mix={mastheadCenter}>

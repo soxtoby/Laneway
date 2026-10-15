@@ -17,8 +17,9 @@ import { CommitMessage } from "./commit-message"
 import { type ComparisonColumnNode, comparisonHistorySource, comparisonKey } from "./comparison-columns"
 import { readDiffContext } from "./diff-context"
 import { DiffControls } from "./diff-controls"
-import { fileLabel, FileTree } from "./file-list"
+import { CopyPathButton, fileLabel, FileTree } from "./file-list"
 import { type FileAction, FileMenu } from "./file-menu"
+import { copyPathActions } from "./file-paths"
 import { isComparableImage, isImagePath, preferredImageMode, readDiffImage, rememberImageMode } from "./image-diff"
 import { createDiffSession, type FileDiffState } from "./inspection-diff-session"
 import { InspectionDiffContents, inspectionMuted, inspectionProgress, selectionSummary } from "./inspection-diff-view"
@@ -40,6 +41,8 @@ interface Options {
     /** Renames a local branch in place; rejects with the reason when Git declines. */
     renameBranch?(repositoryId: string, name: string, newName: string): Promise<void>
     resolveWorkingConflict?(repositoryId: string, subject: string): void
+    /** The repository's main worktree, where committed files are copied from when a column has no worktree of its own. */
+    mainWorktree?(repositoryId: string): string | undefined
     maximized(repositoryId: string): string | undefined
     maximize(repositoryId: string, id: string): void
 }
@@ -164,7 +167,7 @@ let diffInspector = css({
 })
 
 let diffToolbar = css({
-    "& .diff-file-menu": { flex: 1, minWidth: 0 },
+    "& .diff-file-menu": { flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "4px" },
     // Only broken-out diffs show this toolbar, sticking under their diff column's sticky header.
     position: "sticky",
     top: "46px",
@@ -191,7 +194,9 @@ let diffFileToggle = css({
     display: "flex",
     alignItems: "center",
     gap: "6px",
-    width: "100%",
+    flex: "0 1 auto",
+    minWidth: 0,
+    maxWidth: "100%",
     padding: "4px 0",
     border: 0,
     background: "transparent",
@@ -2056,6 +2061,7 @@ export function createInspection(options: Options) {
                 <FileTree
                     renderFile={state.selectingConflicts ? undefined : resolution?.renderFile}
                     hideStagedBadge={group.startsWith("working-")}
+                    root={fileRoot(state, files.source)}
                     actions={file => historyActions(state, files.source, file)}
                     flat
                     filter={state.filter}
@@ -2144,6 +2150,11 @@ export function createInspection(options: Options) {
         })
     }
 
+    /** The worktree a source's files are copied from: the working tree itself, else the column's or the main worktree. */
+    function fileRoot(state: ColumnState, source: DiffSource) {
+        return source.kind == "working" ? source.worktreePath : state.worktreePath ?? options.mainWorktree?.(state.repositoryId)
+    }
+
     function historyActions(state: ColumnState, source: DiffSource, file: ChangedFile): FileAction[] {
         let sourceId = state.auxiliaryId ?? key(state.repositoryId, state.id)
         if (source.kind == "refs" && state.column.kind == "comparison") {
@@ -2200,6 +2211,8 @@ export function createInspection(options: Options) {
 
     function renderDiff(state: ColumnState, diff: FileDiffState): RemixNode {
         let page = diff.page
+        let source = page?.source ?? state.files.get(diff.group)?.source
+        let root = source && fileRoot(state, source)
         let breakout = state.breakout?.group == diff.group ? state.breakout : undefined
         let collapsed = breakout?.collapsed.has(diff.path) ?? false
 
@@ -2220,8 +2233,8 @@ export function createInspection(options: Options) {
                                         else if (page.source.kind == "commit")
                                             openHistory(state, sourceId, { kind: "commit", objectId: page.source.objectId }, diff.path)
                                     },
-                                }]
-                                : []}
+                                }, ...copyPathActions(diff.path, root)]
+                                : copyPathActions(diff.path, root)}
                         >
                             <button
                                 type="button"
@@ -2243,6 +2256,7 @@ export function createInspection(options: Options) {
                                 <Icon name={collapsed ? "chevron-right" : "chevron-down"} size={12} />
                                 <strong mix={diffToolbarStrong}>{fileLabel(diff.path)}</strong>
                             </button>
+                            <CopyPathButton path={diff.path} />
                         </FileMenu>
                         {renderDiffControls(state, diff, true)}
                     </header>

@@ -63,8 +63,6 @@
         --chrome-line: #364056;
         --chrome-text: #f2f4f8;
         --chrome-muted: #98a3b8;
-        --brand-block: #1b2230;
-        --brand-mark: #f2a92c;
         --chrome-accent: #f2a92c;
         --radius: 6px;
         --radius-card: 6px;
@@ -133,8 +131,6 @@
         --chrome-line: #2a3345;
         --chrome-text: #f2f4f8;
         --chrome-muted: #98a3b8;
-        --brand-block: #f2a92c;
-        --brand-mark: #0f141c;
         --chrome-accent: #f2a92c;
         --shadow-dialog: 0 20px 60px rgb(0 0 0 / 58%);
     }

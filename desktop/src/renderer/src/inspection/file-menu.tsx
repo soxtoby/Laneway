@@ -2,6 +2,8 @@ import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 
 export interface FileAction {
     label: string
+    /** Draws a rule above this item, starting a new group. */
+    separator?: boolean
     run(): void
 }
 let menu = css({
@@ -26,6 +28,11 @@ let menu = css({
     },
     "& button:hover": { background: "var(--control-hover)" },
     "&::backdrop": { background: "transparent" },
+})
+let rule = css({
+    margin: "4px 0",
+    border: 0,
+    borderTop: "1px solid var(--line)",
 })
 export function FileMenu(handle: Handle<{ actions: FileAction[]; children?: RemixNode; class?: string }>) {
     let position: { x: number; y: number } | undefined
@@ -78,18 +85,21 @@ export function FileMenu(handle: Handle<{ actions: FileAction[]; children?: Remi
                         }),
                     ]}
                 >
-                    {handle.props.actions.map(action => (
-                        <button
-                            type="button"
-                            role="menuitem"
-                            mix={on("click", () => {
-                                position = undefined
-                                void handle.update()
-                                action.run()
-                            })}
-                        >
-                            {action.label}
-                        </button>
+                    {handle.props.actions.map((action, index) => (
+                        <>
+                            {action.separator && index > 0 && <hr mix={rule} />}
+                            <button
+                                type="button"
+                                role="menuitem"
+                                mix={on("click", () => {
+                                    position = undefined
+                                    void handle.update()
+                                    action.run()
+                                })}
+                            >
+                                {action.label}
+                            </button>
+                        </>
                     ))}
                 </dialog>
             )}

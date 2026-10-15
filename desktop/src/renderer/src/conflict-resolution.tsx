@@ -524,6 +524,8 @@ function ConflictFileRow(
             <div class="conflict-file" data-file={file.path} data-resolved={file.resolved}>
                 <InspectionItem
                     title={file.path}
+                    path={file.path}
+                    root={path}
                     expanded={expanded}
                     actions={busy
                         ? []
