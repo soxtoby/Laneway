@@ -81,9 +81,11 @@ export function EditableName(
                                 element.focus()
                                 element.select?.()
                             }),
+                            // Re-rendering keeps the controlled value in step; otherwise Remix restores the stale one after each keystroke.
                             on("input", event => {
                                 value = event.currentTarget.value
                                 error = ""
+                                update()
                             }),
                             on("keydown", event => {
                                 if (event.key == "Enter") {

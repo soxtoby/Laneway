@@ -186,8 +186,10 @@ export function WorktreeControls(
                                                     input.focus()
                                                     input.select()
                                                 }),
+                                                // Re-rendering keeps the controlled value in step; otherwise Remix restores the stale one after each keystroke.
                                                 on("input", event => {
                                                     name = event.currentTarget.value
+                                                    void handle.update()
                                                 }),
                                                 on("blur", rename),
                                                 on("keydown", event => {

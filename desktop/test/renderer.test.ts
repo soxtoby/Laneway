@@ -385,6 +385,8 @@ test("worktree row renames inline and switches through branch search; removal st
         await flush(root)
         let nextName = row.querySelector<HTMLInputElement>("input")!
         input(nextName, "renamed")
+        await flush(root)
+        expect(nextName.value).toBe("renamed")
         nextName.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
         await flush(root)
         expect(requests).toEqual([{ action: "rename", path: "D:\\Source\\inspection", basename: "renamed" }])
@@ -2065,6 +2067,11 @@ describe("Working Changes inspection", () => {
         expect(container.querySelector(`dialog${label}`)).toBeNull()
         let dialog = container.querySelector<HTMLDialogElement>("dialog[aria-label='Local Git operation']")!
         expect(dialog.querySelector("h2")!.textContent).toBe("Create branch")
+        let name = dialog.querySelector<HTMLInputElement>("[aria-label='Branch name']")!
+        input(name, "alias")
+        await flush(root)
+        expect(dialog.querySelector<HTMLInputElement>("[aria-label='Branch name']")!.value).toBe("alias")
+        expect(button(dialog, "Create branch").disabled).toBe(false)
         click(button(dialog, "Cancel"))
         await flush(root)
         dispose()
@@ -3227,6 +3234,9 @@ test("the column branch renames in place from its heading", async () => {
         expect(heading.querySelector('[role="alert"]')!.textContent).toBe("Choose an unused local branch name.")
         field = heading.querySelector<HTMLInputElement>('[aria-label="New name for branch feature/laneway"]')!
         input(field, "feature/renamed")
+        // Typed text has to survive the render that follows each keystroke, not just the one that submits it.
+        await flush(view.root)
+        expect(field.value).toBe("feature/renamed")
         field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
         await flush(view.root)
         expect(requests).toEqual([{ action: "branch-rename", name: "feature/laneway", newName: "main" }, {
