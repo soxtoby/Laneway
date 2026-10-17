@@ -1,6 +1,7 @@
-import type { ChangedFile } from "@laneway/shared"
-import { css, type Handle, on, type RemixNode } from "remix/ui"
+import { type ChangedFile, defaultFileListView, type FileListView } from "@laneway/shared"
+import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 import { Icon } from "../icons"
+import { groupFiles } from "./file-list-view"
 import { type FileAction, FileMenu } from "./file-menu"
 import { copyPathActions, copyText } from "./file-paths"
 
@@ -18,7 +19,9 @@ let changeFile = css({
     display: "flex",
     gap: "4px",
     alignItems: "center",
-    padding: "1px 6px 1px 2px",
+    // Rows under a commit sit right of its history line; folded rows step in further for each level.
+    "--row-indent": "2px",
+    padding: "1px 6px 1px var(--row-indent)",
     minHeight: "30px",
     borderBottom: "1px solid var(--line)",
     // Rows stick to the top while scrolling, so hover and active tints are mixed into an opaque colour.
@@ -26,7 +29,7 @@ let changeFile = css({
     ".inspect-commit &": {
         top: "calc(var(--filter-height, 0px) + var(--commit-heading-height, 34px))",
         zIndex: 6,
-        paddingLeft: "28px",
+        "--row-indent": "28px",
     },
     ".inspect-commit &::before": {
         position: "absolute",
@@ -46,7 +49,7 @@ let changeFile = css({
         backgroundColor: "color-mix(in srgb, var(--focus) 18%, var(--panel))",
     },
     ".file-tree details &": {
-        paddingLeft: "14px",
+        paddingLeft: "calc(var(--row-indent) + 14px * var(--tree-depth, 1))",
     },
 })
 
@@ -185,12 +188,45 @@ let copyPathButton = css({
     "&:hover": { background: "var(--control-hover)", color: "var(--text)" },
 })
 
-let fileTreeSummary = css({
-    padding: "5px 8px",
-    color: "var(--muted)",
-    font: "11px var(--mono)",
-    overflowWrap: "anywhere",
+// A folder or group row is shaped like a file row: grip, checkbox, then a chevron where the status icon would sit.
+let folderRow = css({
+    position: "relative",
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    minHeight: "30px",
+    "--row-indent": "2px",
+    padding: "1px 6px 1px calc(var(--row-indent) + 14px * (var(--tree-depth, 1) - 1))",
+    borderBottom: "1px solid var(--line)",
+    color: "var(--text)",
     cursor: "pointer",
+    listStyle: "none",
+    userSelect: "none",
+    "&::-webkit-details-marker": { display: "none" },
+    "&:hover": { backgroundColor: "color-mix(in srgb, var(--text) 5%, var(--panel))" },
+    ".inspect-commit &": { "--row-indent": "28px" },
+    ".inspect-commit &::before": {
+        position: "absolute",
+        top: "-1px",
+        bottom: "-1px",
+        left: "12px",
+        width: "2px",
+        content: '""',
+        background: "var(--line-strong)",
+        pointerEvents: "none",
+    },
+    "& .folder-toggle": {
+        display: "inline-flex",
+        justifyContent: "center",
+        flex: "0 0 14px",
+        width: "14px",
+        marginLeft: "6px",
+        color: "var(--muted)",
+    },
+    "& .folder-icon": { display: "inline-flex", flex: "0 0 auto", color: "var(--muted)" },
+    "& .folder-name": { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+    "&.file-group .folder-name": { fontWeight: "600" },
+    "& .file-group-count": { color: "var(--muted)", fontSize: "11px" },
 })
 
 export function FileTree(
@@ -201,41 +237,32 @@ export function FileTree(
             root?: string
             renderFile?(file: ChangedFile): RemixNode
             actions?(file: ChangedFile): FileAction[]
-            flat?: boolean
+            /** Flat or folded, and grouped or not; flat and ungrouped by default. */
+            view?: FileListView
             hideStagedBadge?: boolean
             filter?: string
             expanded: Set<string>
             diff(file: ChangedFile): RemixNode
             controls(file: ChangedFile): RemixNode
             leading?(file: ChangedFile): RemixNode
+            /** A grip for a folder or group row, moving every file it holds. */
+            folderLeading?(files: ChangedFile[], label: string): RemixNode
             checked?: Set<string>
             prefix?: string
             choose(file: ChangedFile): void
             check?(file: ChangedFile): void
-            hide(path: string): void
+            /** Selects every file in a folder or group, or clears them when all are already selected. */
+            checkFolder?(files: ChangedFile[]): void
+            /** Called with the files a folded node hides, so their open diffs can close. */
+            hide(paths: string[]): void
         }
     >,
 ) {
     let collapsed = new Set<string>()
     return () => {
         let props = handle.props
-        interface Directory {
-            files: ChangedFile[]
-            children: Map<string, Directory>
-        }
-        let tree: Directory = { files: [], children: new Map() }
-        for (let file of props.files) {
-            let directory = tree
-            for (let part of file.path.split("/").slice(0, -1)) {
-                let child = directory.children.get(part)
-                if (!child) {
-                    child = { files: [], children: new Map() }
-                    directory.children.set(part, child)
-                }
-                directory = child
-            }
-            directory.files.push(file)
-        }
+        let view = props.view ?? defaultFileListView
+        let flat = view.layout == "flat"
         let rows = (files: ChangedFile[]) =>
             files.map(file =>
                 props.renderFile?.(file) ?? (
@@ -259,7 +286,7 @@ export function FileTree(
                                 <span class={`file-status ${file.status.replaceAll(" ", "-")}`} mix={fileStatus}>
                                     {changeIcon(file.conflicted ? "conflicted" : file.status)}
                                 </span>
-                                {fileLabel(file.path, props.flat || !!file.oldPath, file.oldPath, props.filter)}
+                                {fileLabel(file.path, flat || !!file.oldPath, file.oldPath, props.filter)}
                             </>
                         }
                         trailing={(file.staged && !props.hideStagedBadge || file.submodule) && (
@@ -277,35 +304,106 @@ export function FileTree(
                     </InspectionItem>
                 )
             )
-        let renderDirectory = (directory: Directory, prefix = ""): RemixNode => (
+        // A folded node remembers its state by key; `hide` closes the diffs of the files it covers.
+        // The grip and checkbox inside the row act on its files; the rest of the row folds it.
+        let fold = (key: string, depth: number, kind: "folder" | "group", label: string, files: ChangedFile[], children: RemixNode) => {
+            let open = !collapsed.has(key)
+            let selected = !!props.checkFolder && files.every(file => props.checked?.has(`${props.prefix}:${file.path}`))
+            return (
+                <details
+                    open={open}
+                    mix={[
+                        ref(element => element.style.setProperty("--tree-depth", String(depth))),
+                        on("toggle", event => {
+                            if (event.currentTarget.open)
+                                collapsed.delete(key)
+                            else {
+                                collapsed.add(key)
+                                props.hide(files.map(file => file.path))
+                            }
+                            void handle.update()
+                        }),
+                    ]}
+                >
+                    <summary class={kind == "group" ? "file-group" : "file-folder-row"} mix={folderRow}>
+                        {props.folderLeading?.(files, label)}
+                        {props.checkFolder && (
+                            <input
+                                type="checkbox"
+                                aria-label={`Select ${files.length} files in ${label}`}
+                                checked={selected}
+                                mix={[selectFileInput, on("change", () => props.checkFolder?.(files))]}
+                            />
+                        )}
+                        <span class="folder-toggle" aria-hidden="true">
+                            <Icon name={open ? "chevron-down" : "chevron-right"} size={12} />
+                        </span>
+                        {kind == "folder" && (
+                            <span class="folder-icon">
+                                <Icon name="folder" size={14} />
+                            </span>
+                        )}
+                        <span class="folder-name">{label}</span>
+                        {kind == "group" && <span class="file-group-count">{files.length}</span>}
+                    </summary>
+                    {children}
+                </details>
+            )
+        }
+        let renderDirectory = (directory: Directory, prefix: string, depth: number): RemixNode => (
             <>
                 {[...directory.children].map(([name, child]) => {
-                    let path = `${prefix}${name}/`
-                    return (
-                        <details
-                            open={!collapsed.has(path)}
-                            mix={[on("toggle", event => {
-                                if (event.currentTarget.open)
-                                    collapsed.delete(path)
-                                else {
-                                    collapsed.add(path)
-                                    props.hide(path)
-                                }
-                            })]}
-                        >
-                            <summary mix={fileTreeSummary}>
-                                {name}/
-                            </summary>
-                            {renderDirectory(child, path)}
-                        </details>
-                    )
+                    // A run of folders holding nothing but the next folder collapses into one row.
+                    let label = name
+                    while (child.files.length == 0 && child.children.size == 1) {
+                        let [[nextName, next]] = child.children
+                        label += `/${nextName}`
+                        child = next
+                    }
+                    let path = `${prefix}${label}/`
+                    return fold(path, depth, "folder", label, directoryFiles(child), renderDirectory(child, path, depth + 1))
                 })}
                 {rows(directory.files)}
             </>
         )
+        let section = (files: ChangedFile[], keyPrefix: string, depth: number) => flat ? rows(files) : renderDirectory(buildTree(files), keyPrefix, depth)
 
-        return <div class="file-tree">{props.flat ? rows(props.files) : renderDirectory(tree)}</div>
+        return (
+            <div class="file-tree" data-layout={view.layout} data-grouping={view.grouping}>
+                {view.grouping == "none"
+                    ? section(props.files, "", 1)
+                    : groupFiles(props.files, view.grouping).map(group =>
+                        fold(`${group.id}:`, 1, "group", group.label, group.files, section(group.files, `${group.id}:`, 2))
+                    )}
+            </div>
+        )
     }
+}
+
+interface Directory {
+    files: ChangedFile[]
+    children: Map<string, Directory>
+}
+
+function buildTree(files: ChangedFile[]): Directory {
+    let tree: Directory = { files: [], children: new Map() }
+    for (let file of files) {
+        let directory = tree
+        for (let part of file.path.split("/").slice(0, -1)) {
+            let child = directory.children.get(part)
+            if (!child) {
+                child = { files: [], children: new Map() }
+                directory.children.set(part, child)
+            }
+            directory = child
+        }
+        directory.files.push(file)
+    }
+    return tree
+}
+
+function directoryFiles(directory: Directory): ChangedFile[] {
+    return [...directory.files, ...[...directory.children.values()].flatMap(directoryFiles)]
 }
 
 export function InspectionItem(

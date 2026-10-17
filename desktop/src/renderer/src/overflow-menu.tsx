@@ -4,6 +4,10 @@ import { Icon, type IconName } from "./icons"
 export interface OverflowAction {
     label: string
     icon?: IconName
+    /** Draws a rule above this item, starting a new group. */
+    separator?: boolean
+    /** Makes the item a radio choice showing whether it is the current one. */
+    checked?: boolean
     run(): void
 }
 
@@ -41,12 +45,28 @@ let item = css({
     cursor: "pointer",
     "& svg": { color: "var(--muted)", flex: "0 0 auto" },
     "&:hover, &:focus-visible": { background: "var(--hover)" },
+    '&[aria-checked="true"]': { color: "var(--text)" },
+    '&[aria-checked="true"] .menu-check': { color: "var(--focus)" },
+})
+
+// Reserved beside every radio item, so labels line up whether or not they are chosen.
+let check = css({
+    display: "inline-flex",
+    width: "14px",
+    flex: "0 0 14px",
+    justifyContent: "center",
+})
+
+let rule = css({
+    margin: "4px 2px",
+    border: 0,
+    borderTop: "1px solid var(--line)",
 })
 
 // A "more" button whose actions open in a modal dialog beneath it. The dialog lives in the top
 // layer, so sticky rows and scroll containers can neither clip nor cover the menu.
 export function OverflowMenu(
-    handle: Handle<{ label: string; title?: string; actions: OverflowAction[]; trigger?: ReturnType<typeof css>; size?: number }>,
+    handle: Handle<{ label: string; title?: string; icon?: IconName; actions: OverflowAction[]; trigger?: ReturnType<typeof css>; size?: number }>,
 ) {
     let anchor: DOMRect | undefined
     return () => (
@@ -65,7 +85,7 @@ export function OverflowMenu(
                     }),
                 ]}
             >
-                <Icon name="more" size={handle.props.size ?? 14} />
+                <Icon name={handle.props.icon ?? "more"} size={handle.props.size ?? 14} />
             </button>
             {anchor && (
                 <dialog
@@ -104,21 +124,30 @@ export function OverflowMenu(
                     ]}
                 >
                     <div role="menu" aria-label={handle.props.label} tabIndex={-1} mix={list}>
-                        {handle.props.actions.map(action => (
-                            <button
-                                type="button"
-                                role="menuitem"
-                                mix={[
-                                    item,
-                                    on("click", event => {
-                                        event.currentTarget.closest("dialog")?.close()
-                                        action.run()
-                                    }),
-                                ]}
-                            >
-                                {action.icon && <Icon name={action.icon} size={14} />}
-                                {action.label}
-                            </button>
+                        {handle.props.actions.map((action, index) => (
+                            <>
+                                {action.separator && index > 0 && <hr mix={rule} />}
+                                <button
+                                    type="button"
+                                    role={action.checked == undefined ? "menuitem" : "menuitemradio"}
+                                    aria-checked={action.checked == undefined ? undefined : action.checked}
+                                    mix={[
+                                        item,
+                                        on("click", event => {
+                                            event.currentTarget.closest("dialog")?.close()
+                                            action.run()
+                                        }),
+                                    ]}
+                                >
+                                    {action.checked != undefined && (
+                                        <span class="menu-check" mix={check}>
+                                            {action.checked && <Icon name="check" size={12} />}
+                                        </span>
+                                    )}
+                                    {action.icon && <Icon name={action.icon} size={14} />}
+                                    {action.label}
+                                </button>
+                            </>
                         ))}
                     </div>
                 </dialog>

@@ -138,6 +138,17 @@ describe("Laneway settings", () => {
         await expect(readSettings(path)).rejects.toMatchObject({ code: "settings.corrupt", path })
     })
 
+    test("round-trips the file list view and rejects unknown layouts or groupings", async () => {
+        let path = await temporarySettingsPath()
+        await writeSettings({ version: 1, fileListView: { layout: "tree", grouping: "kind" } }, path)
+
+        expect(await readSettings(path)).toEqual({ version: 1, fileListView: { layout: "tree", grouping: "kind" } })
+
+        await writeFile(path, JSON.stringify({ version: 1, fileListView: { layout: "nested", grouping: "kind" } }))
+
+        await expect(readSettings(path)).rejects.toMatchObject({ code: "settings.corrupt", path })
+    })
+
     test("reports corrupt settings without falling back", async () => {
         let path = await temporarySettingsPath()
         await mkdir(resolve(path, ".."), { recursive: true })

@@ -247,6 +247,8 @@ export function CommitComposer(
         showIgnored: boolean
         toggleIgnored(value: boolean): void
         openDiffColumn?(): void
+        /** The file list view control, shown beside the diff column button. */
+        viewMenu?: RemixNode
         /** Stashes recorded on this column's branch; shown above Working Changes. */
         stashes?: BranchGraphMarker[]
         /** Whether a stash's files are showing, and a toggle and renderer for them. */
@@ -357,6 +359,7 @@ export function CommitComposer(
                             {clean() ? "No Working Changes" : "Working Changes"}
                         </button>
                     </h3>
+                    {props.viewMenu}
                     {props.openDiffColumn && (
                         <button
                             type="button"

@@ -1,4 +1,4 @@
-import type { Appearance, AuthorIdentitySettings, RepositoryGraphSettings } from "@laneway/shared"
+import type { Appearance, AuthorIdentitySettings, FileListView, RepositoryGraphSettings } from "@laneway/shared"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, resolve } from "node:path"
@@ -10,6 +10,7 @@ export interface LanewaySettings {
     gitPath?: string
     virtualBranchPrefix?: string
     appearance?: Appearance
+    fileListView?: FileListView
     authorIdentities?: AuthorIdentitySettings
     repositories?: Record<string, RepositoryGraphSettings>
 }
@@ -61,6 +62,7 @@ export async function readSettings(path = defaultSettingsPath()): Promise<Lanewa
 
         let authorIdentities = parseAuthorIdentities(record.authorIdentities)
         let appearance = parseAppearance(record.appearance)
+        let fileListView = parseFileListView(record.fileListView)
         let repositories = parseRepositories(record.repositories)
 
         return {
@@ -68,6 +70,7 @@ export async function readSettings(path = defaultSettingsPath()): Promise<Lanewa
             gitPath: record.gitPath as string | undefined,
             ...(record.virtualBranchPrefix ? { virtualBranchPrefix: record.virtualBranchPrefix as string } : {}),
             ...(appearance ? { appearance } : {}),
+            ...(fileListView ? { fileListView } : {}),
             ...(authorIdentities ? { authorIdentities } : {}),
             ...(repositories ? { repositories } : {}),
         }
@@ -86,6 +89,21 @@ function parseAppearance(value: unknown): Appearance | undefined {
     if (value != "light" && value != "dark")
         throw new Error('appearance must be "light" or "dark".')
     return value as Appearance
+}
+
+function parseFileListView(value: unknown): FileListView | undefined {
+    if (value == undefined)
+        return undefined
+    if (!value || typeof value != "object" || Array.isArray(value))
+        throw new Error("fileListView must be an object.")
+
+    let { layout, grouping } = value as Record<string, unknown>
+    if (layout != "flat" && layout != "tree")
+        throw new Error('fileListView.layout must be "flat" or "tree".')
+    if (grouping != "none" && grouping != "change" && grouping != "kind")
+        throw new Error('fileListView.grouping must be "none", "change", or "kind".')
+
+    return { layout: layout as FileListView["layout"], grouping: grouping as FileListView["grouping"] }
 }
 
 function parseAuthorIdentities(value: unknown): AuthorIdentitySettings | undefined {

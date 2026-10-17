@@ -3,6 +3,18 @@ import { type EntryError } from "./workspace"
 
 export type DiffLayout = "unified" | "split"
 
+/** How a change file list lays out its rows and whether it groups them first. */
+export interface FileListView {
+    layout: FileListLayout
+    grouping: FileListGrouping
+}
+/** Flat rows show their folders inline; a tree nests rows under collapsible folders. */
+export type FileListLayout = "flat" | "tree"
+/** `change` groups by added, changed, and removed; `kind` groups implementation, test, and generated files. */
+export type FileListGrouping = "none" | "change" | "kind"
+
+export let defaultFileListView: FileListView = { layout: "flat", grouping: "none" }
+
 /** One end of a Branch Comparison. Branch identities follow their tips, so a comparison between them stays live. */
 export type ComparisonRef =
     | { kind: "commit"; objectId: string }
@@ -134,6 +146,11 @@ export let DiffSourceSchema = z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("working"), worktreePath: z.string().min(1) }),
     z.object({ kind: z.literal("commit"), objectId: objectIdSchema, parentId: objectIdSchema.optional() }),
 ])
+
+export let FileListViewSchema = z.object({
+    layout: z.enum(["flat", "tree"]),
+    grouping: z.enum(["none", "change", "kind"]),
+})
 
 export let ChangesRequestSchema = z.object({
     source: DiffSourceSchema,

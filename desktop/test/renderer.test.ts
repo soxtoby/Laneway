@@ -1,4 +1,4 @@
-import type { BranchGraph, ChangesResult, CompositionPreview, CompositionRequest, DiffLine, DiffSource, EntryProgress, EntryResult, FileDiffResult, LocalRequest, Workspace, WorktreeRequest } from "@laneway/shared"
+import type { BranchGraph, ChangedFile, ChangesResult, CompositionPreview, CompositionRequest, DiffLine, DiffSource, EntryProgress, EntryResult, FileDiffResult, FileListView, LocalRequest, Workspace, WorktreeRequest } from "@laneway/shared"
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { Window as HappyWindow } from "happy-dom"
 import type { createElement as createRemixElement, createRoot as createRemixRoot, VirtualRoot } from "remix/ui"
@@ -2635,6 +2635,110 @@ describe("Working Changes inspection", () => {
         click(container.querySelector<HTMLButtonElement>(".commit-heading")!)
         await flush(root)
         expect(container.querySelector(".diff-inspector")).toBeNull()
+        dispose()
+    })
+
+    test("one view menu folds and groups every file list, persists the choice, and folding closes open diffs", async () => {
+        let scenario = inspectionScenario()
+        let saved: FileListView[] = []
+        let files: ChangedFile[] = [
+            { path: "src/file.txt", status: "modified", staged: false, unstaged: true, untracked: false, ignored: false, conflicted: false },
+            { path: "other.txt", status: "modified", staged: false, unstaged: true, untracked: false, ignored: false, conflicted: false },
+            { path: "test/unit/file.test.ts", status: "added", staged: false, unstaged: true, untracked: true, ignored: false, conflicted: false },
+        ]
+        let api: Window["laneway"] = {
+            ...scenario.api,
+            readChanges: async (_id, _requestId, request) => ({
+                ok: true,
+                inventory: {
+                    source: request.source,
+                    files,
+                    version: "inventory",
+                    parents: request.source.kind == "commit" ? [scenario.graph.branches[0].tip] : [],
+                },
+            }),
+            setFileListView: async view => {
+                saved.push(view)
+                return view
+            },
+        }
+        let summaries = (scope: Element) => [...scope.querySelectorAll(".file-tree summary .folder-name")].map(name => name.textContent?.trim())
+        let choose = async (label: string, item: string) => {
+            click(container.querySelector<HTMLButtonElement>(label)!)
+            await flush(root)
+            let menu = container.querySelector<HTMLElement>(`dialog${label} [role='menu']`)!
+            click(button(menu, item))
+            await flush(root)
+            expect(container.querySelector(`dialog${label}`)).toBeNull()
+        }
+        let { container, root, dispose } = render(api)
+        await flush(root)
+        let working = container.querySelector<HTMLElement>(".working-changes")!
+        let workingLabel = "[aria-label='File list view for Working Changes']"
+        expect(working.querySelector(".file-tree details")).toBeNull()
+        expect(working.querySelectorAll(".change-file")).toHaveLength(3)
+
+        click(container.querySelector<HTMLButtonElement>(workingLabel)!)
+        await flush(root)
+        let menu = container.querySelector<HTMLElement>(`dialog${workingLabel} [role='menu']`)!
+        expect([...menu.querySelectorAll("[role='menuitemradio'][aria-checked='true']")].map(item => item.textContent?.trim())).toEqual([
+            "Flat list",
+            "No grouping",
+        ])
+        click(button(menu, "Folders"))
+        await flush(root)
+        expect(saved).toEqual([{ layout: "tree", grouping: "none" }])
+        // Folders holding only the next folder collapse into one row.
+        expect(summaries(working)).toEqual(["src", "test/unit"])
+        expect(working.querySelector(".file-tree details .file-folder")).toBeNull()
+        expect(working.querySelectorAll(".change-file")).toHaveLength(3)
+
+        // An expanded commit shares the view and offers the same menu.
+        let commitLabel = "[aria-label='File list view for commit Inspect changes']"
+        expect(container.querySelector(commitLabel)).toBeNull()
+        click(container.querySelector<HTMLButtonElement>(".commit-heading")!)
+        await flush(root)
+        let commit = container.querySelector<HTMLElement>(".inspect-commit")!
+        expect(summaries(commit)).toEqual(["src", "test/unit"])
+        await choose(commitLabel, "Group by change")
+        expect(saved.at(-1)).toEqual({ layout: "tree", grouping: "change" })
+        expect(summaries(working)).toEqual(["Added", "test/unit", "Changed", "src"])
+        expect(summaries(commit)).toEqual(["Added", "test/unit", "Changed", "src"])
+
+        await choose(workingLabel, "Flat list")
+        await choose(workingLabel, "Group by file kind")
+        expect(saved.at(-1)).toEqual({ layout: "flat", grouping: "kind" })
+        expect(summaries(working)).toEqual(["Implementation", "Tests"])
+        expect(working.querySelector(".file-tree details .file-folder")?.textContent).toBe("src/")
+
+        // A group row selects and drags every file it holds; selecting them all again clears the selection.
+        let groupCheck = working.querySelector<HTMLInputElement>("[aria-label='Select 2 files in Implementation']")!
+        expect(working.querySelector("[aria-label='Move or copy 2 files in Implementation']")).not.toBeNull()
+        click(groupCheck)
+        await flush(root)
+        expect(working.querySelector(".selection-summary")!.textContent).toContain("2 of 3 selected")
+        expect(working.querySelector<HTMLInputElement>("[aria-label='Select file src/file.txt']")!.checked).toBe(true)
+        expect(working.querySelector<HTMLInputElement>("[aria-label='Select 2 files in Implementation']")!.checked).toBe(true)
+        click(working.querySelector<HTMLInputElement>("[aria-label='Select file other.txt']")!)
+        await flush(root)
+        expect(working.querySelector<HTMLInputElement>("[aria-label='Select 2 files in Implementation']")!.checked).toBe(false)
+        click(working.querySelector<HTMLInputElement>("[aria-label='Select 2 files in Implementation']")!)
+        await flush(root)
+        expect(working.querySelector(".selection-summary")!.textContent).toContain("2 of 3 selected")
+        click(working.querySelector<HTMLInputElement>("[aria-label='Select 2 files in Implementation']")!)
+        await flush(root)
+        expect(working.querySelector(".selection-summary")).toBeNull()
+
+        // Folding a group closes the diffs it hides.
+        click(working.querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
+        await flush(root)
+        expect(working.querySelector(".diff-inspector")).not.toBeNull()
+        let group = working.querySelector<HTMLDetailsElement>(".file-tree details")!
+        group.removeAttribute("open")
+        group.dispatchEvent(new Event("toggle"))
+        await flush(root)
+        expect(working.querySelector(".diff-inspector")).toBeNull()
+        expect(working.querySelector<HTMLDetailsElement>(".file-tree details")!.hasAttribute("open")).toBe(false)
         dispose()
     })
 })

@@ -1,5 +1,5 @@
 import type { Appearance, AuthorIdentitySettings, BranchHistoryRequest, EntryProgress, RepositoryGraphSettings, Workspace } from "@laneway/shared"
-import type { ChangesRequest, FileDiffRequest, FileImageRequest } from "@laneway/shared"
+import type { ChangesRequest, FileDiffRequest, FileImageRequest, FileListView } from "@laneway/shared"
 import type { FileHistoryRequest } from "@laneway/shared"
 import type { WorktreeRequest } from "@laneway/shared"
 import type { CommitDraft, LocalRequest } from "@laneway/shared"
@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld("laneway", {
     setAuthorIdentities: (settings: AuthorIdentitySettings) => ipcRenderer.invoke("settings:author-identities", settings),
     openSettingsFile: () => ipcRenderer.invoke("settings:open-file"),
     setAppearance: (appearance: Appearance) => ipcRenderer.invoke("settings:appearance", { appearance }),
+    setFileListView: (view: FileListView) => ipcRenderer.invoke("settings:file-list-view", { view }),
     readBranchGraph: (repositoryId: string, refreshRemote = false, allBranches = false) =>
         ipcRenderer.invoke("graph:read", { repositoryId, refreshRemote, allBranches }),
     cancelBranchGraph: (repositoryId: string) => ipcRenderer.invoke("graph:cancel", { repositoryId }),

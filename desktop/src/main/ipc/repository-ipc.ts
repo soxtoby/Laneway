@@ -1,5 +1,5 @@
 import { isLikelyCloneSource } from "@laneway/git"
-import type { AuthorIdentitySettings, EntryDefaults, EntryResult, Workspace } from "@laneway/shared"
+import { type AuthorIdentitySettings, type EntryDefaults, type EntryResult, FileListViewSchema, type Workspace } from "@laneway/shared"
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron"
 import { EntryQueue } from "../entry-queue"
 import type { OpenRepositories } from "../repositories"
@@ -189,6 +189,12 @@ export function registerRepositoryHandlers(repositories: OpenRepositories, works
                 return appearance
             },
         )
+        ipcMain.handle("settings:file-list-view", (_event, request: { view?: unknown }) => {
+            let view = FileListViewSchema.safeParse(request?.view)
+            if (!view.success)
+                throw new Error("Invalid file list view.")
+            return repositories.setFileListView(view.data)
+        })
         ipcMain.handle("settings:open-file", async () => {
             let state = await repositories.gitSettings()
             return shell.openPath(state.path)

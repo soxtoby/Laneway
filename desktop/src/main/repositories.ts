@@ -1,7 +1,8 @@
 import { GitError, type GitInstallation, type GitTask, inferCloneDirectoryName, initializeRepository, openRepository, type RepositoryGit, selectGit, startCloneRepository } from "@laneway/git"
 import { defaultSettingsPath, readSettings, SettingsError, WorkspaceStateError, writeSettings } from "@laneway/settings"
-import type { Appearance, AuthorIdentitySettings, BranchGraph, BranchGraphReadOptions, BranchHistoryPage, BranchHistoryRequest, ChangesRequest, EntryError, FileDiffRequest, FileImageRequest, GitSettingsState, RepositoryGraphSettings, RepositoryInfo } from "@laneway/shared"
+import type { Appearance, AuthorIdentitySettings, BranchGraph, BranchGraphReadOptions, BranchHistoryPage, BranchHistoryRequest, ChangesRequest, EntryError, FileDiffRequest, FileImageRequest, FileListView, GitSettingsState, RepositoryGraphSettings, RepositoryInfo } from "@laneway/shared"
 import type { FileHistoryRequest } from "@laneway/shared"
+import { defaultFileListView } from "@laneway/shared"
 import { resolve } from "node:path"
 import { watchRepository } from "./repository-watcher"
 
@@ -79,6 +80,19 @@ export class OpenRepositories {
     async setAppearance(appearance: Appearance) {
         await this.updateSettings(current => ({ ...current, appearance }))
         return appearance
+    }
+
+    async fileListView(): Promise<FileListView> {
+        try {
+            return (await readSettings(this.settingsPath)).fileListView ?? defaultFileListView
+        } catch {
+            return defaultFileListView
+        }
+    }
+
+    async setFileListView(fileListView: FileListView) {
+        await this.updateSettings(current => ({ ...current, fileListView }))
+        return fileListView
     }
 
     async setRepositoryGraphSettings(repositoryId: string, graphSettings: RepositoryGraphSettings) {

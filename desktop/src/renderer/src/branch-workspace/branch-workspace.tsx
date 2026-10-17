@@ -1,5 +1,5 @@
 import type { AvailableOpenRepository, BranchGraph, BranchGraphMarker, ComparisonRef, RepositoryGraphSettings, Workspace, WorkspaceColumn } from "@laneway/shared"
-import type { DiffLayout } from "@laneway/shared"
+import type { DiffLayout, FileListView } from "@laneway/shared"
 import type { RecoveryRequest, WorktreeRecovery } from "@laneway/shared"
 import { css, on, ref, type RemixNode } from "remix/ui"
 import { CommandLens } from "../command-lens"
@@ -67,6 +67,8 @@ interface BranchWorkspaceOptions {
     addRepository(): void
     workspace(): Workspace
     workspaceChanged(workspace: Workspace): void
+    fileListView(): FileListView
+    saveFileListView(view: FileListView): void
 }
 
 export interface BranchWorkspace {
@@ -426,6 +428,8 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             stateFor(repositoryId).diffLayouts[columnId] = layout
             void persist(repositoryId).then(() => options.update())
         },
+        fileListView: options.fileListView,
+        saveFileListView: options.saveFileListView,
         maximized: repositoryId => stateFor(repositoryId).maximizedBranchId,
         maximize: (repositoryId, id) => maximizeBranch(repositoryId, id),
     })

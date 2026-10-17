@@ -1,4 +1,4 @@
-import type { BranchGraph, BranchGraphBranchNode, BranchGraphVirtualBranch, BranchHistoryCommit, BranchHistoryPage, ChangedFile, ChangesInventory, ComparisonRef, CompositionSource, DiffLayout, DiffSource, DiffView } from "@laneway/shared"
+import { type BranchGraph, type BranchGraphBranchNode, type BranchGraphVirtualBranch, type BranchHistoryCommit, type BranchHistoryPage, type ChangedFile, type ChangesInventory, type ComparisonRef, type CompositionSource, defaultFileListView, type DiffLayout, type DiffSource, type DiffView, type FileListView } from "@laneway/shared"
 import { css, on, ref, type RemixNode } from "remix/ui"
 import * as accordion from "remix/ui/accordion/primitives"
 import { auxiliaryCloseButton, auxiliaryColumnFrame, auxiliaryColumnHeader, AuxiliaryColumns, defaultAuxiliaryColumnWidth } from "../auxiliary-columns"
@@ -17,7 +17,8 @@ import { CommitMessage } from "./commit-message"
 import { type ComparisonColumnNode, comparisonHistorySource, comparisonKey } from "./comparison-columns"
 import { readDiffContext } from "./diff-context"
 import { DiffControls } from "./diff-controls"
-import { CopyPathButton, fileLabel, FileTree } from "./file-list"
+import { CopyPathButton, fileActionButton, fileLabel, FileTree } from "./file-list"
+import { FileListViewMenu } from "./file-list-view"
 import { type FileAction, FileMenu } from "./file-menu"
 import { copyPathActions } from "./file-paths"
 import { isComparableImage, isImagePath, preferredImageMode, readDiffImage, rememberImageMode } from "./image-diff"
@@ -32,6 +33,9 @@ interface Options {
     notify(notice: NoticeState): () => void
     layout(repositoryId: string, columnId: string): DiffLayout
     saveLayout(repositoryId: string, columnId: string, layout: DiffLayout): void
+    /** The layout and grouping every file list shares. */
+    fileListView(): FileListView
+    saveFileListView(view: FileListView): void
     /** Opens the Branch Comparison Column from `from` to `to` beside the column `sourceColumnId`. */
     openComparison(repositoryId: string, sourceColumnId: string, from: ComparisonRef, to: ComparisonRef): void
     localChanged?(repositoryId: string): Promise<void>
@@ -971,6 +975,14 @@ export function createInspection(options: Options) {
                                 busyChanged={options.localBusyChanged}
                                 inventory={state.files.get("working")?.inventory}
                                 openDiffColumn={() => showWorkingBreakout(state)}
+                                viewMenu={
+                                    <FileListViewMenu
+                                        label="File list view for Working Changes"
+                                        view={options.fileListView()}
+                                        change={options.saveFileListView}
+                                        trigger={fileActionButton}
+                                    />
+                                }
                                 stashes={column.kind == "branch" ? column.markers : []}
                                 stashOpen={stash => state.files.get(stash.objectId)?.open ?? false}
                                 toggleStash={stash => {
@@ -1343,6 +1355,14 @@ export function createInspection(options: Options) {
                                                                                         <Icon name="diff" size={14} />
                                                                                     </button>
                                                                                 )}
+                                                                                {files?.open && (
+                                                                                    <FileListViewMenu
+                                                                                        label={`File list view for commit ${commit.subject}`}
+                                                                                        view={options.fileListView()}
+                                                                                        change={options.saveFileListView}
+                                                                                        trigger={commitToolButton}
+                                                                                    />
+                                                                                )}
                                                                                 {files?.open && actions.length > 0 && (
                                                                                     <OverflowMenu
                                                                                         label={`More actions for commit ${commit.subject}`}
@@ -1590,6 +1610,10 @@ export function createInspection(options: Options) {
                                         },
                                     }
                                     : files,
+                                undefined,
+                                undefined,
+                                false,
+                                defaultFileListView,
                             )
                         },
                         controls(entry) {
@@ -1979,6 +2003,7 @@ export function createInspection(options: Options) {
         stage?: (paths: string[], unstage: boolean) => void,
         resolution?: { files: ChangedFile[]; renderFile(file: ChangedFile): RemixNode },
         diffColumn = false,
+        view = options.fileListView(),
     ): RemixNode {
         if (!files)
             return null
@@ -2063,11 +2088,12 @@ export function createInspection(options: Options) {
                     hideStagedBadge={group.startsWith("working-")}
                     root={fileRoot(state, files.source)}
                     actions={file => historyActions(state, files.source, file)}
-                    flat
+                    view={view}
                     filter={state.filter}
                     files={visible}
                     expanded={expanded}
-                    leading={file => fileTransfer(state, group, file)}
+                    leading={file => fileTransfer(state, group, [file])}
+                    folderLeading={(files, label) => fileTransfer(state, group, files, label)}
                     controls={file => {
                         let diff = state.diffs.get(diffKey(group, file.path))
                         return diff && !state.breakout ? renderDiffControls(state, diff, diffColumn) : null
@@ -2079,24 +2105,19 @@ export function createInspection(options: Options) {
                     checked={new Set(state.wholeFiles.keys())}
                     prefix={group}
                     choose={file => choose(state, group, file)}
-                    hide={path => {
-                        clearGroup(state, group, path)
+                    hide={paths => {
+                        for (let path of paths) {
+                            let diff = state.diffs.get(diffKey(group, path))
+                            if (diff)
+                                clearDiff(state, diff)
+                        }
                         update()
                     }}
-                    check={selectable(state, group)
-                        ? file => {
-                            let id = `${group}:${file.path}`
-                            if (state.wholeFiles.has(id))
-                                state.wholeFiles.delete(id)
-                            else if (files.inventory) {
-                                for (let id of state.wholeFiles.keys()) {
-                                    if (!id.startsWith(group + ":"))
-                                        state.wholeFiles.delete(id)
-                                }
-                                state.wholeFiles.set(id, { source: files.inventory.source, path: file.path, version: files.inventory.version })
-                            }
-                            update()
-                        }
+                    check={selectable(state, group) && files.inventory
+                        ? file => selectFiles(state, group, [file], files.inventory!)
+                        : undefined}
+                    checkFolder={selectable(state, group) && files.inventory
+                        ? chosen => selectFiles(state, group, chosen, files.inventory!)
                         : undefined}
                 />
                 {selected > 0 && (
@@ -2130,14 +2151,16 @@ export function createInspection(options: Options) {
         )
     }
 
-    function fileTransfer(state: ColumnState, group: string, file: ChangedFile) {
+    /** A grip moving `files`, or the whole selection when any of them is selected; `label` names a folder or group. */
+    function fileTransfer(state: ColumnState, group: string, files: ChangedFile[], label = files[0]?.path ?? "") {
         let inventory = state.files.get(group)?.inventory
         let source = inventory && transferSource(state, inventory.source)
-        if (!source || !inventory)
+        if (!source || !inventory || !files.length)
             return null
-        let chosen = state.wholeFiles.has(`${group}:${file.path}`)
+        let selected = files.some(file => state.wholeFiles.has(`${group}:${file.path}`))
+        let chosen = selected
             ? [...state.wholeFiles].filter(([id]) => id.startsWith(group + ":")).map(([, f]) => ({ path: f.path }))
-            : [{ path: file.path }]
+            : files.map(file => ({ path: file.path }))
 
         return composition.source({
             repositoryId: state.repositoryId,
@@ -2146,8 +2169,26 @@ export function createInspection(options: Options) {
             files: chosen,
             inventoryVersion: inventory.version,
             view: group == "working-staged" ? "staged" : group == "working-unstaged" ? "unstaged" : "combined",
-            label: chosen.length > 1 ? `${chosen.length} files` : file.path,
+            label: selected && chosen.length > 1 ? `${chosen.length} files` : files.length > 1 ? `${files.length} files in ${label}` : label,
         })
+    }
+
+    /** Toggles the files' whole-file selection together: all selected clears them, otherwise all become selected. */
+    function selectFiles(state: ColumnState, group: string, files: ChangedFile[], inventory: ChangesInventory) {
+        let ids = files.map(file => `${group}:${file.path}`)
+        if (ids.every(id => state.wholeFiles.has(id))) {
+            for (let id of ids)
+                state.wholeFiles.delete(id)
+        } else {
+            // Checked files all belong to one list.
+            for (let id of state.wholeFiles.keys()) {
+                if (!id.startsWith(group + ":"))
+                    state.wholeFiles.delete(id)
+            }
+            for (let file of files)
+                state.wholeFiles.set(`${group}:${file.path}`, { source: inventory.source, path: file.path, version: inventory.version })
+        }
+        update()
     }
 
     /** The worktree a source's files are copied from: the working tree itself, else the column's or the main worktree. */

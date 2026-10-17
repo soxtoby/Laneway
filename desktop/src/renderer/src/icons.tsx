@@ -44,6 +44,8 @@ let paths = {
     // A head with no branch line above it: the node and its history, cut off from any ref.
     detached: "M5.5 9a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0M8 11.5V15M8 1.5v1M8 4.5v1.5",
     copy: "M6 6h7.5v7.5H6zM10 6V2.5H2.5V10H6",
+    // Rows stepping inward: a list that can also be a tree.
+    "list-tree": "M2 3.5h12M5 8h9M8 12.5h6",
     check: "M3 8.5l3.5 3.5L13 4.5",
 } as const
 

@@ -190,6 +190,7 @@ export function fakeLaneway(overrides: Partial<Window["laneway"]> = {}): Window[
         readCommitDraft: async () => ({ title: "", message: "", branch: "" }),
         saveCommitDraft: async () => {},
         getState: async () => appState(),
+        setFileListView: async view => view,
         previewWorktree: async () => ({ ok: false, error: { message: "Worktree operations unavailable" } }),
         executeWorktree: async () => ({ ok: false, error: { message: "Worktree operations unavailable" } }),
         transitionOperation: async () => ({ ok: true }),
@@ -237,5 +238,6 @@ export function appState() {
         },
         engine: { state: "ready" as const, path: "D:\\Laneway\\cli\\bin\\lane.exe", name: "lane" as const, version: "0.1.0" },
         appearance: "light" as const,
+        fileListView: { layout: "flat" as const, grouping: "none" as const },
     }
 }

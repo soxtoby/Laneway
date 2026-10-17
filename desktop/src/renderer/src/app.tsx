@@ -1,4 +1,4 @@
-import type { Appearance, EntryProgress, Workspace } from "@laneway/shared"
+import { type Appearance, defaultFileListView, type EntryProgress, type FileListView, type Workspace } from "@laneway/shared"
 import { css, type Handle, on } from "remix/ui"
 import { type BranchWorkspace, createBranchWorkspace } from "./branch-workspace/branch-workspace"
 import { errorMessage, FatalError, Notice, type NoticeState } from "./feedback"
@@ -133,6 +133,7 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
     let fatalError: string | undefined
     let railCollapsed = true
     let appearance: Appearance = "light"
+    let fileListView: FileListView = defaultFileListView
 
     handle.queueTask(() => void bootstrap())
     handle.signal.addEventListener("abort", () => document.body.classList.remove("busy"), { once: true })
@@ -230,6 +231,7 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
         try {
             initial = await handle.props.api.getState()
             applyAppearance(initial.appearance)
+            fileListView = initial.fileListView
             workspace = initial.workspace
             if (workspace.persistenceError?.code == "workspace.partial")
                 notify({ code: workspace.persistenceError.code, message: workspace.persistenceError.message })
@@ -254,6 +256,8 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
                     workspace = nextWorkspace
                     void handle.update()
                 },
+                fileListView: () => fileListView,
+                saveFileListView: view => void saveFileListView(view),
             })
             repositoryEntry = createRepositoryEntry({
                 api: handle.props.api,
@@ -290,6 +294,18 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
     function applyAppearance(next: Appearance) {
         appearance = next
         document.documentElement.dataset.appearance = next
+    }
+
+    // The view changes on screen at once; a failed save only loses it for the next start.
+    async function saveFileListView(view: FileListView) {
+        fileListView = view
+        await handle.update()
+        try {
+            await handle.props.api.setFileListView(view)
+        } catch (error) {
+            notify({ code: "settings.file-list-view.failed", message: errorMessage(error) })
+            await handle.update()
+        }
     }
 
     function updateProgress(progress: EntryProgress) {

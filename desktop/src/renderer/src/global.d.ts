@@ -1,5 +1,5 @@
 import type { Appearance, AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryDefaults, EntryProgress, EntryResult, GitSettingsState, RepositoryGraphSettings, Workspace } from "@laneway/shared"
-import type { ChangesRequest, ChangesResult, FileDiffRequest, FileDiffResult, FileImageRequest, FileImageResult } from "@laneway/shared"
+import type { ChangesRequest, ChangesResult, FileDiffRequest, FileDiffResult, FileImageRequest, FileImageResult, FileListView } from "@laneway/shared"
 import type { WorktreeActionResult, WorktreePreviewResult, WorktreeRequest } from "@laneway/shared"
 import type { CommitDraft, LocalActionResult, LocalRequest } from "@laneway/shared"
 import type { ConflictActionResult, ConflictRequest } from "@laneway/shared"
@@ -24,6 +24,7 @@ interface AppState {
     settings: GitSettingsState
     engine: EngineStatusReady | EngineStatusError
     appearance: Appearance
+    fileListView: FileListView
 }
 
 declare global {
@@ -65,6 +66,7 @@ declare global {
             setAuthorIdentities(settings: AuthorIdentitySettings): Promise<GitSettingsState>
             openSettingsFile(): Promise<string>
             setAppearance(appearance: Appearance): Promise<Appearance>
+            setFileListView(view: FileListView): Promise<FileListView>
             readBranchGraph(repositoryId: string, refreshRemote?: boolean, allBranches?: boolean): Promise<BranchGraphResult>
             cancelBranchGraph(repositoryId: string): Promise<boolean>
             readBranchHistory(repositoryId: string, history: BranchHistoryRequest): Promise<BranchHistoryResult>

@@ -104,6 +104,7 @@ function registerHandlers() {
         workspace: await workspace.refreshAvailability(),
         settings: await repositories.gitSettings(),
         appearance: await repositories.appearance(),
+        fileListView: await repositories.fileListView(),
         engine: engineStatus,
     }))
 
