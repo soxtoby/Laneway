@@ -4,6 +4,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron"
 import { EntryQueue } from "../entry-queue"
 import type { OpenRepositories } from "../repositories"
 import { entryError } from "../repositories"
+import { listRepositoryImages, readIconImage } from "../repository-icons"
 import { titleBarOverlay } from "../window"
 import type { WorkspaceManager } from "../workspace-manager"
 
@@ -113,6 +114,11 @@ export function registerRepositoryHandlers(repositories: OpenRepositories, works
         })
 
         ipcMain.handle("workspace:reset", () => workspace.reset())
+        ipcMain.handle("icon:read", (_event, request: { path?: unknown }) => typeof request?.path == "string" ? readIconImage(request.path) : undefined)
+        ipcMain.handle("icon:list", (_event, request: { repositoryId?: unknown }) => {
+            let info = repositories.list().find(repository => repository.id == request?.repositoryId)
+            return info ? listRepositoryImages(repositories.worktreeRepository(info.id), info.mainWorktree) : []
+        })
         ipcMain.handle("workspace:locate", async (event, request: { id?: unknown; useAnyway?: unknown }) => {
             if (typeof request?.id != "string")
                 return workspace.snapshot()

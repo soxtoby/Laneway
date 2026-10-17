@@ -52,6 +52,32 @@ describe("Workspace State", () => {
         })
     })
 
+    test("round-trips the repository label and icon, dropping an icon that no longer parses", async () => {
+        let path = (await temporarySettingsPath()).replace("settings.json", "workspace.json")
+        let repository = {
+            id: "repository-1",
+            path: "D:\\Source\\project",
+            name: "project",
+            anchors: [],
+            open: true,
+            layoutInitialized: false,
+            columns: [],
+        }
+        await writeWorkspace({
+            version: 1,
+            repositories: [{ ...repository, label: "Project", icon: { kind: "monogram", text: "PJ", color: "violet" } }, {
+                ...repository,
+                id: "repository-2",
+                icon: { kind: "icon", name: "Not Kebab", color: "violet" },
+            }],
+        }, path)
+
+        let { workspace } = await readWorkspace(path)
+        expect(workspace.repositories[0]).toMatchObject({ label: "Project", icon: { kind: "monogram", text: "PJ", color: "violet" } })
+        expect(workspace.repositories[1].icon).toBeUndefined()
+        expect("label" in workspace.repositories[1]).toBe(false)
+    })
+
     test("skips malformed repository records", async () => {
         let path = (await temporarySettingsPath()).replace("settings.json", "workspace.json")
         await mkdir(resolve(path, ".."), { recursive: true })

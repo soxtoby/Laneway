@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { resolve } from "node:path"
 import { OpenRepositories } from "../src/main/repositories"
@@ -138,6 +138,67 @@ describe("Workspace manager", () => {
 
         let restored = await new WorkspaceManager(new OpenRepositories(settingsPath), statePath).load()
         expect(restored.repositories[0]).toMatchObject({ status: "missing", id, path: repositoryPath })
+    })
+
+    test("saves the repository label and icon with the presentation and clears them when left out", async () => {
+        let repositoryPath = await temporaryDirectory("laneway-workspace-identity-")
+        expect(runGit(repositoryPath, "init", "--quiet").exitCode).toBe(0)
+        let statePath = resolve(await temporaryDirectory("laneway-workspace-state-"), "workspace.json")
+        let settingsPath = resolve(await temporaryDirectory("laneway-workspace-settings-"), "settings.json")
+        let manager = new WorkspaceManager(new OpenRepositories(settingsPath), statePath)
+        await manager.load()
+        let opened = await manager.open(repositoryPath)
+        let repository = opened.repositories[0]
+        let icon = { kind: "icon" as const, name: "folder-code", color: "teal" as const }
+
+        await manager.update({ ...opened, repositories: [{ ...repository, label: "Shown name", icon }] })
+        expect(manager.snapshot().repositories[0]).toMatchObject({ label: "Shown name", icon })
+        let restored = await new WorkspaceManager(new OpenRepositories(settingsPath), statePath).load()
+        expect(restored.repositories[0]).toMatchObject({ label: "Shown name", icon })
+
+        // An invalid identity rejects the whole presentation, like any other field.
+        await expect(manager.update({ ...opened, repositories: [{ ...repository, icon: { kind: "emoji", emoji: "" } }] })).rejects.toThrow()
+        expect(manager.snapshot().repositories[0]).toMatchObject({ label: "Shown name", icon })
+
+        await manager.update(opened)
+        expect(manager.snapshot().repositories[0].label).toBeUndefined()
+        expect(manager.snapshot().repositories[0].icon).toBeUndefined()
+    })
+
+    test("infers a repository's favicon only when it is unambiguous", async () => {
+        let repositoryPath = await temporaryDirectory("laneway-workspace-favicon-")
+        expect(runGit(repositoryPath, "init", "--quiet").exitCode).toBe(0)
+        let statePath = resolve(await temporaryDirectory("laneway-workspace-state-"), "workspace.json")
+        let settingsPath = resolve(await temporaryDirectory("laneway-workspace-settings-"), "settings.json")
+        let load = async () => {
+            let manager = new WorkspaceManager(new OpenRepositories(settingsPath), statePath)
+            await manager.load()
+            let workspace = manager.snapshot().repositories.length ? manager.snapshot() : await manager.open(repositoryPath)
+            let repository = workspace.repositories[0]
+            return repository.status == "available" ? repository.favicon : undefined
+        }
+
+        expect(await load()).toBeUndefined()
+
+        // One directory holding several formats is one favicon, and the vector one is preferred.
+        await mkdir(resolve(repositoryPath, "public"))
+        await writeFile(resolve(repositoryPath, "public", "favicon.ico"), "ico")
+        await writeFile(resolve(repositoryPath, "public", "favicon.svg"), "<svg/>")
+        expect(await load()).toBe(resolve(repositoryPath, "public", "favicon.svg"))
+
+        // Build output and dependencies are not searched.
+        await mkdir(resolve(repositoryPath, "node_modules", "package"), { recursive: true })
+        await writeFile(resolve(repositoryPath, "node_modules", "package", "favicon.png"), "png")
+        expect(await load()).toBe(resolve(repositoryPath, "public", "favicon.svg"))
+
+        // Different favicons in different places leave the repository without one.
+        await mkdir(resolve(repositoryPath, "docs"))
+        await writeFile(resolve(repositoryPath, "docs", "favicon.svg"), "<svg>other</svg>")
+        expect(await load()).toBeUndefined()
+
+        // Identical copies are the same favicon, found in directory order.
+        await writeFile(resolve(repositoryPath, "docs", "favicon.svg"), "<svg/>")
+        expect(await load()).toBe(resolve(repositoryPath, "docs", "favicon.svg"))
     })
 
     test("remembers the parent of the last opened repository", async () => {

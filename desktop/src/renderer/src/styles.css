@@ -72,6 +72,25 @@
         --toolbar: 48px;
         --rail: 224px;
         --rail-collapsed: 52px;
+        /* Repository Icon palette: the darker tone reads on panels, the lighter one on dark surfaces. */
+        --tone-gray: #4b5563;
+        --tone-red: #dc2626;
+        --tone-orange: #ea580c;
+        --tone-amber: #d97706;
+        --tone-yellow: #ca8a04;
+        --tone-lime: #65a30d;
+        --tone-green: #16a34a;
+        --tone-emerald: #059669;
+        --tone-teal: #0d9488;
+        --tone-cyan: #0891b2;
+        --tone-sky: #0284c7;
+        --tone-blue: #2563eb;
+        --tone-indigo: #4f46e5;
+        --tone-violet: #7c3aed;
+        --tone-purple: #9333ea;
+        --tone-fuchsia: #c026d3;
+        --tone-pink: #db2777;
+        --tone-rose: #e11d48;
     }
 
     :root[data-appearance="dark"] {
@@ -133,6 +152,46 @@
         --chrome-muted: #98a3b8;
         --chrome-accent: #f2a92c;
         --shadow-dialog: 0 20px 60px rgb(0 0 0 / 58%);
+        --tone-gray: #9ca3af;
+        --tone-red: #f87171;
+        --tone-orange: #fb923c;
+        --tone-amber: #fbbf24;
+        --tone-yellow: #facc15;
+        --tone-lime: #a3e635;
+        --tone-green: #4ade80;
+        --tone-emerald: #34d399;
+        --tone-teal: #2dd4bf;
+        --tone-cyan: #22d3ee;
+        --tone-sky: #38bdf8;
+        --tone-blue: #60a5fa;
+        --tone-indigo: #818cf8;
+        --tone-violet: #a78bfa;
+        --tone-purple: #c084fc;
+        --tone-fuchsia: #e879f9;
+        --tone-pink: #f472b6;
+        --tone-rose: #fb7185;
+    }
+
+    /* The rail is dark in both appearances, so icons there always take the lighter tones. */
+    .repository-rail {
+        --tone-gray: #9ca3af;
+        --tone-red: #f87171;
+        --tone-orange: #fb923c;
+        --tone-amber: #fbbf24;
+        --tone-yellow: #facc15;
+        --tone-lime: #a3e635;
+        --tone-green: #4ade80;
+        --tone-emerald: #34d399;
+        --tone-teal: #2dd4bf;
+        --tone-cyan: #22d3ee;
+        --tone-sky: #38bdf8;
+        --tone-blue: #60a5fa;
+        --tone-indigo: #818cf8;
+        --tone-violet: #a78bfa;
+        --tone-purple: #c084fc;
+        --tone-fuchsia: #e879f9;
+        --tone-pink: #f472b6;
+        --tone-rose: #fb7185;
     }
 
     * {

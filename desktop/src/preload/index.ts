@@ -50,6 +50,8 @@ contextBridge.exposeInMainWorld("laneway", {
     locateRepository: (id: string, useAnyway = false) => ipcRenderer.invoke("workspace:locate", { id, useAnyway }),
     updateWorkspace: (workspace: Workspace) => ipcRenderer.invoke("workspace:update", { workspace }),
     resetWorkspace: () => ipcRenderer.invoke("workspace:reset"),
+    readIconImage: (path: string) => ipcRenderer.invoke("icon:read", { path }),
+    listRepositoryImages: (repositoryId: string) => ipcRenderer.invoke("icon:list", { repositoryId }),
     chooseGit: () => ipcRenderer.invoke("settings:choose-git"),
     useGitFromPath: () => ipcRenderer.invoke("settings:use-path"),
     resetSettings: () => ipcRenderer.invoke("settings:reset"),

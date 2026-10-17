@@ -1,4 +1,4 @@
-import type { Appearance, AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryDefaults, EntryProgress, EntryResult, GitSettingsState, RepositoryGraphSettings, Workspace } from "@laneway/shared"
+import type { Appearance, AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryDefaults, EntryProgress, EntryResult, GitSettingsState, RepositoryGraphSettings, RepositoryImageFile, Workspace } from "@laneway/shared"
 import type { ChangesRequest, ChangesResult, FileDiffRequest, FileDiffResult, FileImageRequest, FileImageResult, FileListView } from "@laneway/shared"
 import type { WorktreeActionResult, WorktreePreviewResult, WorktreeRequest } from "@laneway/shared"
 import type { CommitDraft, LocalActionResult, LocalRequest } from "@laneway/shared"
@@ -66,6 +66,10 @@ declare global {
             locateRepository(id: string, useAnyway?: boolean): Promise<Workspace>
             updateWorkspace(workspace: Workspace): Promise<Workspace>
             resetWorkspace(): Promise<Workspace>
+            /** The bytes of a favicon or chosen icon image, or nothing when it cannot be read as an icon. */
+            readIconImage(path: string): Promise<{ bytes: Uint8Array; mime: string } | undefined>
+            /** The image files in an open repository's Main Worktree, likely icons first; empty for a missing repository. */
+            listRepositoryImages(repositoryId: string): Promise<RepositoryImageFile[]>
             chooseGit(): Promise<GitSettingsState>
             useGitFromPath(): Promise<GitSettingsState>
             resetSettings(): Promise<GitSettingsState>

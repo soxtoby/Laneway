@@ -1,6 +1,9 @@
 import type { Workspace } from "@laneway/shared"
 import { css, type Handle, on, type RemixNode } from "remix/ui"
+import { ContextMenu } from "./context-menu"
 import { Icon } from "./icons"
+import { automaticIcon, RepositoryIconContent, repositoryName } from "./repository-icon"
+import type { IconImageApi } from "./repository-icon-images"
 
 // Pointer travel before a press on a repository becomes a drag.
 let dragThreshold = 4
@@ -74,6 +77,8 @@ let repositoryRow = css({
     position: "relative",
     ".rail-collapsed &": { width: "100%", display: "grid", justifyItems: "center" },
     "&.dragging": { zIndex: 1 },
+    // The context menu wrapper takes no space of its own, so the row's grid still places the tile.
+    "& > .repository-menu": { display: "contents" },
 })
 
 let repositoryItem = css({
@@ -94,7 +99,9 @@ let repositoryItem = css({
     background: "transparent",
     "&:hover:not(:disabled)": { background: "var(--chrome-2)" },
     "&.active": { background: "var(--chrome-2)", borderColor: "var(--chrome-line)" },
-    "&.active > span:first-child": { color: "var(--accent-ink)", borderColor: "var(--chrome-accent)", background: "var(--chrome-accent)" },
+    // Initials fill with the accent when active; a chosen icon or favicon keeps its own colours behind an accent edge.
+    "&.active > .repository-tile": { borderColor: "var(--chrome-accent)" },
+    "&.active > .repository-tile:has(> .initials)": { color: "var(--accent-ink)", background: "var(--chrome-accent)" },
     "&.active::before": {
         content: '""',
         position: "absolute",
@@ -109,7 +116,7 @@ let repositoryItem = css({
     "&.collapsed, &.collapsed.active, &.collapsed:hover:not(:disabled)": { background: "transparent", borderColor: "transparent" },
     "&.collapsed.active::before": { left: "-8px", top: "4px", bottom: "4px", width: "3px" },
     "&.collapsed:focus-visible": { outline: "none" },
-    "&.missing > span:first-child": { color: "var(--warning)" },
+    "&.missing > .repository-tile:has(> .initials)": { color: "var(--warning)" },
     // Lifted while dragging and set back down as it settles into its slot; a shadow alone disappears against the dark rail.
     transition: "scale 120ms ease",
     ".reordering:not(.settling) > .dragging > &:not(.collapsed)": {
@@ -119,11 +126,12 @@ let repositoryItem = css({
     },
 })
 
-let repositoryInitials = css({
+let repositoryTile = css({
     width: "28px",
     height: "28px",
     display: "grid",
     placeItems: "center",
+    overflow: "hidden",
     color: "var(--chrome-text)",
     border: "1px solid var(--chrome-line)",
     borderRadius: "6px",
@@ -131,9 +139,12 @@ let repositoryInitials = css({
     fontSize: "11px",
     fontWeight: "700",
     letterSpacing: "0.02em",
+    "& .image": { padding: "2px" },
     ".collapsed:not(.active) > &": { color: "var(--chrome-muted)", opacity: 0.7 },
+    ".collapsed:not(.active) > &:not(:has(> .initials))": { opacity: 0.85 },
     ".collapsed:not(.active):hover > &": { opacity: 1, borderColor: "var(--chrome-accent)" },
-    ".collapsed.active > &": { color: "var(--accent-ink)", borderColor: "var(--chrome-accent)", background: "var(--chrome-accent)" },
+    ".collapsed.active > &": { borderColor: "var(--chrome-accent)" },
+    ".collapsed.active > &:has(> .initials)": { color: "var(--accent-ink)", background: "var(--chrome-accent)" },
     ".collapsed:focus-visible > &": { outline: "2px solid var(--ring)", outlineOffset: "2px" },
     transition: "scale 120ms ease",
     ".reordering:not(.settling) > .dragging > .collapsed > &": { scale: "1.12", opacity: 1, boxShadow: "0 6px 16px rgb(0 0 0 / 0.6)" },
@@ -151,7 +162,7 @@ let repositoryCopy = css({
     gap: "1px",
 })
 
-let repositoryName = css({
+let repositoryLabel = css({
     overflow: "hidden",
     fontSize: "12.5px",
     fontWeight: "600",
@@ -236,8 +247,8 @@ let railToggle = css({
     "&:hover:not(:disabled)": { color: "var(--chrome-text)", background: "var(--chrome-2)" },
 })
 
-// The ink-coloured repository rail on the left edge. Collapsed it is an icon strip of initials
-// tiles; expanded it adds names and worktree paths. Both views share one markup so the
+// The ink-coloured repository rail on the left edge. Collapsed it is an icon strip of Repository
+// Icon tiles; expanded it adds names and worktree paths. Both views share one markup so the
 // branch workspace and the missing-repository view stay identical.
 export function RepositoryRail(
     handle: Handle<{
@@ -245,11 +256,14 @@ export function RepositoryRail(
         toggleRail(): void
         activeId: string
         workspace: Workspace
+        api: IconImageApi
         busy?: boolean
         selectRepository(id: string): void
         // Set when choosing the active repository toggles a panel; reports whether it is shown.
         activeExpanded?: boolean
         closeRepository?(id: string): void
+        /** Opens the name and icon editor for a repository. */
+        customizeRepository?(id: string): void
         moveRepository(id: string, targetId: string): void
         addRepository(): void
         heading?: RemixNode
@@ -270,7 +284,7 @@ export function RepositoryRail(
                 </div>
                 <nav aria-label="Open repositories" class={`${dragging ? "reordering" : ""} ${dragging?.settling ? "settling" : ""}`} mix={openRepositoriesNav}>
                     {props.workspace.repositories.map((repository, index) => {
-                        let name = repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name
+                        let name = repositoryName(repository)
                         let offset = !dragging ? 0 : repository.id == dragging.id ? dragging.offset : displacement(dragging, index)
                         // Rows step aside smoothly while the dragged row tracks the pointer, then it eases into its slot on release.
                         let eased = dragging && (repository.id != dragging.id || dragging.settling)
@@ -306,48 +320,65 @@ export function RepositoryRail(
                                     }),
                                 ]}
                             >
-                                <button
-                                    class={`repository-item ${props.railCollapsed ? "collapsed" : ""} ${
-                                        repository.id == props.activeId ? "active" : ""
-                                    } ${repository.status}`}
-                                    type="button"
-                                    disabled={props.busy}
-                                    title={repository.status == "available" ? repository.info.selectedWorktree : repository.path}
-                                    aria-label={name}
-                                    aria-expanded={repository.id == props.activeId ? props.activeExpanded : undefined}
-                                    data-click-activate
-                                    mix={[
-                                        repositoryItem,
-                                        on("click", () => {
-                                            // Releasing a drag does not choose the repository.
-                                            if (!drag?.slots)
-                                                props.selectRepository(repository.id)
-                                        }),
+                                <ContextMenu
+                                    class="repository-menu"
+                                    label={`Actions for ${name}`}
+                                    actions={[
+                                        ...(props.customizeRepository
+                                            ? [{ label: "Customize…", run: () => props.customizeRepository?.(repository.id) }]
+                                            : []),
+                                        ...(props.closeRepository
+                                            ? [{
+                                                label: "Close repository",
+                                                separator: true,
+                                                run: () => props.closeRepository?.(repository.id),
+                                            }]
+                                            : []),
                                     ]}
                                 >
-                                    <span mix={repositoryInitials}>
-                                        {initials(repository.path)}
-                                    </span>
-                                    {!props.railCollapsed && (
-                                        <span mix={repositoryCopy}>
-                                            <strong mix={repositoryName}>{name}</strong>
-                                            <small mix={repositoryPath}>
-                                                {repository.status == "available" ? repository.info.selectedWorktree : "Unavailable"}
-                                            </small>
-                                        </span>
-                                    )}
-                                </button>
-                                {!props.railCollapsed && props.closeRepository && (
                                     <button
-                                        class="repository-close"
+                                        class={`repository-item ${props.railCollapsed ? "collapsed" : ""} ${
+                                            repository.id == props.activeId ? "active" : ""
+                                        } ${repository.status}`}
                                         type="button"
-                                        aria-label={`Close ${name}`}
-                                        title="Close repository"
-                                        mix={[repositoryClose, on("click", () => props.closeRepository?.(repository.id))]}
+                                        disabled={props.busy}
+                                        title={repository.status == "available" ? repository.info.selectedWorktree : repository.path}
+                                        aria-label={name}
+                                        aria-expanded={repository.id == props.activeId ? props.activeExpanded : undefined}
+                                        data-click-activate
+                                        mix={[
+                                            repositoryItem,
+                                            on("click", () => {
+                                                // Releasing a drag does not choose the repository.
+                                                if (!drag?.slots)
+                                                    props.selectRepository(repository.id)
+                                            }),
+                                        ]}
                                     >
-                                        <Icon name="close" size={12} />
+                                        <span class="repository-tile" mix={repositoryTile}>
+                                            <RepositoryIconContent icon={repository.icon ?? automaticIcon(repository)} name={name} size={28} api={props.api} />
+                                        </span>
+                                        {!props.railCollapsed && (
+                                            <span mix={repositoryCopy}>
+                                                <strong mix={repositoryLabel}>{name}</strong>
+                                                <small mix={repositoryPath}>
+                                                    {repository.status == "available" ? repository.info.selectedWorktree : "Unavailable"}
+                                                </small>
+                                            </span>
+                                        )}
                                     </button>
-                                )}
+                                    {!props.railCollapsed && props.closeRepository && (
+                                        <button
+                                            class="repository-close"
+                                            type="button"
+                                            aria-label={`Close ${name}`}
+                                            title="Close repository"
+                                            mix={[repositoryClose, on("click", () => props.closeRepository?.(repository.id))]}
+                                        >
+                                            <Icon name="close" size={12} />
+                                        </button>
+                                    )}
+                                </ContextMenu>
                             </div>
                         )
                     })}
@@ -487,13 +518,4 @@ export function RepositoryRailToggle(handle: Handle<{ collapsed: boolean; toggle
             <Icon name={handle.props.collapsed ? "collapse-right" : "collapse-left"} size={14} />
         </button>
     )
-}
-
-export function initials(path: string) {
-    let words = baseName(path).split(/[-_.\s]+/).filter(Boolean)
-    return (words.length > 1 ? words[0][0] + words[1][0] : words[0]?.slice(0, 2) ?? "GW").toUpperCase()
-}
-
-export function baseName(path: string) {
-    return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path
 }

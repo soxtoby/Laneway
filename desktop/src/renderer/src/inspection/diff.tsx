@@ -1,7 +1,7 @@
 import type { DiffLayout, DiffLine, FileDiffPage } from "@laneway/shared"
 import { DiffHunksRenderer, type FileDiffLoadedChangedFiles, wrapCoreCSS, wrapThemeCSS } from "@pierre/diffs"
 import { css, type Handle, ref } from "remix/ui"
-import { iconPath } from "../icons"
+import { iconNodes } from "../icon-nodes"
 import { contextDiff, visibleDiffLines } from "./diff-context"
 import { pierrePatch } from "./diff-patch"
 
@@ -447,26 +447,31 @@ export function DiffLines(
     }
 }
 
+// Built imperatively because Pierre owns this part of the DOM; it mirrors the renderer's Icon component.
 function expandContextIcon() {
-    let icon = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+    let namespace = "http://www.w3.org/2000/svg"
+    let icon = document.createElementNS(namespace, "svg")
     for (
         let [name, value] of Object.entries({
             "aria-hidden": "true",
             width: "16",
             height: "16",
-            viewBox: "0 0 16 16",
+            viewBox: "0 0 24 24",
             fill: "none",
             stroke: "currentColor",
-            "stroke-width": "1.5",
+            "stroke-width": "2.25",
             "stroke-linecap": "round",
             "stroke-linejoin": "round",
         })
     ) {
         icon.setAttribute(name, value)
     }
-    let path = document.createElementNS("http://www.w3.org/2000/svg", "path")
-    path.setAttribute("d", iconPath("expand-all"))
-    icon.append(path)
+    for (let [tag, attributes] of iconNodes["expand-all"]) {
+        let shape = document.createElementNS(namespace, tag)
+        for (let [name, value] of Object.entries(attributes))
+            shape.setAttribute(name, String(value))
+        icon.append(shape)
+    }
 
     return icon
 }

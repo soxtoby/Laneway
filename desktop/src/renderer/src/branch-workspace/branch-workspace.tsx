@@ -9,7 +9,8 @@ import { Icon } from "../icons"
 import { comparisonColumnId, comparisonNode, renameComparisonRef } from "../inspection/comparison-columns"
 import { createInspection } from "../inspection/inspection"
 import { createPullLatest, type PullControl } from "../pull-latest"
-import { baseName, RepositoryRail } from "../repository-rail"
+import { repositoryName } from "../repository-icon"
+import { RepositoryRail } from "../repository-rail"
 import { createWorktreeActions } from "../worktrees/worktree-actions"
 import { branchNodeFor, localIdentities, reconcileWorktreeColumns, recoveryColumnId, recoveryWorkspaceColumn, workspaceGraph } from "../worktrees/worktree-columns"
 import { BranchColumns, columnIdentity, columnKindIcon, defaultColumnWidth, recoveryNode } from "./branch-columns"
@@ -63,6 +64,7 @@ interface BranchWorkspaceOptions {
     notify(notice: NoticeState): () => void
     selectRepository(id: string): Promise<void>
     closeRepository(id: string): Promise<void>
+    customizeRepository(id: string): void
     moveRepository(id: string, targetId: string): Promise<void>
     addRepository(): void
     workspace(): Workspace
@@ -679,7 +681,9 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
                         // Choosing the repository already shown toggles its Branch Graph instead.
                         selectRepository={id => id == active.id ? toggleGraph(active.id) : options.selectRepository(id)}
                         activeExpanded={!state.graphCollapsed}
+                        api={options.api}
                         closeRepository={options.closeRepository}
+                        customizeRepository={options.customizeRepository}
                         moveRepository={options.moveRepository}
                         addRepository={options.addRepository}
                         heading={
@@ -1691,7 +1695,7 @@ function lensResults(workspace: Workspace, states: Map<string, RepositoryGraphSt
         }
     }
     for (let repository of workspace.repositories) {
-        let name = repository.status == "available" ? baseName(repository.info.mainWorktree) : repository.name
+        let name = repositoryName(repository)
         let repoScore = textScore(name, needle)
         if (repoScore > 0) {
             results.push({

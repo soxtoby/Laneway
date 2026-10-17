@@ -1,4 +1,5 @@
 import { type ComparisonRef, type DiffLayout } from "./changes"
+import type { RepositoryIdentity } from "./repository-icon"
 
 export type ObjectFormat = "sha1" | "sha256"
 
@@ -57,17 +58,19 @@ export interface ComparisonWorkspaceColumn {
 
 export type WorkspaceColumn = BranchWorkspaceColumn | VirtualBranchWorkspaceColumn | ComparisonWorkspaceColumn
 
-export interface AvailableOpenRepository {
+export interface AvailableOpenRepository extends RepositoryIdentity {
     status: "available"
     id: string
     path: string
     info: RepositoryInfo
+    /** The repository's one unambiguous favicon, shown when the user has not chosen an icon. */
+    favicon?: string
     columns: WorkspaceColumn[]
     focusedColumnId?: string
     layoutInitialized: boolean
 }
 
-export interface MissingOpenRepository {
+export interface MissingOpenRepository extends RepositoryIdentity {
     status: "missing"
     id: string
     path: string

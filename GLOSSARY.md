@@ -13,8 +13,12 @@ The first supported Laneway release: a Windows product covering the settled loca
 _Avoid_: MVP, technical preview
 
 **Repository Icon**:
-The visual identity of a repository in navigation: a user override, otherwise an inferred project icon, otherwise two initials.
-_Avoid_: App icon
+The visual identity of a repository in navigation: a user override, otherwise the repository's one unambiguous favicon, otherwise two initials of its Repository Label. An override is a Lucide icon or monogram in a palette colour, an emoji, or an image file read from where it is. Favicons in one directory are one icon in several formats; favicons in different directories count as one only when identical. The override and label persist in Workspace State.
+_Avoid_: App icon, avatar
+
+**Repository Label**:
+The name shown for a repository everywhere in Laneway: a user-chosen label, otherwise the folder name of its Main Worktree. Changing it never renames the folder. Both are edited from the repository's context menu in the rail.
+_Avoid_: Repository name, title
 
 **Command Lens**:
 The global keyboard-first search and navigation surface. Selecting a branch locates it in the Branch Graph; the Command Lens never switches a worktree itself.

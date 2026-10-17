@@ -1,4 +1,4 @@
-import type { FileAction } from "./file-menu"
+import type { ContextAction } from "../context-menu"
 
 /** Joins a repository-relative path onto a worktree root using the root's own separator. */
 export function fullPath(root: string, path: string) {
@@ -16,8 +16,8 @@ export function copyText(text: string) {
 }
 
 /** Context menu entries copying a file's location; the full path needs the worktree `root` it lives in. */
-export function copyPathActions(path: string, root?: string): FileAction[] {
-    let actions: FileAction[] = []
+export function copyPathActions(path: string, root?: string): ContextAction[] {
+    let actions: ContextAction[] = []
     if (root)
         actions.push({ label: "Copy full path", run: () => void copyText(fullPath(root, path)) })
     actions.push(

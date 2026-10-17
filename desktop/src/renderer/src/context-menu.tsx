@@ -1,11 +1,13 @@
 import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
 
-export interface FileAction {
+export interface ContextAction {
     label: string
     /** Draws a rule above this item, starting a new group. */
     separator?: boolean
+    disabled?: boolean
     run(): void
 }
+
 let menu = css({
     position: "fixed",
     margin: 0,
@@ -26,15 +28,21 @@ let menu = css({
         font: "inherit",
         cursor: "pointer",
     },
-    "& button:hover": { background: "var(--control-hover)" },
+    "& button:hover:not(:disabled)": { background: "var(--control-hover)" },
     "&::backdrop": { background: "transparent" },
 })
+
 let rule = css({
     margin: "4px 0",
     border: 0,
     borderTop: "1px solid var(--line)",
 })
-export function FileMenu(handle: Handle<{ actions: FileAction[]; children?: RemixNode; class?: string }>) {
+
+/**
+ * Wraps its children so a right click, the Menu key, or Shift+F10 opens the actions beside the pointer.
+ * The menu is a modal dialog in the top layer, so no scroll container clips it.
+ */
+export function ContextMenu(handle: Handle<{ label: string; actions: ContextAction[]; children?: RemixNode; class?: string }>) {
     let position: { x: number; y: number } | undefined
     return () => (
         <div
@@ -55,7 +63,8 @@ export function FileMenu(handle: Handle<{ actions: FileAction[]; children?: Remi
                     if (event.key == "ContextMenu" || event.shiftKey && event.key == "F10") {
                         event.preventDefault()
                         event.stopPropagation()
-                        let bounds = element.getBoundingClientRect()
+                        // A host with display: contents has no box, so its first child stands in for it.
+                        let bounds = (element.firstElementChild ?? element).getBoundingClientRect()
                         open(bounds.left, bounds.top)
                     }
                 }, { signal })
@@ -64,7 +73,7 @@ export function FileMenu(handle: Handle<{ actions: FileAction[]; children?: Remi
             {handle.props.children}
             {position && (
                 <dialog
-                    aria-label="File actions"
+                    aria-label={handle.props.label}
                     mix={[
                         menu,
                         ref(element => {
@@ -91,6 +100,7 @@ export function FileMenu(handle: Handle<{ actions: FileAction[]; children?: Remi
                             <button
                                 type="button"
                                 role="menuitem"
+                                disabled={action.disabled}
                                 mix={on("click", () => {
                                     position = undefined
                                     void handle.update()

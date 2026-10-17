@@ -1,4 +1,5 @@
-import type { ComparisonRef, DiffLayout, ObjectFormat, Workspace, WorkspaceColumn } from "@laneway/shared"
+import type { ComparisonRef, DiffLayout, ObjectFormat, RepositoryIcon, Workspace, WorkspaceColumn } from "@laneway/shared"
+import { RepositoryIconSchema, RepositoryLabelSchema } from "@laneway/shared"
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, resolve } from "node:path"
@@ -8,6 +9,9 @@ export interface StoredRepository {
     path: string
     name: string
     objectFormat?: ObjectFormat
+    /** The user's display name for the repository; the folder name shows when absent. */
+    label?: string
+    icon?: RepositoryIcon
     anchors: string[]
     open: boolean
     columns: WorkspaceColumn[]
@@ -186,11 +190,19 @@ function parsePresentation(value: unknown, restoring = false) {
         return undefined
     }
 
+    // A saved identity that no longer parses is dropped on restore; a renderer sending one is rejected outright.
+    let label = record.label === undefined ? undefined : RepositoryLabelSchema.safeParse(record.label)
+    let icon = record.icon === undefined ? undefined : RepositoryIconSchema.safeParse(record.icon)
+    if (!restoring && ((label && !label.success) || (icon && !icon.success)))
+        return undefined
+
     return {
         id: record.id,
         columns,
         ...(nonEmptyString(record.focusedColumnId) ? { focusedColumnId: record.focusedColumnId } : {}),
         layoutInitialized: record.layoutInitialized === true,
+        ...(label?.success ? { label: label.data } : {}),
+        ...(icon?.success ? { icon: icon.data } : {}),
     }
 }
 

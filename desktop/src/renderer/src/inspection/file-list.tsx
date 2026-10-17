@@ -1,8 +1,8 @@
 import { type ChangedFile, defaultFileListView, type FileListView } from "@laneway/shared"
 import { css, type Handle, on, ref, type RemixNode } from "remix/ui"
+import { type ContextAction, ContextMenu } from "../context-menu"
 import { Icon } from "../icons"
 import { groupFiles } from "./file-list-view"
-import { type FileAction, FileMenu } from "./file-menu"
 import { copyPathActions, copyText } from "./file-paths"
 
 let filterMatch = css({
@@ -236,7 +236,7 @@ export function FileTree(
             /** The worktree the files live in, enabling "Copy full path". */
             root?: string
             renderFile?(file: ChangedFile): RemixNode
-            actions?(file: ChangedFile): FileAction[]
+            actions?(file: ChangedFile): ContextAction[]
             /** Flat or folded, and grouped or not; flat and ungrouped by default. */
             view?: FileListView
             hideStagedBadge?: boolean
@@ -416,7 +416,7 @@ export function InspectionItem(
         /** The worktree the file lives in, enabling "Copy full path". */
         root?: string
         expanded: boolean
-        actions: FileAction[]
+        actions: ContextAction[]
         leading?: RemixNode
         /** Badges shown after the name, pushed to the right edge of the row. */
         trailing?: RemixNode
@@ -432,7 +432,7 @@ export function InspectionItem(
         let props = handle.props
         let actions = props.path ? [...props.actions, ...copyPathActions(props.path, props.root)] : props.actions
         return (
-            <FileMenu class={`file-inspection ${props.class ?? ""}`} actions={actions}>
+            <ContextMenu label="File actions" class={`file-inspection ${props.class ?? ""}`} actions={actions}>
                 <div
                     class={`change-file ${props.expanded ? "active" : ""}`}
                     mix={[
@@ -467,7 +467,7 @@ export function InspectionItem(
                     {props.controls}
                 </div>
                 {props.children}
-            </FileMenu>
+            </ContextMenu>
         )
     }
 }

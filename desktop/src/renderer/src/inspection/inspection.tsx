@@ -6,6 +6,7 @@ import { ColumnDivider } from "../column-divider"
 import { CommitComposer } from "../commit-composer"
 import { compositionStyles, createComposition } from "../composition"
 import { ConflictResolution } from "../conflict-resolution"
+import { type ContextAction, ContextMenu } from "../context-menu"
 import { EditableName } from "../editable-name"
 import type { NoticeState } from "../feedback"
 import { Icon } from "../icons"
@@ -20,7 +21,6 @@ import { DiffControls } from "./diff-controls"
 import { createDiscards } from "./discard"
 import { CopyPathButton, fileActionButton, fileLabel, FileTree } from "./file-list"
 import { FileListViewMenu } from "./file-list-view"
-import { type FileAction, FileMenu } from "./file-menu"
 import { copyPathActions } from "./file-paths"
 import { isComparableImage, isImagePath, preferredImageMode, readDiffImage, rememberImageMode } from "./image-diff"
 import { createDiffSession, type FileDiffState } from "./inspection-diff-session"
@@ -2220,7 +2220,7 @@ export function createInspection(options: Options) {
         return source.kind == "working" ? source.worktreePath : state.worktreePath ?? options.mainWorktree?.(state.repositoryId)
     }
 
-    function historyActions(state: ColumnState, source: DiffSource, file: ChangedFile): FileAction[] {
+    function historyActions(state: ColumnState, source: DiffSource, file: ChangedFile): ContextAction[] {
         let sourceId = state.auxiliaryId ?? key(state.repositoryId, state.id)
         if (source.kind == "refs" && state.column.kind == "comparison") {
             let column = state.column
@@ -2247,7 +2247,7 @@ export function createInspection(options: Options) {
     }
 
     /** Discard sits in the context menu only, so nothing on a row discards with one click. */
-    function discardActions(state: ColumnState, group: string, files: FileState, file: ChangedFile): FileAction[] {
+    function discardActions(state: ColumnState, group: string, files: FileState, file: ChangedFile): ContextAction[] {
         let source = files.source
         if (!group.startsWith("working-") || source.kind != "working" || file.conflicted || file.submodule)
             return []
@@ -2309,7 +2309,8 @@ export function createInspection(options: Options) {
             <section class="diff-inspector" aria-label={`Diff for ${diff.path}`} mix={diffInspector}>
                 {breakout && (
                     <header class="diff-toolbar" mix={diffToolbar}>
-                        <FileMenu
+                        <ContextMenu
+                            label="File actions"
                             class="diff-file-menu"
                             actions={page
                                 ? [{
@@ -2346,7 +2347,7 @@ export function createInspection(options: Options) {
                                 <strong mix={diffToolbarStrong}>{fileLabel(diff.path)}</strong>
                             </button>
                             <CopyPathButton path={diff.path} />
-                        </FileMenu>
+                        </ContextMenu>
                         {renderDiffControls(state, diff, true)}
                     </header>
                 )}

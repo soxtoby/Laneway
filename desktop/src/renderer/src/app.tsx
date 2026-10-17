@@ -1,9 +1,11 @@
-import { type Appearance, defaultFileListView, type EntryProgress, type FileListView, type Workspace } from "@laneway/shared"
+import { type Appearance, defaultFileListView, type EntryProgress, type FileListView, type RepositoryIdentity, type Workspace } from "@laneway/shared"
 import { css, type Handle, on } from "remix/ui"
 import { type BranchWorkspace, createBranchWorkspace } from "./branch-workspace/branch-workspace"
 import { errorMessage, FatalError, Notice, type NoticeState } from "./feedback"
 import { activateSelectionsOnMouseDown } from "./mouse-activation"
 import { createRepositoryEntry, type RepositoryEntry } from "./repository-entry/repository-entry"
+import { repositoryName } from "./repository-icon"
+import { createRepositoryIdentityEditor, type RepositoryIdentityEditor } from "./repository-identity"
 import { RepositoryRail } from "./repository-rail"
 import { createGitSettings, type GitSettings } from "./settings"
 import { LanewayHeader, Welcome } from "./workspace"
@@ -127,7 +129,9 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
     let workspace: Workspace | undefined
     let repositoryEntry: RepositoryEntry | undefined
     let gitSettings: GitSettings | undefined
+    let identityEditor: RepositoryIdentityEditor | undefined
     let branchWorkspace: BranchWorkspace | undefined
+    let identitySave: ReturnType<typeof setTimeout> | undefined
     let openingRepository = false
     let notice: NoticeState | undefined
     let fatalError: string | undefined
@@ -139,7 +143,7 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
     handle.signal.addEventListener("abort", () => document.body.classList.remove("busy"), { once: true })
 
     return () => {
-        if (!initial || !workspace || !repositoryEntry || !gitSettings || !branchWorkspace) {
+        if (!initial || !workspace || !repositoryEntry || !gitSettings || !branchWorkspace || !identityEditor) {
             return fatalError
                 ? <FatalError message={fatalError} retry={bootstrap} />
                 : (
@@ -177,11 +181,13 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
                             <MissingRepository
                                 railCollapsed={railCollapsed}
                                 toggleRail={toggleRail}
+                                api={handle.props.api}
                                 repository={active}
                                 workspace={currentWorkspace}
                                 select={selectRepository}
                                 locate={locateRepository}
                                 close={closeRepository}
+                                customize={identityEditor.open}
                                 move={moveRepository}
                                 addRepository={() => repositoryEntry?.openAdd()}
                             />
@@ -198,6 +204,7 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
                 </main>
                 {repositoryEntry.render()}
                 {gitSettings.render()}
+                {identityEditor.render()}
                 {branchWorkspace.renderLens(currentWorkspace)}
                 <Notice
                     notice={notice}
@@ -244,6 +251,12 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
                 update: handle.update,
                 notify,
             })
+            identityEditor = createRepositoryIdentityEditor({
+                api: handle.props.api,
+                update: handle.update,
+                workspace: () => workspace!,
+                commit: customizeRepository,
+            })
             branchWorkspace = createBranchWorkspace({
                 api: handle.props.api,
                 update: handle.update,
@@ -251,6 +264,7 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
                 notify,
                 selectRepository,
                 closeRepository,
+                customizeRepository: identityEditor.open,
                 moveRepository,
                 addRepository: () => repositoryEntry?.openAdd(),
                 workspace: () => workspace!,
@@ -394,6 +408,30 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
         await handle.update()
     }
 
+    // The rail shows the new name or icon at once; typing a name coalesces into one save shortly after it pauses.
+    function customizeRepository(id: string, identity: RepositoryIdentity) {
+        let repository = workspace?.repositories.find(repository => repository.id == id)
+        if (!repository)
+            return
+        delete repository.label
+        delete repository.icon
+        Object.assign(repository, identity)
+        void handle.update()
+        clearTimeout(identitySave)
+        identitySave = setTimeout(() => void saveWorkspace(), 200)
+    }
+
+    async function saveWorkspace() {
+        if (!workspace)
+            return
+        try {
+            workspace = await handle.props.api.updateWorkspace(workspace)
+        } catch (error) {
+            notify({ code: "workspace.save.failed", message: errorMessage(error) })
+        }
+        await handle.update()
+    }
+
     async function resetWorkspace() {
         try {
             workspace = await handle.props.api.resetWorkspace()
@@ -446,9 +484,11 @@ function MissingRepository(
         {
             repository: Extract<Workspace["repositories"][number], { status: "missing" }>
             workspace: Workspace
+            api: Window["laneway"]
             select(id: string): void
             locate(id: string): void
             close(id: string): void
+            customize(id: string): void
             move(id: string, targetId: string): void
             railCollapsed: boolean
             toggleRail(): void
@@ -463,8 +503,10 @@ function MissingRepository(
                 toggleRail={handle.props.toggleRail}
                 activeId={handle.props.repository.id}
                 workspace={handle.props.workspace}
+                api={handle.props.api}
                 selectRepository={handle.props.select}
                 closeRepository={handle.props.close}
+                customizeRepository={handle.props.customize}
                 moveRepository={handle.props.move}
                 addRepository={handle.props.addRepository}
             />
@@ -473,7 +515,7 @@ function MissingRepository(
                     Repository unavailable
                 </p>
                 <h1 mix={missingCopyH1}>
-                    {handle.props.repository.name}
+                    {repositoryName(handle.props.repository)}
                 </h1>
                 <p mix={missingCopyP}>
                     {handle.props.repository.path}

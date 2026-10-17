@@ -3,10 +3,12 @@ import { parseWorkspacePresentation, readWorkspace, resetWorkspace, type StoredR
 import type { EntryError, OpenRepository, RepositoryInfo, Workspace } from "@laneway/shared"
 import { basename, dirname } from "node:path"
 import { entryError, type OpenRepositories } from "./repositories"
+import { inferFavicon } from "./repository-icons"
 
 export class WorkspaceManager {
     private stored: StoredWorkspace = { version: 1, repositories: [] }
     private available = new Map<string, RepositoryInfo>()
+    private favicons = new Map<string, string>()
     private persistenceError: EntryError | undefined
     private writesBlocked = false
     private writes: Promise<void> = Promise.resolve()
@@ -39,15 +41,18 @@ export class WorkspaceManager {
     snapshot(): Workspace {
         let repositories: OpenRepository[] = this.stored.repositories.filter(repository => repository.open).map(repository => {
             let info = this.available.get(repository.id)
+            let favicon = this.favicons.get(repository.id)
             let common = {
                 id: repository.id,
                 path: repository.path,
                 columns: repository.columns.map(column => ({ ...column })),
                 focusedColumnId: repository.focusedColumnId,
                 layoutInitialized: repository.layoutInitialized,
+                ...(repository.label ? { label: repository.label } : {}),
+                ...(repository.icon ? { icon: structuredClone(repository.icon) } : {}),
             }
             return info
-                ? { ...common, status: "available" as const, info }
+                ? { ...common, status: "available" as const, info, ...(favicon ? { favicon } : {}) }
                 : {
                     ...common,
                     status: "missing" as const,
@@ -75,6 +80,7 @@ export class WorkspaceManager {
         for (let [id, info] of this.available) {
             if (!await pathExists(info.mainWorktree)) {
                 this.available.delete(id)
+                this.favicons.delete(id)
                 this.openRepositories.close(id)
             }
         }
@@ -98,6 +104,7 @@ export class WorkspaceManager {
         record.objectFormat = info.objectFormat
         this.stored.lastRepositoryParentPath = dirname(info.mainWorktree)
         this.available.set(record.id, info)
+        await this.inferFavicon(record.id, info)
         this.stored.activeRepositoryId = record.id
 
         await this.save()
@@ -112,6 +119,7 @@ export class WorkspaceManager {
         record.open = true
         this.stored.lastRepositoryParentPath = dirname(info.mainWorktree)
         this.available.set(info.id, info)
+        await this.inferFavicon(info.id, info)
         this.stored.activeRepositoryId = info.id
 
         await this.save()
@@ -136,6 +144,7 @@ export class WorkspaceManager {
         record.objectFormat = info.objectFormat
         this.stored.lastRepositoryParentPath = dirname(info.mainWorktree)
         this.available.set(id, info)
+        await this.inferFavicon(id, info)
 
         await this.save()
         return this.snapshot()
@@ -154,6 +163,7 @@ export class WorkspaceManager {
         let record = this.requireStored(id)
         record.open = false
         this.available.delete(id)
+        this.favicons.delete(id)
         this.openRepositories.close(id)
         if (this.stored.activeRepositoryId == id)
             this.stored.activeRepositoryId = open[index + 1]?.id ?? open[index - 1]?.id
@@ -171,6 +181,9 @@ export class WorkspaceManager {
             ...this.requireStored(repository.id),
             ...repository,
             focusedColumnId: repository.focusedColumnId,
+            // The identity is part of each snapshot, so leaving it out clears it.
+            label: repository.label,
+            icon: repository.icon,
             open: true,
             anchors: [...new Set(repository.columns.flatMap(column => column.kind == "comparison" ? [] : [column.lastSeenObjectId]))],
         }))
@@ -191,6 +204,7 @@ export class WorkspaceManager {
             this.openRepositories.close(repository)
 
         this.available.clear()
+        this.favicons.clear()
         this.stored = { version: 1, repositories: [] }
         this.persistenceError = undefined
         this.writesBlocked = false
@@ -210,11 +224,21 @@ export class WorkspaceManager {
                     throw new Error("The repository object format no longer matches saved Workspace State.")
 
                 this.available.set(repository.id, info)
+                await this.inferFavicon(repository.id, info)
             } catch {
                 // The persisted record remains visible as missing.
                 this.openRepositories.close(repository.id)
             }
         }
+    }
+
+    // A favicon is a convenience, so failing to look for one never makes a repository unavailable.
+    private async inferFavicon(id: string, info: RepositoryInfo) {
+        let favicon = await inferFavicon(info.mainWorktree).catch(() => undefined)
+        if (favicon)
+            this.favicons.set(id, favicon)
+        else
+            this.favicons.delete(id)
     }
 
     private requireStored(id: string) {

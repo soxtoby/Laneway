@@ -892,6 +892,149 @@ describe("Remix repository entry renderer", () => {
         dispose()
     })
 
+    test("customizes a repository's name and icon from the rail's context menu", async () => {
+        let scenario = inspectionScenario()
+        let saves: Workspace[] = []
+        let api = fakeLaneway({
+            ...scenario.api,
+            updateWorkspace: async workspace => {
+                saves.push(structuredClone(workspace))
+                return workspace
+            },
+        })
+        let { container, root, dispose } = render(api)
+        await flush(root)
+        click(container.querySelector<HTMLButtonElement>("[aria-label='Expand repository sidebar']")!)
+        root.flush()
+        let item = () => container.querySelector<HTMLButtonElement>(".repository-item")!
+        expect(item().getAttribute("aria-label")).toBe("inspection")
+        expect(container.querySelector(".repository-tile .initials")?.textContent).toBe("IN")
+
+        container.querySelector(".repository-item")!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 20, clientY: 30 }))
+        root.flush()
+        let menu = container.querySelector("dialog[aria-label='Actions for inspection']")!
+        expect([...menu.querySelectorAll("button")].map(button => button.textContent)).toEqual(["Customize…", "Close repository"])
+        click(menu.querySelector("button")!)
+        await flush(root)
+        let editor = () => container.querySelector<HTMLElement>(".repository-identity")!
+        expect(editor().querySelector("h2")?.textContent).toBe("inspection")
+        // Without a favicon the default is initials, so the dialog opens on the Monogram tab showing them.
+        expect(button(editor(), "Monogram").getAttribute("aria-pressed")).toBe("true")
+        expect(editor().querySelector<HTMLInputElement>("[aria-label='Monogram letters']")?.value).toBe("IN")
+
+        // The name applies as it is typed and saves once typing pauses.
+        input(editor().querySelector<HTMLInputElement>("#repository-label")!, "Inspection desk")
+        root.flush()
+        expect(item().getAttribute("aria-label")).toBe("Inspection desk")
+        expect(container.querySelector(".repository-tile .initials")?.textContent).toBe("ID")
+        expect(saves.at(-1)?.repositories[0].label).toBeUndefined()
+        await new Promise(resolve => setTimeout(resolve, 250))
+        expect(saves.at(-1)?.repositories[0]).toMatchObject({ label: "Inspection desk" })
+        expect(saves.at(-1)?.repositories[0].icon).toBeUndefined()
+        // Untouched initials follow the new name; choosing a colour makes them an explicit monogram.
+        expect(editor().querySelector<HTMLInputElement>("[aria-label='Monogram letters']")?.value).toBe("ID")
+        click(button(editor(), "Violet"))
+        root.flush()
+        expect(container.querySelector(".repository-tile .monogram-tile")?.getAttribute("style")).toContain("--tone-violet")
+        expect(container.querySelector(".repository-tile text")?.textContent).toBe("ID")
+        input(editor().querySelector<HTMLInputElement>("[aria-label='Monogram letters']")!, "too long")
+        root.flush()
+        // Invalid letters keep the previous tile rather than showing a broken one.
+        expect(container.querySelector(".repository-tile .initials")?.textContent).toBe("ID")
+        input(editor().querySelector<HTMLInputElement>("[aria-label='Monogram letters']")!, "t3")
+        await new Promise(resolve => setTimeout(resolve, 250))
+        root.flush()
+        expect(saves.at(-1)?.repositories[0]).toMatchObject({ label: "Inspection desk", icon: { kind: "monogram", text: "T3", color: "violet" } })
+
+        click(button(editor(), "Emoji"))
+        root.flush()
+        click(button(editor(), "Rocket"))
+        root.flush()
+        expect(container.querySelector(".repository-tile .emoji")?.textContent).toBe("🚀")
+
+        click(button(editor(), "Reset"))
+        await new Promise(resolve => setTimeout(resolve, 250))
+        root.flush()
+        expect(item().getAttribute("aria-label")).toBe("inspection")
+        expect(container.querySelector(".repository-tile .initials")?.textContent).toBe("IN")
+        expect(button(editor(), "Monogram").getAttribute("aria-pressed")).toBe("true")
+        expect(saves.at(-1)?.repositories[0].label).toBeUndefined()
+        expect(saves.at(-1)?.repositories[0].icon).toBeUndefined()
+        click(button(editor(), "Done"))
+        root.flush()
+        expect(container.querySelector(".repository-identity")).toBeNull()
+        dispose()
+    })
+
+    test("shows a repository's inferred favicon until the user chooses an icon", async () => {
+        let repository = repositoryInfo("D:\\Source\\branded")
+        let favicon = "D:\\Source\\branded\\public\\favicon.svg"
+        let workspace: Workspace = {
+            ...openedWorkspace(repository),
+            repositories: [{ ...openedWorkspace(repository).repositories[0], favicon }],
+        }
+        let reads: string[] = []
+        let saves: Workspace[] = []
+        let logo = "D:\\Source\\branded\\src\\assets\\logo.svg"
+        let api = fakeLaneway({
+            getState: async () => ({ ...appState(), workspace }),
+            readBranchGraph: async () => ({ ok: true, graph: branchGraph(repository.id) }),
+            readIconImage: async path => {
+                reads.push(path)
+                return { bytes: new TextEncoder().encode("<svg xmlns='http://www.w3.org/2000/svg'/>"), mime: "image/svg+xml" }
+            },
+            listRepositoryImages: async () => [{ path: favicon, relative: "public/favicon.svg" }, { path: logo, relative: "src/assets/logo.svg" }, {
+                path: "D:\\Source\\branded\\docs\\screenshot.png",
+                relative: "docs/screenshot.png",
+            }],
+            updateWorkspace: async next => {
+                saves.push(structuredClone(next))
+                return next
+            },
+        })
+        let { container, root, dispose } = render(api)
+        await flush(root)
+        expect(reads).toEqual([favicon])
+        let image = container.querySelector<HTMLImageElement>(".repository-tile img")
+        expect(image?.getAttribute("src")).toMatch(/^blob:/)
+        expect(container.querySelector(".repository-tile .initials")).toBeNull()
+
+        // The dialog opens on the Image tab, naming the favicon it found and listing the repository's images.
+        container.querySelector(".repository-item")!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 20, clientY: 30 }))
+        root.flush()
+        click(container.querySelector<HTMLButtonElement>("dialog[aria-label='Actions for branded'] button")!)
+        await flush(root)
+        let editor = () => container.querySelector<HTMLElement>(".repository-identity")!
+        expect(button(editor(), "Image").getAttribute("aria-pressed")).toBe("true")
+        expect(editor().textContent).toContain("Using the favicon favicon.svg found in the repository")
+        expect([...editor().querySelectorAll("[aria-label='Icon type'] button")].map(button => button.textContent?.trim())).toEqual([
+            "Icon",
+            "Emoji",
+            "Monogram",
+            "Image",
+        ])
+        let rows = () => [...editor().querySelectorAll<HTMLButtonElement>("[role=option]")]
+        expect(rows().map(row => row.querySelector(".image-name")?.textContent)).toEqual(["favicon.svg", "logo.svg", "screenshot.png"])
+        expect(rows().map(row => row.querySelector(".image-path")?.textContent)).toEqual(["public/favicon.svg", "src/assets/logo.svg", "docs/screenshot.png"])
+        expect(rows()[0].getAttribute("aria-pressed")).toBe("true")
+        await flush(root)
+        expect(rows().every(row => row.querySelector("img")?.getAttribute("src")?.startsWith("blob:"))).toBe(true)
+
+        // Searching narrows by any part of the path; Enter chooses the highlighted file.
+        let search = () => editor().querySelector<HTMLInputElement>("[aria-label='Search images in the repository']")!
+        input(search(), "assets")
+        root.flush()
+        expect(rows().map(row => row.querySelector(".image-name")?.textContent)).toEqual(["logo.svg"])
+        search().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+        await flush(root)
+        expect(container.querySelector(".repository-tile img")?.getAttribute("src")).toMatch(/^blob:/)
+        expect(reads).toContain(logo)
+        expect(editor().textContent).toContain(`Using ${logo}`)
+        await new Promise(resolve => setTimeout(resolve, 250))
+        expect(saves.at(-1)?.repositories[0].icon).toEqual({ kind: "image", path: logo })
+        dispose()
+    })
+
     test("drags a repository along the rail while the others step aside, committing the order on release", async () => {
         let alpha = repositoryInfo("D:\\Source\\alpha")
         let beta = repositoryInfo("D:\\Source\\beta")
