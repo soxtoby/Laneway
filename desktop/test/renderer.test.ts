@@ -2845,11 +2845,12 @@ test("file rows copy their path from a hover button and from the context menu", 
             let dialog = container.querySelector<HTMLElement>("dialog[aria-label='File actions']")!
             expect([...dialog.querySelectorAll("button")].map(item => item.textContent?.trim())).toEqual([
                 "File history",
+                "Discard all changes",
                 "Copy full path",
                 "Copy relative path",
                 "Copy file name",
             ])
-            expect(dialog.querySelector("hr")).not.toBeNull()
+            expect(dialog.querySelectorAll("hr")).toHaveLength(2)
             click(button(dialog, label))
             await flush(root)
             return navigator.clipboard.readText()
@@ -2857,6 +2858,91 @@ test("file rows copy their path from a hover button and from the context menu", 
         expect(await menu("Copy full path")).toBe("D:\\Source\\inspection\\src\\file.txt")
         expect(await menu("Copy file name")).toBe("file.txt")
         expect(await menu("Copy relative path")).toBe("src/file.txt")
+    } finally {
+        dispose()
+    }
+})
+
+test("working files discard from the context menu and the selection, with Undo while the notice shows", async () => {
+    let scenario = inspectionScenario()
+    let requests: unknown[] = [], undone: string[] = [], settled: string[] = [], reads = 0
+    let readChanges = scenario.api.readChanges
+    scenario.api.readChanges = (...args) => {
+        reads++
+        return readChanges(...args)
+    }
+    scenario.api.discardChanges = async (_id, request) => {
+        requests.push(request)
+        return { ok: true, id: `discard-${requests.length}`, undoable: true }
+    }
+    scenario.api.undoDiscard = async (_id, id) => {
+        undone.push(id)
+        return { ok: true, kept: [] }
+    }
+    scenario.api.settleDiscard = async (_id, id) => {
+        settled.push(id)
+    }
+    let { container, root, dispose } = render(scenario.api)
+    try {
+        await flush(root)
+        let rows = container.querySelectorAll<HTMLElement>(".change-file")
+        let discard = async (row: HTMLElement, label: string) => {
+            row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 50, clientY: 50 }))
+            await flush(root)
+            click(button(container.querySelector<HTMLElement>("dialog[aria-label='File actions']")!, label))
+            await flush(root)
+        }
+        let notice = () => container.querySelector<HTMLElement>(".notice:not([hidden])")
+
+        // The staged list sits above the unstaged list, and each row discards its own side.
+        let before = reads
+        await discard(rows[0], "Discard all changes")
+        expect(requests).toEqual([{
+            kind: "files",
+            worktreePath: "D:\\Source\\inspection",
+            view: "staged",
+            files: [{ path: "src/file.txt", oldPath: undefined, untracked: false }],
+        }])
+        expect(reads).toBeGreaterThan(before)
+        expect(notice()?.textContent).toContain("Discarded src/file.txt")
+        click(notice()!.querySelector<HTMLElement>(".notice-action")!)
+        await flush(root)
+        expect(undone).toEqual(["discard-1"])
+        expect(settled).toEqual([])
+        expect(notice()?.textContent).toContain("Discard undone.")
+
+        // Discards made while the notice shows join it, and Ctrl+Z undoes them all before any Operation History undo.
+        await discard(rows[2], "Discard unstaged changes")
+        await discard(rows[3], "Discard unstaged changes")
+        expect(requests.slice(1).map(request => (request as { view: string }).view)).toEqual(["unstaged", "unstaged"])
+        expect(notice()?.textContent).toContain("Discarded 2 files")
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true, cancelable: true }))
+        await flush(root)
+        expect(undone).toEqual(["discard-1", "discard-3", "discard-2"])
+
+        // Closing the notice settles the discard for good.
+        await discard(rows[0], "Discard all changes")
+        click(button(notice()!, "Dismiss"))
+        await flush(root)
+        expect(settled).toEqual(["discard-4"])
+        expect(undone).toHaveLength(3)
+
+        // Selected lines discard from the unstaged side only; the staged side offers no line discard.
+        click(rows[0].querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
+        await flush(root)
+        click(diffRoot(container).querySelector<HTMLButtonElement>("[aria-label='Select deletion line 1']")!)
+        await flush(root)
+        expect(container.querySelector(".discard-lines")).toBeNull()
+        click(rows[2].querySelector<HTMLButtonElement>("[title='src/file.txt']")!)
+        await flush(root)
+        let unstaged = rows[2].closest<HTMLElement>(".file-inspection")!
+        click(diffRoot(unstaged).querySelector<HTMLButtonElement>("[aria-label='Select addition line 1']")!)
+        await flush(root)
+        click(unstaged.querySelector<HTMLButtonElement>(".discard-lines")!)
+        await flush(root)
+        expect(requests.at(-1)).toMatchObject({ kind: "lines", worktreePath: "D:\\Source\\inspection", path: "src/file.txt", lineIds: [2] })
+        expect((requests.at(-1) as { lines: unknown[] }).lines).toHaveLength(3)
+        expect(notice()?.textContent).toContain("Discarded 1 line in src/file.txt")
     } finally {
         dispose()
     }

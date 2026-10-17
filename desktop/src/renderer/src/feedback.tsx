@@ -5,6 +5,12 @@ export interface NoticeState {
     message: string
     // Confirmations close themselves; failures and guidance wait for the user.
     transient?: boolean
+    /** How long a transient notice stays when it needs longer than the default, such as an undo window. */
+    duration?: number
+    /** One follow-up the notice offers, such as undoing what it reports. */
+    action?: { label: string; run(): void }
+    /** Called once the notice leaves the screen, whether dismissed, timed out, or replaced. */
+    closed?(): void
 }
 
 let transientDuration = 5_000
@@ -17,7 +23,7 @@ let notice = css({
     width: "min(460px, calc(100vw - 28px))",
     padding: "11px 12px",
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) auto",
+    gridTemplateColumns: "minmax(0, 1fr) auto auto",
     alignItems: "center",
     gap: "10px",
     border: "1px solid var(--line-strong)",
@@ -46,6 +52,24 @@ let noticeP = css({
     margin: "4px 0 0",
     fontSize: "13px",
     lineHeight: "1.45",
+})
+
+let noticeAction = css({
+    fontWeight: "600",
+    letterSpacing: "0",
+    textTransform: "none",
+    minHeight: "24px",
+    padding: "0 10px",
+    color: "var(--text)",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "4px",
+    background: "var(--control)",
+    font: "inherit",
+    fontSize: "12px",
+    cursor: "pointer",
+    "&:hover": {
+        background: "var(--control-hover)",
+    },
 })
 
 let noticeClose = css({
@@ -107,7 +131,7 @@ export function Notice(handle: Handle<{ notice?: NoticeState; dismiss(): void }>
     let schedule = () => {
         stop()
         if (shown?.transient && !hovered && !focused)
-            timer = window.setTimeout(() => handle.props.dismiss(), transientDuration)
+            timer = window.setTimeout(() => handle.props.dismiss(), shown.duration ?? transientDuration)
     }
     handle.signal.addEventListener("abort", stop, { once: true })
 
@@ -152,6 +176,15 @@ export function Notice(handle: Handle<{ notice?: NoticeState; dismiss(): void }>
                         {handle.props.notice?.message ?? ""}
                     </p>
                 </div>
+                {handle.props.notice?.action && (
+                    <button
+                        type="button"
+                        class="notice-action"
+                        mix={[noticeAction, on("click", () => handle.props.notice?.action?.run())]}
+                    >
+                        {handle.props.notice.action.label}
+                    </button>
+                )}
                 <button id="notice-close" type="button" aria-label="Dismiss" mix={[noticeClose, on("click", handle.props.dismiss)]}>
                     ×
                 </button>

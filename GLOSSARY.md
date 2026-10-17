@@ -117,6 +117,10 @@ _Avoid_: Publish undo, push log
 An immediate Git mutation recorded in a persistent linear undo/redo history. Undo and redo are transitions through eligible operations, not new operations themselves; a new operation after undo makes the abandoned redo path unavailable. Multi-step Laneway workflows retain their starting Git state for interruption recovery; unusual failures may require manual recovery. Native Git wrappers instead record operation-specific inverses after Git finishes, without a repository lock or interruption-recovery transaction around Git execution. Commit undo moves only the recorded ref; staging undo restores the index. External changes to affected state may make replay unsafe. Ignored files are outside workflow undo, but native stash undo includes them when explicitly stashed with `--all`.
 _Avoid_: Command, action
 
+**Working Changes Discard**:
+An immediate removal of chosen Working Changes from a worktree: whole files from a file row's context menu, or selected lines from an unstaged diff. It is not a Laneway Operation and never enters the Operation History. The originals move aside by rename within the worktree's git directory, so a discard costs the same for any file size; a notice offers Undo and Ctrl+Z for a few seconds, further discards join that notice, and when it closes the originals are released for good. A staged discard returns index and worktree to HEAD, and its undo stages the restored files in full; an unstaged discard returns the worktree to the index. A file edited again inside the window is kept rather than overwritten by undo. Ignored files and files in use are untouched.
+_Avoid_: Revert, checkout, clean, reset
+
 **Operation History**:
 The repository-wide persistent linear record of Laneway Operations around the current undo/redo position, shared across linked worktrees. It is distinct from Git commit history and the recovery journal.
 _Avoid_: History, journal, reflog

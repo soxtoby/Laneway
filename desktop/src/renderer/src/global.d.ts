@@ -2,6 +2,7 @@ import type { Appearance, AuthorIdentitySettings, BranchGraphResult, BranchHisto
 import type { ChangesRequest, ChangesResult, FileDiffRequest, FileDiffResult, FileImageRequest, FileImageResult, FileListView } from "@laneway/shared"
 import type { WorktreeActionResult, WorktreePreviewResult, WorktreeRequest } from "@laneway/shared"
 import type { CommitDraft, LocalActionResult, LocalRequest } from "@laneway/shared"
+import type { DiscardRequest, DiscardResult, DiscardUndoResult } from "@laneway/shared"
 import type { ConflictActionResult, ConflictRequest } from "@laneway/shared"
 import type { PullActionResult, PullProgress, PullRequest } from "@laneway/shared"
 import type { RecoveryActionResult, RecoveryRequest } from "@laneway/shared"
@@ -38,6 +39,11 @@ declare global {
             conflictOperation(repositoryId: string, request: ConflictRequest): Promise<ConflictActionResult>
             previewWorktree(repositoryId: string, request: WorktreeRequest): Promise<WorktreePreviewResult>
             localOperation(repositoryId: string, request: LocalRequest, token?: string): Promise<LocalActionResult>
+            /** Applies a Working Changes Discard immediately, setting the originals aside for a short undo window. */
+            discardChanges(repositoryId: string, request: DiscardRequest): Promise<DiscardResult>
+            undoDiscard(repositoryId: string, id: string): Promise<DiscardUndoResult>
+            /** Releases a discard's originals, making it final. */
+            settleDiscard(repositoryId: string, id: string): Promise<void>
             readCommitDraft(repositoryId: string, path: string): Promise<CommitDraft>
             saveCommitDraft(repositoryId: string, path: string, draft: CommitDraft): Promise<void>
             executeWorktree(repositoryId: string, request: WorktreeRequest, token: string): Promise<WorktreeActionResult>

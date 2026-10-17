@@ -1,10 +1,11 @@
 import { isText, normalize, previewWorktree, readRegisteredWorktrees } from "@laneway/git"
-import { CommitDraftSchema, type ConflictActionResult, ConflictRequestSchema, type LocalActionResult, LocalRequestSchema, type PullActionResult, type PullProgress, PullRequestSchema, type RecoveryActionResult, RecoveryRequestSchema, type WorktreeActionResult, type WorktreePreviewResult, WorktreeRequestSchema } from "@laneway/shared"
+import { CommitDraftSchema, type ConflictActionResult, ConflictRequestSchema, DiscardRequestSchema, type DiscardResult, type DiscardUndoResult, type LocalActionResult, LocalRequestSchema, type PullActionResult, type PullProgress, PullRequestSchema, type RecoveryActionResult, RecoveryRequestSchema, type WorktreeActionResult, type WorktreePreviewResult, WorktreeRequestSchema } from "@laneway/shared"
 import { ipcMain } from "electron"
 import { mkdtemp, rm, rmdir, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { CommitDrafts } from "../commit-drafts"
+import { WorkingDiscards } from "../discard"
 import { type EngineCommandResult, runEngineCommand } from "../engine"
 import type { OpenRepositories } from "../repositories"
 
@@ -13,10 +14,36 @@ export function registerOperationHandlers(repositories: OpenRepositories, engine
     let conflictInspections = new Map<string, ConflictActionResult>()
     // One Pull latest per repository; cancellation stops at the next safe boundary.
     let activePulls = new Map<string, { cancel(): void }>()
+    let discards = new WorkingDiscards(repositoryId => repositories.worktreeRepository(repositoryId))
     registerConflictHandlers()
     registerPullHandlers()
     registerLocalHandlers()
+    registerDiscardHandlers()
     registerWorktreeHandlers()
+
+    // Discards bypass the engine: they are renames plus one Git call, and stay outside the Operation History.
+    function registerDiscardHandlers() {
+        ipcMain.handle("discard:apply", async (_event, repositoryId: unknown, value: unknown): Promise<DiscardResult> => {
+            try {
+                if (typeof repositoryId != "string")
+                    throw new Error("Choose a repository.")
+                return await discards.apply(repositoryId, DiscardRequestSchema.parse(value))
+            } catch (error) {
+                return { ok: false, error: { message: error instanceof Error ? error.message : String(error) } }
+            }
+        })
+
+        ipcMain.handle("discard:undo", async (_event, repositoryId: unknown, id: unknown): Promise<DiscardUndoResult> => {
+            if (typeof repositoryId != "string" || typeof id != "string")
+                return { ok: false, error: { message: "Choose a discard to undo." } }
+            return discards.undo(repositoryId, id)
+        })
+
+        ipcMain.handle("discard:settle", async (_event, repositoryId: unknown, id: unknown) => {
+            if (typeof repositoryId == "string" && typeof id == "string")
+                await discards.settle(repositoryId, id)
+        })
+    }
 
     function registerConflictHandlers() {
         ipcMain.handle("conflict:content", async (_event, repositoryId: unknown, object: unknown): Promise<string | null> => {

@@ -534,7 +534,11 @@ export function createBranchWorkspace(options: BranchWorkspaceOptions): BranchWo
             && !event.composedPath().some(node => node instanceof HTMLElement && node.matches('input, textarea, select, [contenteditable="true"]'))
         ) {
             event.preventDefault()
-            void worktreeActions.transition(activeRepositoryId, event.shiftKey || event.key.toLowerCase() == "y" ? "redo" : "undo")
+            let redo = event.shiftKey || event.key.toLowerCase() == "y"
+            // A discard still showing its Undo notice takes Ctrl+Z before the Operation History does.
+            if (!redo && inspection.undoDiscard())
+                return
+            void worktreeActions.transition(activeRepositoryId, redo ? "redo" : "undo")
             return
         }
         if (event.ctrlKey && event.key.toLowerCase() == "k") {

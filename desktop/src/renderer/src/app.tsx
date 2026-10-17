@@ -202,7 +202,9 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
                 <Notice
                     notice={notice}
                     dismiss={() => {
+                        let closing = notice
                         notice = undefined
+                        closing?.closed?.()
                         handle.update()
                     }}
                 />
@@ -403,13 +405,18 @@ export function LanewayApp(handle: Handle<{ api: Window["laneway"] }>) {
     }
 
     function notify(nextNotice: NoticeState) {
+        let replaced = notice
         notice = nextNotice
+        replaced?.closed?.()
         // Callers that have already finished their own refresh still need the toast to appear.
         void handle.update()
         // Withdraws this notice only if nothing has replaced it since.
         return () => {
-            if (notice == nextNotice)
+            if (notice == nextNotice) {
                 notice = undefined
+                nextNotice.closed?.()
+                void handle.update()
+            }
         }
     }
 }

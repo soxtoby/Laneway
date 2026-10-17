@@ -3,6 +3,7 @@ import type { ChangesRequest, FileDiffRequest, FileImageRequest, FileListView } 
 import type { FileHistoryRequest } from "@laneway/shared"
 import type { WorktreeRequest } from "@laneway/shared"
 import type { CommitDraft, LocalRequest } from "@laneway/shared"
+import type { DiscardRequest } from "@laneway/shared"
 import type { ConflictRequest } from "@laneway/shared"
 import type { PullProgress, PullRequest } from "@laneway/shared"
 import type { RecoveryRequest } from "@laneway/shared"
@@ -21,6 +22,9 @@ contextBridge.exposeInMainWorld("laneway", {
     conflictOperation: (repositoryId: string, request: ConflictRequest) => ipcRenderer.invoke("conflict:operation", repositoryId, request),
     previewWorktree: (repositoryId: string, request: WorktreeRequest) => ipcRenderer.invoke("worktree:preview", repositoryId, request),
     localOperation: (repositoryId: string, request: LocalRequest, token?: string) => ipcRenderer.invoke("local:operation", repositoryId, request, token),
+    discardChanges: (repositoryId: string, request: DiscardRequest) => ipcRenderer.invoke("discard:apply", repositoryId, request),
+    undoDiscard: (repositoryId: string, id: string) => ipcRenderer.invoke("discard:undo", repositoryId, id),
+    settleDiscard: (repositoryId: string, id: string) => ipcRenderer.invoke("discard:settle", repositoryId, id),
     readCommitDraft: (repositoryId: string, path: string) => ipcRenderer.invoke("commit:draft", repositoryId, path),
     saveCommitDraft: (repositoryId: string, path: string, draft: CommitDraft) => ipcRenderer.invoke("commit:draft", repositoryId, path, draft),
     executeWorktree: (repositoryId: string, request: WorktreeRequest, token: string) => ipcRenderer.invoke("worktree:execute", repositoryId, request, token),

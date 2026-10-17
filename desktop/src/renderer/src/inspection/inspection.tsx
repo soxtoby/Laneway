@@ -1,4 +1,4 @@
-import { type BranchGraph, type BranchGraphBranchNode, type BranchGraphVirtualBranch, type BranchHistoryCommit, type BranchHistoryPage, type ChangedFile, type ChangesInventory, type ComparisonRef, type CompositionSource, defaultFileListView, type DiffLayout, type DiffSource, type DiffView, type FileListView } from "@laneway/shared"
+import { type BranchGraph, type BranchGraphBranchNode, type BranchGraphVirtualBranch, type BranchHistoryCommit, type BranchHistoryPage, type ChangedFile, type ChangesInventory, type ComparisonRef, type CompositionSource, defaultFileListView, type DiffLayout, type DiffSource, type DiffView, type FileDiffPage, type FileListView } from "@laneway/shared"
 import { css, on, ref, type RemixNode } from "remix/ui"
 import * as accordion from "remix/ui/accordion/primitives"
 import { auxiliaryCloseButton, auxiliaryColumnFrame, auxiliaryColumnHeader, AuxiliaryColumns, defaultAuxiliaryColumnWidth } from "../auxiliary-columns"
@@ -17,6 +17,7 @@ import { CommitMessage } from "./commit-message"
 import { type ComparisonColumnNode, comparisonHistorySource, comparisonKey } from "./comparison-columns"
 import { readDiffContext } from "./diff-context"
 import { DiffControls } from "./diff-controls"
+import { createDiscards } from "./discard"
 import { CopyPathButton, fileActionButton, fileLabel, FileTree } from "./file-list"
 import { FileListViewMenu } from "./file-list-view"
 import { type FileAction, FileMenu } from "./file-menu"
@@ -666,6 +667,25 @@ export function createInspection(options: Options) {
             }
         },
     })
+    let discards = createDiscards({
+        api: options.api,
+        notify: options.notify,
+        changed: async (repositoryId, worktreePath) => {
+            for (let state of [...columns.values(), ...historyHosts.values()]) {
+                if (state.repositoryId != repositoryId || state.worktreePath != worktreePath)
+                    continue
+                for (let id of state.wholeFiles.keys()) {
+                    if (id.startsWith("working-"))
+                        state.wholeFiles.delete(id)
+                }
+                for (let diff of state.diffs.values()) {
+                    if (diff.group.startsWith("working"))
+                        diff.selection = undefined
+                }
+                await readFiles(state, "working", { kind: "working", worktreePath }, true)
+            }
+        },
+    })
     let refresh = () => {
         if (activeRepositoryId)
             histories.refresh(activeRepositoryId)
@@ -708,6 +728,10 @@ export function createInspection(options: Options) {
         /** Re-reads every open worktree's Working Changes, for repository changes noticed outside Laneway. */
         refreshWorking() {
             refresh()
+        },
+        /** Undoes the discards still showing their notice; false when there are none. */
+        undoDiscard() {
+            return discards.undo()
         },
         renameBranch(repositoryId: string, oldRef: string, newRef: string) {
             histories.renameBranch(repositoryId, oldRef, newRef)
@@ -2087,7 +2111,7 @@ export function createInspection(options: Options) {
                     renderFile={state.selectingConflicts ? undefined : resolution?.renderFile}
                     hideStagedBadge={group.startsWith("working-")}
                     root={fileRoot(state, files.source)}
-                    actions={file => historyActions(state, files.source, file)}
+                    actions={file => [...historyActions(state, files.source, file), ...discardActions(state, group, files, file)]}
                     view={view}
                     filter={state.filter}
                     files={visible}
@@ -2220,6 +2244,30 @@ export function createInspection(options: Options) {
                     file.path,
                 ),
         }]
+    }
+
+    /** Discard sits in the context menu only, so nothing on a row discards with one click. */
+    function discardActions(state: ColumnState, group: string, files: FileState, file: ChangedFile): FileAction[] {
+        let source = files.source
+        if (!group.startsWith("working-") || source.kind != "working" || file.conflicted || file.submodule)
+            return []
+
+        let view = group == "working-staged" ? "staged" as const : "unstaged" as const
+        let eligible = (candidate: ChangedFile) => !candidate.conflicted && !candidate.submodule
+        // A right-click on one of the checked files acts on all of them.
+        let checked = files.inventory?.files.filter(candidate => state.wholeFiles.has(`${group}:${candidate.path}`)) ?? []
+        let targets = checked.length > 1 && checked.some(candidate => candidate.path == file.path) ? checked.filter(eligible) : [file]
+        let label = targets.length > 1
+            ? `Discard ${targets.length} selected files`
+            : view == "staged"
+            ? file.unstaged ? "Discard all changes" : "Discard staged changes"
+            : file.untracked
+            ? "Delete untracked file"
+            : file.staged
+            ? "Discard unstaged changes"
+            : "Discard changes"
+
+        return [{ label, separator: true, run: () => void discards.files(state.repositoryId, source.worktreePath, view, targets) }]
     }
 
     function clearGroup(state: ColumnState, group: string, prefix = "") {
@@ -2713,14 +2761,19 @@ export function createInspection(options: Options) {
                 eligible={selectable(state, diff.group)}
                 layout={state.transientLayout ?? options.layout(state.repositoryId, state.id)}
                 imageMode={diff.imageMode ?? preferredImageMode()}
-                selectionControl={page && diff.selection && transferSource(state, page.source) && composition.source({
-                    repositoryId: state.repositoryId,
-                    selectedRemote: state.graph.selectedRemote,
-                    source: transferSource(state, page.source)!,
-                    files: [{ path: diff.path, version: page.version, entireFile: page.entireFile, lineIds: diff.selection.lineIds }],
-                    view: diff.view == "staged" || diff.view == "unstaged" ? diff.view : "combined",
-                    label: `${diff.selection.lineIds.length} lines in ${diff.path}`,
-                })}
+                selectionControl={page && diff.selection && (
+                    <>
+                        {transferSource(state, page.source) && composition.source({
+                            repositoryId: state.repositoryId,
+                            selectedRemote: state.graph.selectedRemote,
+                            source: transferSource(state, page.source)!,
+                            files: [{ path: diff.path, version: page.version, entireFile: page.entireFile, lineIds: diff.selection.lineIds }],
+                            view: diff.view == "staged" || diff.view == "unstaged" ? diff.view : "combined",
+                            label: `${diff.selection.lineIds.length} lines in ${diff.path}`,
+                        })}
+                        {lineDiscard(state, diff, page)}
+                    </>
+                )}
                 changeView={view => changeView(state, diff, view)}
                 read={more => readDiff(state, diff, more)}
                 readContext={(page, signal) => readDiffContext(options.api, state.repositoryId, page, signal)}
@@ -2738,6 +2791,29 @@ export function createInspection(options: Options) {
                     update()
                 }}
             />
+        )
+    }
+
+    // Line discards rewrite the worktree file from the index-to-worktree diff. A file with staged
+    // content shows that diff only in its Unstaged view, so the combined view offers no discard there.
+    function lineDiscard(state: ColumnState, diff: FileDiffState, page: FileDiffPage): RemixNode {
+        let selection = diff.selection
+        if (page.source.kind != "working" || !selection?.lineIds.length || !(diff.view == "unstaged" || diff.view == "combined" && !page.file.staged))
+            return null
+
+        let { worktreePath } = page.source
+        return (
+            <button
+                type="button"
+                class="discard-lines"
+                data-mousedown-activate
+                mix={[
+                    bodySelectionSummaryButton,
+                    on("click", () => void discards.lines(state.repositoryId, worktreePath, diff.path, page.lines, selection.lineIds)),
+                ]}
+            >
+                Discard selected
+            </button>
         )
     }
 
