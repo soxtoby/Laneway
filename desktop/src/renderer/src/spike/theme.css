@@ -1,0 +1,142 @@
+/* Laneway's theme over the React Aria starter's variables (ui/theme.css). Screens and Laneway's
+   own components use these variables; colours are only written here.
+   `:root:root` outranks the starter's `:root` rules wherever the bundler places them. */
+:root:root {
+    /* Laneway amber. The starter derives every tint step from this hue and chroma. */
+    --tint: oklch(72.4% 0.153 71.5);
+
+    /* Accent fills are bright amber with dark ink, as Laneway has always drawn them. */
+    --highlight-background: oklch(from var(--tint) 72.4% c h);
+    --highlight-background-pressed: oklch(from var(--tint) 66.5% c h);
+    --highlight-foreground: oklch(19% 0.03 79);
+    --focus-ring-color: oklch(from var(--tint) 67.8% c h);
+
+    /* Selected rows in dense lists take a wash rather than a fill, so their text keeps its colour. */
+    --selection-background: oklch(from var(--tint) l c h / 20%);
+    --selection-background-hover: oklch(from var(--tint) l c h / 30%);
+
+    /* Repository Icon tiles, stash rows, and the Commit Trail graph. */
+    --tile-background: var(--gray-100);
+    --stash-background: oklch(from var(--purple) var(--lightness-100) calc(c * 0.4) h);
+    --stash-border: oklch(from var(--purple) var(--lightness-400) calc(c * 0.6) h);
+    --graph-line: var(--tint-800);
+    --graph-dot: var(--tint-1000);
+
+    /* File status marks. */
+    --status-modified: var(--tint-1100);
+    --status-added: oklch(from var(--green) var(--lightness-1100) c h);
+    --status-deleted: oklch(from var(--red) var(--lightness-1000) c h);
+
+    /* Repository Icon colours: Laneway's palette names map to hues; lightness follows the appearance. */
+    --tone-lightness: 55%;
+    --tone-chroma: 0.17;
+
+    --font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+
+[data-tone] {
+    color: oklch(var(--tone-lightness) var(--tone-chroma) var(--tone-hue));
+}
+
+[data-tone="gray"] {
+    --tone-chroma: 0;
+    --tone-hue: 0;
+}
+
+[data-tone="rose"] {
+    --tone-hue: 16;
+}
+[data-tone="red"] {
+    --tone-hue: 25;
+}
+[data-tone="orange"] {
+    --tone-hue: 47;
+}
+[data-tone="amber"] {
+    --tone-hue: 70;
+}
+[data-tone="yellow"] {
+    --tone-hue: 86;
+}
+[data-tone="lime"] {
+    --tone-hue: 131;
+}
+[data-tone="green"] {
+    --tone-hue: 150;
+}
+[data-tone="emerald"] {
+    --tone-hue: 163;
+}
+[data-tone="teal"] {
+    --tone-hue: 182;
+}
+[data-tone="cyan"] {
+    --tone-hue: 215;
+}
+[data-tone="sky"] {
+    --tone-hue: 237;
+}
+[data-tone="blue"] {
+    --tone-hue: 260;
+}
+[data-tone="indigo"] {
+    --tone-hue: 277;
+}
+[data-tone="violet"] {
+    --tone-hue: 293;
+}
+[data-tone="purple"] {
+    --tone-hue: 304;
+}
+[data-tone="fuchsia"] {
+    --tone-hue: 322;
+}
+[data-tone="pink"] {
+    --tone-hue: 354;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:root {
+        --highlight-background: oklch(from var(--tint) 78.6% c h);
+        --highlight-background-pressed: oklch(from var(--tint) 72.4% c h);
+        --focus-ring-color: oklch(from var(--tint) 78.6% c h);
+        --selection-background: oklch(from var(--tint) l c h / 18%);
+        --selection-background-hover: oklch(from var(--tint) l c h / 26%);
+        --stash-background: oklch(from var(--purple) var(--lightness-100) calc(c * 0.35) h);
+        --stash-border: oklch(from var(--purple) var(--lightness-300) calc(c * 0.5) h);
+        --tone-lightness: 76%;
+        --tone-chroma: 0.15;
+    }
+}
+
+/* The repository panel stays dark in both appearances, as Laneway's rail always has. Variables
+   resolve where they are used, so the panel's own rows and the starter's buttons inside it take
+   these values in place of the page's. */
+.repository-panel {
+    color-scheme: dark;
+    --gray-50: #1b2230;
+    --tile-background: #273043;
+    --highlight-hover: #273043;
+    --highlight-pressed: #364056;
+    --selection-background: #273043;
+    --border-color: #364056;
+    --text-color: #f2f4f8;
+    --text-color-placeholder: #98a3b8;
+    --highlight-background: #f2a92c;
+    --focus-ring-color: #f2a92c;
+    --tint-200: var(--highlight-hover);
+    --tint-1400: var(--text-color);
+    --tone-lightness: 76%;
+    --tone-chroma: 0.15;
+}
+
+@media (prefers-color-scheme: dark) {
+    .repository-panel {
+        --gray-50: #0f141c;
+        --tile-background: #1a2130;
+        --highlight-hover: #1a2130;
+        --highlight-pressed: #2a3345;
+        --selection-background: #1a2130;
+        --border-color: #2a3345;
+    }
+}

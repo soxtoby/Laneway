@@ -1,0 +1,661 @@
+/* Laneway's own surfaces, built from the starter's variables and Laneway's theme (theme.css).
+   Colours, radii, and spacing come from those variables; only geometry is written here. */
+
+.shell {
+    height: 100vh;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+}
+
+/* Header */
+
+.header {
+    height: 48px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding-inline: var(--spacing-4) 144px;
+    background: var(--gray-50);
+    border-bottom: 1px solid var(--border-color);
+
+    .react-aria-Tabs {
+        align-self: stretch;
+        justify-content: end;
+    }
+
+    .react-aria-TabList[data-orientation="horizontal"] {
+        border-bottom: none;
+    }
+
+    .react-aria-Tab {
+        padding: var(--spacing-3) var(--spacing-3);
+    }
+}
+
+.brand {
+    font-weight: 600;
+    font-size: var(--font-size-lg);
+    margin-inline-end: var(--spacing-4);
+}
+
+.spacer {
+    flex: 1 1 auto;
+}
+
+.header-divider {
+    width: 1px;
+    align-self: stretch;
+    margin-block: var(--spacing-3);
+    background: var(--border-color);
+}
+
+/* Accent buttons are bright amber with dark ink, like the selected and highlighted states. */
+.button-base[data-variant="accent"] {
+    --button-background: var(--highlight-background);
+    --button-gradient: oklch(from var(--highlight-background) calc(l + 0.04) c h);
+    --button-border: oklch(from var(--highlight-background) calc(l - 0.08) c h);
+    --button-shadow: oklch(from var(--highlight-background) calc(l - 0.16) c h);
+    --button-highlight: rgb(255 255 255 / 0.35);
+    --button-text: var(--highlight-foreground);
+
+    &[data-pressed] {
+        --button-background: var(--highlight-background-pressed);
+    }
+}
+
+/* Small icon buttons for rows and column headers, where the starter's 32px round buttons are too large. */
+.icon-button {
+    appearance: none;
+    flex: 0 0 auto;
+    display: inline-grid;
+    place-items: center;
+    width: var(--spacing-7);
+    height: var(--spacing-7);
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-color);
+    outline: none;
+
+    &.small {
+        width: var(--spacing-6);
+        height: var(--spacing-6);
+    }
+
+    > svg {
+        width: var(--spacing-4);
+        height: var(--spacing-4);
+    }
+
+    &[data-hovered] {
+        background: var(--highlight-hover);
+    }
+
+    &[data-pressed] {
+        background: var(--highlight-pressed);
+    }
+
+    &[data-focus-visible] {
+        outline: 2px solid var(--focus-ring-color);
+        outline-offset: -2px;
+    }
+}
+
+/* Workspace */
+
+.work-area {
+    min-height: 0;
+    display: flex;
+}
+
+.columns {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: start;
+    gap: var(--spacing-2);
+    padding: var(--spacing-2);
+    overflow: auto;
+}
+
+.column {
+    width: 380px;
+    max-height: 100%;
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    background: var(--gray-50);
+    border: 0.5px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.column-header {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-1);
+    padding: var(--spacing-2) var(--spacing-2) var(--spacing-2) var(--spacing-3);
+
+    > svg {
+        flex: 0 0 auto;
+        width: var(--spacing-5);
+        height: var(--spacing-5);
+        color: var(--tint-1000);
+    }
+}
+
+.column-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    margin-inline-start: var(--spacing-1);
+}
+
+.column-name {
+    font-weight: 600;
+    font-size: var(--font-size-lg);
+}
+
+.column-path,
+.column-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.column-path {
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+}
+
+.column-body {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2);
+    padding: 0 var(--spacing-2) var(--spacing-2);
+    overflow: auto;
+}
+
+.stash-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: var(--spacing-1) var(--spacing-1) var(--spacing-1) var(--spacing-2);
+    border: 1px solid var(--stash-border);
+    border-radius: var(--radius);
+    background: var(--stash-background);
+
+    > svg {
+        flex: 0 0 auto;
+        width: var(--spacing-4);
+        height: var(--spacing-4);
+    }
+}
+
+.stash-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Working Changes */
+
+.working-changes {
+    border-block: 0.5px solid var(--border-color);
+    padding-block: var(--spacing-1);
+
+    .react-aria-Disclosure {
+        width: auto;
+    }
+
+    .react-aria-DisclosurePanel > div {
+        padding: 0;
+    }
+}
+
+.changes-header {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-1);
+
+    .react-aria-Heading {
+        flex: 1 1 auto;
+    }
+
+    .disclosure-button {
+        padding-inline: var(--spacing-1);
+    }
+}
+
+.commit-bar {
+    display: flex;
+    justify-content: end;
+    padding-top: var(--spacing-2);
+}
+
+/* Branch heading */
+
+.branch-header {
+    height: var(--spacing-8);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding-inline: var(--spacing-2) var(--spacing-1);
+    border-radius: var(--radius);
+    background: var(--tint-100);
+    border: 0.5px solid var(--tint-300);
+
+    > svg {
+        width: var(--spacing-4);
+        height: var(--spacing-4);
+        color: var(--tint-1100);
+    }
+}
+
+.branch-name {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.badge {
+    flex: 0 0 auto;
+    padding: 0 var(--spacing-2);
+    border-radius: 999px;
+    font-size: var(--font-size-sm);
+    line-height: 20px;
+    background: var(--gray-200);
+    color: var(--text-color);
+
+    &[data-variant="ahead"] {
+        background: var(--highlight-background);
+        color: var(--highlight-foreground);
+    }
+}
+
+/* Dense lists: the File List and Commit Trail share one row. */
+
+.dense-list {
+    display: flex;
+    flex-direction: column;
+    outline: none;
+}
+
+.dense-row {
+    flex: 0 0 auto;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    color: var(--text-color);
+    cursor: default;
+    outline: none;
+
+    &.compact {
+        height: 28px;
+    }
+
+    &[data-hovered] {
+        background: var(--highlight-hover);
+    }
+
+    &[data-selected] {
+        background: var(--selection-background);
+
+        &[data-hovered] {
+            background: var(--selection-background-hover);
+        }
+    }
+
+    &[data-focus-visible] {
+        outline: 2px solid var(--focus-ring-color);
+        outline-offset: -2px;
+    }
+}
+
+.row-content {
+    height: 100%;
+    display: grid;
+    align-items: center;
+    column-gap: var(--spacing-2);
+    padding-inline: var(--spacing-1);
+    outline: none;
+}
+
+.row-actions {
+    display: flex;
+    opacity: 0;
+
+    &[data-visible] {
+        opacity: 1;
+    }
+}
+
+.file-content {
+    grid-template-columns: auto auto minmax(0, 1fr) var(--spacing-6);
+
+    .react-aria-CheckboxField {
+        display: flex;
+    }
+}
+
+.file-status {
+    width: var(--spacing-4);
+    height: var(--spacing-4);
+
+    &[data-status="modified"] {
+        color: var(--status-modified);
+    }
+
+    &[data-status="added"] {
+        color: var(--status-added);
+    }
+
+    &[data-status="deleted"] {
+        color: var(--status-deleted);
+    }
+}
+
+.file-path,
+.commit-subject {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-directory {
+    color: var(--text-color-placeholder);
+}
+
+.commit-content {
+    grid-template-columns: var(--spacing-7) minmax(0, 1fr) auto var(--spacing-6);
+    padding-inline-start: 0;
+}
+
+.commit-time {
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+}
+
+.graph-cell {
+    position: relative;
+    align-self: stretch;
+}
+
+.graph-line {
+    position: absolute;
+    left: 13px;
+    width: 2px;
+    top: 0;
+    bottom: 0;
+    background: var(--graph-line);
+
+    &[data-first] {
+        top: 50%;
+    }
+
+    &[data-last] {
+        bottom: 50%;
+    }
+}
+
+.graph-dot {
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    translate: 0 -50%;
+    width: 12px;
+    height: 12px;
+    box-sizing: border-box;
+    border-radius: 50%;
+    border: 2px solid var(--graph-dot);
+    background: var(--gray-50);
+
+    &[data-head] {
+        border-color: var(--highlight-background-pressed);
+        background: var(--highlight-background);
+    }
+}
+
+/* Repository panel */
+
+.repository-panel {
+    width: 224px;
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-1);
+    padding: var(--spacing-2) var(--spacing-1);
+    background: var(--gray-50);
+    border-inline-end: 0.5px solid var(--border-color);
+    transition: width 200ms;
+    overflow: hidden;
+
+    &.collapsed {
+        width: 52px;
+    }
+}
+
+.panel-heading {
+    padding: 0 var(--spacing-2) var(--spacing-1);
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.repository-list-area {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.repository-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+    outline: none;
+}
+
+.repository-row {
+    position: relative;
+    flex: 0 0 auto;
+    height: 40px;
+    margin-top: 2px;
+    border-radius: var(--radius);
+    color: var(--text-color);
+    cursor: default;
+    outline: none;
+
+    &.collapsed {
+        height: 36px;
+    }
+
+    &[data-hovered] {
+        background: var(--highlight-hover);
+    }
+
+    &.active {
+        background: var(--selection-background);
+        box-shadow: inset 0 0 0 1px var(--border-color);
+    }
+
+    /* The active repository's marker at the row's edge; the list clips anything beyond it. */
+    &.active::before {
+        content: "";
+        position: absolute;
+        inset-inline-start: 0;
+        top: var(--spacing-2);
+        bottom: var(--spacing-2);
+        width: 3px;
+        border-radius: 0 2px 2px 0;
+        background: var(--highlight-background);
+    }
+
+    &[data-dragging] {
+        opacity: 0.5;
+    }
+
+    &[data-focus-visible] {
+        outline: 2px solid var(--focus-ring-color);
+        outline-offset: -2px;
+    }
+}
+
+.repository-content {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding-inline: var(--spacing-2) var(--spacing-1);
+    outline: none;
+
+    .collapsed > & {
+        justify-content: center;
+        padding: 0;
+    }
+}
+
+.repository-copy {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    white-space: nowrap;
+}
+
+.repository-name,
+.repository-path {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.active .repository-name {
+    font-weight: 600;
+}
+
+.repository-path {
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+}
+
+/* React Aria starts keyboard drags from this button; it only shows for keyboard focus. */
+.drag-handle {
+    position: absolute;
+    inset-inline-start: 0;
+    top: 50%;
+    translate: 0 -50%;
+    display: grid;
+    place-items: center;
+    width: var(--spacing-3);
+    height: var(--spacing-6);
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: var(--gray-50);
+    color: var(--text-color-placeholder);
+    opacity: 0;
+    outline: none;
+
+    &[data-visible] {
+        opacity: 1;
+    }
+
+    &[data-focus-visible] {
+        outline: 2px solid var(--focus-ring-color);
+    }
+
+    > svg {
+        width: var(--spacing-3);
+        height: var(--spacing-3);
+    }
+}
+
+.drop-slot {
+    position: relative;
+    height: 0;
+    outline: none;
+}
+
+.drop-line {
+    position: absolute;
+    left: var(--spacing-1);
+    right: var(--spacing-1);
+    top: 0;
+    height: 2px;
+    border-radius: 999px;
+
+    &[data-drop-target] {
+        background: var(--focus-ring-color);
+    }
+}
+
+.panel-footer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-1);
+    align-items: start;
+
+    .collapsed > & {
+        align-items: center;
+    }
+}
+
+/* Repository Icon tiles: a 20-unit SVG drawn at 28px. */
+.tile {
+    flex: 0 0 auto;
+    width: var(--spacing-7);
+    height: var(--spacing-7);
+    display: block;
+}
+
+.tile-frame {
+    fill: var(--tile-background);
+    stroke: var(--border-color);
+    stroke-width: 1;
+
+    .active & {
+        stroke: var(--focus-ring-color);
+    }
+
+    &[data-filled] {
+        fill: var(--highlight-background);
+    }
+
+    &[data-missing] {
+        stroke: var(--invalid-color);
+    }
+}
+
+.tile-text {
+    fill: var(--text-color);
+    font-family: var(--font-family);
+
+    &[data-inverse] {
+        fill: var(--highlight-foreground);
+    }
+
+    &[data-tone] {
+        fill: currentColor;
+    }
+}
+
+/* Toasts carry file paths, so they are wider than the starter's and wrap long paths. */
+.react-aria-Toast {
+    width: 360px;
+
+    [slot="description"] {
+        overflow-wrap: anywhere;
+    }
+}

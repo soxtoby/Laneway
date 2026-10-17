@@ -5,7 +5,7 @@ import { EntryQueue } from "../entry-queue"
 import type { OpenRepositories } from "../repositories"
 import { entryError } from "../repositories"
 import { listRepositoryImages, readIconImage } from "../repository-icons"
-import { titleBarOverlay } from "../window"
+import { applyNativeTheme, titleBarOverlay } from "../window"
 import type { WorkspaceManager } from "../workspace-manager"
 
 export function registerRepositoryHandlers(repositories: OpenRepositories, workspace: WorkspaceManager) {
@@ -190,6 +190,7 @@ export function registerRepositoryHandlers(repositories: OpenRepositories, works
             "settings:appearance",
             async (_event, request: { appearance?: unknown }) => {
                 let appearance = await repositories.setAppearance(request?.appearance == "dark" ? "dark" : "light")
+                applyNativeTheme(appearance)
                 for (let window of BrowserWindow.getAllWindows())
                     window.setTitleBarOverlay?.(titleBarOverlay(appearance))
                 return appearance

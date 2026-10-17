@@ -1,0 +1,32 @@
+/* Spike page baseline: document sizing and the rules no component owns. */
+
+/* React Aria's usePress injects this as an inline <style>, which the CSP blocks; spike.html's
+   meta#react-aria-pressable-style tells it the rule is already here. */
+@layer {
+    [data-react-aria-pressable] {
+        touch-action: pan-x pan-y pinch-zoom;
+    }
+}
+
+/* The header doubles as the window's title bar. */
+.spike-drag-region {
+    -webkit-app-region: drag;
+}
+
+.spike-drag-region :is(button, [role="button"], [role="tab"]) {
+    -webkit-app-region: no-drag;
+}
+
+html,
+body,
+#app {
+    height: 100%;
+    margin: 0;
+}
+
+body {
+    overflow: hidden;
+    background: var(--background-color);
+    color: var(--text-color);
+    font: var(--font-size) / 1.4 var(--font-family);
+}
