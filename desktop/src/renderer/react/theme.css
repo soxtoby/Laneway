@@ -32,6 +32,17 @@
     --graph-line: var(--gray-400);
     --graph-dot: var(--branch-color);
 
+    /* Branch Graph rails: the Primary Branch's line in the neutral line colour, other lines in eight hues. */
+    --graph-lane-lightness: 48%;
+    --graph-lane-0: var(--graph-line);
+    --graph-lane-1: hsl(215 65% var(--graph-lane-lightness));
+    --graph-lane-2: hsl(28 65% var(--graph-lane-lightness));
+    --graph-lane-3: hsl(275 65% var(--graph-lane-lightness));
+    --graph-lane-4: hsl(175 65% var(--graph-lane-lightness));
+    --graph-lane-5: hsl(345 65% var(--graph-lane-lightness));
+    --graph-lane-6: hsl(50 65% var(--graph-lane-lightness));
+    --graph-lane-7: hsl(315 65% var(--graph-lane-lightness));
+
     /* Working Changes cards: amber for a worktree's own changes, purple for stashes, and pink for the
        branch a detached worktree's commit creates. */
     --changes-background: oklch(from var(--tint) l c h / 14%);
@@ -150,6 +161,7 @@
         --virtual-border: oklch(from var(--pink) var(--lightness-300) calc(c * 0.5) h);
         --tone-lightness: 76%;
         --tone-chroma: 0.15;
+        --graph-lane-lightness: 64%;
     }
 }
 

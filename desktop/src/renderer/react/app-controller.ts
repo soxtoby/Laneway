@@ -319,6 +319,9 @@ export function createAppController(api: Api): AppController {
 
         selectRepository: id =>
             whileOpening(async () => {
+                // Choosing the repository already shown shows or hides its Branch Graph instead.
+                if (id == ready()?.workspace.activeRepositoryId)
+                    return columns.toggleGraph()
                 try {
                     showWorkspace(await api.selectRepository(id))
                 } catch (error) {

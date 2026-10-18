@@ -4,6 +4,8 @@
 .shell {
     height: 100vh;
     display: grid;
+    /* The window bounds everything; wide content scrolls inside its own area rather than widening the shell. */
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
 }
 
@@ -71,12 +73,17 @@
     border-bottom: 1px solid var(--border-color);
 
     .react-aria-Tabs {
+        min-width: 0;
+        flex: 0 1 auto;
         align-self: stretch;
         justify-content: end;
     }
 
+    /* Many columns' tabs scroll sideways within the header instead of pushing its controls away. */
     .react-aria-TabList[data-orientation="horizontal"] {
         border-bottom: none;
+        overflow-x: auto;
+        scrollbar-width: none;
     }
 
     .react-aria-Tab {
@@ -3016,4 +3023,363 @@
     border-radius: 2px;
     background: var(--selection-background-hover);
     color: inherit;
+}
+
+/* The Branch Graph: a card between the repositories and the columns, its rows on the rails of their history. */
+.graph-panel {
+    flex: 0 0 auto;
+    width: clamp(260px, 26vw, 380px);
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    margin: var(--spacing-2) 0 var(--spacing-2) var(--spacing-2);
+    overflow: hidden;
+    border: 0.5px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background: var(--gray-50);
+}
+
+.graph-toolbar {
+    flex: 0 0 auto;
+    min-height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-2);
+    padding: 0 var(--spacing-2) 0 var(--spacing-3);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.graph-title {
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+}
+
+.graph-limit {
+    flex: 0 0 auto;
+    margin: 0;
+    padding: var(--spacing-1) var(--spacing-3);
+    border-bottom: 1px solid var(--border-color);
+    background: var(--warning-background);
+    color: var(--warning-color);
+    font-size: var(--font-size-sm);
+}
+
+.graph-message {
+    margin: auto;
+    padding: var(--spacing-5);
+    text-align: center;
+
+    p {
+        margin: 0 0 var(--spacing-1);
+    }
+
+    small {
+        color: var(--text-color-placeholder);
+    }
+}
+
+.graph-summary {
+    flex: 0 0 auto;
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    margin: 0;
+    padding: 0 var(--spacing-3);
+    overflow: hidden;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--tray-background);
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+
+    span + span::before {
+        content: "·";
+        margin-inline-end: var(--spacing-3);
+    }
+}
+
+.graph-rows-area {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.graph-rows {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    /* Virtual rows already keep their place; browser anchoring would move the viewport as they are replaced. */
+    overflow-anchor: none;
+    outline: none;
+
+    &[data-focus-visible] {
+        box-shadow: inset 0 0 0 2px var(--focus-ring-color);
+    }
+}
+
+/* Rows are exactly as tall as the rails' geometry; their separators are shadows so it stays exact. */
+.graph-row {
+    height: 40px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding-inline-end: var(--spacing-2);
+    box-shadow: inset 0 -1px var(--border-color);
+    color: var(--text-color);
+    cursor: default;
+    outline: none;
+
+    &[data-hovered] {
+        background: var(--highlight-hover);
+    }
+
+    &[data-selected] {
+        background: var(--selection-background);
+        box-shadow: inset 3px 0 var(--focus-ring-color), inset 0 -1px var(--border-color);
+    }
+
+    &[data-focus-visible] {
+        outline: 2px solid var(--focus-ring-color);
+        outline-offset: -2px;
+    }
+}
+
+.graph-rail {
+    flex: 0 0 auto;
+    overflow: hidden;
+}
+
+.graph-line {
+    fill: none;
+    stroke: var(--lane);
+    stroke-width: 2;
+}
+
+.graph-node {
+    fill: var(--gray-50);
+    stroke: var(--lane);
+    stroke-width: 2;
+}
+
+.graph-node-fill {
+    fill: var(--gray-50);
+}
+
+[data-lane="0"] {
+    --lane: var(--graph-lane-0);
+}
+[data-lane="1"] {
+    --lane: var(--graph-lane-1);
+}
+[data-lane="2"] {
+    --lane: var(--graph-lane-2);
+}
+[data-lane="3"] {
+    --lane: var(--graph-lane-3);
+}
+[data-lane="4"] {
+    --lane: var(--graph-lane-4);
+}
+[data-lane="5"] {
+    --lane: var(--graph-lane-5);
+}
+[data-lane="6"] {
+    --lane: var(--graph-lane-6);
+}
+[data-lane="7"] {
+    --lane: var(--graph-lane-7);
+}
+
+.graph-copy {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: grid;
+    gap: 1px;
+}
+
+.graph-name {
+    overflow: hidden;
+    font-size: 13px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.graph-details {
+    min-width: 0;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-1);
+    overflow: hidden;
+}
+
+.graph-kind {
+    overflow: hidden;
+    color: var(--text-color-placeholder);
+    font: 10.5px var(--font-family-mono);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.graph-chip {
+    max-width: 110px;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-1);
+    padding: 0 5px;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    font: 600 10.5px var(--font-family-mono);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    > svg {
+        flex: 0 0 auto;
+        width: 11px;
+        height: 11px;
+    }
+
+    &.worktree {
+        color: var(--identity-worktree);
+    }
+
+    &.tag {
+        border-color: var(--changes-border);
+        background: var(--changes-background);
+        color: var(--warning-color);
+    }
+
+    &.unresolved {
+        border-color: var(--warning-border);
+        background: var(--warning-background);
+        color: var(--warning-color);
+    }
+
+    &.divergence {
+        background: var(--tray-background);
+        color: var(--text-color-placeholder);
+    }
+}
+
+.graph-marker {
+    flex: 0 0 auto;
+    width: 20px;
+    height: 18px;
+    display: inline-grid;
+    place-items: center;
+    padding: 0;
+    border: 1px solid var(--stash-border);
+    border-radius: var(--radius-sm);
+    background: var(--stash-background);
+    color: var(--stash-color);
+    outline: none;
+
+    > svg {
+        width: 12px;
+        height: 12px;
+    }
+
+    &[data-hovered] {
+        background: var(--stash-background-hover);
+    }
+
+    &[data-focus-visible] {
+        outline: 2px solid var(--focus-ring-color);
+    }
+}
+
+.graph-open {
+    flex: 0 0 auto;
+    height: 24px;
+    padding: 0 var(--spacing-3);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--gray-50);
+    color: var(--text-color);
+    font: 600 12px var(--font-family);
+    outline: none;
+
+    &[data-hovered] {
+        border-color: var(--highlight-background);
+        background: var(--highlight-background);
+        color: var(--highlight-foreground);
+    }
+
+    &[data-focus-visible] {
+        outline: 2px solid var(--focus-ring-color);
+    }
+}
+
+.unassigned-stashes {
+    flex: 0 0 auto;
+    padding: var(--spacing-2) var(--spacing-3);
+    border-top: 1px solid var(--border-color);
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+}
+
+.unassigned-stash {
+    display: block;
+    width: 100%;
+    margin-top: var(--spacing-1);
+    padding: 2px var(--spacing-1);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--stash-color);
+    font: inherit;
+    text-align: start;
+    outline: none;
+
+    &[data-hovered] {
+        background: var(--stash-background);
+    }
+
+    &[data-focus-visible] {
+        outline: 2px solid var(--focus-ring-color);
+    }
+}
+
+.marker-details {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: var(--spacing-2) var(--spacing-3);
+    border-top: 1px solid var(--stash-border);
+    background: var(--stash-background);
+
+    .marker-kind {
+        color: var(--stash-color);
+        font: 600 10px var(--font-family);
+        text-transform: uppercase;
+    }
+
+    strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    small {
+        color: var(--text-color-placeholder);
+        font-family: var(--font-family-mono);
+    }
+
+    p {
+        grid-column: 1 / -1;
+        margin: 0;
+        color: var(--text-color-placeholder);
+        font-size: var(--font-size-sm);
+    }
 }

@@ -1,4 +1,4 @@
-import type { BranchGraph, BranchGraphBranchNode, BranchGraphWorktree, ComparisonRef, DiffLayout, RecoveryRequest, Workspace, WorkspaceColumn, WorktreeRecovery } from "@laneway/shared"
+import type { BranchGraph, BranchGraphBranchNode, BranchGraphMarker, BranchGraphWorktree, ComparisonRef, DiffLayout, RecoveryRequest, Workspace, WorkspaceColumn, WorktreeRecovery } from "@laneway/shared"
 import { comparisonColumnId, type ComparisonColumnNode, comparisonNode, renameComparisonRef } from "../src/inspection/comparison-columns"
 import { columnWorktree, reconcileWorktreeColumns, recoveryColumnId, recoveryWorkspaceColumn, workspaceGraph } from "../src/worktrees/worktree-columns"
 import type { ColumnInspection, Inspection } from "./inspection"
@@ -53,6 +53,22 @@ export interface ColumnsSnapshot {
     busy: boolean
     /** The column last opened by an operation, which the view brings into view and focuses; `serial` tells repeats apart. */
     revealed?: { id: string; serial: number }
+    graphView: GraphView
+}
+
+/** How the active repository's Branch Graph shows. */
+export interface GraphView {
+    shown: boolean
+    /** Every branch, rather than local, Involved, Primary, pattern-matched, and Base branches only. */
+    showAll: boolean
+    /** Graph Selection: the node the graph highlights, which never opens a column by itself. */
+    selectedId?: string
+    /** Branch Nodes whose stacks are folded, hiding the branches built on them. */
+    foldedIds: string[]
+    /** The stash marker whose details show. */
+    marker?: BranchGraphMarker
+    /** The node the graph scrolls to and focuses once it shows; `serial` tells repeats apart. */
+    revealed?: { id: string; serial: number }
 }
 
 export interface BranchWorkspace extends Store<ColumnsSnapshot> {
@@ -68,6 +84,16 @@ export interface BranchWorkspace extends Store<ColumnsSnapshot> {
     focus(id: string): void
     /** Opens a column, or expands it if it is collapsed, and brings it into view with focus. */
     open(id: string): void
+    /** Shows or hides the active repository's Branch Graph. */
+    toggleGraph(): void
+    /** Shows every branch, or only the relevant ones, reading the graph again. */
+    toggleAll(): void
+    /** Highlights a node in the Branch Graph, or none. */
+    select(nodeId?: string): void
+    /** Folds a Branch Node's stack, hiding the branches built on it, or unfolds it. */
+    fold(nodeId: string, folded: boolean): void
+    /** Shows a stash marker's details beside the branch it belongs to, or hides them. */
+    showMarker(marker?: BranchGraphMarker, branchId?: string): void
     /** Opens the Branch Comparison Column from `from` to `to` beside `sourceId`, or brings the open one into view. */
     openComparison(sourceId: string, from: ComparisonRef, to: ComparisonRef): void
     /**
@@ -120,6 +146,12 @@ interface RepositoryColumns {
     /** The remote's default branch has been asked for once, after the first read. */
     remoteRefreshed: boolean
     revealed?: { id: string; serial: number }
+    showAll: boolean
+    graphShown: boolean
+    selectedId?: string
+    foldedIds: string[]
+    marker?: BranchGraphMarker
+    graphRevealed?: { id: string; serial: number }
 }
 
 interface BranchWorkspaceOptions {
@@ -136,7 +168,14 @@ interface BranchWorkspaceOptions {
 
 /** The active repository's Workspace Columns: which are open and how they are laid out, read from its Branch Graph. */
 export function createBranchWorkspace({ api, notify, inspection, workspace, saveColumns, checkMissing }: BranchWorkspaceOptions): BranchWorkspace {
-    let store = createStore<ColumnsSnapshot>({ loading: false, columns: [], recoveryErrors: {}, blocked: false, busy: false })
+    let store = createStore<ColumnsSnapshot>({
+        loading: false,
+        columns: [],
+        recoveryErrors: {},
+        blocked: false,
+        busy: false,
+        graphView: { shown: false, showAll: false, foldedIds: [] },
+    })
     let states = new Map<string, RepositoryColumns>()
     let activeId: string | undefined
     // A disk change that lands mid-read is replayed once that read settles.
@@ -162,6 +201,9 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
                     columns.flatMap(column => column.kind == "comparison" ? [[column.id, { from: column.from, to: column.to }]] : []),
                 ),
                 remoteRefreshed: false,
+                showAll: false,
+                graphShown: false,
+                foldedIds: [],
             }
             states.set(repositoryId, state)
         }
@@ -192,7 +234,14 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
         }
         store.publish(
             !activeId || !state
-                ? { loading: false, columns: [], recoveryErrors: {}, blocked: false, busy: mutations > 0 }
+                ? {
+                    loading: false,
+                    columns: [],
+                    recoveryErrors: {},
+                    blocked: false,
+                    busy: mutations > 0,
+                    graphView: { shown: false, showAll: false, foldedIds: [] },
+                }
                 : {
                     repositoryId: activeId,
                     graph: state.graph,
@@ -206,6 +255,14 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
                     blocked: state.recoveries.length > 0,
                     busy: mutations > 0,
                     revealed: state.revealed,
+                    graphView: {
+                        shown: state.graphShown,
+                        showAll: state.showAll,
+                        selectedId: state.selectedId,
+                        foldedIds: state.foldedIds,
+                        marker: state.marker,
+                        revealed: state.graphRevealed,
+                    },
                 },
         )
     }
@@ -325,7 +382,7 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
             publish()
 
         try {
-            let result = await api.readBranchGraph(repositoryId, refreshRemote)
+            let result = await api.readBranchGraph(repositoryId, refreshRemote, state.showAll)
             if (result.ok) {
                 if (refreshRemote)
                     state.remoteRefreshed = true
@@ -404,6 +461,10 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
             state.maximizedId = undefined
         if (!state.focusedId || !state.openedIds.includes(state.focusedId))
             state.focusedId = state.openedIds[0]
+        // Hiding the selected node, by narrowing the graph or deleting its branch, clears Graph Selection.
+        let shownIds = [...identities.branches, ...graph.tags, ...graph.virtualBranches].map(node => node.id)
+        if (state.selectedId && !shownIds.includes(state.selectedId))
+            state.selectedId = undefined
         if (removed.length > 0) {
             notify({
                 code: "branch.removed",
@@ -475,12 +536,40 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
             change(activeId, state => {
                 if (!state.openedIds.includes(id))
                     state.openedIds.push(id)
+                state.selectedId = id
                 state.collapsedIds = state.collapsedIds.filter(candidate => candidate != id)
                 state.focusedId = id
                 state.widths[id] ??= defaultColumnWidth
                 state.maximizedId = undefined
                 state.revealed = { id, serial: (state.revealed?.serial ?? 0) + 1 }
             })
+        },
+        toggleGraph() {
+            change(activeId, state => state.graphShown = !state.graphShown, false)
+        },
+        toggleAll() {
+            if (!activeId)
+                return
+            change(activeId, state => state.showAll = !state.showAll, false)
+            void read(activeId, false)
+        },
+        select(nodeId) {
+            change(activeId, state => {
+                state.selectedId = nodeId
+                state.marker = undefined
+            }, false)
+        },
+        fold(nodeId, folded) {
+            change(activeId, state => {
+                state.foldedIds = folded ? [...new Set([...state.foldedIds, nodeId])] : state.foldedIds.filter(id => id != nodeId)
+            }, false)
+        },
+        showMarker(marker, branchId) {
+            change(activeId, state => {
+                state.marker = marker
+                if (branchId)
+                    state.selectedId = branchId
+            }, false)
         },
         openComparison(sourceId, from, to) {
             let id = comparisonColumnId(from, to)

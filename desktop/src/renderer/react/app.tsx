@@ -2,9 +2,10 @@
 import type { ReactNode } from "react"
 import type { IconImageApi } from "../src/repository-icon-images"
 import type { AppController, AppSnapshot } from "./app-controller"
+import { BranchGraphPanel } from "./branch-graph"
 import { ContextMenuHost } from "./context-menu"
 import { GitSettingsDialog } from "./git-settings-dialog"
-import { ArchiveIcon, MoonIcon, PullIcon, RedoIcon, SearchIcon, SettingsIcon, SunIcon, UndoIcon } from "./icons"
+import { ArchiveIcon, GraphIcon, MoonIcon, PullIcon, RedoIcon, SearchIcon, SettingsIcon, SunIcon, UndoIcon } from "./icons"
 import { LocalBranchDialog } from "./local-branch-dialog"
 import { MissingRepository } from "./missing-repository"
 import { Notices } from "./notices"
@@ -14,6 +15,7 @@ import { RepositoryPanel } from "./repository-panel"
 import { Starting, StartupFailed, WorkspaceRecovery } from "./startup"
 import { StashesDialog } from "./stashes-dialog"
 import { Button } from "./ui/Button"
+import { ToggleButton } from "./ui/ToggleButton"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 import { useSnapshot } from "./use-snapshot"
 import { Welcome } from "./welcome"
@@ -39,7 +41,7 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
     let { entry, gitSettings, identity, columns, worktrees, branches, stashes } = controller
     let entering = useSnapshot(entry).operation != "idle"
     // Repository operations wait for any other that is under way.
-    let columnsBusy = useSnapshot(columns).busy
+    let { busy: columnsBusy, graphView } = useSnapshot(columns)
     let worktreesBusy = useSnapshot(worktrees).busy
     let branchesBusy = useSnapshot(branches).busy
     let operating = columnsBusy || worktreesBusy || branchesBusy
@@ -49,6 +51,7 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
     return (
         <div className="shell">
             <Header
+                graph={active?.status == "available" ? { shown: graphView.shown, toggle: columns.toggleGraph } : undefined}
                 tabs={active?.status == "available" && <ColumnTabs columns={columns} />}
                 actions={active?.status == "available"
                     ? {
@@ -77,6 +80,9 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
                             onClose={id => void controller.closeRepository(id)}
                             onAdd={entry.openAdd}
                         />
+                        {active.status == "available" && graphView.shown && (
+                            <BranchGraphPanel controller={controller} repositoryId={active.id} mainWorktree={active.info.mainWorktree} />
+                        )}
                         <main className="columns">
                             {active.status == "missing"
                                 ? (
@@ -117,6 +123,8 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
 }
 
 interface HeaderProps {
+    /** The open repository's Branch Graph, which shows beside its columns. */
+    graph?: { shown: boolean; toggle(): void }
     tabs: ReactNode
     /** The open repository's operations; absent when none is open. */
     actions?: { busy: boolean; stashes(): void; undo(): void; redo(): void }
@@ -127,11 +135,24 @@ interface HeaderProps {
 }
 
 // Pull latest stands in until its screen moves (migration step 8).
-function Header({ tabs, actions, appearance, busy, onToggleAppearance, onOpenSettings }: HeaderProps) {
+function Header({ graph, tabs, actions, appearance, busy, onToggleAppearance, onOpenSettings }: HeaderProps) {
     let appearanceLabel = appearance == "dark" ? "Switch to light appearance" : "Switch to dark appearance"
     return (
         <header className="header drag-region">
             <span className="brand">Laneway</span>
+            {graph && (
+                <TooltipTrigger>
+                    <ToggleButton
+                        variant="quiet"
+                        aria-label={graph.shown ? "Hide Branch Graph" : "Show Branch Graph"}
+                        isSelected={graph.shown}
+                        onChange={graph.toggle}
+                    >
+                        <GraphIcon />
+                    </ToggleButton>
+                    <Tooltip>{graph.shown ? "Hide Branch Graph" : "Show Branch Graph"}</Tooltip>
+                </TooltipTrigger>
+            )}
             {tabs}
             <span className="spacer" />
             <HeaderButton label="Command Lens">
