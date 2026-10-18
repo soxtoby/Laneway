@@ -1,5 +1,4 @@
 import type { Appearance, BranchHistoryCommit, FileListView, OpenRepository, RepositoryIdentity, Workspace, WorkspaceColumn } from "@laneway/shared"
-import { workspaceGraph } from "../src/worktrees/worktree-columns"
 import { type BranchRebase, createBranchRebase } from "./branch-rebase"
 import { type BranchWorkspace, createBranchWorkspace } from "./branch-workspace"
 import { type CommandLens, createCommandLens, type LensResult } from "./command-lens"
@@ -17,6 +16,7 @@ import { createReword, type Reword } from "./reword"
 import { createStashes, type Stashes } from "./stashes"
 import { createStore, type Store } from "./store"
 import { createWorktreeActions, type WorktreeActions } from "./worktree-actions"
+import { workspaceGraph } from "./worktree-columns"
 
 type Api = Window["laneway"]
 

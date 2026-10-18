@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { OverlayArrow, Tooltip as AriaTooltip, type TooltipProps as AriaTooltipProps, TooltipTrigger as AriaTooltipTrigger, type TooltipTriggerComponentProps } from "react-aria-components/Tooltip"
 import "./Tooltip.css"
 

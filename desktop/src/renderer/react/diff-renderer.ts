@@ -1,8 +1,8 @@
 import type { DiffLayout, DiffLine, FileDiffPage } from "@laneway/shared"
 import { DiffHunksRenderer, type FileDiffLoadedChangedFiles, wrapCoreCSS, wrapThemeCSS } from "@pierre/diffs"
-import { iconNodes } from "../src/icon-nodes"
-import { contextDiff, visibleDiffLines } from "../src/inspection/diff-context"
-import type { pierrePatch } from "../src/inspection/diff-patch"
+import { contextDiff, visibleDiffLines } from "./diff-context"
+import type { pierrePatch } from "./diff-patch"
+import { iconNodes } from "./icon-nodes"
 
 export interface DiffLinesProps {
     page: FileDiffPage

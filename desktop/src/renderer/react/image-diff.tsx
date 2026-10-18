@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import type { FileDiffPage, FileImagePage, ImageContent } from "@laneway/shared"
 import { type CSSProperties, type KeyboardEvent, type PointerEvent, useEffect, useEffectEvent, useState } from "react"
 import { Button as AriaButton, ToggleButton } from "react-aria-components"

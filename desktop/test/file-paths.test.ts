@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { fileName, fullPath } from "../src/renderer/src/inspection/file-paths"
+import { fileName, fullPath } from "../src/renderer/react/file-paths"
 
 describe("file paths", () => {
     test("joins repository-relative paths onto the worktree root with its own separator", () => {

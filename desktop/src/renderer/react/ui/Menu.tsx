@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import React from "react"
 import { Header, Keyboard, Menu as AriaMenu, MenuItem as AriaMenuItem, type MenuItemProps, MenuLoadMoreItem as AriaMenuLoadMoreItem, type MenuLoadMoreItemProps, type MenuProps, MenuSection as AriaMenuSection, type MenuSectionProps, MenuTrigger as AriaMenuTrigger, type MenuTriggerProps, Separator, SubmenuTrigger as AriaSubmenuTrigger, type SubmenuTriggerProps } from "react-aria-components/Menu"
 import { Text } from "./Content"

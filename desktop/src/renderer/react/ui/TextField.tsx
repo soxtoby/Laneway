@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { Input, TextArea as AriaTextArea, TextField as AriaTextField, type TextFieldProps as AriaTextFieldProps, type ValidationResult } from "react-aria-components/TextField"
 import { Description, FieldError, Label } from "./Form"
 import "./TextField.css"

@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { useEffect } from "react"
 import type { AppController } from "./app-controller"
 import type { Notice } from "./notice"

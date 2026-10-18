@@ -1,9 +1,8 @@
-/** @jsxImportSource react */
 import type { BranchGraph, CompositionPreview, CompositionRequest } from "@laneway/shared"
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
 import type { Window as HappyWindow } from "happy-dom"
 import { canRebaseOnto } from "../src/renderer/react/branch-rebase"
-import { workspaceGraph } from "../src/renderer/src/worktrees/worktree-columns"
+import { workspaceGraph } from "../src/renderer/react/worktree-columns"
 import { button, installReactDom, press, startReactApp, stopReactApps } from "./react-dom"
 import { appState, branchGraph, fakeLaneway, openedWorkspace, repositoryInfo } from "./renderer-fixtures"
 

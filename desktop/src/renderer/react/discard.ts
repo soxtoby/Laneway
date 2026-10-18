@@ -1,9 +1,9 @@
 import type { ChangedFile, DiffLine, DiscardRequest } from "@laneway/shared"
-import type { NoticeState } from "../feedback"
+import type { Notice } from "./notice"
 
 interface Options {
     api: Pick<Window["laneway"], "discardChanges" | "undoDiscard" | "settleDiscard">
-    notify(notice: NoticeState): () => void
+    notify(notice: Notice): () => void
     /** Re-reads a worktree's Working Changes after a discard or its undo. */
     changed(repositoryId: string, worktreePath: string): Promise<void> | void
 }
@@ -25,7 +25,7 @@ export let undoWindowMs = 8_000
  */
 export function createDiscards(options: Options) {
     let pending: Pending[] = []
-    let current: { notice: NoticeState; withdraw(): void } | undefined
+    let current: { notice: Notice; withdraw(): void } | undefined
     let busy = false
 
     return {
@@ -76,7 +76,7 @@ export function createDiscards(options: Options) {
     }
 
     function show() {
-        let notice: NoticeState = {
+        let notice: Notice = {
             code: "working.discarded",
             message: `Discarded ${describe(pending)}`,
             transient: true,

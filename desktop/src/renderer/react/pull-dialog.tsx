@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import type { PullStackOutcome, PullStackStatus } from "@laneway/shared"
 import { useState } from "react"
 import type { PullLatest } from "./pull-latest"

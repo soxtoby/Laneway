@@ -1,10 +1,10 @@
 import type { BranchGraph, BranchGraphBranchNode, BranchGraphMarker, BranchGraphWorktree, ComparisonRef, DiffLayout, RecoveryRequest, RepositoryGraphSettings, Workspace, WorkspaceColumn, WorktreeRecovery } from "@laneway/shared"
-import { comparisonColumnId, type ComparisonColumnNode, comparisonNode, renameComparisonRef } from "../src/inspection/comparison-columns"
-import { branchNodeFor, columnWorktree, reconcileWorktreeColumns, recoveryColumnId, recoveryWorkspaceColumn, workspaceGraph } from "../src/worktrees/worktree-columns"
+import { comparisonColumnId, type ComparisonColumnNode, comparisonNode, renameComparisonRef } from "./comparison-columns"
 import type { ColumnInspection, Inspection } from "./inspection"
 import { errorMessage, type Notice } from "./notice"
 import { baseName } from "./repositories"
 import { createStore, type Store } from "./store"
+import { branchNodeFor, columnWorktree, reconcileWorktreeColumns, recoveryColumnId, recoveryWorkspaceColumn, workspaceGraph } from "./worktree-columns"
 
 type Api = Window["laneway"]
 type VirtualBranch = BranchGraph["virtualBranches"][number]

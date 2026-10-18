@@ -1,7 +1,6 @@
 import type { ChangedFile, FileDiffPage, FileImagePage } from "@laneway/shared"
 
-// Pure helpers from the Remix renderer's `inspection/image-diff.tsx`, which can't be imported here because it
-// styles itself through Remix as it loads.
+// Which files compare as pictures, and reading their versions for the image diff.
 
 export type ImageDiffMode = "side-by-side" | "swipe" | "onion" | "difference"
 

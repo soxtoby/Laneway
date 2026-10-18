@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import type { GitSettingsState } from "@laneway/shared"
 import { useId } from "react"
 import { Button as AriaButton } from "react-aria-components"

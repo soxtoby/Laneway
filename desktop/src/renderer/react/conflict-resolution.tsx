@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import type { BranchGraphBranchNode } from "@laneway/shared"
 import { UnresolvedFile } from "@pierre/diffs"
 import { type ReactNode, useEffect, useEffectEvent, useMemo, useRef, useState } from "react"

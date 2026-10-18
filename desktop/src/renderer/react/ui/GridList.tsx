@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { Button, GridList as AriaGridList, GridListHeader, GridListItem as AriaGridListItem, type GridListItemProps, GridListLoadMoreItem as AriaGridListLoadMoreItem, type GridListLoadMoreItemProps, type GridListProps, GridListSection, Text } from "react-aria-components/GridList"
 import { Checkbox } from "./Checkbox"
 import { GripVertical } from "./icons"

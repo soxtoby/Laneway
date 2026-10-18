@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { Heading as AriaHeading, type HeadingProps } from "react-aria-components/Heading"
 import { Text as AriaText, type TextProps } from "react-aria-components/Text"
 import "./Content.css"

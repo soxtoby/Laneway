@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { AuxiliaryColumns } from "../src/renderer/src/auxiliary-columns"
+import { AuxiliaryColumns } from "../src/renderer/react/auxiliary-columns"
 
 test("keeps newest sibling subtrees beside their source and reuses only the same parent's identity", () => {
     let tree = new AuxiliaryColumns<string>()

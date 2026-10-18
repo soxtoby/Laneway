@@ -13,7 +13,7 @@ test("React image diffs decode and compare pictures under the production CSP", a
 
         // The React page with its CSP, loading the fixture and the stylesheet its imports bundle into.
         let styles = (await readdir(directory)).filter(name => name.endsWith(".css")).map(name => `<link rel="stylesheet" href="./${name}" />`).join("")
-        let html = (await readFile(join(import.meta.dir, "../src/renderer/react.html"), "utf8"))
+        let html = (await readFile(join(import.meta.dir, "../src/renderer/index.html"), "utf8"))
             .replace('<script type="module" src="./react/main.tsx"></script>', `${styles}<script type="module" src="./react-image-diff.js"></script>`)
         await writeFile(join(directory, "index.html"), html)
 
@@ -46,7 +46,7 @@ test("React image diffs decode and compare pictures under the production CSP", a
         expect(result.swipe.clip).toContain("inset(0px 0px 0px 50%)")
 
         // The enlarged picture fits the viewer, which leaves 24px around it and 16px inside, then shows every pixel at 1:1.
-        // The kit's modal draws an outline, which takes no room, where the Remix viewer had a 1px border.
+        // The kit's modal draws an outline, which takes no room.
         let viewer = result.viewer
         expect(viewer.error, viewer.text).toBeUndefined()
         expect(viewer).toMatchObject({ closed: true, fit: { open: true }, stacked: { open: true, layers: 2 } })

@@ -1,10 +1,8 @@
-/** @jsxImportSource react */
 import type { BranchGraph, BranchGraphBranchNode, BranchGraphMarker } from "@laneway/shared"
 import { type KeyboardEvent, useEffect, useEffectEvent, useMemo, useRef } from "react"
 import { Button as AriaButton, GridList, GridListItem, ListLayout, useDragAndDrop, Virtualizer } from "react-aria-components"
-import { graphRowHeight, type GraphRowLayout, layoutBranchGraph } from "../src/branch-workspace/branch-graph-layout"
-import { branchNodeFor, localIdentities, workspaceGraph } from "../src/worktrees/worktree-columns"
 import type { AppController } from "./app-controller"
+import { graphRowHeight, type GraphRowLayout, layoutBranchGraph } from "./branch-graph-layout"
 import { canRebaseOnto, rebaseable } from "./branch-rebase"
 import type { GraphView } from "./branch-workspace"
 import { IconButton } from "./controls"
@@ -16,6 +14,7 @@ import { GripVertical } from "./ui/icons"
 import { MenuItem } from "./ui/Menu"
 import { ToggleButton } from "./ui/ToggleButton"
 import { useSnapshot } from "./use-snapshot"
+import { branchNodeFor, localIdentities, workspaceGraph } from "./worktree-columns"
 
 /** What a Branch Graph row carries when dragged: the branch's ref. */
 export let branchDragType = "application/x-laneway-branch"

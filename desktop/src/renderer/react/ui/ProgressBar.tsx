@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import type { CSSProperties } from "react"
 import { ProgressBar as AriaProgressBar, type ProgressBarProps as AriaProgressBarProps } from "react-aria-components/ProgressBar"
 import { Label } from "./Form"

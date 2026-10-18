@@ -1,9 +1,8 @@
-/** @jsxImportSource react */
 import type { RepositoryIcon } from "@laneway/shared"
 import { graphemeCount, repositoryInitials } from "@laneway/shared"
 import { createElement, type ReactNode, useReducer } from "react"
-import { lucideNode } from "../src/lucide-catalog"
-import { type IconImageApi, iconImageUrl } from "../src/repository-icon-images"
+import { lucideNode } from "./lucide-catalog"
+import { type IconImageApi, iconImageUrl } from "./repository-icon-images"
 
 interface TileProps {
     icon?: RepositoryIcon
@@ -60,7 +59,7 @@ export function RepositoryTile({ icon, name, api, isActive = false, isMissing = 
             )
         }
     }
-    // Initials fill with the accent when active, as they do in the Remix rail.
+    // Initials fill with the accent when active.
     let isInitials = content == undefined
     return (
         <svg viewBox="0 0 20 20" className={className} data-kind={isInitials ? "initials" : icon!.kind} aria-hidden>

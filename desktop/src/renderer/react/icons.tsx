@@ -1,10 +1,9 @@
-/** @jsxImportSource react */
 import { Archive, ArrowDownToLine, ArrowRight, Check, ChevronDown, ChevronsDownUp, ChevronsLeft, ChevronsRight, ChevronsUpDown, Copy, Diff, Ellipsis, ExternalLink, FaceSlightlySmiling, Folder, GitBranch, GitCompareArrows, GitGraph, type IconNode, Image, ImagePlus, ListTree, Maximize2, Minimize2, Minus, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Redo2, Search, SlidersHorizontal, Sun, Tag, TriangleAlert, Type, Undo2, X } from "lucide"
 import { createElement, type ReactNode } from "react"
-import { customIconPaths } from "../src/icon-nodes"
+import { customIconPaths } from "./icon-nodes"
 import { lucideIcon } from "./ui/icons"
 
-// Application icons, drawn from the same Lucide nodes as the Remix renderer's (ADR 0020).
+// Application icons, drawn from Lucide's nodes (ADR 0020).
 export let ArchiveIcon = lucideIcon(Archive, "archive")
 export let PullIcon = lucideIcon(ArrowDownToLine, "arrow-down-to-line")
 export let MoreIcon = lucideIcon(Ellipsis, "ellipsis")
@@ -87,7 +86,7 @@ export function DetachedIcon({ className }: { className?: string }) {
     )
 }
 
-// The diff controls' own strokes, drawn on a 16-unit grid as the Remix renderer draws them.
+// The diff controls' own strokes, drawn on a 16-unit grid.
 function DiffStroke({ children, strokeWidth = 1.25 }: { children: ReactNode; strokeWidth?: number }) {
     return (
         <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={strokeWidth} aria-hidden="true">
@@ -177,7 +176,7 @@ export function ImageModeIcon({ mode }: { mode: "side-by-side" | "swipe" | "onio
     )
 }
 
-// Conflict resolution's whole-file choices and merge tool, as the Remix renderer drew them.
+// Conflict resolution's whole-file choices and merge tool.
 function ResolutionStroke({ d }: { d: string }) {
     return (
         <svg

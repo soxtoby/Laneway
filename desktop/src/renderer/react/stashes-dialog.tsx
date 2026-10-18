@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { FormError } from "./form-error"
 import type { Stashes } from "./stashes"
 import { Button } from "./ui/Button"

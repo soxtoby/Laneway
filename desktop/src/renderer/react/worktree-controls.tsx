@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import type { BranchGraph, BranchGraphWorktree, WorktreeRequest } from "@laneway/shared"
 import { useState } from "react"
 import { Autocomplete, Button as AriaButton, useFilter } from "react-aria-components"

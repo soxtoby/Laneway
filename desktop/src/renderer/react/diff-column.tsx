@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import type { ChangedFile } from "@laneway/shared"
 import { type MouseEvent, type RefObject, useLayoutEffect, useRef } from "react"
 import { Button as AriaButton } from "react-aria-components"

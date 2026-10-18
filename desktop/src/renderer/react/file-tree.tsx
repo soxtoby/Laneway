@@ -1,12 +1,11 @@
-/** @jsxImportSource react */
 import type { ChangedFile, FileListView } from "@laneway/shared"
 import clsx from "clsx"
 import { type ReactNode, useEffect, useState } from "react"
 import { Button as AriaButton, type Key, type Selection, Tree } from "react-aria-components"
-import { copyText, fileName, fullPath } from "../src/inspection/file-paths"
 import { DenseTreeItem } from "./dense-row"
 import { DiffRegion } from "./diff-panel"
 import { type FileTreeNode, fileTreeNodes } from "./file-list-view"
+import { copyText, fileName, fullPath } from "./file-paths"
 import { CheckIcon, CopyIcon, FileStatusIcon, FolderIcon } from "./icons"
 import { Checkbox } from "./ui/Checkbox"
 import { ChevronRight } from "./ui/icons"

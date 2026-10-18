@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { Button, type ButtonProps } from "react-aria-components/Button"
 import { FieldError as RACFieldError, type FieldErrorProps } from "react-aria-components/FieldError"
 import { Form as RACForm, type FormProps } from "react-aria-components/Form"

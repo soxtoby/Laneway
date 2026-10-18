@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import type { CompositionSource, CompositionTarget, DiffSource } from "@laneway/shared"
 import { createContext, type MouseEvent, useContext, useEffect, useEffectEvent, useRef, useSyncExternalStore } from "react"
 import { Button as AriaButton } from "react-aria-components"

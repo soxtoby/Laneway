@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { Button as AriaButton } from "react-aria-components/Button"
 import { Text, type ToastProps, UNSTABLE_Toast as Toast, UNSTABLE_ToastContent as ToastContent, UNSTABLE_ToastQueue as ToastQueue, UNSTABLE_ToastRegion as ToastRegion } from "react-aria-components/Toast"
 import { Button } from "./Button"

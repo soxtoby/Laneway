@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { Modal as RACModal, type ModalOverlayProps } from "react-aria-components/Modal"
 import "./Modal.css"
 

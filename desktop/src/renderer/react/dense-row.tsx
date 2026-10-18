@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import clsx from "clsx"
 import { type MouseEvent, type ReactNode, useRef } from "react"
 import { GridListItem, type GridListItemProps, type GridListItemRenderProps, TreeItem, TreeItemContent, type TreeItemContentRenderProps, type TreeItemProps } from "react-aria-components"

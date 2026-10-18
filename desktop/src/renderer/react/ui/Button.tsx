@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { Children, type ReactNode } from "react"
 import { Button as RACButton, type ButtonProps as RACButtonProps } from "react-aria-components/Button"
 import { composeRenderProps } from "react-aria-components/composeRenderProps"

@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { createContext, type ReactNode, type RefObject, useContext, useState } from "react"
 import { Menu } from "./ui/Menu"
 import { Popover } from "./ui/Popover"

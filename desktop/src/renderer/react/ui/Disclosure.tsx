@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { Button } from "react-aria-components/Button"
 import { Disclosure as AriaDisclosure, DisclosurePanel as AriaDisclosurePanel, type DisclosurePanelProps, type DisclosureProps, type HeadingProps } from "react-aria-components/Disclosure"
 import { Heading } from "./Content"

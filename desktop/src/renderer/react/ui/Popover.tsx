@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import clsx from "clsx"
 import { OverlayArrow, Popover as AriaPopover, type PopoverProps as AriaPopoverProps } from "react-aria-components/Popover"
 import "./Popover.css"

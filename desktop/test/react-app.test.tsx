@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import type { EntryProgress, EntryResult } from "@laneway/shared"
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
 import type { Window as HappyWindow } from "happy-dom"

@@ -1,11 +1,9 @@
-/** @jsxImportSource react */
 import type { BranchGraph, FileListView, WorktreeRecovery, WorktreeRequest } from "@laneway/shared"
 import clsx from "clsx"
 import { type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, useEffect, useMemo, useRef } from "react"
 import { Button as AriaButton, ToggleButton, useDrop } from "react-aria-components"
-import { defaultAuxiliaryColumnWidth } from "../src/auxiliary-columns"
-import { workspaceGraph } from "../src/worktrees/worktree-columns"
 import type { AppController } from "./app-controller"
+import { defaultAuxiliaryColumnWidth } from "./auxiliary-columns"
 import { branchDragType } from "./branch-graph"
 import { type BranchWorkspace, type ColumnsSnapshot, type ColumnView, defaultColumnWidth, minimumColumnWidth, workingSummary } from "./branch-workspace"
 import { ColumnBody, columnRoot, ColumnScopes } from "./column-body"
@@ -20,9 +18,10 @@ import { Button } from "./ui/Button"
 import { Tab, TabList, Tabs } from "./ui/Tabs"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 import { useSnapshot } from "./use-snapshot"
+import { workspaceGraph } from "./worktree-columns"
 import { MissingWorktree, WorktreeMenu, WorktreeTitle } from "./worktree-controls"
 
-// Polls together with window focus, as the Remix renderer does: a hidden or unfocused window waits.
+// Polls together with window focus: a hidden or unfocused window waits.
 let pollInterval = 5_000
 
 /** The active repository's Workspace Columns, side by side, each resizable, collapsible, and movable. */

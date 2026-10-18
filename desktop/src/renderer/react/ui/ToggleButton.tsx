@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { composeRenderProps } from "react-aria-components/composeRenderProps"
 import { ToggleButton as RACToggleButton, type ToggleButtonProps as RACToggleButtonProps } from "react-aria-components/ToggleButton"
 import "./ToggleButton.css"

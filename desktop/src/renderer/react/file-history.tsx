@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import type { FileHistoryEntry, FileHistorySource, FileListView } from "@laneway/shared"
 import clsx from "clsx"
 import type { ReactNode } from "react"

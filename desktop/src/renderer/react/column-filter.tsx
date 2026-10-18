@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import type { Ref } from "react"
 import { IconButton } from "./controls"
 import { CloseIcon } from "./icons"

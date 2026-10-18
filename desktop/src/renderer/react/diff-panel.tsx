@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import type { ChangedFile, DiffLayout, DiffView } from "@laneway/shared"
 import { createContext, type ReactNode, useContext } from "react"
 import { ToggleButton } from "react-aria-components"

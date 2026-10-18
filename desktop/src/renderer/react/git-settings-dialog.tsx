@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { useId } from "react"
 import type { GitSettings } from "./git-settings"
 import { Button } from "./ui/Button"

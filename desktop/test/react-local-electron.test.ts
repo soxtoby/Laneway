@@ -38,7 +38,6 @@ test("the built React renderer commits, manages branches, and composes through p
                 await writeFile(join(directory, "repository", "file.txt"), "composed desktop change\n")
             let env: NodeJS.ProcessEnv = {
                 ...process.env,
-                LANEWAY_RENDERER: "react",
                 LANEWAY_ENGINE_PATH: join(root, "cli/bin/lane.exe"),
                 LANEWAY_SETTINGS_PATH: join(directory, "settings.json"),
                 LANEWAY_WORKSPACE_PATH: join(directory, "workspace.json"),

@@ -1,7 +1,7 @@
 import { firstEmoji, monogramText, RepositoryIconSchema, repositoryInitials } from "@laneway/shared"
 import { describe, expect, test } from "bun:test"
-import { customIconPaths, iconNodes } from "../src/renderer/src/icon-nodes"
-import { iconLabel, lucideCatalog, popularIcons, searchLucide } from "../src/renderer/src/lucide-catalog"
+import { customIconPaths, iconNodes } from "../src/renderer/react/icon-nodes"
+import { iconLabel, lucideCatalog, popularIcons, searchLucide } from "../src/renderer/react/lucide-catalog"
 
 describe("Application icons", () => {
     test("every name draws from Lucide node data or a hand-drawn stroke", () => {

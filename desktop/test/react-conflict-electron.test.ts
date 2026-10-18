@@ -63,7 +63,6 @@ test("React conflict resolution through production IPC: inline in its commit, ke
         for (let phase of ["unresolved", "candidate", "accept"]) {
             let env: NodeJS.ProcessEnv = {
                 ...process.env,
-                LANEWAY_RENDERER: "react",
                 LANEWAY_ENGINE_PATH: engine,
                 LANEWAY_SETTINGS_PATH: join(directory, "settings.json"),
                 LANEWAY_WORKSPACE_PATH: join(directory, "workspace.json"),

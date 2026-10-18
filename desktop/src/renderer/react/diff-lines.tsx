@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { useEffect, useEffectEvent, useRef, useState } from "react"
 import { createDiffRenderer, type DiffLinesProps } from "./diff-renderer"
 

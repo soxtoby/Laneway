@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import type { FormEvent, ReactNode } from "react"
 import { FormError } from "./form-error"
 import { type CloneForm, entryErrorMessage, type EntryOperation, type InitializeForm, type RepositoryEntry } from "./repository-entry"

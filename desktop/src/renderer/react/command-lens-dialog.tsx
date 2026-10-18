@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { useMemo } from "react"
 import { Autocomplete } from "react-aria-components"
 import type { AppController } from "./app-controller"

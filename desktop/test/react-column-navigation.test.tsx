@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
 import type { Window as HappyWindow } from "happy-dom"
 import { button, installReactDom, press, startReactApp, stopReactApps, type } from "./react-dom"

@@ -1,7 +1,7 @@
 import type { BranchGraph, Workspace } from "@laneway/shared"
-import { workspaceGraph } from "../src/worktrees/worktree-columns"
 import { repositoryName } from "./repositories"
 import { createStore, type Store } from "./store"
+import { workspaceGraph } from "./worktree-columns"
 
 type Api = Window["laneway"]
 

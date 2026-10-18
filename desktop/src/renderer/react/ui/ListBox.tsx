@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { composeRenderProps } from "react-aria-components/composeRenderProps"
 import { Header, ListBox as AriaListBox, ListBoxItem as AriaListBoxItem, type ListBoxItemProps, ListBoxLoadMoreItem as AriaListBoxLoadMoreItem, type ListBoxLoadMoreItemProps, type ListBoxProps, ListBoxSection as AriaListBoxSection, type ListBoxSectionProps } from "react-aria-components/ListBox"
 import { Text } from "./Content"

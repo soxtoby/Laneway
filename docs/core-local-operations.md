@@ -36,13 +36,9 @@ Accepted: keep ordinary file inspection compact, reveal staging controls with th
 
 ## Throwaway prototype
 
-Run `bun run prototype:commits`, then open <http://127.0.0.1:4315/?variant=A>. A is compact inline, B is an expandable composer, and C is split unstaged/staged. The bottom switcher changes variants without clearing the in-memory scenario. Scenario selection and Reset restore sample changes.
+Three variants were compared: A, compact inline file selection; B, an expandable composer; C, split unstaged and staged lists. The revised C combined inline files, a staging divider, and an expandable inline commit form; A and B kept file selection for comparison with the same form. The prototype substituted the Working Changes section of the Remix renderer at build time, with fixture data and simulated Git and index mutations. Scenarios covered existing staging, edits after staging, Virtual Branch naming, first commit, hook changes and failures, external edits, and stash apply and drop. It did not test real repository mutation or durable draft persistence.
 
-The revised prototype is <http://127.0.0.1:4315/?variant=C>: inline files, a staging divider, and an expandable inline commit form. A/B retain file selection for comparison, using the same form (B initially expanded). Cancel closes the form and retains the draft.
-
-The prototype substitutes the Working Changes section of the actual renderer at build time, using fixture data. Git/index mutations are simulated; restart is a simulation that retains the current draft, not durable storage. Production rendering is unchanged. Scenarios cover existing staging, edits after staging, Virtual Branch naming, first commit, hook changes/failure, external edits, and stash apply/drop.
-
-At the prototype stage, typechecking and an isolated Electron interaction/rendering check passed under the existing CSP. The prototype did not test real repository mutation or durable draft persistence.
+It was removed with the Remix renderer (ADR-0021). `desktop/src/renderer/src/commit-prototype.tsx` and `desktop/commit-prototype-server.ts` at commit `50267f0` recover it.
 
 ## Implementation
 

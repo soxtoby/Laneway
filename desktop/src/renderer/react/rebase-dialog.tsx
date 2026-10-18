@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { useState } from "react"
 import { Radio, RadioGroup } from "react-aria-components"
 import { type BranchRebase, plural } from "./branch-rebase"

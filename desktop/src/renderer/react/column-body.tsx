@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import type { BranchGraph, DiffLayout, FileListView } from "@laneway/shared"
 import type { ReactNode } from "react"
 import type { AppController } from "./app-controller"

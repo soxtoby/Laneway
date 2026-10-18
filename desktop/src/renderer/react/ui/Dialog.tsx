@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { Dialog as RACDialog, type DialogProps, DialogTrigger as RACDialogTrigger, type DialogTriggerProps, Heading } from "react-aria-components/Dialog"
 import "./Dialog.css"
 

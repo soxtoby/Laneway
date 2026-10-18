@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 // Mounts the React image diff with its mode toggle under the production CSP; react-image-diff-electron.test.ts reads the result.
 import "../../src/renderer/react/ui/theme.css"
 import "../../src/renderer/react/ui/utilities.css"

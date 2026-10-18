@@ -13,7 +13,7 @@ test("React composition drags, approves conflicts, and transfers by keyboard und
 
         // The React page with its CSP, loading the fixture and the stylesheet its imports bundle into.
         let styles = (await readdir(directory)).filter(name => name.endsWith(".css")).map(name => `<link rel="stylesheet" href="./${name}" />`).join("")
-        let html = (await readFile(join(import.meta.dir, "../src/renderer/react.html"), "utf8"))
+        let html = (await readFile(join(import.meta.dir, "../src/renderer/index.html"), "utf8"))
             .replace('<script type="module" src="./react/main.tsx"></script>', `${styles}<script type="module" src="./react-composition.js"></script>`)
         await writeFile(join(directory, "index.html"), html)
 

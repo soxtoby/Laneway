@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { type ListBoxItemProps, type ListBoxProps, Select as AriaSelect, type SelectProps as AriaSelectProps, SelectValue, type ValidationResult } from "react-aria-components/Select"
 import { Button } from "./Button"
 import { Description, FieldError, Label } from "./Form"

@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import type { WorktreePreview } from "@laneway/shared"
 import { useState } from "react"
 import { FormError } from "./form-error"

@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 // The kit's variables and utilities load once, before its components and Laneway's theme over them.
 import "./ui/theme.css"
 import "./ui/utilities.css"

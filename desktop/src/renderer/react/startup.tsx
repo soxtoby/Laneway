@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import type { EntryError } from "@laneway/shared"
 import { Button } from "./ui/Button"
 

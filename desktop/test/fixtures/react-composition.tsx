@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 // Drives the React composition views with real pointer drags in Electron; react-composition-electron.test.ts reads the result.
 import "../../src/renderer/react/ui/theme.css"
 import "../../src/renderer/react/ui/utilities.css"

@@ -40,7 +40,6 @@ test("React renderer styles and menus work under production CSP in the built app
         // The test script builds desktop/out once; parallel test files must not rebuild it.
         let env: NodeJS.ProcessEnv = {
             ...process.env,
-            LANEWAY_RENDERER: "react",
             LANEWAY_ENGINE_PATH: join(root, "cli/bin/lane.exe"),
             LANEWAY_SETTINGS_PATH: join(directory, "settings.json"),
             LANEWAY_WORKSPACE_PATH: join(directory, "workspace.json"),
@@ -67,14 +66,14 @@ test("React renderer styles and menus work under production CSP in the built app
 
         expect(JSON.parse(result)).toEqual({
             light: {
-                body: windowBackground("light", true),
-                header: titleBarOverlay("light", true).color,
+                body: windowBackground("light"),
+                header: titleBarOverlay("light").color,
                 panel: "#1b2230",
                 accent: "#e0930e",
             },
             dark: {
-                body: windowBackground("dark", true),
-                header: titleBarOverlay("dark", true).color,
+                body: windowBackground("dark"),
+                header: titleBarOverlay("dark").color,
                 panel: "#0f141c",
                 accent: "#f5a733",
             },

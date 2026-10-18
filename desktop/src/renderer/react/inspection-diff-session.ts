@@ -1,5 +1,5 @@
 import type { ChangeSelection, DiffSource, DiffView, FileDiffPage } from "@laneway/shared"
-import type { ImageDiffMode } from "./image-diff"
+import type { ImageDiffMode } from "./image-files"
 
 export interface FileDiffState {
     showWhitespace: boolean

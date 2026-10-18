@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import type { BranchGraph, BranchGraphBranchNode, BranchHistoryCommit, ComparisonRef, FileListView } from "@laneway/shared"
 import clsx from "clsx"
 import { useState } from "react"

@@ -8,10 +8,11 @@
         />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Laneway</title>
-        <link rel="stylesheet" href="./src/styles.css" />
+        <!-- React Aria skips injecting its inline pressable <style> when this id exists; page.css carries the rule. -->
+        <meta id="react-aria-pressable-style" name="react-aria-pressable-style" content="page.css" />
     </head>
     <body>
         <div id="app"></div>
-        <script type="module" src="./src/main.tsx"></script>
+        <script type="module" src="./react/main.tsx"></script>
     </body>
 </html>

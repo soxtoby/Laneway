@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { CheckboxButton, CheckboxField, type CheckboxFieldProps, type ValidationResult } from "react-aria-components/Checkbox"
 import "./Checkbox.css"
 import type { ReactNode } from "react"

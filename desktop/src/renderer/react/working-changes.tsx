@@ -1,10 +1,9 @@
-/** @jsxImportSource react */
 import type { BranchGraphMarker, ChangedFile, DiffSource, FileHistorySource, FileListView } from "@laneway/shared"
 import { type ReactNode, useEffect, useState } from "react"
 import { Button as AriaButton, Form } from "react-aria-components"
-import { type ComparisonColumnNode, comparisonHistorySource } from "../src/inspection/comparison-columns"
 import type { ColumnView } from "./branch-workspace"
 import { type CommitComposer, defaultBranchName } from "./commit-composer"
+import { type ComparisonColumnNode, comparisonHistorySource } from "./comparison-columns"
 import type { Landing } from "./composition"
 import { IconButton } from "./controls"
 import { DiffControls, DiffPanel } from "./diff-panel"

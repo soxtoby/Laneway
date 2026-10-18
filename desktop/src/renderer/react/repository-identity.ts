@@ -1,7 +1,7 @@
 import type { OpenRepository, RepositoryIcon, RepositoryIconColor, RepositoryIdentity, RepositoryImageFile, Workspace } from "@laneway/shared"
 import { firstEmoji, monogramText, repositoryInitials, RepositoryLabelSchema } from "@laneway/shared"
-import { forgetIconImage } from "../src/repository-icon-images"
 import { automaticIcon, repositoryName } from "./repositories"
+import { forgetIconImage } from "./repository-icon-images"
 import { createStore, type Store } from "./store"
 
 type Api = Window["laneway"]

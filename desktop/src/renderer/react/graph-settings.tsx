@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import type { BranchGraph, RepositoryGraphSettings } from "@laneway/shared"
 import { useState } from "react"
 import { Button as AriaButton, Form, Radio, RadioGroup } from "react-aria-components"

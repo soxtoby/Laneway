@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { Button, Input, SearchField as AriaSearchField, type SearchFieldProps as AriaSearchFieldProps, type ValidationResult } from "react-aria-components/SearchField"
 import { Description, FieldError, Label } from "./Form"
 import { Search, X } from "./icons"

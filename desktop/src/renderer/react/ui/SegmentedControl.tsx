@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { composeRenderProps } from "react-aria-components/composeRenderProps"
 import { SelectionIndicator, ToggleButton, ToggleButtonGroup as RACToggleButtonGroup, type ToggleButtonGroupProps, type ToggleButtonProps } from "react-aria-components/ToggleButtonGroup"
 import "./SegmentedControl.css"

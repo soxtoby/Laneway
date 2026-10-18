@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import type { MissingOpenRepository } from "@laneway/shared"
 import { repositoryName } from "./repositories"
 import { Button } from "./ui/Button"

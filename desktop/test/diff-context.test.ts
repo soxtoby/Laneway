@@ -4,7 +4,7 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { contextDiff, readDiffContext } from "../src/renderer/src/inspection/diff-context"
+import { contextDiff, readDiffContext } from "../src/renderer/react/diff-context"
 
 let directories: string[] = []
 afterEach(async () => {

@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { type KeyboardEvent, useEffect, useRef, useState } from "react"
 import { Button as AriaButton } from "react-aria-components"
 import { errorMessage } from "./notice"

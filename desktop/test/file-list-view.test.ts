@@ -1,6 +1,6 @@
 import type { ChangedFile } from "@laneway/shared"
 import { describe, expect, test } from "bun:test"
-import { changeGroup, fileKind, groupFiles } from "../src/renderer/src/inspection/file-list-view"
+import { changeGroup, fileKind, groupFiles } from "../src/renderer/react/file-list-view"
 
 function file(path: string, status = "modified", untracked = false): ChangedFile {
     return { path, status, staged: false, unstaged: true, untracked, ignored: false, conflicted: false }

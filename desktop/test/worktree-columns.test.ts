@@ -1,6 +1,6 @@
 import type { BranchGraph, WorkspaceColumn } from "@laneway/shared"
 import { expect, test } from "bun:test"
-import { branchNodeFor, localIdentities, reconcileWorktreeColumns, workspaceGraph } from "../src/renderer/src/worktrees/worktree-columns"
+import { branchNodeFor, localIdentities, reconcileWorktreeColumns, workspaceGraph } from "../src/renderer/react/worktree-columns"
 import { branchGraph } from "./renderer-fixtures"
 
 test("equivalent refs retain separate branch-only columns and worktree identity", () => {

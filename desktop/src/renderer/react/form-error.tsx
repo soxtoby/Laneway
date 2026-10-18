@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { useEffect, useRef } from "react"
 
 /** A form's failure, focused when it appears so it is read out. */

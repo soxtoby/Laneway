@@ -13,7 +13,7 @@ let windowFunctions = ["getComputedStyle", "matchMedia", "requestAnimationFrame"
  * so layout and colours are checked in Electron instead (react-renderer-styles.test.ts).
  */
 export function installReactDom() {
-    let browserWindow = new HappyWindow({ url: "file:///renderer/react.html" })
+    let browserWindow = new HappyWindow({ url: "file:///renderer/index.html" })
     let browserGlobal = browserWindow as unknown as Record<string, unknown>
     let names = new Set<string>()
     for (let object: object | null = browserWindow; object && object != Object.prototype; object = Object.getPrototypeOf(object)) {

@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import { Check as CheckNode, ChevronDown as ChevronDownNode, ChevronRight as ChevronRightNode, Dot as DotNode, GripVertical as GripVerticalNode, type IconNode, Search as SearchNode, X as XNode } from "lucide"
 import { createElement, type SVGProps } from "react"
 

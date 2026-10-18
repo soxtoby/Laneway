@@ -35,15 +35,11 @@ export default defineConfig(({ command }) => ({
         },
     },
     renderer: {
-        // Fast Refresh covers only the React renderer; Remix modules keep the project's JSX source.
-        plugins: [react({ include: /\/src\/renderer\/react\/.*\.tsx?$/ }), devNonceCsp],
+        plugins: [react(), devNonceCsp],
         html: command == "serve" ? { cspNonce: devNonce } : {},
         build: {
             rollupOptions: {
-                input: {
-                    index: resolve(import.meta.dirname, "src/renderer/index.html"),
-                    react: resolve(import.meta.dirname, "src/renderer/react.html"),
-                },
+                input: { index: resolve(import.meta.dirname, "src/renderer/index.html") },
             },
         },
     },

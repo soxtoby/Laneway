@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { pierrePatch } from "../src/renderer/src/inspection/diff-patch"
+import { pierrePatch } from "../src/renderer/react/diff-patch"
 import { inspectionScenario } from "./renderer-fixtures"
 
 test("Pierre receives loaded hunk counts and original line numbers", () => {

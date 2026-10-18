@@ -2,7 +2,7 @@ import { BrowserWindow, nativeTheme } from "electron"
 import { fileURLToPath } from "node:url"
 import windowsIcon from "../../resources/icon.ico?asset"
 import icon from "../../resources/icon.png?asset"
-import { reactRenderer, titleBarOverlay, windowBackground } from "./window-colors"
+import { titleBarOverlay, windowBackground } from "./window-colors"
 
 export function createWindow(appearance: string) {
     applyNativeTheme(appearance)
@@ -25,14 +25,13 @@ export function createWindow(appearance: string) {
         },
     })
 
-    let page = reactRenderer ? "react.html" : "index.html"
     if (process.env.ELECTRON_RENDERER_URL)
-        void window.loadURL(new URL(page, process.env.ELECTRON_RENDERER_URL.replace(/\/?$/, "/")).href)
+        void window.loadURL(process.env.ELECTRON_RENDERER_URL)
     else
-        void window.loadFile(fileURLToPath(new URL(`../renderer/${page}`, import.meta.url)))
+        void window.loadFile(fileURLToPath(new URL("../renderer/index.html", import.meta.url)))
 }
 
-// The React renderer's styles switch with prefers-color-scheme, which follows this rather than the OS.
+// The renderer's styles switch with prefers-color-scheme, which follows this rather than the OS.
 export function applyNativeTheme(appearance: string) {
     nativeTheme.themeSource = appearance == "dark" ? "dark" : "light"
 }

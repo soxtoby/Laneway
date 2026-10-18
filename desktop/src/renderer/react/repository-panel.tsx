@@ -1,13 +1,12 @@
-/** @jsxImportSource react */
 import type { OpenRepository } from "@laneway/shared"
 import clsx from "clsx"
 import { type KeyboardEvent, useRef, useState } from "react"
 import { Button as AriaButton, DropIndicator, GridList, useDragAndDrop } from "react-aria-components"
-import type { IconImageApi } from "../src/repository-icon-images"
 import { IconButton } from "./controls"
 import { DenseRow } from "./dense-row"
 import { AddIcon, CollapsePanelIcon, ExpandPanelIcon } from "./icons"
 import { automaticIcon, repositoryName } from "./repositories"
+import type { IconImageApi } from "./repository-icon-images"
 import { RepositoryTile } from "./repository-tile"
 import { Button } from "./ui/Button"
 import { GripVertical } from "./ui/icons"
@@ -29,7 +28,7 @@ interface RepositoryPanelProps {
 
 /**
  * Open repositories in a side panel that stays dark in both appearances, reordered by drag, keyboard
- * drag, or Ctrl+Shift+< and >. It starts collapsed to its tiles, as the Remix rail does.
+ * drag, or Ctrl+Shift+< and >. It starts collapsed to its tiles.
  */
 export function RepositoryPanel(props: RepositoryPanelProps) {
     let [collapsed, setCollapsed] = useState(true)

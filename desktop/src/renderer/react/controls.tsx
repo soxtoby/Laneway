@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import type { ReactNode } from "react"
 import { Button as AriaButton, type ButtonProps } from "react-aria-components"
 import { MoreIcon } from "./icons"

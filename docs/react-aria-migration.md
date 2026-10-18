@@ -14,25 +14,11 @@ The migration lives on the `react-aria` branch, each step as its own commits, an
 Port each screen with the same recipe:
 
 1. Extract its controller into a framework-free module that exposes `subscribe` and a snapshot, as `app-controller.ts` does; React views read it with `useSnapshot`. Existing framework-free modules (`branch-graph-layout.ts`, `auxiliary-columns.ts`, `discard.ts`, `file-paths.ts`, `lucide-catalog.ts`, `repository-icon-images.ts`, and similar) carry over unchanged.
-2. Build the view from the kit's components. Where the kit has no component at Laneway's density or with the behaviour needed, build one from React Aria Components with CSS that uses only the theme's variables (see the conventions below).
+2. Build the view from the kit's components. Where the kit has no component at Laneway's density or with the behaviour needed, build one from React Aria Components with CSS that uses only the theme's variables (see [the renderer conventions](renderer.md)).
 3. Port the screen's `renderer.test.ts` cases to React DOM tests on the same `renderer-fixtures.ts` fakes, as `react-app.test.tsx` does. Query roles and labels rather than markup, which is not preserved. Extend `react-renderer-styles.test.ts` for what only a real window shows: layout, colours, and the CSP.
 4. Compare the screen in a real window with the Remix version, in light and dark.
 
-A step is done when its listed tests pass against the React renderer and the screen matches Remix behaviour in the real window.
-
-## Conventions
-
-- **The kit:** React Aria's vanilla CSS starter components live in `react/ui/`, copied from adobe/react-spectrum at `d3b2bd2` (Apache 2.0). Its README lists every local change; fix kit bugs there and add them to the list, so upstream updates can be compared against the pinned commit.
-- **Colours:** set only in Laneway's theme file, `react/theme.css`, which overrides the kit's variables under `:root:root`. `--tint` is Laneway's amber, and accent fills take dark ink. The repository panel stays dark in both appearances by redefining those variables on the panel. Laneway's own CSS uses the variables, never literal colours; `bun run lint` checks this with stylelint. The kit's own stylesheets keep their upstream colours.
-- **Appearance:** the main process sets Electron's `nativeTheme.themeSource` from the appearance setting, so the kit's `prefers-color-scheme` rules follow it without edits. The window's background and title bar overlay can't read the stylesheets, so `main/window-colors.ts` repeats the header's colours, and `react-renderer-styles.test.ts` checks that they still match.
-- **CSP:** plain stylesheets only. `meta#react-aria-pressable-style` with its rule in the page CSS stops React Aria's one inline style. Only the dev server gets a nonce, for Vite's style tags and Fast Refresh's preamble script. Keep `style-src 'self'` and `script-src 'self'` unchanged.
-- **Density:** commit rows are 32px, file rows 28px, repository rows 40px (36px collapsed) with 28px tiles. Dense collections are React Aria GridLists of `DenseRow`s sharing one row style; the kit's GridList is a card grid.
-- **Activation:** React Aria's own press timing replaces the Remix renderer's mousedown activation (`mouse-activation.ts`): collection items select and menus open on pointer down, and buttons act on release, which leaves native drags free to start from any row.
-- **Row menus:** a `DenseRow` takes its menu items once. Right-click opens them at the pointer, and Shift+F10 under the row, through the app's one `ContextMenuHost`; the same items appear in the row's hover menu button. The host sits outside every list, because a menu rendered inside a row passes its focus events to the list through React's portal bubbling.
-- **Dialogs** are the kit's `Modal` and `Dialog`, open while their controller says so. Escape and Cancel go through the controller, which can keep a dialog open while Git runs. Forms use the kit's `Form` and `TextField`, and a failure shows in the form as an alert that takes focus.
-- **Tests:** React DOM tests install Happy DOM with `installReactDom` from `test/react-dom.ts` before importing views. React Aria acts on pointer presses, so tests press with pointer events rather than `click()`.
-- **Destructive actions** apply immediately with an Undo toast (the kit's toast with an `action`), never a confirmation dialog.
-- **Icons** are Lucide nodes (ADR-0020), drawn by `lucideIcon()`, which also gives the kit the `lucide-<name>` classes its CSS expects.
+A step is done when its listed tests pass against the React renderer and the screen matches Remix behaviour in the real window. The conventions the steps followed are now [the renderer conventions](renderer.md).
 
 ## Steps
 
@@ -138,16 +124,15 @@ A step is done when its listed tests pass against the React renderer and the scr
     - Tests: `react-conflict-electron.test.ts`, ported from `conflict-electron.test.ts`, resolves the fixture's conflict through production IPC across restarts; resolving now has tests in `react-rebase.test.tsx` and `react-composition.test.tsx`.
     - The kit's `Button` keeps classes passed to it beside its own, rather than replacing them.
 - [ ] **9. Cutover.**
-  - **Remove Remix:**
-    - Delete the Remix renderer, `styles.css`, and the `remix` dependency and its pin.
-    - Delete the renderer switch (`reactRenderer` in `main/window-colors.ts`, `dev:react`) and `renderer-styles.test.ts`; `react.html` becomes the only page.
-    - Delete AGENTS.md's Remix section.
-  - **Settle the code:**
-    - Set `jsxImportSource` to `react` in `tsconfig.json` and drop the per-file pragmas.
-    - Lint every `.tsx` and stylesheet; ESLint and stylelint cover only the React renderer until then.
-  - **Merge:** rebase onto master a final time, run the full suite, and merge the branch.
+  - **Landed:**
+    - The Remix renderer, `styles.css`, the `remix` dependency and its pin, and the Remix skill are gone, with the Remix-only tests and fixtures: `renderer.test.ts`, `renderer-styles.test.ts`, `composition-browser.test.ts`, `conflict-electron.test.ts`, `local-electron.test.ts`, `image-diff-electron.test.ts`, and `image-diff.test.ts`, each ported in its step.
+    - The framework-free modules React reused moved into `react/`, and their tests followed them: `auxiliary-columns.ts`, `branch-graph-layout.ts`, `comparison-columns.ts`, `diff-context.ts`, `diff-patch.ts`, `discard.ts`, `file-paths.ts`, `icon-nodes.ts`, `inspection-diff-session.ts`, `lucide-catalog.ts`, `repository-icon-images.ts`, `worktree-columns.ts`, and the global typings.
+    - The renderer switch is gone (`LANEWAY_RENDERER`, `reactRenderer`, `dev:react`); `react.html` became `index.html`, the only page.
+    - `jsxImportSource` is `react`, and files dropped their pragmas. ESLint covers every `.ts` and `.tsx`, with the hooks rules across the renderer and its tests.
+    - The commit prototype was deleted rather than ported: it was a throwaway for a decision taken on 2026-09-13 (ADR-0012), and `core-local-operations.md` says where to recover it.
+    - The conventions moved to [the renderer conventions](renderer.md), which AGENTS.md points to in place of its Remix section.
+  - **Remaining:** rebase onto master a final time, run the full suite, and merge the branch.
 
 ## Open questions
 
-- **Greys:** the kit's greys are neutral, while the dark panel keeps the Remix rail's cool slate. If the mix looks off, tinting the kit's `--gray` is one variable.
-- **Commit prototype:** the commit prototype (`commit-prototype*.tsx`, `bun run prototype:commits`) is Remix; port it or delete it before cutover.
+- **Greys:** the kit's greys are neutral, while the dark panel keeps a cool slate. If the mix looks off, tinting the kit's `--gray` is one variable.

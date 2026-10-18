@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 import type { LocalActionResult, LocalPreview, LocalRequest, WorktreePreview, WorktreeRequest } from "@laneway/shared"
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
 import type { Window as HappyWindow } from "happy-dom"
