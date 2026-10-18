@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
 
-test("the built React renderer commits through production IPC and restores drafts across process restart", async () => {
+test("the built React renderer commits, manages branches, and composes through production IPC, restoring drafts across restart", async () => {
     let directory = await mkdtemp(join(tmpdir(), "laneway-react-local-electron-"))
     let root = resolve(import.meta.dir, "../..")
     try {
@@ -33,7 +33,9 @@ test("the built React renderer commits through production IPC and restores draft
         )
 
         // The test script builds desktop/out once; parallel test files must not rebuild it.
-        for (let phase of ["draft", "commit"]) {
+        for (let phase of ["draft", "commit", "branches", "compose"]) {
+            if (phase == "compose")
+                await writeFile(join(directory, "repository", "file.txt"), "composed desktop change\n")
             let env: NodeJS.ProcessEnv = {
                 ...process.env,
                 LANEWAY_RENDERER: "react",
@@ -61,10 +63,15 @@ test("the built React renderer commits through production IPC and restores draft
             })
             let result = await readFile(join(directory, `${phase}.json`), "utf8").catch(() => errors)
             expect(exitCode, result).toBe(0)
-            expect(JSON.parse(result)).toEqual(phase == "draft" ? { draft: true } : { committed: true })
+            expect(JSON.parse(result)).toEqual(
+                { draft: { draft: true }, commit: { committed: true }, branches: { branches: true }, compose: { composed: true } }[phase],
+            )
         }
-        expect(git("log", "-1", "--format=%s")).toBe("Persistent desktop commit")
+        expect(git("log", "-2", "--format=%s")).toBe("Composed in desktop\nPersistent desktop commit")
+        expect(git("show", "HEAD:file.txt")).toBe("composed desktop change")
         expect(git("status", "--porcelain")).toBe("")
+        expect(git("branch", "--show-current")).toBe("main")
+        expect(git("branch", "--list", "alias", "renamed")).toBe("")
     } finally {
         if (!resolve(directory).startsWith(resolve(tmpdir()) + sep))
             throw new Error("Invalid fixture path")

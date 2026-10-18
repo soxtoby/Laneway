@@ -10,6 +10,7 @@ import { EditableName } from "./editable-name"
 import { BranchIcon, MoreIcon, WarningIcon } from "./icons"
 import { branchStack, type ColumnInspection, type Inspection } from "./inspection"
 import type { Reword } from "./reword"
+import { TransferGrip, TransferReview, TransferSeam, useTransferScope, useTransferTarget } from "./transfer"
 import { Button } from "./ui/Button"
 import { ChevronRight } from "./ui/icons"
 import { MenuItem } from "./ui/Menu"
@@ -44,7 +45,16 @@ export function CommitTrail(props: CommitTrailProps) {
     return (
         <div className="commit-trail">
             {stack.map((branch, index) => (
-                <StackBranch key={branch.id} {...props} branch={branch} own={index == 0} rewording={rewording} onReword={setRewording} />
+                <StackBranch
+                    key={branch.id}
+                    {...props}
+                    branch={branch}
+                    own={index == 0}
+                    above={stack[index - 1]}
+                    below={stack[index + 1]}
+                    rewording={rewording}
+                    onReword={setRewording}
+                />
             ))}
         </div>
     )
@@ -54,21 +64,45 @@ interface StackBranchProps extends CommitTrailProps {
     branch: BranchGraphBranchNode
     /** The column's own branch, whose commits always show; the bases below fold. */
     own: boolean
+    /** The branches either side of this one in the stack: the one built on it, and its base. */
+    above?: BranchGraphBranchNode
+    below?: BranchGraphBranchNode
     /** The commit whose message is being edited, by object ID. */
     rewording?: string
     onReword(objectId?: string): void
 }
 
 function StackBranch(props: StackBranchProps) {
-    let { branch, own, column, inspected, inspection } = props
+    let { branch, own, above, column, inspected, inspection } = props
     let history = inspected?.history[branch.id]
     let open = own || history?.open == true
     let unresolved = branch.unresolved && (
         <WarningIcon className="branch-conflict" role="img" aria-label={`${branch.name} has unresolved conflicts`} aria-hidden={false} />
     )
+    // A local branch takes whole commits and other branches; any but the primary branch can move onto another.
+    let scope = useTransferScope()
+    let branchTarget = { kind: "branch" as const, branch: branch.preferredRef, tip: branch.tip }
+    let { target: heading, props: targetProps } = useTransferTarget<HTMLHeadingElement>(
+        scope?.composition,
+        scope && !branch.remoteOnly ? { kind: "compose", repositoryId: scope.repositoryId, target: branchTarget } : undefined,
+    )
     return (
         <section className={clsx("stack-branch", branch.published && "remote")} aria-label={`Branch ${branch.name}`}>
-            <h3 className="stack-heading">
+            {/* The seam at this branch's tip belongs to the branch built on it. */}
+            {scope && above && !above.remoteOnly && (
+                <TransferSeam
+                    composition={scope.composition}
+                    repositoryId={scope.repositoryId}
+                    target={{ kind: "seam", branch: above.preferredRef, parentId: branch.tip }}
+                />
+            )}
+            <h3 ref={heading} {...targetProps} className="stack-heading">
+                {scope && !branch.remoteOnly && !branch.primary && (
+                    <TransferGrip
+                        composition={scope.composition}
+                        selection={{ repositoryId: scope.repositoryId, selectedRemote: scope.selectedRemote, source: branchTarget, label: branch.name }}
+                    />
+                )}
                 {own
                     ? (
                         <span className="stack-title">
@@ -88,6 +122,14 @@ function StackBranch(props: StackBranchProps) {
                         </AriaButton>
                     )}
             </h3>
+            {scope && <TransferReview composition={scope.composition} repositoryId={scope.repositoryId} target={branchTarget} />}
+            {scope && !branch.remoteOnly && (
+                <TransferSeam
+                    composition={scope.composition}
+                    repositoryId={scope.repositoryId}
+                    target={{ kind: "seam", branch: branch.preferredRef, parentId: branch.tip }}
+                />
+            )}
             {open && (
                 <div className="stack-commits">
                     {history?.loading && !history.page && <p className="column-placeholder" role="status">Reading commits…</p>}
@@ -133,7 +175,7 @@ function BaseChoice({ branch, column, inspected, inspection, candidates }: Stack
 }
 
 function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) {
-    let { commit, branch, column, inspected, inspection, view, onViewChange, rewording, onReword } = props
+    let { commit, branch, below, column, inspected, inspection, view, onViewChange, rewording, onReword } = props
     let files = inspected?.files[commit.objectId]
     let open = files?.open == true
     // Only a local branch's history can be reworded, and merge commits can't be.
@@ -147,11 +189,53 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
             </>
         ),
     }
-    let { row, openMenu } = useRowMenu(menu)
+    let { row: rowRef, openMenu } = useRowMenu(menu)
+    // A commit takes files and other commits, and a pointer near its top or bottom edge inserts beside it.
+    let scope = useTransferScope()
+    let commitTarget = { kind: "commit" as const, objectId: commit.objectId, branch: branch.preferredRef }
+    let parentId = commit.parentIds[0]
+    let edges = branch.remoteOnly ? {} : {
+        above: { kind: "seam" as const, parentId: commit.objectId, branch: branch.preferredRef },
+        below: parentId ? { kind: "seam" as const, parentId, branch: branch.preferredRef } : undefined,
+    }
+    let { target: targetRef, props: targetProps } = useTransferTarget<HTMLDivElement>(
+        scope?.composition,
+        scope && { kind: "compose", repositoryId: scope.repositoryId, target: commitTarget },
+        edges,
+    )
+    // The seam below the branch's last commit is its base's tip, which the base's own seam already offers.
+    let seamBelow = !branch.remoteOnly && parentId && !(branch.base.status == "known" && branch.base.tip == parentId && below)
+    let comparedParent = files?.source.kind == "commit" ? files.source.parentId : undefined
     return (
         <div className="trail-commit" data-expanded={open || undefined} data-remote={commit.remote || undefined}>
-            <div ref={row} className="commit-row" title={commit.body ? `${commit.subject}\n\n${commit.body}` : commit.subject} onContextMenu={openMenu}>
+            <div
+                ref={element => {
+                    rowRef.current = element
+                    targetRef.current = element
+                }}
+                {...targetProps}
+                className="commit-row"
+                title={commit.body ? `${commit.subject}\n\n${commit.body}` : commit.subject}
+                onContextMenu={openMenu}
+            >
                 <span className="commit-node" aria-hidden="true" />
+                {scope && (
+                    // A single parent also tells composition which seams sit beside the commit.
+                    <TransferGrip
+                        composition={scope.composition}
+                        selection={{
+                            repositoryId: scope.repositoryId,
+                            selectedRemote: scope.selectedRemote,
+                            source: {
+                                kind: "commit",
+                                objectId: commit.objectId,
+                                branch: branch.preferredRef,
+                                ...comparedParent ? { parentId: comparedParent } : commit.parentIds.length == 1 ? { parentId } : {},
+                            },
+                            label: commit.subject,
+                        }}
+                    />
+                )}
                 <AriaButton className="commit-toggle" aria-expanded={open} onPress={() => inspection.toggleCommit(column.id, commit.objectId)}>
                     <span className="commit-subject">{commit.subject}</span>
                     {commit.body && !open && <MoreIcon className="message-indicator" role="img" aria-label="Has message body" aria-hidden={false} />}
@@ -162,6 +246,7 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
                 </span>
             </div>
             {rewording == commit.objectId && <RewordForm {...props} close={() => onReword(undefined)} />}
+            {scope && <TransferReview composition={scope.composition} repositoryId={scope.repositoryId} target={commitTarget} />}
             {open && files && (
                 <div className="commit-files">
                     {commit.body && <CommitMessage body={commit.body} />}
@@ -187,9 +272,17 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
                         inspection={inspection}
                         view={view}
                         root={props.root}
+                        selectable
                         empty="No changes against this parent"
                     />
                 </div>
+            )}
+            {scope && seamBelow && (
+                <TransferSeam
+                    composition={scope.composition}
+                    repositoryId={scope.repositoryId}
+                    target={{ kind: "seam", branch: branch.preferredRef, parentId }}
+                />
             )}
         </div>
     )

@@ -26,13 +26,15 @@ interface FileTreeProps {
     menuItems?(file: ChangedFile): ReactNode
     /** Working Changes lists say staged by where they sit, so their rows leave the badge out. */
     hideStagedBadge?: boolean
+    /** What leads a row: a grip moving the row's files, named by the file's path or the folder's or group's label. */
+    leading?(files: ChangedFile[], label: string): ReactNode
 }
 
 /**
  * A list of changed files, flat or in folders and optionally grouped, as React Aria's Tree. A file's
  * checkbox chooses it for bulk actions; a folder's or group's chooses every file it holds.
  */
-export function FileTree({ label, files, view, group, selected, onSelect, root, menuItems, hideStagedBadge }: FileTreeProps) {
+export function FileTree({ label, files, view, group, selected, onSelect, root, menuItems, hideStagedBadge, leading }: FileTreeProps) {
     let nodes = fileTreeNodes(files, view)
     let folders = foldingNodes(nodes)
     // Folders start open; a folded one remembers that by its key while the list stays.
@@ -80,13 +82,15 @@ export function FileTree({ label, files, view, group, selected, onSelect, root, 
             onExpandedChange={keys => setFolded(new Set([...folders.keys()].filter(key => !keys.has(key))))}
             onAction={toggleFolder}
         >
-            {nodes.map(node => <FileTreeRow key={node.key} node={node} flat={view.layout == "flat"} props={{ onSelect, root, menuItems, hideStagedBadge }} />)}
+            {nodes.map(node => (
+                <FileTreeRow key={node.key} node={node} flat={view.layout == "flat"} props={{ onSelect, root, menuItems, hideStagedBadge, leading }} />
+            ))}
         </Tree>
     )
 }
 
 function FileTreeRow(
-    { node, flat, props }: { node: FileTreeNode; flat: boolean; props: Pick<FileTreeProps, "onSelect" | "root" | "menuItems" | "hideStagedBadge"> },
+    { node, flat, props }: { node: FileTreeNode; flat: boolean; props: Pick<FileTreeProps, "onSelect" | "root" | "menuItems" | "hideStagedBadge" | "leading"> },
 ) {
     if (node.kind == "file") {
         let file = node.file
@@ -99,6 +103,7 @@ function FileTreeRow(
                 menu={{ label: `Actions for ${file.path}`, items: () => <FileMenuItems file={file} root={props.root} items={props.menuItems} /> }}
                 content={({ actions }) => (
                     <div className="row-content file-content" title={path}>
+                        {props.leading?.([file], file.path)}
                         {props.onSelect && <Checkbox slot="selection" aria-label={`Select file ${file.path}`} />}
                         <FileStatusIcon status={file.conflicted ? "conflicted" : file.status} />
                         <FileLabel file={file} showFolder={flat || !!file.oldPath} />
@@ -119,6 +124,7 @@ function FileTreeRow(
             content={({ isExpanded }) => (
                 // Shaped like a file row, with the chevron where a file's status icon sits, so checkboxes line up.
                 <div className="row-content folder-content">
+                    {props.leading?.(node.files, node.label)}
                     {props.onSelect && <Checkbox slot="selection" aria-label={`Select ${node.files.length} files in ${node.label}`} />}
                     <AriaButton slot="chevron" className="folder-chevron" aria-label={isExpanded ? `Fold ${node.label}` : `Unfold ${node.label}`}>
                         <ChevronRight />

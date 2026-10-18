@@ -21,12 +21,43 @@ app.on("browser-window-created", (_event, window) => {
                     }
                     throw new Error('UI timeout: ' + document.body.innerText);
                 };
-                const button = text => [...document.querySelectorAll('button')].find(element => element.textContent.trim() == text && !element.disabled);
+                const button = (text, scope = document) => [...scope.querySelectorAll('button')].find(element => (element.textContent.trim() == text || element.getAttribute('aria-label') == text) && !element.disabled);
+                const menuItem = text => [...document.querySelectorAll('[role=menu] [role=menuitem]')].find(element => element.textContent == text);
                 // React tracks an input's value, so typing goes through the element's own setter.
                 const type = (input, value) => {
                     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value);
                     input.dispatchEvent(new Event('input', { bubbles: true }));
                 };
+                const key = (target, key) => target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+                if (${JSON.stringify(phase)} == 'compose') {
+                    (await wait(() => button('Move or copy file.txt'))).click();
+                    (await wait(() => document.querySelector('.transfer-seam[aria-label="New commit on main"]'))).click();
+                    type(await wait(() => document.querySelector('[aria-label="New commit message"]')), 'Composed in desktop');
+                    (await wait(() => button('Review transfer'))).click();
+                    await wait(() => !document.querySelector('[aria-label="New commit message"]') && document.body.innerText.includes('No Working Changes'));
+                    return { composed: true };
+                }
+                if (${JSON.stringify(phase)} == 'branches') {
+                    let column = await wait(() => document.querySelector('[data-column-id="branch:refs/heads/main"]'));
+                    let commit = await wait(() => column.querySelector('.commit-row'));
+                    commit.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 80, clientY: 100 }));
+                    (await wait(() => menuItem('Create branch here…'))).click();
+                    type(await wait(() => document.querySelector('[role=dialog] input')), 'alias');
+                    (await wait(() => button('Create branch', document.querySelector('[role=dialog]')))).click();
+                    const alias = await wait(() => document.querySelector('[data-column-id="branch:refs/heads/alias"]'));
+                    if (alias.querySelector('[aria-label="Working Changes"]')) throw new Error('Branch creation unexpectedly checked out the branch');
+                    await wait(() => !document.querySelector('[role=dialog]'));
+                    key(alias, 'F2');
+                    const rename = await wait(() => document.querySelector('[role=dialog] input'));
+                    type(rename, 'renamed');
+                    (await wait(() => button('Rename', document.querySelector('[role=dialog]')))).click();
+                    const renamed = await wait(() => document.querySelector('[data-column-id="branch:refs/heads/renamed"]'));
+                    await wait(() => !document.querySelector('[role=dialog]'));
+                    key(renamed, 'Delete');
+                    (await wait(() => button('Delete', document.querySelector('[role=dialog]') ?? document))).click();
+                    await wait(() => !document.querySelector('[data-column-id="branch:refs/heads/renamed"]'));
+                    return { branches: true };
+                }
                 (await wait(() => button('Commit…'))).click();
                 const title = await wait(() => document.querySelector('[aria-label="Commit title"]'));
                 if (${JSON.stringify(phase)} == 'draft') {

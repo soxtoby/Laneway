@@ -1,6 +1,7 @@
 import type { Appearance, BranchHistoryCommit, FileListView, OpenRepository, RepositoryIdentity, Workspace, WorkspaceColumn } from "@laneway/shared"
 import { type BranchWorkspace, createBranchWorkspace } from "./branch-workspace"
 import { type CommitComposer, createCommitComposer } from "./commit-composer"
+import { type Composition, createComposition } from "./composition"
 import { createGitSettings, type GitSettings } from "./git-settings"
 import { createInspection, type Inspection } from "./inspection"
 import { createLocalBranches, type LocalBranches } from "./local-branches"
@@ -44,6 +45,8 @@ export interface AppController extends Store<AppSnapshot> {
     readonly worktrees: WorktreeActions
     /** Every stash in the repository, applied or dropped. */
     readonly stashes: Stashes
+    /** Moving and copying files, commits, and branches between columns. */
+    readonly composition: Composition
     /** Loads the app state; also retries after a failed start. */
     start(): Promise<void>
     toggleAppearance(): Promise<void>
@@ -177,6 +180,13 @@ export function createAppController(api: Api): AppController {
         transitioned: rewritten,
     })
 
+    let composition = createComposition({
+        api,
+        notify,
+        mutating: busy => columns.mutating(busy),
+        changed: rewritten,
+    })
+
     let stashes = createStashes({
         api,
         mutating: busy => columns.mutating(busy),
@@ -222,6 +232,7 @@ export function createAppController(api: Api): AppController {
         branches,
         worktrees,
         stashes,
+        composition,
 
         async start() {
             store.publish({ status: "starting" })
@@ -385,6 +396,7 @@ export function createAppController(api: Api): AppController {
 
         dispose() {
             clearTimeout(identitySave)
+            composition.dispose()
             for (let stop of unsubscribe)
                 stop()
             store.clear()

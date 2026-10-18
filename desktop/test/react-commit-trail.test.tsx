@@ -41,7 +41,10 @@ describe("React Commit Trail", () => {
         await app.act(() => press(button(trail(), "main")))
 
         expect(requests[0]).toMatchObject({ tip: local, remoteTips: scenario.graph.remoteTips })
-        expect(commitRows().slice(0, 2).map(row => [row.textContent, row.hasAttribute("data-remote")])).toEqual([["Unpublished", false], ["Published", true]])
+        expect(commitRows().slice(0, 2).map(row => [row.querySelector(".commit-subject")?.textContent, row.hasAttribute("data-remote")])).toEqual([[
+            "Unpublished",
+            false,
+        ], ["Published", true]])
         expect([...trail().querySelectorAll(".stack-branch")].map(card => card.classList.contains("remote"))).toEqual([false, true])
     })
 

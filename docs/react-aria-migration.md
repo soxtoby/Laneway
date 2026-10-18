@@ -73,24 +73,22 @@ A step is done when its listed tests pass against the React renderer and the scr
     - Composition moves files between lists, stashes, columns, and commits, and is also how a single file is staged, so it moves to step 5 with the Commit Trail it lands on. So do `local-electron.test.ts`'s compose and branch phases.
     - Line discards, the diff column button, the File history menu item, and showing ignored files belong to diffs and filters, so they move to step 6.
     - Mousedown activation is not ported; see the Activation convention.
-- [ ] **5. Commit Trail and local operations.**
+- [x] **5. Commit Trail and local operations.**
   - **Scope:**
-    - Commits, rewording, and Create branch here.
-    - Composition: moving or copying files and commits between lists, stashes, columns, and commits, including staging single files.
-    - Renaming branches and worktrees inline, with `editable-name.tsx`.
-    - Creating, switching, and removing worktrees from their previews, and repairing or removing a missing worktree.
-    - Undo and redo, which Ctrl+Z reaches once no discard is waiting.
-  - **Remix modules:** `reword.tsx`, `composition.tsx`, `inspection/commit-message.tsx`, `overflow-menu.tsx`, `context-menu.tsx`, `branch-workspace/local-branch-actions.tsx`, the Commit Trail part of `inspection/inspection.tsx`, `worktrees/worktree-controls.tsx`, `worktrees/worktree-actions.tsx`, `worktrees/missing-worktree.tsx`.
-  - **Tests to port:** rewording, Create branch here, composition, the worktree creation preview, inline renames, detached worktrees, branch deletion, missing worktrees, and the compose and branch phases of `local-electron.test.ts`.
-  - **Landed so far:**
     - The Commit Trail (`commit-trail.tsx`): the column's branch and the bases below it, paged, with ambiguous bases chosen after the last page; commits that unfold to their message and files, with merge parents to compare; commits and branches the remote already has in the remote tone.
     - Rewording (`reword.ts`), and creating, renaming, and deleting branches (`local-branches.ts`, `local-branch-dialog.tsx`): Create branch here from a commit's menu, F2 and Delete on a branch column, and the column's branch renamed in place.
-    - Tests in `react-commit-trail.test.tsx`: remote commits and branches, unfolding commits, ambiguous bases, Create branch here, rewording, inline renames, and branch deletion.
     - Worktrees (`worktree-actions.ts`, `worktree-controls.tsx`, `worktree-dialog.tsx`): a worktree column's name renames in place over its path; its menu switches branch through a branch search, unlocks, repairs, or removes it; a branch column without a worktree checks the branch out in an existing worktree or a new one; a missing worktree's panel offers Repair and Remove. Each operation is reviewed in a dialog before it runs.
     - Undo and redo from the header and by Ctrl+Z, Ctrl+Y, and Ctrl+Shift+Z, after any waiting discard; an undo into a taken directory asks for another name. The header's Stashes dialog applies a stash to a chosen worktree or drops it (`stashes.ts`).
-    - Tests in `react-worktrees.test.tsx`: missing worktrees, a missing detached worktree returning, the creation preview, inline worktree renames with branch switching and removal, undo and redo, and the Stashes dialog.
+    - Composition (`composition.ts`, `transfer.tsx`): grips on files, folders, commits, and branches drag their rows, or choose them with M or C for the arrow keys and Enter; Working Changes, the staging lists, commits, the seams between commits, and branch headings take them, with the review at the destination. Commit and stash files can be chosen like Working Changes files.
+  - **Remix modules:** `reword.tsx`, `composition.tsx`, `inspection/commit-message.tsx`, `branch-workspace/local-branch-actions.tsx`, the Commit Trail part of `inspection/inspection.tsx`, `worktrees/worktree-controls.tsx`, `worktrees/worktree-actions.tsx`, `worktrees/missing-worktree.tsx`. The React renderer's row menus and the kit's menus replace `overflow-menu.tsx` and `context-menu.tsx`.
+  - **Tests ported:**
+    - `react-commit-trail.test.tsx`: remote commits and branches, unfolding commits, ambiguous bases, Create branch here, rewording, inline renames, and branch deletion.
+    - `react-worktrees.test.tsx`: missing worktrees, a missing detached worktree returning, the creation preview, inline worktree renames with branch switching and removal; undo, redo, and the Stashes dialog are new.
+    - `react-composition.test.tsx` covers staging by moving files and the keyboard paths; `react-composition-electron.test.ts` ports `composition-browser.test.ts` with real drags under the production CSP.
+    - `react-local-electron.test.ts` now has the branch and compose phases of `local-electron.test.ts`.
+  - **Moved on:**
+    - A conflicting transfer offers only Continue and resolve later until conflict resolution moves in step 8.
     - Branch deletion and worktree removal keep the Remix renderer's confirmation dialogs. Both are undoable, so the Destructive actions convention could replace them with an Undo notice; that is a behaviour change for master first.
-    - Still to come: composition.
 - [ ] **6. Inspection.**
   - **Scope:**
     - Diff columns: combined and split views, selection, hidden-line gaps, and virtualized large patches.
@@ -112,7 +110,7 @@ A step is done when its listed tests pass against the React renderer and the scr
   - **Remix modules:** the rest of `branch-workspace/` (graph view, settings, marker details, rebase) and `command-lens.tsx`.
   - **Tests to port:** graph selection and Lens navigation, virtualization, quiet refreshes, Branch Graph settings, the "Branch Graph rebase" block.
 - [ ] **8. Pull latest and conflicts.**
-  - **Scope:** Pull latest progress, cancellation, and outcomes; confirmation notices; conflict and merge resolution.
+  - **Scope:** Pull latest progress, cancellation, and outcomes; confirmation notices; conflict and merge resolution, including Continue and resolve now after a conflicting transfer.
   - **Remix modules:** `pull-latest.tsx`, `conflict-resolution.tsx`, `conflict-content.tsx`, `merge-resolution.tsx`.
   - **Tests to port:** the Pull latest tests, notices, `conflict-electron.test.ts`.
 - [ ] **9. Cutover.**

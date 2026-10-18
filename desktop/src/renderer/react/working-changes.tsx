@@ -4,12 +4,14 @@ import { type ReactNode, useEffect, useState } from "react"
 import { Button as AriaButton, Form } from "react-aria-components"
 import type { ColumnView } from "./branch-workspace"
 import { type CommitComposer, defaultBranchName } from "./commit-composer"
+import type { Landing } from "./composition"
 import { IconButton } from "./controls"
 import { EditableName } from "./editable-name"
 import { fileListViewOptions } from "./file-list-view"
 import { FileTree } from "./file-tree"
 import { ArchiveIcon, ChevronDownIcon, CloseIcon, DetachedIcon, FolderIcon, TreeIcon } from "./icons"
 import type { ColumnInspection, FilesState, Inspection } from "./inspection"
+import { TransferGrip, TransferReview, transferSource, useTransferScope, useTransferTarget } from "./transfer"
 import { Button } from "./ui/Button"
 import { ChevronRight } from "./ui/icons"
 import { Menu, MenuItem, MenuSection, MenuTrigger, Separator } from "./ui/Menu"
@@ -52,7 +54,25 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
         setExpanded(true)
         action()
     }
+    // Changes from commits and stashes land in Working Changes.
+    let scope = useTransferScope()
+    let workingTarget = { kind: "working" as const, worktreePath: path }
+    let { target: section, props: targetProps } = useTransferTarget<HTMLElement>(
+        scope?.composition,
+        scope && { kind: "compose", repositoryId: scope.repositoryId, target: workingTarget },
+    )
 
+    // While composing, files move between the staged and unstaged lists to stage or unstage them.
+    let staging = (group: "working-staged" | "working-unstaged"): Landing | undefined =>
+        scope && state.composing && !disabled
+            ? {
+                kind: "stage",
+                repositoryId: scope.repositoryId,
+                worktreePath: path,
+                view: group == "working-staged" ? "staged" : "unstaged",
+                apply: paths => void composer.stage(files.filter(file => paths.includes(file.path)), group == "working-unstaged"),
+            }
+            : undefined
     let list = (group: "working-staged" | "working-unstaged", label: string) => (
         <FileList
             columnId={column.id}
@@ -64,12 +84,14 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
             view={view}
             root={path}
             selectable
+            staging={staging(group)}
             menuItems={file => <DiscardItem columnId={column.id} group={group} file={file} inspection={inspection} />}
         />
     )
 
     return (
-        <section className="working-changes" aria-label="Working Changes">
+        <section ref={section} {...targetProps} className="working-changes" aria-label="Working Changes">
+            {scope && <TransferReview composition={scope.composition} repositoryId={scope.repositoryId} target={workingTarget} />}
             {column.kind == "branch"
                 && column.branch.markers.map(stash => (
                     <StashCard
@@ -194,7 +216,7 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
                         )}
                         {(staged.length > 0 || state.composing) && (
                             <>
-                                {staged.length > 0 && list("working-staged", "Staged files")}
+                                {list("working-staged", "Staged files")}
                                 <div className="staged-divider" role="separator" aria-label="Staged changes">
                                     <span>Staged · {staged.length}</span>
                                 </div>
@@ -271,6 +293,7 @@ function StashCard({ columnId, stash, inspected, inspection, view, root, actions
             inspection={inspection}
             view={view}
             root={root}
+            selectable
             empty="No changes in this stash"
         />
     )
@@ -324,17 +347,50 @@ interface FileListProps {
     menuItems?(file: ChangedFile): ReactNode
     /** What an empty list says, such as "No changes in this stash". */
     empty?: string
+    /** Files from the other Working Changes list land here to be staged or unstaged. */
+    staging?: Landing
 }
 
 /** One list of a column's files, with its reading and failure states and, once files are chosen, how many. */
-export function FileList({ columnId, group, label, files, inspected, inspection, view, root, selectable, menuItems, empty }: FileListProps) {
+export function FileList({ columnId, group, label, files, inspected, inspection, view, root, selectable, menuItems, empty, staging }: FileListProps) {
+    let scope = useTransferScope()
+    let { target, props } = useTransferTarget<HTMLDivElement>(scope?.composition, staging)
     if (!files)
         return null
     let listed = files.inventory?.files.filter(file => !file.ignored) ?? []
-    let chosen = inspected?.selected.filter(id => id.startsWith(`${group}:`)).length ?? 0
+    let selected = inspected?.selected ?? []
+    let chosen = selected.filter(id => id.startsWith(`${group}:`)).length
     let working = group.startsWith("working-")
+    let inventory = files.inventory
+    let source = inventory && transferSource(inventory.source, scope?.branch)
+    // A grip moves its own files, or every chosen file when it holds one of them.
+    let leading = scope && inventory && source
+        ? (rowFiles: ChangedFile[], rowLabel: string) => {
+            let isChosen = (file: ChangedFile) => selected.includes(`${group}:${file.path}`)
+            let taken = rowFiles.some(isChosen) ? listed.filter(isChosen) : rowFiles
+            return (
+                <TransferGrip
+                    composition={scope.composition}
+                    selection={{
+                        repositoryId: scope.repositoryId,
+                        source,
+                        files: taken.map(file => ({ path: file.path })),
+                        inventoryVersion: inventory.version,
+                        selectedRemote: scope.selectedRemote,
+                        view: group == "working-staged" ? "staged" : group == "working-unstaged" ? "unstaged" : "combined",
+                        label: rowFiles.some(isChosen) && taken.length > 1
+                            ? `${taken.length} files`
+                            : rowFiles.length > 1
+                            ? `${rowFiles.length} files in ${rowLabel}`
+                            : rowLabel,
+                    }}
+                />
+            )
+        }
+        : undefined
     return (
-        <div className="change-file-list">
+        <div ref={target} {...props} className="change-file-list" data-group={group}>
+            {staging && group == "working-staged" && !listed.length && <p className="staging-hint">Drop files here to stage them</p>}
             {!working && files.loading && !files.inventory && <p className="column-placeholder" role="status">Reading files…</p>}
             {!working && files.error && (
                 <p className="column-placeholder" role="alert">
@@ -355,6 +411,7 @@ export function FileList({ columnId, group, label, files, inspected, inspection,
                     root={root}
                     hideStagedBadge={working}
                     menuItems={menuItems}
+                    leading={leading}
                 />
             )}
             {chosen > 0 && (
