@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import type { ChangedFile, FileListView } from "@laneway/shared"
+import clsx from "clsx"
 import { type ReactNode, useEffect, useState } from "react"
 import { Button as AriaButton, type Key, type Selection, Tree } from "react-aria-components"
 import { copyText, fileName, fullPath } from "../src/inspection/file-paths"
@@ -36,6 +37,8 @@ interface FileTreeProps {
 /** A list's diffs: which files show one, and what the row draws for it. */
 export interface FileInspection {
     isOpen(file: ChangedFile): boolean
+    /** Whether the file is the one the column's diff column shows; its row is marked. */
+    isActive(file: ChangedFile): boolean
     toggle(file: ChangedFile): void
     /** Closes the diffs of files a folded folder or group hides. */
     close(files: ChangedFile[]): void
@@ -129,7 +132,7 @@ function FileTreeRow(
             <DenseTreeItem
                 id={node.key}
                 textValue={file.path}
-                className={open ? "compact file-row inspected" : "compact file-row"}
+                className={clsx("compact file-row", open && "inspected", props.inspect?.isActive(file) && "active")}
                 menu={{ label: `Actions for ${file.path}`, items: () => <FileMenuItems file={file} root={props.root} items={props.menuItems} /> }}
                 content={({ actions }) => (
                     <>
@@ -175,7 +178,7 @@ function FileTreeRow(
 }
 
 /** A file's own actions, then copying where it lives. */
-function FileMenuItems({ file, root, items }: { file: ChangedFile; root?: string; items?(file: ChangedFile): ReactNode }) {
+export function FileMenuItems({ file, root, items }: { file: ChangedFile; root?: string; items?(file: ChangedFile): ReactNode }) {
     let own = items?.(file)
     return (
         <>
@@ -189,7 +192,7 @@ function FileMenuItems({ file, root, items }: { file: ChangedFile; root?: string
 }
 
 /** The file's name, after its folder when the list doesn't show folders, and after its old path when renamed. */
-function FileLabel({ file, showFolder }: { file: ChangedFile; showFolder: boolean }) {
+export function FileLabel({ file, showFolder }: { file: ChangedFile; showFolder: boolean }) {
     let separator = file.path.lastIndexOf("/") + 1
     let folder = `${file.oldPath ? `${file.oldPath} → ` : ""}${showFolder ? file.path.slice(0, separator) : ""}`
     return (
@@ -201,7 +204,7 @@ function FileLabel({ file, showFolder }: { file: ChangedFile; showFolder: boolea
 }
 
 /** Copies the file's repository-relative path; it shows while the row is hovered or focused, and confirms the copy. */
-function CopyPathButton({ path }: { path: string }) {
+export function CopyPathButton({ path }: { path: string }) {
     let [copied, setCopied] = useState(false)
     useEffect(() => {
         if (!copied)

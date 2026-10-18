@@ -4,10 +4,10 @@ import clsx from "clsx"
 import { useState } from "react"
 import { Button as AriaButton } from "react-aria-components"
 import type { ColumnView } from "./branch-workspace"
-import { MoreMenu } from "./controls"
+import { IconButton, MoreMenu } from "./controls"
 import { useRowMenu } from "./dense-row"
 import { EditableName } from "./editable-name"
-import { BranchIcon, MoreIcon, WarningIcon } from "./icons"
+import { BranchIcon, DiffIcon, MoreIcon, WarningIcon } from "./icons"
 import { branchStack, type ColumnInspection, type Inspection } from "./inspection"
 import type { Reword } from "./reword"
 import { TransferGrip, TransferReview, TransferSeam, useTransferScope, useTransferTarget } from "./transfer"
@@ -240,6 +240,15 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
                     <span className="commit-subject">{commit.subject}</span>
                     {commit.body && !open && <MoreIcon className="message-indicator" role="img" aria-label="Has message body" aria-hidden={false} />}
                 </AriaButton>
+                {open && (
+                    <IconButton
+                        label={`Show full diff for commit ${commit.subject}`}
+                        small
+                        onPress={() => inspection.openDiffColumn(column.id, commit.objectId, undefined, commit.subject)}
+                    >
+                        <DiffIcon />
+                    </IconButton>
+                )}
                 {open && <FileListViewMenu label={`File list view for commit ${commit.subject}`} view={view} onChange={onViewChange} />}
                 <span className="row-actions" data-visible={open || undefined}>
                     <MoreMenu label={menu.label}>{menu.items()}</MoreMenu>

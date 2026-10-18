@@ -86,12 +86,36 @@ app.on("browser-window-created", (_event, window) => {
                 document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
                 await wait(() => !document.querySelector('[role=dialog]'), 'Git settings to close');
 
+                // The diff column joins its source column's card across a seam, with the header band running on.
+                document.querySelector(fileRow + ' .file-path').click();
+                (await wait(() => document.querySelector('[aria-label="Break out diff"]'), 'the inline diff')).click();
+                const aside = await wait(() => document.querySelector('.diff-column .pierre-diff') && document.querySelector('.diff-column'), 'the diff column');
+                await wait(() => document.getAnimations().length == 0, 'the diff column to settle');
+                const seam = aside.previousElementSibling;
+                const source = seam.previousElementSibling;
+                const diffColumn = {
+                    joined: getComputedStyle(source).borderTopRightRadius == '0px' && getComputedStyle(aside).borderTopLeftRadius == '0px'
+                        && seam.matches('.column-divider.attached') && Math.abs(aside.getBoundingClientRect().left - seam.getBoundingClientRect().right) <= 0.5,
+                    headersAligned: Math.abs(aside.querySelector('header').getBoundingClientRect().height - source.querySelector('header').getBoundingClientRect().height) <= 1,
+                    focused: document.activeElement == aside,
+                    width: Math.round(aside.getBoundingClientRect().width),
+                };
+                // Maximized, the source column keeps its width and the diff column takes the rest of the row.
+                aside.querySelector('[aria-label="Maximize column"]').click();
+                const columnRow = await wait(() => document.querySelector('.column-row.maximized'), 'the maximized column');
+                const rowEnd = columnRow.getBoundingClientRect().right - parseFloat(getComputedStyle(columnRow).paddingRight);
+                diffColumn.split = columnRow.scrollWidth <= columnRow.clientWidth && Math.abs(aside.getBoundingClientRect().right - rowEnd) <= 1
+                    && Math.round(source.getBoundingClientRect().width) == 380;
+                aside.querySelector('[aria-label="Restore columns"]').click();
+                (await wait(() => document.querySelector('[aria-label="Close diff column"]'), 'the restored columns')).click();
+                await wait(() => !document.querySelector('.diff-column'), 'the diff column to close');
+
                 document.querySelector('header button[aria-label="Switch to dark appearance"]').click();
                 await wait(() => matchMedia('(prefers-color-scheme: dark)').matches && document.querySelector('header button[aria-label="Switch to light appearance"]'), 'the dark appearance');
                 await wait(() => document.getAnimations().length == 0, 'the appearance transitions');
                 const dark = colors();
 
-                return { light, dark, geometry, contextMenu, disabledCommit, settingsDialog, styleElements: document.querySelectorAll('style').length };
+                return { light, dark, geometry, contextMenu, disabledCommit, settingsDialog, diffColumn, styleElements: document.querySelectorAll('style').length };
             })()`)
             writeFileSync(join(directory, "result.json"), JSON.stringify({ ...result, problems }))
             app.quit()

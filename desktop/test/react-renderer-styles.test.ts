@@ -82,6 +82,7 @@ test("React renderer styles and menus work under production CSP in the built app
             contextMenu: { items: ["Discard changes", "Copy full path", "Copy relative path", "Copy file name"], atPointer: true },
             disabledCommit: { disabled: true, grey: true },
             settingsDialog: { tall: true, centred: true },
+            diffColumn: { joined: true, headersAligned: true, focused: true, width: 620, split: true },
             styleElements: 0,
             problems: [],
         })

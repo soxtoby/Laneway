@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { Archive, ArrowDownToLine, ArrowRight, Check, ChevronDown, ChevronsLeft, ChevronsRight, Copy, Ellipsis, ExternalLink, FaceSlightlySmiling, Folder, GitBranch, GitCompareArrows, type IconNode, Image, ImagePlus, ListTree, Maximize2, Minimize2, Minus, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Redo2, Search, SlidersHorizontal, Sun, TriangleAlert, Type, Undo2, X } from "lucide"
+import { Archive, ArrowDownToLine, ArrowRight, Check, ChevronDown, ChevronsDownUp, ChevronsLeft, ChevronsRight, ChevronsUpDown, Copy, Diff, Ellipsis, ExternalLink, FaceSlightlySmiling, Folder, GitBranch, GitCompareArrows, type IconNode, Image, ImagePlus, ListTree, Maximize2, Minimize2, Minus, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Redo2, Search, SlidersHorizontal, Sun, TriangleAlert, Type, Undo2, X } from "lucide"
 import { createElement, type ReactNode } from "react"
 import { customIconPaths } from "../src/icon-nodes"
 import { lucideIcon } from "./ui/icons"
@@ -37,6 +37,9 @@ export let IconTypeIcon = lucideIcon(Image, "image")
 export let EmojiTypeIcon = lucideIcon(FaceSlightlySmiling, "face-slightly-smiling")
 export let MonogramTypeIcon = lucideIcon(Type, "type")
 export let ImageTypeIcon = lucideIcon(ImagePlus, "image-plus")
+export let DiffIcon = lucideIcon(Diff, "diff")
+export let ExpandAllIcon = lucideIcon(ChevronsUpDown, "chevrons-up-down")
+export let CollapseAllIcon = lucideIcon(ChevronsDownUp, "chevrons-down-up")
 
 /** Any Lucide icon by its node data, such as one chosen from the catalog for a Repository Icon. */
 export function LucideGlyph({ node }: { node: IconNode }) {

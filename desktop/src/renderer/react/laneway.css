@@ -190,6 +190,18 @@
     &.collapsed {
         width: 52px;
     }
+
+    /* Auxiliary columns join onto the card, which stays square where they meet. */
+    &.attached {
+        border-start-end-radius: 0;
+        border-end-end-radius: 0;
+    }
+
+    /* A maximized column keeps its own width beside its auxiliary columns, leaving room for one. */
+    .maximized > &.split {
+        flex: 0 0 auto;
+        max-width: calc(100% - 310px - var(--spacing-2));
+    }
 }
 
 .column-divider {
@@ -206,6 +218,69 @@
 
     &:focus-visible {
         background: var(--focus-ring-color);
+    }
+
+    /* Between a column and its auxiliary columns, the divider is the seam of their shared card. */
+    &.attached {
+        margin-inline: 0;
+        border-block: 0.5px solid var(--border-color);
+        border-radius: 0;
+        background: var(--tray-background);
+
+        &:hover {
+            background: var(--highlight-hover);
+        }
+
+        &:focus-visible {
+            background: var(--focus-ring-color);
+        }
+    }
+}
+
+/* Auxiliary columns extend their source column's card, rounded only at the card's far end. Each keeps its
+   own width, except the last beside a maximized column, which takes the space the others leave. */
+.auxiliary-column {
+    flex: 0 0 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    background: var(--gray-50);
+    border: 0.5px solid var(--border-color);
+    border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+    overflow: hidden;
+    outline: none;
+
+    &:focus-visible {
+        outline: 2px solid var(--focus-ring-color);
+        outline-offset: -2px;
+    }
+
+    /* Auxiliary columns opened from one another sit flush, split by the divider they share. */
+    &:has(+ .column-divider.attached) {
+        border-radius: 0;
+    }
+
+    .maximized > &:not(:has(+ .column-divider)) {
+        flex: 1 1 0;
+        min-width: 310px;
+    }
+}
+
+/* The header matches its source column's, line for line; its rule is a shadow so it adds no height. */
+.auxiliary-header {
+    box-shadow: inset 0 -1px var(--border-color);
+
+    .column-name {
+        display: block;
+        flex: 0 1 auto;
+    }
+
+    .column-title-row > .auxiliary-source {
+        flex: 0 0 auto;
+        color: var(--text-color-placeholder);
+        font-size: var(--font-size-sm);
+        white-space: nowrap;
     }
 }
 
@@ -433,8 +508,15 @@
 }
 
 .column-name {
+    margin: 0;
     font-weight: 600;
     font-size: var(--font-size-lg);
+}
+
+/* A plain title line is as tall as a renamable one, whose button pads its name, so headers line up. */
+.column-title > .column-name,
+.auxiliary-header .column-name {
+    padding-block: 3px;
 }
 
 .column-path,
@@ -2595,4 +2677,104 @@
         width: 16px;
         height: 16px;
     }
+}
+
+/* The diff column: a list's whole diff, each file under a toolbar that sticks while its diff scrolls past. */
+.diff-column {
+    min-width: 380px;
+}
+
+.diff-column-files {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+.diff-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-1);
+    padding: 0 var(--spacing-2) 0 var(--spacing-1);
+    border-bottom: 1px solid var(--border-color);
+    background: var(--gray-50);
+
+    .diff-controls {
+        margin-inline-start: auto;
+    }
+
+    &:hover .copy-path {
+        opacity: 1;
+    }
+
+    /* A file chosen in the source column is marked as it scrolls into place. */
+    &[data-arrived] {
+        animation: diff-arrival 1.5s ease-out;
+    }
+}
+
+@keyframes diff-arrival {
+    0%,
+    60% {
+        background: var(--selection-background-hover);
+        box-shadow: inset 3px 0 var(--focus-ring-color);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .diff-toolbar[data-arrived] {
+        animation-timing-function: steps(1, end);
+    }
+}
+
+.diff-file-toggle {
+    flex: 0 1 auto;
+    min-width: 0;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-1);
+    padding: 0 var(--spacing-1);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-color);
+    font: 12px var(--font-family-mono);
+    outline: none;
+
+    > svg {
+        flex: 0 0 auto;
+        width: var(--spacing-3);
+        height: var(--spacing-3);
+    }
+
+    .file-path {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    &[data-hovered] {
+        background: var(--highlight-hover);
+    }
+
+    &[data-focus-visible] {
+        outline: 2px solid var(--focus-ring-color);
+        outline-offset: -2px;
+    }
+}
+
+.diff-column-file .diff-panel {
+    margin: 0;
+    border-top: 0;
+}
+
+/* The file a diff column shows is marked in its source column's list. */
+.file-row.active {
+    box-shadow: inset 2px 0 var(--focus-ring-color);
+    background: var(--highlight-hover);
 }

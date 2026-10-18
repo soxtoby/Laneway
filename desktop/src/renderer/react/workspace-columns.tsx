@@ -1,14 +1,16 @@
 /** @jsxImportSource react */
 import type { BranchGraph, FileListView, WorktreeRecovery, WorktreeRequest } from "@laneway/shared"
 import clsx from "clsx"
-import { type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, useEffect, useMemo, useRef } from "react"
+import { type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, useEffect, useLayoutEffect, useMemo, useRef } from "react"
+import { defaultAuxiliaryColumnWidth } from "../src/auxiliary-columns"
 import { workspaceGraph } from "../src/worktrees/worktree-columns"
 import type { AppController } from "./app-controller"
 import { type BranchWorkspace, type ColumnsSnapshot, type ColumnView, defaultColumnWidth, minimumColumnWidth, workingSummary } from "./branch-workspace"
-import { ColumnBody } from "./column-body"
+import { ColumnBody, columnRoot, ColumnScopes } from "./column-body"
 import { IconButton } from "./controls"
+import { DiffColumn, minimumDiffColumnWidth } from "./diff-column"
 import { BranchIcon, CloseIcon, CollapseColumnIcon, CompareIcon, ExpandColumnIcon, FolderIcon, MaximizeIcon, RestoreIcon, WarningIcon } from "./icons"
-import type { InspectionSnapshot } from "./inspection"
+import type { AuxiliaryView, InspectionSnapshot } from "./inspection"
 import { Button } from "./ui/Button"
 import { Tab, TabList, Tabs } from "./ui/Tabs"
 import { useSnapshot } from "./use-snapshot"
@@ -24,9 +26,11 @@ export function WorkspaceColumns({ controller, fileListView }: { controller: App
     let inspected = useSnapshot(inspection)
     let dragging = useRef<{ id: string; dropped: boolean }>(undefined)
     let graph = useMemo(() => snapshot.graph && workspaceGraph(snapshot.graph), [snapshot.graph])
+    let current = inspected.repositoryId == snapshot.repositoryId ? inspected : undefined
     useRefreshes(columns)
     useUndo(controller, snapshot.repositoryId)
     useReveal(snapshot.revealed)
+    useAuxiliaryFocus(current?.focused)
 
     // Escape restores a maximized column's neighbours.
     useEffect(() => {
@@ -87,27 +91,64 @@ export function WorkspaceColumns({ controller, fileListView }: { controller: App
     }
     return (
         <section className={clsx("column-row", snapshot.maximizedId && "maximized")}>
-            {visible.flatMap(
-                column => [
+            {visible.flatMap(column => {
+                // A collapsed column hides its auxiliary columns, and a column without its files has none to show.
+                let auxiliary = column.collapsed || column.kind == "recovery" || column.worktree?.missing ? [] : current?.auxiliary[column.id] ?? []
+                let attached = auxiliary.length > 0
+                // A maximized column shares the window with its auxiliary columns, split at its own width.
+                let split = snapshot.maximizedId != undefined && attached
+                return [
                     <ColumnFrame
                         key={column.id}
                         column={column}
                         snapshot={snapshot}
-                        inspected={inspected.repositoryId == snapshot.repositoryId ? inspected : undefined}
+                        inspected={current}
                         graph={graph!}
                         controller={controller}
                         fileListView={fileListView}
                         header={header}
+                        attached={attached}
+                        split={split}
                     />,
-                    !column.collapsed && !snapshot.maximizedId && (
+                    !column.collapsed && (!snapshot.maximizedId || split) && (
                         <ColumnDivider
                             key={`${column.id}:divider`}
-                            column={column}
+                            label="Resize branch column"
+                            width={column.width}
+                            minimum={minimumColumnWidth}
+                            defaultWidth={defaultColumnWidth}
+                            attached={attached}
                             onResize={width => columns.resize(column.id, width)}
                         />
                     ),
-                ],
-            )}
+                    ...auxiliary.flatMap((view, index) => {
+                        // The last one beside a maximized column takes the space the others leave.
+                        let last = index == auxiliary.length - 1
+                        return [
+                            <AuxiliaryFrame
+                                key={view.id}
+                                view={view}
+                                column={column}
+                                inspected={current}
+                                graph={graph!}
+                                controller={controller}
+                                maximized={snapshot.maximizedId == column.id}
+                            />,
+                            !(snapshot.maximizedId && last) && (
+                                <ColumnDivider
+                                    key={`${view.id}:divider`}
+                                    label="Resize auxiliary column"
+                                    width={view.width}
+                                    minimum={minimumDiffColumnWidth}
+                                    defaultWidth={defaultAuxiliaryColumnWidth}
+                                    attached={!last}
+                                    onResize={width => controller.inspection.resizeAuxiliary(view.id, width)}
+                                />
+                            ),
+                        ]
+                    }),
+                ]
+            })}
         </section>
     )
 }
@@ -119,7 +160,7 @@ interface HeaderDrag {
     end(): void
 }
 
-function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListView, header }: {
+function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListView, header, attached, split }: {
     column: ColumnView
     snapshot: ColumnsSnapshot
     /** The active repository's files, once the inspection has them. */
@@ -129,6 +170,10 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
     controller: AppController
     fileListView: FileListView
     header: HeaderDrag
+    /** Whether auxiliary columns join onto its card. */
+    attached: boolean
+    /** Whether it is maximized beside its auxiliary columns, keeping its own width. */
+    split: boolean
 }) {
     let { columns } = controller
     let worktreeBusy = useSnapshot(controller.worktrees).busy
@@ -165,11 +210,11 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
     }
     return (
         <article
-            className={clsx("column", column.collapsed && "collapsed", column.worktree?.missing && "missing")}
+            className={clsx("column", column.collapsed && "collapsed", column.worktree?.missing && "missing", attached && "attached", split && "split")}
             data-column-id={column.id}
             aria-label={column.name}
             tabIndex={-1}
-            style={column.collapsed || maximized ? undefined : { width: column.width }}
+            style={column.collapsed || maximized && !split ? undefined : { width: column.width }}
             onFocus={() => columns.focus(column.id)}
             onKeyDown={keyDown}
         >
@@ -294,12 +339,46 @@ export function ColumnTabs({ columns }: { columns: BranchWorkspace }) {
     )
 }
 
+/** An auxiliary column beside its source column, sharing the source column's scopes. */
+function AuxiliaryFrame({ view, column, inspected, graph, controller, maximized }: {
+    view: AuxiliaryView
+    column: ColumnView
+    inspected?: InspectionSnapshot
+    graph: BranchGraph
+    controller: AppController
+    maximized: boolean
+}) {
+    return (
+        <ColumnScopes controller={controller} repositoryId={inspected?.repositoryId ?? ""} graph={graph} column={column}>
+            <DiffColumn
+                view={view}
+                sourceName={column.name}
+                stacked={column.worktree != undefined && column.kind != "recovery"}
+                inspected={inspected?.columns[column.id]}
+                inspection={controller.inspection}
+                root={columnRoot(column)}
+                maximized={maximized}
+                onMaximize={() => controller.columns.toggleMaximized(column.id)}
+                onClose={() => requestAnimationFrame(() => columnElement(column.id)?.focus({ preventScroll: true }))}
+            />
+        </ColumnScopes>
+    )
+}
+
 /** Resizes the column before it by dragging or the keyboard, and back to its default width on a double-click. */
-function ColumnDivider({ column, onResize }: { column: ColumnView; onResize(width: number): void }) {
+function ColumnDivider({ label, width, minimum, defaultWidth, attached, onResize }: {
+    label: string
+    width: number
+    minimum: number
+    defaultWidth: number
+    /** Whether it is the seam between a column and an auxiliary column joined onto its card. */
+    attached: boolean
+    onResize(width: number): void
+}) {
     let divider = useRef<HTMLDivElement>(null)
     // A drag sizes the column directly as it goes; the width saves once it ends.
-    let size = (width: number) => {
-        let clamped = Math.max(minimumColumnWidth, Math.round(width))
+    let size = (next: number) => {
+        let clamped = Math.max(minimum, Math.round(next))
         let element = divider.current?.previousElementSibling
         if (element instanceof HTMLElement)
             element.style.width = `${clamped}px`
@@ -307,25 +386,25 @@ function ColumnDivider({ column, onResize }: { column: ColumnView; onResize(widt
     }
     let keyDown = (event: KeyboardEvent) => {
         let step = event.shiftKey ? 50 : 10
-        let width = event.key == "ArrowLeft" || event.key == "ArrowRight"
-            ? column.width + (event.key == "ArrowLeft" ? -step : step)
+        let next = event.key == "ArrowLeft" || event.key == "ArrowRight"
+            ? width + (event.key == "ArrowLeft" ? -step : step)
             : event.key == "Home"
-            ? minimumColumnWidth
+            ? minimum
             : event.key == "End"
-            ? divider.current?.parentElement?.clientWidth ?? defaultColumnWidth
+            ? divider.current?.parentElement?.clientWidth ?? defaultWidth
             : undefined
-        if (width != undefined) {
+        if (next != undefined) {
             event.preventDefault()
-            onResize(size(width))
+            onResize(size(next))
         }
     }
     let pointerDown = (event: PointerEvent) => {
         event.preventDefault()
         let startX = event.clientX
-        let move = (next: globalThis.PointerEvent) => size(column.width + next.clientX - startX)
+        let move = (next: globalThis.PointerEvent) => size(width + next.clientX - startX)
         let end = (next: globalThis.PointerEvent) => {
             window.removeEventListener("pointermove", move)
-            onResize(size(column.width + next.clientX - startX))
+            onResize(size(width + next.clientX - startX))
         }
         window.addEventListener("pointermove", move)
         window.addEventListener("pointerup", end, { once: true })
@@ -333,17 +412,17 @@ function ColumnDivider({ column, onResize }: { column: ColumnView; onResize(widt
     return (
         <div
             ref={divider}
-            className="column-divider"
+            className={clsx("column-divider", attached && "attached")}
             role="separator"
             tabIndex={0}
-            aria-label="Resize branch column"
+            aria-label={label}
             aria-orientation="vertical"
-            aria-valuemin={minimumColumnWidth}
+            aria-valuemin={minimum}
             aria-valuemax={2000}
-            aria-valuenow={column.width}
+            aria-valuenow={width}
             onKeyDown={keyDown}
             onPointerDown={pointerDown}
-            onDoubleClick={() => onResize(size(defaultColumnWidth))}
+            onDoubleClick={() => onResize(size(defaultWidth))}
         />
     )
 }
@@ -389,6 +468,17 @@ function useReveal(revealed?: { id: string; serial: number }) {
         })
         return () => cancelAnimationFrame(frame)
     }, [revealed])
+}
+
+// An auxiliary column that opens, or is asked for again, takes focus once it shows.
+function useAuxiliaryFocus(focused?: { id: string; serial: number }) {
+    useLayoutEffect(() => {
+        if (!focused)
+            return
+        let element = document.querySelector<HTMLElement>(`[data-auxiliary-id="${focused.id}"]`)
+        element?.focus({ preventScroll: true })
+        element?.scrollIntoView({ behavior: "instant", block: "nearest", inline: "nearest" })
+    }, [focused])
 }
 
 // Ctrl+Z undoes and Ctrl+Y or Ctrl+Shift+Z redoes the latest operation; a discard still showing its Undo notice

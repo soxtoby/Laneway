@@ -10,7 +10,7 @@ import { DiffControls, DiffPanel } from "./diff-panel"
 import { EditableName } from "./editable-name"
 import { fileListViewOptions } from "./file-list-view"
 import { type FileInspection, FileTree } from "./file-tree"
-import { ArchiveIcon, ChevronDownIcon, CloseIcon, DetachedIcon, FolderIcon, TreeIcon } from "./icons"
+import { ArchiveIcon, ChevronDownIcon, CloseIcon, DetachedIcon, FolderIcon, OpenColumnIcon, TreeIcon } from "./icons"
 import { type ColumnInspection, diffKey, type FilesState, type Inspection } from "./inspection"
 import { TransferGrip, TransferReview, transferSource, useTransferScope, useTransferTarget } from "./transfer"
 import { Button } from "./ui/Button"
@@ -121,6 +121,9 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
                         </AriaButton>
                     </h3>
                     <FileListViewMenu label="File list view for Working Changes" view={view} onChange={onViewChange} />
+                    <IconButton label="Open diff column" small isDisabled={!files.length} onPress={() => inspection.openWorkingDiffColumn(column.id)}>
+                        <OpenColumnIcon />
+                    </IconButton>
                     {/* The form's own Commit button takes over while composing. */}
                     {!clean && !state.composing && (
                         <div className="commit-split">
@@ -389,15 +392,25 @@ export function FileList({ columnId, group, label, files, inspected, inspection,
             )
         }
         : undefined
-    // A file's row opens its diff; a comparison's lines can't be chosen.
+    // A file's row opens its diff, under it or in the diff column while there is one; a comparison's lines can't be chosen.
+    let diffColumn = inspected?.diffColumn
     let inspect: FileInspection | undefined = inspected && {
-        isOpen: file => inspected.diffs[diffKey(group, file.path)] != undefined,
+        isOpen: file => !diffColumn && inspected.diffs[diffKey(group, file.path)] != undefined,
+        isActive: file => diffColumn?.group == group && diffColumn.focus == file.path,
         toggle: file => inspection.toggleDiff(columnId, group, file.path),
         close: hidden => inspection.closeDiffs(columnId, group, hidden.map(file => file.path)),
         controls: file => {
             let id = diffKey(group, file.path)
             let diff = inspected.diffs[id]
-            return diff && <DiffControls columnId={columnId} id={id} diff={diff} inspection={inspection} />
+            return diff && (
+                <DiffControls
+                    columnId={columnId}
+                    id={id}
+                    diff={diff}
+                    inspection={inspection}
+                    breakout={() => inspection.openDiffColumn(columnId, group, file.path)}
+                />
+            )
         },
         diff: file => {
             let id = diffKey(group, file.path)

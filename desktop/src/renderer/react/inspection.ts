@@ -1,5 +1,6 @@
 import type { BranchGraph, BranchGraphBranchNode, BranchHistoryPage, ChangedFile, ChangesInventory, DiffSource, DiffView, FileDiffPage, FileImagePage } from "@laneway/shared"
 import type { FileDiffLoadedChangedFiles } from "@pierre/diffs"
+import { type AuxiliaryColumn, AuxiliaryColumns } from "../src/auxiliary-columns"
 import { readDiffContext } from "../src/inspection/diff-context"
 import { createDiscards } from "../src/inspection/discard"
 import { createDiffSession, type FileDiffState } from "../src/inspection/inspection-diff-session"
@@ -48,13 +49,42 @@ export interface ColumnInspection {
     history: Record<string, HistoryState>
     /** The base chosen for a branch whose base is ambiguous, by branch ID. */
     bases: Record<string, string>
-    /** Open diffs by `diffKey`; each shows under its file's row. */
+    /** Open diffs by `diffKey`; each shows under its file's row, or in the diff column while there is one. */
     diffs: Record<string, FileDiffState>
+    /** The list and file the column's diff column shows, while it has one. */
+    diffColumn?: { group: string; focus?: string }
 }
+
+/** A list's whole diff, in an auxiliary column beside the Workspace Column it came from. */
+export interface DiffColumnView {
+    kind: "diff"
+    /** The auxiliary column's ID. */
+    id: string
+    /** The Workspace Column whose diffs it shows. */
+    sourceId: string
+    width: number
+    /** The list whose files it shows. */
+    group: string
+    /** The commit's subject, when the list is a commit's. */
+    subject?: string
+    /** Files folded down to their toolbar. */
+    collapsed: string[]
+    /** The file it scrolls to; `serial` rises each time a file is chosen, so choosing one again scrolls to it again. */
+    focus?: { path: string; serial: number }
+    /** Whether its diffs show their files whole rather than only around the changes. */
+    entireFiles: boolean
+}
+
+/** A column opened beside a Workspace Column; it closes with that column and isn't kept across restarts. */
+export type AuxiliaryView = DiffColumnView
 
 export interface InspectionSnapshot {
     repositoryId?: string
     columns: Record<string, ColumnInspection>
+    /** Each Workspace Column's auxiliary columns, in the order they show after it. */
+    auxiliary: Record<string, AuxiliaryView[]>
+    /** The auxiliary column that takes focus once it shows; `serial` rises each time one is to. */
+    focused?: { id: string; serial: number }
 }
 
 /** A column the inspection keeps lists for, as the Workspace Columns describe it. */
@@ -93,10 +123,21 @@ export interface Inspection extends Store<InspectionSnapshot> {
     chooseBase(columnId: string, branchId: string, baseId?: string): void
     /** Drops choices that rewritten history made stale. */
     rewritten(): void
-    /** Shows or hides a file's diff under its row. */
+    /** Shows or hides a file's diff under its row; with a diff column open, shows the file there instead. */
     toggleDiff(columnId: string, group: string, path: string): void
     /** Closes the diffs of files a folded folder or group hides. */
     closeDiffs(columnId: string, group: string, paths: string[]): void
+    /** Shows a list's whole diff in the column's diff column, scrolled to `path` when given, and focuses it. */
+    openDiffColumn(columnId: string, group: string, path?: string, subject?: string): void
+    /** Opens the diff column on the Working Changes diff opened last, or else the first changed file. */
+    openWorkingDiffColumn(columnId: string): void
+    /** Closes an auxiliary column and the ones opened from it. */
+    closeAuxiliary(id: string): void
+    resizeAuxiliary(id: string, width: number): void
+    /** Folds a diff column's files down to their toolbars, or unfolds them. */
+    foldDiffs(id: string, paths: string[], folded: boolean): void
+    /** Shows a diff column's files whole, or only around their changes, reading its diffs again. */
+    toggleEntireFiles(id: string): void
     /** Reads a diff again after it failed, or its next page. */
     readDiff(columnId: string, key: string, more?: boolean): void
     /** Shows a Working Changes diff's staged or unstaged side, or a conflict's side. */
@@ -135,7 +176,24 @@ interface ColumnState extends ColumnInspection {
     generations: Record<string, number>
     history: Record<string, History>
     session: ReturnType<typeof createDiffSession>
+    diffColumn?: DiffColumnState
 }
+
+interface DiffColumnState {
+    kind: "diff"
+    id: string
+    owner: ColumnState
+    group: string
+    subject?: string
+    /** The diffs it opened, which close with it; diffs already open under their rows stay open. */
+    created: Set<string>
+    collapsed: Set<string>
+    focus?: string
+    serial: number
+    entireFiles: boolean
+}
+
+type AuxiliaryValue = DiffColumnState
 
 interface InspectionOptions {
     api: Api
@@ -144,10 +202,12 @@ interface InspectionOptions {
 
 /** The files and commits each Workspace Column shows, read from Git as the column needs them. */
 export function createInspection({ api, notify }: InspectionOptions): Inspection {
-    let store = createStore<InspectionSnapshot>({ columns: {} })
+    let store = createStore<InspectionSnapshot>({ columns: {}, auxiliary: {} })
     let repositories = new Map<string, Map<string, ColumnState>>()
     let graphs = new Map<string, BranchGraph>()
+    let auxiliaries = new Map<string, AuxiliaryColumns<AuxiliaryValue>>()
     let activeId: string | undefined
+    let focused: InspectionSnapshot["focused"]
     let discards = createDiscards({
         api,
         notify,
@@ -161,6 +221,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
 
     function publish() {
         let columns = activeId ? repositories.get(activeId) : undefined
+        let tree = activeId ? auxiliaryFor(activeId) : undefined
         store.publish({
             repositoryId: activeId,
             columns: Object.fromEntries(
@@ -172,9 +233,53 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
                     history: { ...state.history },
                     bases: { ...state.bases },
                     diffs: { ...state.diffs },
+                    diffColumn: state.diffColumn && { group: state.diffColumn.group, focus: state.diffColumn.focus },
                 }]),
             ),
+            auxiliary: Object.fromEntries([...columns?.keys() ?? []].map(id => [id, tree?.descendants(id).map(auxiliaryView) ?? []])),
+            focused,
         })
+    }
+
+    function auxiliaryView(node: AuxiliaryColumn<AuxiliaryValue>): AuxiliaryView {
+        let column = node.value
+        return {
+            kind: "diff",
+            id: node.id,
+            sourceId: node.sourceId,
+            width: node.width,
+            group: column.group,
+            subject: column.subject,
+            collapsed: [...column.collapsed],
+            focus: column.focus ? { path: column.focus, serial: column.serial } : undefined,
+            entireFiles: column.entireFiles,
+        }
+    }
+
+    // Each repository keeps its own auxiliary columns, rooted at its Workspace Columns.
+    function auxiliaryFor(repositoryId: string) {
+        let tree = auxiliaries.get(repositoryId)
+        if (!tree) {
+            tree = new AuxiliaryColumns()
+            auxiliaries.set(repositoryId, tree)
+        }
+        return tree
+    }
+
+    function auxiliaryNode(id: string) {
+        if (!activeId)
+            return undefined
+        let tree = auxiliaryFor(activeId)
+        for (let rootId of repositories.get(activeId)?.keys() ?? []) {
+            let node = tree.descendants(rootId).find(candidate => candidate.id == id)
+            if (node)
+                return { tree, node }
+        }
+        return undefined
+    }
+
+    function focusAuxiliary(id: string) {
+        focused = { id, serial: (focused?.serial ?? 0) + 1 }
     }
 
     // A column closed while its read was under way no longer shows anything.
@@ -216,19 +321,41 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
                 settled: () => {},
             }),
         }
+        auxiliaryFor(repositoryId).addRoot(id)
         return state
+    }
+
+    // A closed column cancels its reads and closes the auxiliary columns opened from it.
+    function dispose(states: Map<string, ColumnState>, state: ColumnState) {
+        states.delete(state.id)
+        for (let group of Object.keys(state.files))
+            void api.cancelInspection(state.repositoryId, requestId(state, group))
+        auxiliaryFor(state.repositoryId).close(state.id)
     }
 
     // A diff reads its list's source at the version the list was read at, so it can't show newer lines than the list.
     function diffInput(state: ColumnState, group: string) {
         let files = state.files[group]
-        return { source: files?.source, inventoryVersion: files?.inventory?.version, unavailable: !!files?.error }
+        return {
+            source: files?.source,
+            inventoryVersion: files?.inventory?.version,
+            entireFile: state.diffColumn?.entireFiles,
+            unavailable: !!files?.error,
+        }
     }
 
     function closeDiff(state: ColumnState, diff: FileDiffState) {
+        let key = diffKey(diff.group, diff.path)
         diff.generation++
         void api.cancelInspection(state.repositoryId, diffRequestId(state, diff))
-        delete state.diffs[diffKey(diff.group, diff.path)]
+        delete state.diffs[key]
+        state.diffColumn?.created.delete(key)
+    }
+
+    // Reading a diff another way starts it afresh, so lines chosen in the old one no longer apply.
+    function rereadDiff(state: ColumnState, diff: FileDiffState) {
+        Object.assign(diff, { notice: diff.selection ? "Diff view changed. Change Selection cleared." : undefined, selection: undefined, page: undefined })
+        void state.session.read(diff, diffInput(state, diff.group))
     }
 
     // Working Changes diffs belong to the staged and unstaged views of the `working` list.
@@ -237,6 +364,99 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             if (diff.group == group)
                 closeDiff(state, diff)
         }
+        if (state.diffColumn?.group == group)
+            auxiliaryFor(state.repositoryId).close(state.diffColumn.id)
+    }
+
+    /**
+     * Shows one list's whole diff in the column's diff column, scrolled to `path` when given; a diff column showing
+     * another list gives way to it, keeping its width. Opening it focuses it; choosing files in the column doesn't.
+     */
+    async function showDiffColumn(state: ColumnState, group: string, path: string | undefined, subject: string | undefined, focus: boolean) {
+        let current = state.diffColumn
+        if (current?.group == group) {
+            if (path) {
+                current.focus = path
+                current.serial++
+                current.collapsed.delete(path)
+            }
+            if (focus)
+                focusAuxiliary(current.id)
+            return publish()
+        }
+        let tree = auxiliaryFor(state.repositoryId)
+        let previous = current && tree.descendants(state.id).find(node => node.value == current)
+        let column: DiffColumnState = {
+            kind: "diff",
+            id: "",
+            owner: state,
+            group,
+            subject: subject ?? commitSubject(state, group),
+            created: new Set(),
+            collapsed: new Set(),
+            focus: path,
+            serial: (current?.serial ?? 0) + 1,
+            entireFiles: current?.entireFiles ?? false,
+        }
+        state.diffColumn = column
+        if (previous)
+            tree.close(previous.id)
+        column.id = tree.open(state.id, "diff", () => ({ value: column, dispose: () => disposeDiffColumn(column) }), previous?.width).id
+        if (focus)
+            focusAuxiliary(column.id)
+        publish()
+        if (!state.files[group]?.inventory && !group.startsWith("working"))
+            await read(state.repositoryId, state, group, { kind: "commit", objectId: group })
+        if (state.diffColumn == column) {
+            populate(state, column)
+            publishFor(state.repositoryId, state)
+        }
+    }
+
+    // A diff column shows every file of its list, opening the diffs that aren't open yet.
+    function populate(state: ColumnState, column: DiffColumnState) {
+        let files = state.files[column.group]
+        if (files?.error)
+            return
+        for (let file of files?.inventory?.files ?? []) {
+            let key = diffKey(column.group, file.path)
+            if (file.ignored)
+                continue
+            let diff = state.diffs[key]
+            if (!diff) {
+                diff = state.session.create(column.group, file.path, diffInput(state, column.group))
+                state.diffs[key] = diff
+                column.created.add(key)
+            }
+            if (!diff.page && !diff.loading)
+                void state.session.read(diff, diffInput(state, column.group))
+        }
+    }
+
+    function disposeDiffColumn(column: DiffColumnState) {
+        let state = column.owner
+        let replaced = state.diffColumn != column
+        if (!replaced)
+            state.diffColumn = undefined
+        for (let key of column.created) {
+            let diff = state.diffs[key]
+            if (diff)
+                closeDiff(state, diff)
+        }
+        // The diffs left open under their rows go back to showing only the lines around their changes.
+        if (column.entireFiles && !replaced && repositories.get(state.repositoryId)?.get(state.id) == state) {
+            for (let diff of Object.values(state.diffs))
+                rereadDiff(state, diff)
+        }
+    }
+
+    function commitSubject(state: ColumnState, objectId: string) {
+        for (let history of Object.values(state.history)) {
+            let commit = history.page?.commits.find(candidate => candidate.objectId == objectId)
+            if (commit)
+                return commit.subject
+        }
+        return undefined
     }
 
     function diffFor(columnId: string, key: string) {
@@ -298,6 +518,9 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
                 }
             }
         }
+        let column = state.diffColumn
+        if (column && (column.group == group || group == "working" && column.group.startsWith("working-")))
+            populate(state, column)
         publishFor(repositoryId, state)
     }
 
@@ -390,9 +613,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             repositories.set(repositoryId, states)
             for (let [id, state] of states) {
                 if (!columns.some(column => column.id == id)) {
-                    for (let group of Object.keys(state.files))
-                        void api.cancelInspection(repositoryId, requestId(state, group))
-                    states.delete(id)
+                    dispose(states, state)
                     changed = true
                 }
             }
@@ -400,6 +621,8 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
                 let worktreePath = column.worktreeMissing ? undefined : column.worktreePath
                 let state = states.get(column.id)
                 if (!state || state.worktreePath != worktreePath) {
+                    if (state)
+                        dispose(states, state)
                     state = createState(repositoryId, column.id, worktreePath)
                     states.set(column.id, state)
                     changed = true
@@ -532,6 +755,8 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             let state = columnState(columnId)
             if (!state)
                 return
+            if (state.diffColumn)
+                return void showDiffColumn(state, group, path, undefined, false)
             let open = state.diffs[diffKey(group, path)]
             if (open) {
                 closeDiff(state, open)
@@ -547,13 +772,74 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
 
         closeDiffs(columnId, group, paths) {
             let state = columnState(columnId)
-            if (!state)
+            // A diff column keeps showing its list's files whatever folds in the column.
+            if (!state || state.diffColumn?.group == group)
                 return
             for (let path of paths) {
                 let diff = state.diffs[diffKey(group, path)]
                 if (diff)
                     closeDiff(state, diff)
             }
+            publish()
+        },
+
+        openDiffColumn(columnId, group, path, subject) {
+            let state = columnState(columnId)
+            if (state)
+                void showDiffColumn(state, group, path, subject, true)
+        },
+
+        openWorkingDiffColumn(columnId) {
+            let state = columnState(columnId)
+            if (!state)
+                return
+            if (state.diffColumn?.group.startsWith("working")) {
+                focusAuxiliary(state.diffColumn.id)
+                return publish()
+            }
+            let shown = Object.values(state.diffs).findLast(diff => diff.group.startsWith("working"))
+            let group = shown?.group ?? (state.files["working-staged"]?.inventory?.files.some(file => !file.ignored) ? "working-staged" : "working-unstaged")
+            let path = shown?.path ?? state.files[group]?.inventory?.files.find(file => !file.ignored)?.path
+            if (path)
+                void showDiffColumn(state, group, path, undefined, true)
+        },
+
+        closeAuxiliary(id) {
+            let found = auxiliaryNode(id)
+            if (found) {
+                found.tree.close(id)
+                publish()
+            }
+        },
+
+        resizeAuxiliary(id, width) {
+            let found = auxiliaryNode(id)
+            if (found) {
+                found.node.width = Math.round(width)
+                publish()
+            }
+        },
+
+        foldDiffs(id, paths, folded) {
+            let column = auxiliaryNode(id)?.node.value
+            if (!column)
+                return
+            for (let path of paths) {
+                if (folded)
+                    column.collapsed.add(path)
+                else
+                    column.collapsed.delete(path)
+            }
+            publish()
+        },
+
+        toggleEntireFiles(id) {
+            let column = auxiliaryNode(id)?.node.value
+            if (!column)
+                return
+            column.entireFiles = !column.entireFiles
+            for (let diff of Object.values(column.owner.diffs))
+                rereadDiff(column.owner, diff)
             publish()
         },
 

@@ -101,9 +101,10 @@ A step is done when its listed tests pass against the React renderer and the scr
   - **Landed so far:**
     - Inline diffs: a file's row opens its diff beneath it, drawn by Pierre in `diff-renderer.ts` (the imperative part of `inspection/diff.tsx`) with only the lines near the viewport. The diff session, `diff-context.ts`, and `diff-patch.ts` carry over. Diffs lay out unified or side by side per column, show whitespace, reveal hidden lines from the whole file, page large patches, and choose lines to discard or move. Tests in `react-diffs.test.tsx`.
     - Image diffs (`image-diff.tsx`, `image-files.ts`): a changed picture's versions side by side, or stacked to swipe, fade, or difference, chosen in its row and kept for every picture; either version or the comparison enlarges in the kit's modal. `react-image-diff-electron.test.ts` ports `image-diff-electron.test.ts`; the viewer's expected width drops the Remix viewer's 2px border, as the kit's modal draws an outline.
+    - The diff column (`diff-column.tsx`): "Break out diff", Working Changes' "Open diff column", and a commit's "Show full diff" open a list's whole diff beside its column. The inspection keeps auxiliary columns per repository in `AuxiliaryColumns`, rooted at the Workspace Columns, and publishes them by source column; `workspace-columns.tsx` draws them after their source column's divider. Choosing a file in the source column scrolls the diff column to it; files fold, show whole, resize, and maximize with the source column, and nothing is restored after a restart. Its header matches its source column's line for line, so the card's header band runs across the seam. Tests in `react-diff-column.test.tsx`, and the card join, header alignment, and maximized split in `react-renderer-styles.test.ts`.
+    - Showing entire files now belongs to the diff column: closing it reads the diffs left under their rows again around their changes, where the Remix renderer kept them whole with no control to switch back.
   - **Tests to port:**
-    - The "Working Changes inspection" and "Branch Comparison" blocks, the File History tests, the diff column placement and resize tests, and the line discards in the discarding test.
-    - The Electron test `image-diff-electron.test.ts`.
+    - The "Working Changes inspection" and "Branch Comparison" blocks, the File History tests, and the line discards in the discarding test.
 - [ ] **7. Branch Graph and Command Lens.**
   - **Scope:**
     - The virtualized graph and its settings.

@@ -2,8 +2,9 @@
 import type { ChangedFile, DiffLayout, DiffView } from "@laneway/shared"
 import { createContext, type ReactNode, useContext } from "react"
 import { ToggleButton } from "react-aria-components"
+import { IconButton } from "./controls"
 import { DiffLines } from "./diff-lines"
-import { ImageModeIcon, SplitDiffIcon, UnifiedDiffIcon, WhitespaceIcon } from "./icons"
+import { BreakoutDiffIcon, EntireFileIcon, ImageModeIcon, SplitDiffIcon, UnifiedDiffIcon, WhitespaceIcon } from "./icons"
 import { ImageDiff, imageKey } from "./image-diff"
 import { type ImageDiffMode, imageModes, isComparableImage, isImagePath, preferredImageMode, visibleSummary } from "./image-files"
 import type { FileDiffState, Inspection } from "./inspection"
@@ -27,16 +28,29 @@ interface DiffProps {
     inspection: Inspection
 }
 
+interface DiffControlsProps extends DiffProps {
+    /** Opens the diff in the column's diff column. */
+    breakout?(): void
+    /** Whether the diff column shows files whole, which only its toolbars switch. */
+    entireFiles?: { shown: boolean; toggle(): void }
+}
+
 /** A diff's controls in its file's row: unified or side by side, and showing whitespace. */
-export function DiffControls({ columnId, id, diff, inspection }: DiffProps) {
+export function DiffControls({ columnId, id, diff, inspection, breakout, entireFiles }: DiffControlsProps) {
     let { layout, setLayout } = useContext(DiffScopeContext)
+    let breakoutButton = breakout && (
+        <IconButton label="Break out diff" small onPress={breakout}>
+            <BreakoutDiffIcon />
+        </IconButton>
+    )
     // Pictures swap the line layouts for their comparison modes; added and deleted ones have nothing to compare.
     if (isImagePath(diff.path)) {
         let mode = diff.imageMode ?? preferredImageMode()
         let comparable = diff.page ? isComparableImage(diff.page.file) : true
-        return comparable && (
+        return (comparable || breakoutButton) && (
             <div className="diff-controls">
-                <ImageModeToggle mode={mode} onChange={chosen => inspection.setImageMode(columnId, id, chosen)} />
+                {comparable && <ImageModeToggle mode={mode} onChange={chosen => inspection.setImageMode(columnId, id, chosen)} />}
+                {breakoutButton}
             </div>
         )
     }
@@ -50,6 +64,11 @@ export function DiffControls({ columnId, id, diff, inspection }: DiffProps) {
                     <SplitDiffIcon />
                 </ToggleButton>
             </div>
+            {entireFiles && (
+                <ToggleButton className="icon-button small" aria-label="Show entire files" isSelected={entireFiles.shown} onChange={entireFiles.toggle}>
+                    <EntireFileIcon />
+                </ToggleButton>
+            )}
             <ToggleButton
                 className="icon-button small"
                 aria-label="Show whitespace"
@@ -58,6 +77,7 @@ export function DiffControls({ columnId, id, diff, inspection }: DiffProps) {
             >
                 <WhitespaceIcon />
             </ToggleButton>
+            {breakoutButton}
         </div>
     )
 }
