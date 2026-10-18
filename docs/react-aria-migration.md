@@ -13,38 +13,39 @@ The migration lives on the `react-aria` branch, each step as its own commits, an
 
 Port each screen with the same recipe:
 
-1. Extract its controller into a framework-free module that exposes `subscribe` and a snapshot; React views read it with `useSyncExternalStore`. Existing framework-free modules (`branch-graph-layout.ts`, `auxiliary-columns.ts`, `discard.ts`, `file-paths.ts`, `lucide-catalog.ts`, `repository-icon-images.ts`, and similar) carry over unchanged.
+1. Extract its controller into a framework-free module that exposes `subscribe` and a snapshot, as `app-controller.ts` does; React views read it with `useSnapshot`. Existing framework-free modules (`branch-graph-layout.ts`, `auxiliary-columns.ts`, `discard.ts`, `file-paths.ts`, `lucide-catalog.ts`, `repository-icon-images.ts`, and similar) carry over unchanged.
 2. Build the view from the kit's components. Where the kit has no component at Laneway's density or with the behaviour needed, build one from React Aria Components with CSS that uses only the theme's variables (see the conventions below).
-3. Port the screen's `renderer.test.ts` cases to React DOM tests on the same `renderer-fixtures.ts` fakes. Query roles and labels rather than markup, which is not preserved.
+3. Port the screen's `renderer.test.ts` cases to React DOM tests on the same `renderer-fixtures.ts` fakes, as `react-app.test.tsx` does. Query roles and labels rather than markup, which is not preserved. Extend `react-renderer-styles.test.ts` for what only a real window shows: layout, colours, and the CSP.
 4. Compare the screen in a real window with the Remix version, in light and dark.
 
 A step is done when its listed tests pass against the React renderer and the screen matches Remix behaviour in the real window.
 
-## Conventions settled by the spike
+## Conventions
 
-- **The kit:** React Aria's vanilla CSS starter components live in `ui/`, copied from adobe/react-spectrum at `d3b2bd2` (Apache 2.0). Its README lists every local change; fix kit bugs there and add them to the list, so upstream updates can be compared against the pinned commit.
-- **Colours:** set only in Laneway's theme file, which overrides the kit's variables under `:root:root`. `--tint` is Laneway's amber, and accent fills take dark ink. The repository panel stays dark in both appearances by redefining those variables on the panel. Laneway's own CSS uses the variables, never literal colours.
-- **Appearance:** the main process sets Electron's `nativeTheme.themeSource` from the appearance setting, so the kit's `prefers-color-scheme` rules follow it without edits.
-- **CSP:** plain stylesheets only. `meta#react-aria-pressable-style` with its rule in the page CSS stops React Aria's one inline style, and only the dev server gets a style nonce. Keep `style-src 'self'` and `script-src 'self'` unchanged.
-- **Density:** commit rows are 32px, file rows 28px, repository rows 40px (36px collapsed) with 28px tiles. Dense collections are React Aria GridLists sharing one row style; the kit's GridList is a card grid.
-- **Row menus:** right-click and Shift+F10 use `MenuTrigger trigger="contextMenu"` around a Pressable that continues propagation, so clicks still select; the same items appear in a hover menu button.
+- **The kit:** React Aria's vanilla CSS starter components live in `react/ui/`, copied from adobe/react-spectrum at `d3b2bd2` (Apache 2.0). Its README lists every local change; fix kit bugs there and add them to the list, so upstream updates can be compared against the pinned commit.
+- **Colours:** set only in Laneway's theme file, `react/theme.css`, which overrides the kit's variables under `:root:root`. `--tint` is Laneway's amber, and accent fills take dark ink. The repository panel stays dark in both appearances by redefining those variables on the panel. Laneway's own CSS uses the variables, never literal colours; `bun run lint` checks this with stylelint. The kit's own stylesheets keep their upstream colours.
+- **Appearance:** the main process sets Electron's `nativeTheme.themeSource` from the appearance setting, so the kit's `prefers-color-scheme` rules follow it without edits. The window's background and title bar overlay can't read the stylesheets, so `main/window-colors.ts` repeats the header's colours, and `react-renderer-styles.test.ts` checks that they still match.
+- **CSP:** plain stylesheets only. `meta#react-aria-pressable-style` with its rule in the page CSS stops React Aria's one inline style. Only the dev server gets a nonce, for Vite's style tags and Fast Refresh's preamble script. Keep `style-src 'self'` and `script-src 'self'` unchanged.
+- **Density:** commit rows are 32px, file rows 28px, repository rows 40px (36px collapsed) with 28px tiles. Dense collections are React Aria GridLists of `DenseRow`s sharing one row style; the kit's GridList is a card grid.
+- **Row menus:** a `DenseRow` takes its menu items once. Right-click opens them at the pointer, and Shift+F10 under the row, through the app's one `ContextMenuHost`; the same items appear in the row's hover menu button. The host sits outside every list, because a menu rendered inside a row passes its focus events to the list through React's portal bubbling.
+- **Tests:** React DOM tests install Happy DOM with `installReactDom` from `test/react-dom.ts` before importing views. React Aria acts on pointer presses, so tests press with pointer events rather than `click()`.
 - **Destructive actions** apply immediately with an Undo toast (the kit's toast with an `action`), never a confirmation dialog.
 - **Icons** are Lucide nodes (ADR-0020), drawn by `lucideIcon()`, which also gives the kit the `lucide-<name>` classes its CSS expects.
 
 ## Steps
 
-- [ ] **0. Foundation.**
-  - **Shell and switch:** promote the spike (`spike.html`, `src/spike/`, and the kit in `src/spike/ui/`) to a permanent page and folders, selected by `LANEWAY_RENDERER=react`.
+- [x] **0. Foundation.**
+  - **Shell and switch:** the React page is `react.html` with its modules in `src/renderer/react/`, selected by `LANEWAY_RENDERER=react`; `bun run dev:react` serves it.
   - **Shared pieces:**
-    - Turn the spike's `data.ts` into the first controller.
-    - Settle one dense row and context-menu component, with the dev warning about the Pressable child's role resolved.
-    - Move notices and the fatal error (`feedback.tsx`) to the kit's toast and an inline alert.
-    - Take appearance from settings, including the title bar overlay colours in `main/window.ts`.
+    - `app-controller.ts` owns startup, appearance, the open repositories, and notices. Until step 3, it also reads the spike's column preview (`column-preview.ts`).
+    - `DenseRow` and `ContextMenuHost` are the dense row and its context menu.
+    - Notices show as the kit's toast, and a failed start as an inline alert with Retry (`notices.tsx`, `startup.tsx`).
+    - The appearance setting drives the native theme, the window background, and the title bar overlay (`main/window-colors.ts`).
   - **Tooling:**
-    - A React DOM test harness on happy-dom.
-    - An Electron test that drives the React page under the production CSP, the counterpart of `renderer-styles.test.ts`.
+    - React DOM tests on Happy DOM (`test/react-dom.ts`).
+    - `react-renderer-styles.test.ts` drives the built React page under the production CSP in both appearances.
     - React Fast Refresh with a dev-only script nonce.
-    - `eslint-plugin-react-hooks`, and a stylelint rule that allows colours only in the theme file.
+    - `eslint-plugin-react-hooks` and ESLint for the React renderer's `.tsx`, and stylelint's colour rule.
 - [ ] **1. Repository entry.**
   - **Scope:** Welcome, open, clone, and initialize with progress and cancellation; Git settings; the fatal bootstrap state.
   - **Remix modules:** `workspace.tsx`, `repository-entry/`, `settings.tsx`.
@@ -54,7 +55,7 @@ A step is done when its listed tests pass against the React renderer and the scr
   - **Remix modules:** `repository-rail.tsx`, `repository-icon.tsx`, `repository-identity.tsx`.
   - **Tests to port:** customizing a repository, the inferred favicon, dragging a repository along the rail.
 - [ ] **3. Workspace Columns.**
-  - **Scope:** layout and persistence, column tabs, resizing, maximizing, collapsing, the auxiliary-column lifecycle, and missing-worktree and recovery columns.
+  - **Scope:** layout and persistence, column tabs, resizing, maximizing, collapsing, the auxiliary-column lifecycle, and missing-worktree and recovery columns. Replaces the spike's column preview.
   - **Remix modules:** the shell in `app.tsx`, `branch-workspace/branch-columns.tsx`, `column-divider.tsx`, `worktrees/worktree-columns.ts`, `worktrees/missing-worktree.tsx`, `worktrees/worktree-recovery.tsx`.
   - **Tests to port:** restoring and persisting Workspace Columns, maximizing, retained collapse, recovery columns, missing worktrees.
 - [ ] **4. Working Changes and committing.**
@@ -94,9 +95,11 @@ A step is done when its listed tests pass against the React renderer and the scr
 - [ ] **9. Cutover.**
   - **Remove Remix:**
     - Delete the Remix renderer, `styles.css`, and the `remix` dependency and its pin.
-    - Delete the renderer switch and `renderer-styles.test.ts`.
+    - Delete the renderer switch (`reactRenderer` in `main/window-colors.ts`, `dev:react`) and `renderer-styles.test.ts`; `react.html` becomes the only page.
     - Delete AGENTS.md's Remix section.
-  - **Settle the code:** set `jsxImportSource` to `react` in `tsconfig.json` and drop the per-file pragmas.
+  - **Settle the code:**
+    - Set `jsxImportSource` to `react` in `tsconfig.json` and drop the per-file pragmas.
+    - Lint every `.tsx` and stylesheet; ESLint and stylelint cover only the React renderer until then.
   - **Merge:** rebase onto master a final time, run the full suite, and merge the branch.
 
 ## Open questions

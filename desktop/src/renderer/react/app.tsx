@@ -1,106 +1,70 @@
 /** @jsxImportSource react */
 import type { BranchHistoryCommit, ChangedFile } from "@laneway/shared"
-import { type ReactNode, useEffect, useState } from "react"
-import { Button as AriaButton, GridList, GridListItem, type Key } from "react-aria-components"
-import { ContextMenuArea } from "./context-menu-area"
+import { type ReactNode, useState } from "react"
+import { Button as AriaButton, GridList, type Key } from "react-aria-components"
+import type { IconImageApi } from "../src/repository-icon-images"
+import type { AppController, AppSnapshot } from "./app-controller"
+import type { WorktreeColumn } from "./column-preview"
+import { ContextMenuHost } from "./context-menu"
 import { IconButton, MoreMenu } from "./controls"
-import { readRepositoryView, type RepositoryView, type WorktreeColumn } from "./data"
+import { DenseRow } from "./dense-row"
 import { AddIcon, ArchiveIcon, BranchIcon, CloseIcon, DeletedIcon, FolderIcon, MaximizeIcon, ModifiedIcon, MoonIcon, MoreIcon, OpenColumnIcon, PullIcon, RedoIcon, SearchIcon, SettingsIcon, SunIcon, TreeIcon, UndoIcon } from "./icons"
+import { Notices } from "./notices"
 import { RepositoryPanel } from "./repository-panel"
+import { Starting, StartupFailed } from "./startup"
 import { Button } from "./ui/Button"
 import { Checkbox } from "./ui/Checkbox"
 import { Disclosure, DisclosureHeader, DisclosurePanel } from "./ui/Disclosure"
 import { Menu, MenuItem, MenuTrigger } from "./ui/Menu"
 import { ProgressCircle } from "./ui/ProgressCircle"
 import { Tab, TabList, Tabs } from "./ui/Tabs"
-import { MyToastRegion, queue } from "./ui/Toast"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
+import { useSnapshot } from "./use-snapshot"
 import "./laneway.css"
 
-type Api = Window["laneway"]
+export function App({ api, controller }: { api: IconImageApi; controller: AppController }) {
+    let snapshot = useSnapshot(controller)
+    if (snapshot.status == "starting")
+        return <Starting />
+    if (snapshot.status == "failed")
+        return <StartupFailed error={snapshot.error} onRetry={() => void controller.start()} />
+    return (
+        <ContextMenuHost>
+            <Shell api={api} controller={controller} snapshot={snapshot} />
+        </ContextMenuHost>
+    )
+}
 
-export function SpikeApp({ api }: { api: Api }) {
-    let [view, setView] = useState<RepositoryView>()
-    let [appearance, setAppearance] = useState<"light" | "dark">("light")
-    let load = () => readRepositoryView(api).then(setView)
-
-    useEffect(() => {
-        let alive = true
-        void readRepositoryView(api).then(next => {
-            if (!alive)
-                return
-            setView(next)
-            setAppearance(next.appearance)
-        })
-        let unsubscribe = api.onRepositoryChanged(() =>
-            void readRepositoryView(api).then(next => {
-                if (alive)
-                    setView(next)
-            })
-        )
-        return () => {
-            alive = false
-            unsubscribe()
-        }
-    }, [api])
-
-    // The main process applies the appearance to Electron's native theme, which the starter's
-    // prefers-color-scheme rules follow.
-    async function toggleAppearance() {
-        setAppearance(await api.setAppearance(appearance == "dark" ? "light" : "dark"))
-    }
-
-    async function selectRepository(id: string) {
-        await api.selectRepository(id)
-        await load()
-    }
-
-    // The new order shows at once; a dropped repository already appears in its slot while the workspace saves.
-    async function reorderRepositories(ids: string[]) {
-        let byOrder = <T extends { id: string }>(items: T[]) => [...items].sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id))
-        setView(current => current && { ...current, repositories: byOrder(current.repositories) })
-        let { workspace } = await api.getState()
-        await api.updateWorkspace({ ...workspace, repositories: byOrder(workspace.repositories) })
-        await load()
-    }
-
-    async function closeRepository(id: string) {
-        await api.closeRepository(id)
-        await load()
-    }
-
-    async function addRepository() {
-        let result = await api.openRepository()
-        if (result.ok)
-            await load()
-    }
-
+function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: AppController; snapshot: Extract<AppSnapshot, { status: "ready" }> }) {
+    let { workspace, preview, appearance, notice } = snapshot
+    let active = workspace.repositories.find(repository => repository.id == workspace.activeRepositoryId)
+    let columns = preview?.status == "ready" ? preview.columns : []
     return (
         <div className="shell">
-            <Header view={view} appearance={appearance} onToggleAppearance={() => void toggleAppearance()} />
+            <Header columns={columns} appearance={appearance} onToggleAppearance={() => void controller.toggleAppearance()} />
             <div className="work-area">
                 <RepositoryPanel
-                    repositories={view?.repositories ?? []}
-                    activeId={view?.activeRepositoryId}
+                    repositories={workspace.repositories}
+                    activeId={workspace.activeRepositoryId}
                     api={api}
-                    onSelect={id => void selectRepository(id)}
-                    onReorder={ids => void reorderRepositories(ids)}
-                    onClose={id => void closeRepository(id)}
-                    onAdd={() => void addRepository()}
+                    onSelect={id => void controller.selectRepository(id)}
+                    onReorder={ids => void controller.reorderRepositories(ids)}
+                    onClose={id => void controller.closeRepository(id)}
+                    onAdd={() => void controller.openRepository()}
                 />
                 <main className="columns">
-                    {!view && <ProgressCircle isIndeterminate aria-label="Loading repository" />}
-                    {view?.error && <p>{view.error}</p>}
-                    {view?.columns.map(column => <Column key={column.id} column={column} />)}
+                    {preview?.status == "loading" && <ProgressCircle isIndeterminate aria-label="Loading repository" />}
+                    {preview?.status == "failed" && <p>{preview.error}</p>}
+                    {active?.status == "missing" && <p>{active.error.message}</p>}
+                    {columns.map(column => <Column key={column.id} column={column} controller={controller} />)}
                 </main>
             </div>
-            <MyToastRegion />
+            <Notices controller={controller} notice={notice} />
         </div>
     )
 }
 
-function Header({ view, appearance, onToggleAppearance }: { view?: RepositoryView; appearance: "light" | "dark"; onToggleAppearance: () => void }) {
-    let columns = view?.columns ?? []
+function Header({ columns, appearance, onToggleAppearance }: { columns: WorktreeColumn[]; appearance: "light" | "dark"; onToggleAppearance(): void }) {
     let [selected, setSelected] = useState<Key>()
     let selectedKey = columns.some(column => column.id == selected) ? selected : columns[0]?.id
     let showColumn = (id: Key) => {
@@ -108,7 +72,7 @@ function Header({ view, appearance, onToggleAppearance }: { view?: RepositoryVie
         document.querySelector(`[data-column-id="${CSS.escape(String(id))}"]`)?.scrollIntoView({ behavior: "smooth", inline: "nearest" })
     }
     return (
-        <header className="header spike-drag-region">
+        <header className="header drag-region">
             <span className="brand">Laneway</span>
             {columns.length > 0 && selectedKey != null && (
                 <Tabs aria-label="Open columns" selectedKey={selectedKey} onSelectionChange={showColumn}>
@@ -156,7 +120,8 @@ function HeaderButton({ label, children, onPress }: { label: string; children: R
     )
 }
 
-function Column({ column }: { column: WorktreeColumn }) {
+// The spike's column, standing in until Workspace Columns move (migration step 3).
+function Column({ column, controller }: { column: WorktreeColumn; controller: AppController }) {
     return (
         <section className="column" aria-label={column.worktree.name} data-column-id={column.id}>
             <div className="column-header">
@@ -193,7 +158,7 @@ function Column({ column }: { column: WorktreeColumn }) {
                         </IconButton>
                     </div>
                 ))}
-                <WorkingChanges files={column.changes} />
+                <WorkingChanges files={column.changes} controller={controller} />
                 <div className="branch-header">
                     <BranchIcon />
                     <span className="branch-name">{column.branchName}</span>
@@ -212,7 +177,7 @@ function Column({ column }: { column: WorktreeColumn }) {
     )
 }
 
-function WorkingChanges({ files }: { files: ChangedFile[] }) {
+function WorkingChanges({ files, controller }: { files: ChangedFile[]; controller: AppController }) {
     let title = files.length == 0 ? "No Working Changes" : `Working Changes (${files.length})`
     return (
         <div className="working-changes">
@@ -227,7 +192,7 @@ function WorkingChanges({ files }: { files: ChangedFile[] }) {
                     </IconButton>
                 </div>
                 <DisclosurePanel>
-                    {files.length > 0 && <FileList files={files} />}
+                    {files.length > 0 && <FileList files={files} controller={controller} />}
                     <div className="commit-bar">
                         <Button variant="accent" isDisabled={files.length == 0}>Commit…</Button>
                     </div>
@@ -237,47 +202,51 @@ function WorkingChanges({ files }: { files: ChangedFile[] }) {
     )
 }
 
-/** Changed files at Laneway's density: a React Aria GridList with the starter's Checkbox. */
-function FileList({ files }: { files: ChangedFile[] }) {
+/** Changed files at Laneway's density, with the kit's Checkbox for selection. */
+function FileList({ files, controller }: { files: ChangedFile[]; controller: AppController }) {
     return (
         <GridList aria-label="Working Changes" selectionMode="multiple" className="dense-list">
             {files.map(file => {
                 let slash = file.path.lastIndexOf("/") + 1
                 return (
-                    <GridListItem key={file.path} id={file.path} textValue={file.path} className="dense-row compact">
-                        {({ isHovered, isFocusVisibleWithin }) => (
-                            <MenuTrigger trigger="contextMenu">
-                                <ContextMenuArea>
-                                    <div className="row-content file-content">
-                                        <Checkbox slot="selection" />
-                                        <FileStatus file={file} />
-                                        <span className="file-path">
-                                            <span className="file-directory">{file.path.slice(0, slash)}</span>
-                                            {file.path.slice(slash)}
-                                        </span>
-                                        <span className="row-actions" data-visible={isHovered || isFocusVisibleWithin || undefined}>
-                                            <MoreMenu label={`Actions for ${file.path}`}>
-                                                <FileMenuItems path={file.path} />
-                                            </MoreMenu>
-                                        </span>
-                                    </div>
-                                </ContextMenuArea>
-                                <Menu>
-                                    <FileMenuItems path={file.path} />
-                                </Menu>
-                            </MenuTrigger>
+                    <DenseRow
+                        key={file.path}
+                        id={file.path}
+                        textValue={file.path}
+                        className="compact"
+                        menu={{ label: `Actions for ${file.path}`, items: () => <FileMenuItems path={file.path} controller={controller} /> }}
+                    >
+                        {({ actions }) => (
+                            <div className="row-content file-content">
+                                <Checkbox slot="selection" />
+                                <FileStatus file={file} />
+                                <span className="file-path">
+                                    <span className="file-directory">{file.path.slice(0, slash)}</span>
+                                    {file.path.slice(slash)}
+                                </span>
+                                {actions}
+                            </div>
                         )}
-                    </GridListItem>
+                    </DenseRow>
                 )
             })}
         </GridList>
     )
 }
 
-function FileMenuItems({ path }: { path: string }) {
+// The undo window replaces a confirmation dialog. The spike's discard only shows the notices.
+function FileMenuItems({ path, controller }: { path: string; controller: AppController }) {
+    let discard = () =>
+        controller.notify({
+            code: "discard.applied",
+            message: `Discarded changes to ${path}.`,
+            transient: true,
+            duration: 6_000,
+            action: { label: "Undo", run: () => controller.notify({ code: "discard.undone", message: `Restored ${path}.`, transient: true }) },
+        })
     return (
         <>
-            <MenuItem onAction={() => discardWithUndo(path)}>Discard changes</MenuItem>
+            <MenuItem onAction={discard}>Discard changes</MenuItem>
             <MenuItem>Copy path</MenuItem>
             <MenuItem>Show history</MenuItem>
         </>
@@ -292,48 +261,29 @@ function FileStatus({ file }: { file: ChangedFile }) {
     return <ModifiedIcon className="file-status" data-status="modified" aria-label="Modified" />
 }
 
-// The undo window replaces a confirmation dialog: the action applies immediately.
-function discardWithUndo(path: string) {
-    queue.add({
-        title: "Discarded changes",
-        description: path,
-        action: { label: "Undo", onAction: () => queue.add({ title: "Restored changes", description: path }, { timeout: 3000 }) },
-    }, { timeout: 6000 })
-}
-
 /** The Commit Trail: the same dense rows with a graph gutter. */
 function CommitTrail({ branchName, commits }: { branchName: string; commits: BranchHistoryCommit[] }) {
     return (
         <GridList aria-label={`Commits on ${branchName}`} selectionMode="multiple" selectionBehavior="replace" className="dense-list">
             {commits.map((commit, index) => (
-                <GridListItem key={commit.objectId} id={commit.objectId} textValue={commit.subject} className="dense-row">
-                    {({ isHovered, isFocusVisibleWithin }) => (
-                        <MenuTrigger trigger="contextMenu">
-                            <ContextMenuArea>
-                                <div className="row-content commit-content">
-                                    <span className="graph-cell" aria-hidden>
-                                        <span
-                                            className="graph-line"
-                                            data-first={index == 0 || undefined}
-                                            data-last={index == commits.length - 1 || undefined}
-                                        />
-                                        <span className="graph-dot" data-head={index == 0 || undefined} />
-                                    </span>
-                                    <span className="commit-subject">{commit.subject}</span>
-                                    <span className="commit-time">{relativeTime(commit.authoredAt)}</span>
-                                    <span className="row-actions" data-visible={isHovered || isFocusVisibleWithin || undefined}>
-                                        <MoreMenu label={`Actions for ${commit.subject}`}>
-                                            <CommitMenuItems />
-                                        </MoreMenu>
-                                    </span>
-                                </div>
-                            </ContextMenuArea>
-                            <Menu>
-                                <CommitMenuItems />
-                            </Menu>
-                        </MenuTrigger>
+                <DenseRow
+                    key={commit.objectId}
+                    id={commit.objectId}
+                    textValue={commit.subject}
+                    menu={{ label: `Actions for ${commit.subject}`, items: () => <CommitMenuItems /> }}
+                >
+                    {({ actions }) => (
+                        <div className="row-content commit-content">
+                            <span className="graph-cell" aria-hidden>
+                                <span className="graph-line" data-first={index == 0 || undefined} data-last={index == commits.length - 1 || undefined} />
+                                <span className="graph-dot" data-head={index == 0 || undefined} />
+                            </span>
+                            <span className="commit-subject">{commit.subject}</span>
+                            <span className="commit-time">{relativeTime(commit.authoredAt)}</span>
+                            {actions}
+                        </div>
                     )}
-                </GridListItem>
+                </DenseRow>
             ))}
         </GridList>
     )

@@ -27,6 +27,7 @@
         "@types/node": "^26.2.0",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
+        "@vitejs/plugin-react": "^5",
         "electron": "^43.4.1",
         "electron-vite": "^5.0.0",
         "happy-dom": "^20.11.15",

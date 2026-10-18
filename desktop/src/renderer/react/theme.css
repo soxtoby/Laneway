@@ -109,6 +109,21 @@
     }
 }
 
+/* Accent buttons are bright amber with dark ink, like the selected and highlighted states. They
+   derive their gradient and edges from the fill where they are drawn, so the panel's fill applies there. */
+.button-base[data-variant="accent"] {
+    --button-background: var(--highlight-background);
+    --button-gradient: oklch(from var(--highlight-background) calc(l + 0.04) c h);
+    --button-border: oklch(from var(--highlight-background) calc(l - 0.08) c h);
+    --button-shadow: oklch(from var(--highlight-background) calc(l - 0.16) c h);
+    --button-highlight: rgb(255 255 255 / 0.35);
+    --button-text: var(--highlight-foreground);
+
+    &[data-pressed] {
+        --button-background: var(--highlight-background-pressed);
+    }
+}
+
 /* The repository panel stays dark in both appearances, as Laneway's rail always has. Variables
    resolve where they are used, so the panel's own rows and the starter's buttons inside it take
    these values in place of the page's. */

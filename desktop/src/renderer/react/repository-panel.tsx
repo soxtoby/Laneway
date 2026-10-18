@@ -1,17 +1,18 @@
 /** @jsxImportSource react */
 import type { OpenRepository } from "@laneway/shared"
 import { repositoryInitials } from "@laneway/shared"
+import clsx from "clsx"
 import { createElement, type KeyboardEvent, type ReactNode, useReducer, useRef, useState } from "react"
-import { Button as AriaButton, DropIndicator, GridList, GridListItem, useDragAndDrop } from "react-aria-components"
-import { lucideNode } from "../lucide-catalog"
-import { type IconImageApi, iconImageUrl } from "../repository-icon-images"
-import { ContextMenuArea } from "./context-menu-area"
-import { IconButton, MoreMenu } from "./controls"
-import { repositoryName } from "./data"
+import { Button as AriaButton, DropIndicator, GridList, useDragAndDrop } from "react-aria-components"
+import { lucideNode } from "../src/lucide-catalog"
+import { type IconImageApi, iconImageUrl } from "../src/repository-icon-images"
+import { IconButton } from "./controls"
+import { DenseRow } from "./dense-row"
 import { AddIcon, CollapsePanelIcon, ExpandPanelIcon } from "./icons"
+import { repositoryName } from "./repositories"
 import { Button } from "./ui/Button"
 import { GripVertical } from "./ui/icons"
-import { Menu, MenuItem, MenuTrigger } from "./ui/Menu"
+import { MenuItem } from "./ui/Menu"
 
 interface RepositoryPanelProps {
     repositories: OpenRepository[]
@@ -99,41 +100,31 @@ function RepositoryList({ repositories, activeId, api, onSelect, onReorder, onCl
                     let isActive = repository.id == activeId
                     let path = repository.status == "available" ? repository.info.selectedWorktree : "Unavailable"
                     return (
-                        <GridListItem
+                        <DenseRow
                             key={repository.id}
                             id={repository.id}
                             textValue={name}
-                            className={["repository-row", isActive && "active", collapsed && "collapsed"].filter(Boolean).join(" ")}
+                            className={clsx("repository-row", isActive && "active", collapsed && "collapsed")}
+                            menu={{ label: `Actions for ${name}`, items: () => <RepositoryMenuItems onClose={() => onClose(repository.id)} /> }}
                         >
-                            {({ isHovered, isFocusVisibleWithin }) => (
-                                <MenuTrigger trigger="contextMenu">
-                                    <ContextMenuArea>
-                                        <div className="repository-content" title={collapsed ? `${name}\n${path}` : path}>
-                                            <AriaButton slot="drag" className="drag-handle" data-visible={isFocusVisibleWithin || undefined}>
-                                                <GripVertical />
-                                            </AriaButton>
-                                            <RepositoryTile repository={repository} name={name} api={api} isActive={isActive} />
-                                            {!collapsed && (
-                                                <>
-                                                    <span className="repository-copy">
-                                                        <span className="repository-name">{name}</span>
-                                                        <span className="repository-path">{path}</span>
-                                                    </span>
-                                                    <span className="row-actions" data-visible={isHovered || isFocusVisibleWithin || undefined}>
-                                                        <MoreMenu label={`Actions for ${name}`}>
-                                                            <RepositoryMenuItems onClose={() => onClose(repository.id)} />
-                                                        </MoreMenu>
-                                                    </span>
-                                                </>
-                                            )}
-                                        </div>
-                                    </ContextMenuArea>
-                                    <Menu>
-                                        <RepositoryMenuItems onClose={() => onClose(repository.id)} />
-                                    </Menu>
-                                </MenuTrigger>
+                            {({ isFocusVisibleWithin, actions }) => (
+                                <div className="repository-content" title={collapsed ? `${name}\n${path}` : path}>
+                                    <AriaButton slot="drag" className="drag-handle" data-visible={isFocusVisibleWithin || undefined}>
+                                        <GripVertical />
+                                    </AriaButton>
+                                    <RepositoryTile repository={repository} name={name} api={api} isActive={isActive} />
+                                    {!collapsed && (
+                                        <>
+                                            <span className="repository-copy">
+                                                <span className="repository-name">{name}</span>
+                                                <span className="repository-path">{path}</span>
+                                            </span>
+                                            {actions}
+                                        </>
+                                    )}
+                                </div>
                             )}
-                        </GridListItem>
+                        </DenseRow>
                     )
                 })}
             </GridList>

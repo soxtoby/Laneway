@@ -7,6 +7,36 @@
     grid-template-rows: auto minmax(0, 1fr);
 }
 
+/* Starting up, and the fatal state when that fails. */
+
+.startup {
+    height: 100%;
+    box-sizing: border-box;
+    padding: var(--spacing-8);
+    display: grid;
+    place-items: center;
+    overflow: auto;
+    text-align: center;
+}
+
+.startup-alert {
+    max-width: 520px;
+    display: grid;
+    justify-items: center;
+    gap: var(--spacing-2);
+}
+
+.startup-title {
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+}
+
+.startup-detail {
+    margin: 0;
+    color: var(--text-color-placeholder);
+}
+
 /* Header */
 
 .header {
@@ -48,20 +78,6 @@
     align-self: stretch;
     margin-block: var(--spacing-3);
     background: var(--border-color);
-}
-
-/* Accent buttons are bright amber with dark ink, like the selected and highlighted states. */
-.button-base[data-variant="accent"] {
-    --button-background: var(--highlight-background);
-    --button-gradient: oklch(from var(--highlight-background) calc(l + 0.04) c h);
-    --button-border: oklch(from var(--highlight-background) calc(l - 0.08) c h);
-    --button-shadow: oklch(from var(--highlight-background) calc(l - 0.16) c h);
-    --button-highlight: rgb(255 255 255 / 0.35);
-    --button-text: var(--highlight-foreground);
-
-    &[data-pressed] {
-        --button-background: var(--highlight-background-pressed);
-    }
 }
 
 /* Small icon buttons for rows and column headers, where the starter's 32px round buttons are too large. */
@@ -468,22 +484,15 @@
     outline: none;
 }
 
+/* A dense row with room for a Repository Icon, and the active repository marked instead of selected. */
 .repository-row {
     position: relative;
-    flex: 0 0 auto;
     height: 40px;
     margin-top: 2px;
     border-radius: var(--radius);
-    color: var(--text-color);
-    cursor: default;
-    outline: none;
 
     &.collapsed {
         height: 36px;
-    }
-
-    &[data-hovered] {
-        background: var(--highlight-hover);
     }
 
     &.active {
@@ -505,11 +514,6 @@
 
     &[data-dragging] {
         opacity: 0.5;
-    }
-
-    &[data-focus-visible] {
-        outline: 2px solid var(--focus-ring-color);
-        outline-offset: -2px;
     }
 }
 

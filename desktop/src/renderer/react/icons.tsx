@@ -2,7 +2,7 @@
 import { Archive, ArrowDownToLine, Ellipsis, ExternalLink, Folder, GitBranch, ListTree, Maximize2, Minus, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Redo2, Search, SlidersHorizontal, Sun, Undo2, X } from "lucide"
 import { lucideIcon } from "./ui/icons"
 
-// The spike's icons, drawn from the same Lucide nodes as the Remix renderer's (ADR 0020).
+// Application icons, drawn from the same Lucide nodes as the Remix renderer's (ADR 0020).
 export let ArchiveIcon = lucideIcon(Archive, "archive")
 export let PullIcon = lucideIcon(ArrowDownToLine, "arrow-down-to-line")
 export let MoreIcon = lucideIcon(Ellipsis, "ellipsis")

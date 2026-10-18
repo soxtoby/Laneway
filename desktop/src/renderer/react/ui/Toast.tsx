@@ -21,9 +21,10 @@ export const queue = new ToastQueue<MyToastContent>({
     // Wrap state updates in a CSS view transition.
     wrapUpdate(fn) {
         if ("startViewTransition" in document) {
+            // Laneway: a toast replaced at once interrupts its transition, which then rejects; the update still applies.
             document.startViewTransition(() => {
                 flushSync(fn)
-            })
+            }).ready.catch(() => {})
         } else {
             fn()
         }

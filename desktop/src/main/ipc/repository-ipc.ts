@@ -5,7 +5,8 @@ import { EntryQueue } from "../entry-queue"
 import type { OpenRepositories } from "../repositories"
 import { entryError } from "../repositories"
 import { listRepositoryImages, readIconImage } from "../repository-icons"
-import { applyNativeTheme, titleBarOverlay } from "../window"
+import { applyNativeTheme } from "../window"
+import { titleBarOverlay } from "../window-colors"
 import type { WorkspaceManager } from "../workspace-manager"
 
 export function registerRepositoryHandlers(repositories: OpenRepositories, workspace: WorkspaceManager) {
