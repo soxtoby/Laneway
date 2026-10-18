@@ -1,8 +1,9 @@
-import type { BranchGraph, BranchGraphBranchNode, BranchHistoryPage, ChangedFile, ChangesInventory, DiffSource, DiffView, FileDiffPage } from "@laneway/shared"
+import type { BranchGraph, BranchGraphBranchNode, BranchHistoryPage, ChangedFile, ChangesInventory, DiffSource, DiffView, FileDiffPage, FileImagePage } from "@laneway/shared"
 import type { FileDiffLoadedChangedFiles } from "@pierre/diffs"
 import { readDiffContext } from "../src/inspection/diff-context"
 import { createDiscards } from "../src/inspection/discard"
 import { createDiffSession, type FileDiffState } from "../src/inspection/inspection-diff-session"
+import { type ImageDiffMode, readDiffImage, rememberImageMode } from "./image-files"
 import { errorMessage, type Notice } from "./notice"
 import { createStore, type Store } from "./store"
 
@@ -109,6 +110,10 @@ export interface Inspection extends Store<InspectionSnapshot> {
     discardLines(columnId: string, key: string): Promise<void>
     /** Reads the whole file around a diff page, so the lines between its hunks can show. */
     readContext(page: FileDiffPage, signal: AbortSignal): Promise<FileDiffLoadedChangedFiles>
+    /** Reads a changed picture's old and new versions; `fetchLfs` downloads them through Git LFS. */
+    readImage(page: FileDiffPage, signal: AbortSignal, fetchLfs?: boolean): Promise<FileImagePage>
+    /** Compares a picture another way; every picture opens in the last mode chosen until Laneway restarts. */
+    setImageMode(columnId: string, key: string, mode: ImageDiffMode): void
     /** Toggles whole files together: all already chosen clears them, otherwise all become chosen. */
     select(columnId: string, group: string, files: ChangedFile[]): void
     clearSelection(columnId: string): void
@@ -607,6 +612,17 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
         },
 
         readContext: (page, signal) => readDiffContext(api, activeId ?? "", page, signal),
+
+        readImage: (page, signal, fetchLfs) => readDiffImage(api, activeId ?? "", page, signal, fetchLfs),
+
+        setImageMode(columnId, key, mode) {
+            let found = diffFor(columnId, key)
+            if (!found)
+                return
+            found.diff.imageMode = mode
+            rememberImageMode(mode)
+            publish()
+        },
 
         select(columnId, group, files) {
             let state = columnState(columnId)

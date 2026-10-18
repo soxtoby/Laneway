@@ -271,6 +271,53 @@ describe("React diffs", () => {
         expect(document.querySelector("[role=alertdialog]")?.textContent).toContain("Discarded 1 line in src/file.txt")
     })
 
+    test("a changed picture compares its versions instead of lines, in the mode its row chooses for every picture", async () => {
+        let scenario = inspectionScenario()
+        let picture = { path: "art/logo.png", status: "modified", staged: true, unstaged: false, untracked: false, ignored: false, conflicted: false }
+        let imageReads: string[] = []
+        let app = await startReactApp({
+            ...scenario.api,
+            readChanges: async (_id, _requestId, request) => ({
+                ok: true,
+                inventory: { source: request.source, files: [picture], version: "pictures", parents: [] },
+            }),
+            readFileDiff: async (_id, _requestId, request) => ({
+                ok: true,
+                page: {
+                    source: request.source,
+                    file: picture,
+                    view: request.view ?? "combined",
+                    version: "one",
+                    summary: ["Binary content changed."],
+                    lines: [],
+                    selectable: false,
+                },
+            }),
+            readFileImage: async (_id, _requestId, request) => {
+                imageReads.push(request.path)
+                return { ok: false, error: { code: "git.command-failed", message: "Pictures unavailable here" } }
+            },
+        })
+        let row = fileRows("working-staged")[0]!
+
+        await app.act(async () => {
+            openRow(row)
+            await new Promise(resolve => setTimeout(resolve, 20))
+        })
+        expect(imageReads).toEqual(["art/logo.png"])
+        expect(row.querySelector(".pierre-diff")).toBeNull()
+        expect(row.querySelector(".diff-summary")).toBeNull()
+        expect(row.querySelector(".image-diff [role=alert]")?.textContent).toBe("Pictures unavailable here")
+        expect(button(row, "Side by side").getAttribute("aria-pressed")).toBe("true")
+        await app.act(() => press(button(row, "Swipe")))
+        expect(button(row, "Swipe").getAttribute("aria-pressed")).toBe("true")
+
+        // A picture opened next starts in the mode chosen last.
+        await app.act(() => openRow(row))
+        await app.act(() => openRow(row))
+        expect(button(row, "Swipe").getAttribute("aria-pressed")).toBe("true")
+    })
+
     test("folding a folder closes the diffs of the files it hides", async () => {
         let scenario = inspectionScenario()
         let app = await startReactApp(scenario.api)

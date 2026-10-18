@@ -71,6 +71,9 @@
 
     /* Chosen diff lines, washed in the accent. */
     --diff-selection: oklch(from var(--tint) l c h / 34%);
+    /* An image difference shows what changed against black; the swipe divider keeps an edge on any picture. */
+    --image-difference-background: #000;
+    --image-divider-edge: rgb(0 0 0 / 40%);
 }
 
 [data-tone] {

@@ -132,3 +132,42 @@ export function EntireFileIcon() {
         </DiffStroke>
     )
 }
+
+// Solid and outlined shapes stay distinct at toolbar size, where thin frames blur together.
+export function ImageModeIcon({ mode }: { mode: "side-by-side" | "swipe" | "onion" | "difference" }) {
+    return (
+        <DiffStroke strokeWidth={1.5}>
+            {mode == "side-by-side"
+                ? (
+                    // A solid picture beside an outlined one.
+                    <>
+                        <path d="M1.5 3h5.5v10H1.5z" fill="currentColor" stroke="none" />
+                        <path d="M9 3h5.5v10H9z" />
+                    </>
+                )
+                : mode == "swipe"
+                ? (
+                    // A picture half revealed by a divider that stretches past its frame.
+                    <>
+                        <path d="M2 3h6v10H2z" fill="currentColor" stroke="none" />
+                        <path d="M2 3h12v10H2zM8 1v14" />
+                    </>
+                )
+                : mode == "onion"
+                ? (
+                    // An outlined picture laid over a solid one.
+                    <>
+                        <path d="M2 2h8v8H2z" fill="currentColor" stroke="none" />
+                        <path d="M6 6h8v8H6z" />
+                    </>
+                )
+                : (
+                    // Two discs with their overlap picked out.
+                    <>
+                        <path d="M8 4.54A4 4 0 0 1 8 11.46A4 4 0 0 1 8 4.54z" fill="currentColor" stroke="none" />
+                        <path d="M2 8a4 4 0 1 0 8 0a4 4 0 1 0-8 0M6 8a4 4 0 1 0 8 0a4 4 0 1 0-8 0" />
+                    </>
+                )}
+        </DiffStroke>
+    )
+}

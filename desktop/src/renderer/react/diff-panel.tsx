@@ -3,8 +3,9 @@ import type { ChangedFile, DiffLayout, DiffView } from "@laneway/shared"
 import { createContext, type ReactNode, useContext } from "react"
 import { ToggleButton } from "react-aria-components"
 import { DiffLines } from "./diff-lines"
-import { SplitDiffIcon, UnifiedDiffIcon, WhitespaceIcon } from "./icons"
-import { isImagePath, visibleSummary } from "./image-files"
+import { ImageModeIcon, SplitDiffIcon, UnifiedDiffIcon, WhitespaceIcon } from "./icons"
+import { ImageDiff, imageKey } from "./image-diff"
+import { type ImageDiffMode, imageModes, isComparableImage, isImagePath, preferredImageMode, visibleSummary } from "./image-files"
 import type { FileDiffState, Inspection } from "./inspection"
 import { TransferGrip, transferSource, useTransferScope } from "./transfer"
 import { Button } from "./ui/Button"
@@ -29,8 +30,16 @@ interface DiffProps {
 /** A diff's controls in its file's row: unified or side by side, and showing whitespace. */
 export function DiffControls({ columnId, id, diff, inspection }: DiffProps) {
     let { layout, setLayout } = useContext(DiffScopeContext)
-    if (isImagePath(diff.path))
-        return null
+    // Pictures swap the line layouts for their comparison modes; added and deleted ones have nothing to compare.
+    if (isImagePath(diff.path)) {
+        let mode = diff.imageMode ?? preferredImageMode()
+        let comparable = diff.page ? isComparableImage(diff.page.file) : true
+        return comparable && (
+            <div className="diff-controls">
+                <ImageModeToggle mode={mode} onChange={chosen => inspection.setImageMode(columnId, id, chosen)} />
+            </div>
+        )
+    }
     return (
         <div className="diff-controls">
             <div className="diff-layout-toggle" role="group" aria-label="Diff layout">
@@ -49,6 +58,25 @@ export function DiffControls({ columnId, id, diff, inspection }: DiffProps) {
             >
                 <WhitespaceIcon />
             </ToggleButton>
+        </div>
+    )
+}
+
+/** How a changed picture compares: its versions side by side, or stacked to swipe, fade, or difference. */
+export function ImageModeToggle({ mode, onChange }: { mode: ImageDiffMode; onChange(mode: ImageDiffMode): void }) {
+    return (
+        <div className="diff-layout-toggle" role="group" aria-label="Image comparison mode">
+            {imageModes.map(choice => (
+                <ToggleButton
+                    key={choice.mode}
+                    className="icon-button small"
+                    aria-label={choice.label}
+                    isSelected={mode == choice.mode}
+                    onChange={() => onChange(choice.mode)}
+                >
+                    <ImageModeIcon mode={choice.mode} />
+                </ToggleButton>
+            ))}
         </div>
     )
 }
@@ -100,7 +128,7 @@ export function DiffPanel({ columnId, id, diff, inspection, eligible }: DiffProp
                     {summary.map(text => <p key={text} className="diff-summary">{text}</p>)}
                     {!image && page.lines.length == 0 && page.summary.length == 0 && <p className="diff-message">No net content difference in this view.</p>}
                     {image
-                        ? <p className="diff-message">Pictures compare once image diffs move to the React renderer.</p>
+                        ? <ImageDiff key={imageKey(page)} page={page} mode={diff.imageMode ?? preferredImageMode()} read={inspection.readImage} />
                         : (
                             <DiffLines
                                 page={page}

@@ -1496,6 +1496,260 @@
     white-space: nowrap;
 }
 
+/* Image diffs: a changed picture's versions side by side, or stacked to swipe, fade, or difference. */
+
+.image-diff {
+    padding: var(--spacing-1) var(--spacing-2) var(--spacing-2);
+}
+
+.image-notice,
+.image-caption {
+    margin: 0;
+    padding: var(--spacing-1) 0;
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+}
+
+.image-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-1);
+    padding: var(--spacing-1) 0 var(--spacing-2);
+}
+
+.image-tool {
+    min-height: 22px;
+    padding: 0 var(--spacing-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--gray-50);
+    color: var(--text-color);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    outline: none;
+
+    &[data-hovered] {
+        background: var(--highlight-hover);
+    }
+
+    &[data-selected] {
+        color: var(--focus-ring-color);
+        background: var(--selection-background);
+    }
+
+    &[data-focus-visible] {
+        outline: 2px solid var(--focus-ring-color);
+    }
+}
+
+.image-fade {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+}
+
+/* A two-row grid keeps both captions on one line even when the pictures differ in height. */
+.image-sides {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    grid-template-rows: auto auto;
+    gap: 0 var(--spacing-2);
+    align-items: end;
+
+    &.both {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+}
+
+.image-figure {
+    display: contents;
+}
+
+.image-enlarge {
+    display: block;
+    max-width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: zoom-in;
+    outline: none;
+
+    &[data-focus-visible] {
+        outline: 2px solid var(--focus-ring-color);
+        outline-offset: 1px;
+    }
+}
+
+/* Transparent parts of a picture show over a checkerboard. */
+.image-picture,
+.image-stage {
+    background-color: var(--gray-50);
+    background-image:
+        linear-gradient(45deg, var(--border-color) 25%, transparent 25%, transparent 75%, var(--border-color) 75%),
+        linear-gradient(45deg, var(--border-color) 25%, transparent 25%, transparent 75%, var(--border-color) 75%);
+    background-position: 0 0, 8px 8px;
+    background-size: 16px 16px;
+    border: 1px solid var(--border-color);
+}
+
+.image-picture {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+.image-unavailable {
+    align-self: stretch;
+    padding: var(--spacing-4);
+    border: 1px dashed var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+}
+
+.image-stacked {
+    max-width: 100%;
+}
+
+.image-stage {
+    position: relative;
+    /* The stage is sized from the pictures' natural dimensions, which its border must not eat into. */
+    box-sizing: content-box;
+    max-width: 100%;
+    overflow: hidden;
+    outline: none;
+
+    &.swipe {
+        cursor: col-resize;
+        touch-action: none;
+    }
+
+    &.difference {
+        background: var(--image-difference-background);
+    }
+
+    &[role="button"] {
+        cursor: zoom-in;
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--focus-ring-color);
+    }
+}
+
+.image-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: block;
+    max-width: 100%;
+    height: auto;
+    pointer-events: none;
+    user-select: none;
+}
+
+.image-divider {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--focus-ring-color);
+    box-shadow: 0 0 0 1px var(--image-divider-edge);
+    pointer-events: none;
+}
+
+/* The enlarged viewer fills the window below the title bar. */
+.image-viewer-modal.react-aria-Modal {
+    --viewer-bar: 44px;
+    --viewer-height: calc(100vh - 48px - 2px - var(--viewer-bar) - 32px);
+    width: calc(100vw - 48px);
+    max-width: none;
+    height: calc(100vh - 48px);
+    max-height: none;
+    padding: 0;
+    overflow: hidden;
+}
+
+/* Two classes outrank the kit's dialog padding wherever its stylesheet lands. */
+.react-aria-Dialog.image-viewer {
+    /* The kit's modal lays its dialog out in a row, so the viewer takes its width rather than its content's. */
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    outline: none;
+}
+
+.image-viewer-bar {
+    height: var(--viewer-bar);
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: 0 var(--spacing-2) 0 var(--spacing-3);
+    border-bottom: 1px solid var(--border-color);
+    font-size: var(--font-size-sm);
+}
+
+.image-viewer-title {
+    min-width: 0;
+    overflow: hidden;
+    font: 600 15px var(--font-family-mono);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.image-viewer-caption {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-color-placeholder);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.image-viewer-group {
+    flex: 0 0 auto;
+    display: inline-flex;
+    gap: 2px;
+}
+
+/* Pictures centre when they fit, and scroll from their top-left corner when they don't. */
+.image-viewer-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    overflow: auto;
+    padding: var(--spacing-4);
+    background: var(--tray-background);
+
+    > * {
+        flex-shrink: 0;
+        margin: auto;
+    }
+}
+
+/* Enlarged, a picture shows every pixel unless it fits the window. */
+.image-viewed {
+    box-sizing: border-box;
+    max-width: none;
+
+    &.fit {
+        max-width: 100%;
+        max-height: var(--viewer-height);
+        object-fit: contain;
+    }
+}
+
 /* Composition: grips that drag rows, destinations that mark where a drop lands, and the review at a destination. */
 
 .transfer-grip {
