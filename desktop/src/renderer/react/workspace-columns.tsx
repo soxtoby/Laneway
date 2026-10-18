@@ -2,6 +2,7 @@
 import type { BranchGraph, FileListView, WorktreeRecovery, WorktreeRequest } from "@laneway/shared"
 import clsx from "clsx"
 import { type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, useEffect, useMemo, useRef } from "react"
+import { ToggleButton } from "react-aria-components"
 import { defaultAuxiliaryColumnWidth } from "../src/auxiliary-columns"
 import { workspaceGraph } from "../src/worktrees/worktree-columns"
 import type { AppController } from "./app-controller"
@@ -10,10 +11,11 @@ import { ColumnBody, columnRoot, ColumnScopes } from "./column-body"
 import { IconButton } from "./controls"
 import { DiffColumn, minimumDiffColumnWidth } from "./diff-column"
 import { CommitDiffColumn, FileHistoryColumn } from "./file-history"
-import { BranchIcon, CloseIcon, CollapseColumnIcon, CompareIcon, ExpandColumnIcon, FolderIcon, MaximizeIcon, RestoreIcon, WarningIcon } from "./icons"
+import { BranchIcon, CloseIcon, CollapseColumnIcon, CompareIcon, ExpandColumnIcon, FolderIcon, MaximizeIcon, OpenColumnIcon, RestoreIcon, WarningIcon } from "./icons"
 import type { AuxiliaryView, InspectionSnapshot } from "./inspection"
 import { Button } from "./ui/Button"
 import { Tab, TabList, Tabs } from "./ui/Tabs"
+import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 import { useSnapshot } from "./use-snapshot"
 import { MissingWorktree, WorktreeMenu, WorktreeTitle } from "./worktree-controls"
 
@@ -259,6 +261,21 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                 )}
                             {(column.kind == "branch" || column.kind == "virtual") && (
                                 <WorktreeMenu column={column} graph={graph} busy={busy} onPrepare={prepare} chooseDirectory={controller.chooseDirectory} />
+                            )}
+                            {column.kind == "comparison" && (
+                                // Mirrors Working Changes' control: it opens the comparison's whole diff, or focuses it.
+                                <TooltipTrigger>
+                                    <ToggleButton
+                                        className="icon-button"
+                                        aria-label="Open diff column"
+                                        isSelected={files?.diffColumn != undefined}
+                                        isDisabled={!files?.files.comparison?.inventory?.files.some(file => !file.ignored)}
+                                        onChange={() => controller.inspection.openDiffColumn(column.id, "comparison")}
+                                    >
+                                        <OpenColumnIcon />
+                                    </ToggleButton>
+                                    <Tooltip>Open diff column</Tooltip>
+                                </TooltipTrigger>
                             )}
                             <IconButton label={snapshot.maximizedId ? "Restore columns" : "Maximize column"} onPress={() => columns.toggleMaximized(column.id)}>
                                 {snapshot.maximizedId ? <RestoreIcon /> : <MaximizeIcon />}

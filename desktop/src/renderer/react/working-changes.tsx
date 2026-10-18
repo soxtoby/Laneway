@@ -2,6 +2,7 @@
 import type { BranchGraphMarker, ChangedFile, DiffSource, FileHistorySource, FileListView } from "@laneway/shared"
 import { type ReactNode, useEffect, useState } from "react"
 import { Button as AriaButton, Form } from "react-aria-components"
+import { type ComparisonColumnNode, comparisonHistorySource } from "../src/inspection/comparison-columns"
 import type { ColumnView } from "./branch-workspace"
 import { type CommitComposer, defaultBranchName } from "./commit-composer"
 import type { Landing } from "./composition"
@@ -355,12 +356,28 @@ interface FileListProps {
     staging?: Landing
     /** Whether diffs break out into the column's diff column; auxiliary columns have none. */
     diffColumn?: boolean
+    /** A comparison's ends, whose histories its files open in. */
+    comparison?: ComparisonColumnNode
 }
 
 /** One list of a column's files, with its reading and failure states and, once files are chosen, how many. */
 export function FileList(
-    { columnId, group, label, files, inspected, inspection, view, root, selectable = false, menuItems, empty, staging, diffColumn: breaksOut = true }:
-        FileListProps,
+    {
+        columnId,
+        group,
+        label,
+        files,
+        inspected,
+        inspection,
+        view,
+        root,
+        selectable = false,
+        menuItems,
+        empty,
+        staging,
+        diffColumn: breaksOut = true,
+        comparison,
+    }: FileListProps,
 ) {
     let scope = useTransferScope()
     let { target, props } = useTransferTarget<HTMLDivElement>(scope?.composition, staging)
@@ -425,14 +442,26 @@ export function FileList(
             return diff && <DiffPanel columnId={columnId} id={id} diff={diff} inspection={inspection} eligible={selectable && group != "comparison"} />
         },
     }
-    // Every list but a comparison's opens a file's history from where the list was read.
+    // A file's history reads from where the list was read; a comparison's file has one at either end.
     let history = historySource(files.source)
+    let histories = (file: ChangedFile) =>
+        comparison
+            ? [{ label: `History in ${comparison.fromName}`, source: comparisonHistorySource(comparison.from), path: file.oldPath ?? file.path }, {
+                label: `History in ${comparison.toName}`,
+                source: comparisonHistorySource(comparison.to),
+                path: file.path,
+            }]
+            : history
+            ? [{ label: "File history", source: history, path: file.path }]
+            : []
     let items = (file: ChangedFile) => {
         let own = menuItems?.(file)
+        let opened = histories(file)
         return (
             <>
-                {history && <MenuItem onAction={() => inspection.openHistory(columnId, history, file.path)}>File history</MenuItem>}
-                {history && own && <Separator />}
+                {opened.map(item => <MenuItem key={item.label} onAction={() => inspection.openHistory(columnId, item.source, item.path)}>{item.label}
+                </MenuItem>)}
+                {opened.length > 0 && own && <Separator />}
                 {own}
             </>
         )

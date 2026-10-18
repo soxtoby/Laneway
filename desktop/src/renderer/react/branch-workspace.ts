@@ -68,6 +68,8 @@ export interface BranchWorkspace extends Store<ColumnsSnapshot> {
     focus(id: string): void
     /** Opens a column, or expands it if it is collapsed, and brings it into view with focus. */
     open(id: string): void
+    /** Opens the Branch Comparison Column from `from` to `to` beside `sourceId`, or brings the open one into view. */
+    openComparison(sourceId: string, from: ComparisonRef, to: ComparisonRef): void
     /**
      * Follows a branch rename: its column, and any comparison naming it, keep their place, width, and state
      * under the new name. The saved layout follows at once, so the next read reconciles against it.
@@ -183,6 +185,7 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
                     worktreePath: view.worktree?.path,
                     worktreeMissing: view.worktree?.missing,
                     branch: view.kind == "branch" ? view.branch : undefined,
+                    comparison: view.kind == "comparison" ? { from: view.comparison.from, to: view.comparison.to } : undefined,
                 })),
                 workspaceGraph(state.graph),
             )
@@ -472,6 +475,19 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
             change(activeId, state => {
                 if (!state.openedIds.includes(id))
                     state.openedIds.push(id)
+                state.collapsedIds = state.collapsedIds.filter(candidate => candidate != id)
+                state.focusedId = id
+                state.widths[id] ??= defaultColumnWidth
+                state.maximizedId = undefined
+                state.revealed = { id, serial: (state.revealed?.serial ?? 0) + 1 }
+            })
+        },
+        openComparison(sourceId, from, to) {
+            let id = comparisonColumnId(from, to)
+            change(activeId, state => {
+                state.comparisons[id] = { from, to }
+                if (!state.openedIds.includes(id))
+                    state.openedIds.splice(state.openedIds.indexOf(sourceId) + 1, 0, id)
                 state.collapsedIds = state.collapsedIds.filter(candidate => candidate != id)
                 state.focusedId = id
                 state.widths[id] ??= defaultColumnWidth

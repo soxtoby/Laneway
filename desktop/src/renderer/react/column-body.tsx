@@ -7,7 +7,7 @@ import { CommitTrail } from "./commit-trail"
 import { DiffScopeContext } from "./diff-panel"
 import type { ColumnInspection } from "./inspection"
 import { TransferScopeContext } from "./transfer"
-import { StashedChanges, WorkingChanges } from "./working-changes"
+import { FileList, StashedChanges, WorkingChanges } from "./working-changes"
 
 interface ColumnBodyProps {
     controller: AppController
@@ -24,11 +24,31 @@ interface ColumnBodyProps {
 
 /** A column's Working Changes and stashes, then its branch's Commit Trail. A missing worktree has no Working Changes. */
 export function ColumnBody({ controller, repositoryId, graph, column, inspected, blocked, view, onViewChange }: ColumnBodyProps) {
-    if (column.kind == "comparison")
-        return <p className="column-placeholder">{column.description}</p>
     if (column.kind == "recovery")
         return null
     let { inspection, branches } = controller
+    // A comparison only reads, so its files can't be chosen to move or discard.
+    if (column.kind == "comparison") {
+        return (
+            <ColumnScopes controller={controller} repositoryId={repositoryId} graph={graph} column={column}>
+                <div className="column-body">
+                    <section className="branch-comparison" aria-label={column.description}>
+                        <FileList
+                            columnId={column.id}
+                            group="comparison"
+                            label={`Files changed in ${column.name}`}
+                            files={inspected?.files.comparison}
+                            inspected={inspected}
+                            inspection={inspection}
+                            view={view}
+                            comparison={column.comparison}
+                            empty="No differences"
+                        />
+                    </section>
+                </div>
+            </ColumnScopes>
+        )
+    }
     let path = columnRoot(column)
     return (
         <ColumnScopes controller={controller} repositoryId={repositoryId} graph={graph} column={column}>
@@ -63,6 +83,7 @@ export function ColumnBody({ controller, repositoryId, graph, column, inspected,
                         renameBranch={newName => branches.perform(repositoryId, { action: "branch-rename", name: column.branch.name, newName })}
                         createBranchAt={commit => branches.createAt(repositoryId, commit.objectId)}
                         reword={(branch, commit, close) => controller.reword(repositoryId, branch.preferredRef, commit, close)}
+                        compare={(from, to) => controller.columns.openComparison(column.id, from, to)}
                     />
                 )}
             </div>

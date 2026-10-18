@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import type { BranchGraph, BranchGraphBranchNode, BranchHistoryCommit, FileListView } from "@laneway/shared"
+import type { BranchGraph, BranchGraphBranchNode, BranchHistoryCommit, ComparisonRef, FileListView } from "@laneway/shared"
 import clsx from "clsx"
 import { useState } from "react"
 import { Button as AriaButton } from "react-aria-components"
@@ -32,6 +32,8 @@ export interface CommitTrailProps {
     renameBranch(name: string): Promise<void>
     createBranchAt(commit: BranchHistoryCommit): void
     reword(branch: BranchGraphBranchNode, commit: BranchHistoryCommit, close: () => void): Reword
+    /** Opens the Branch Comparison Column from `from` to `to` beside this column. */
+    compare(from: ComparisonRef, to: ComparisonRef): void
 }
 
 /**
@@ -73,7 +75,7 @@ interface StackBranchProps extends CommitTrailProps {
 }
 
 function StackBranch(props: StackBranchProps) {
-    let { branch, own, above, column, inspected, inspection } = props
+    let { branch, own, above, below, column, inspected, inspection } = props
     let history = inspected?.history[branch.id]
     let open = own || history?.open == true
     let unresolved = branch.unresolved && (
@@ -121,6 +123,20 @@ function StackBranch(props: StackBranchProps) {
                             {unresolved}
                         </AriaButton>
                     )}
+                {/* The branch at the bottom of the stack has no base in the column, so only those above it compare. */}
+                {below && (
+                    <IconButton
+                        label={`Compare ${branch.name} with ${below.name}`}
+                        small
+                        onPress={() =>
+                            props.compare({ kind: "merge-base", ref: below.preferredRef, withRef: branch.preferredRef }, {
+                                kind: "branch",
+                                ref: branch.preferredRef,
+                            })}
+                    >
+                        <DiffIcon />
+                    </IconButton>
+                )}
             </h3>
             {scope && <TransferReview composition={scope.composition} repositoryId={scope.repositoryId} target={branchTarget} />}
             {scope && !branch.remoteOnly && (

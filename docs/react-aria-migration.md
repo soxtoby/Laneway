@@ -105,10 +105,11 @@ A step is done when its listed tests pass against the React renderer and the scr
     - Showing entire files now belongs to the diff column: closing it reads the diffs left under their rows again around their changes, where the Remix renderer kept them whole with no control to switch back.
     - File History and Commit Diff columns (`file-history.tsx`, with their reads in `file-histories.ts` from `inspection/file-history.tsx` and `trail-commit.tsx`): "File history" in a file's menu, in Working Changes, commits, stashes, the diff column, and the auxiliary columns themselves, opens beside where it was chosen. Entries unfold to the file's diff in that commit; their menu blames the file or opens the whole commit, whose parent can change and whose related files open more histories. Each keeps a column state of its own for its files and diffs, laid out unified for the session, and chooses files and lines only in commits its Workspace Column's branch can compose while that branch stays put. Histories page through sparse scans, refresh quietly with the columns, and follow renamed branches. Closing one returns focus to the column it came from. Tests in `react-file-history.test.tsx`.
     - A composable history entry offers a grip that moves its change to the file, in place of the Remix renderer's checkbox: each entry holds one file, so there is nothing to choose it with.
+    - Branch Comparison Columns: a branch heading above its base in the Commit Trail compares the branch with that base, opening the comparison beside its column (`openComparison` in `branch-workspace.ts`). Its files read once, then again quietly with their open diffs when a compared branch moves; they can't be chosen, moved, or discarded. Its header opens its whole diff in a diff column, and a file's menu opens its history at either end. Tests in `react-comparison.test.tsx`, ported from the "Branch Comparison" block.
   - **Moved on:**
     - A branch column whose branch goes away closes its File History columns with it; the Remix renderer kept them showing at the end of the row without their source column.
   - **Tests to port:**
-    - The "Working Changes inspection" and "Branch Comparison" blocks, and the line discards in the discarding test.
+    - The "Working Changes inspection" block, and the line discards in the discarding test.
 - [ ] **7. Branch Graph and Command Lens.**
   - **Scope:**
     - The virtualized graph and its settings.

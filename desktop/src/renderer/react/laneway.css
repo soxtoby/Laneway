@@ -134,6 +134,12 @@
         background: var(--highlight-pressed);
     }
 
+    /* A toggle that is on, such as a column's diff column control while the diff column shows. */
+    &[data-selected] {
+        color: var(--focus-ring-color);
+        background: var(--selection-background);
+    }
+
     &[data-focus-visible] {
         outline: 2px solid var(--focus-ring-color);
         outline-offset: -2px;
