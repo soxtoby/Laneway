@@ -2,7 +2,7 @@
 import type { BranchGraph } from "@laneway/shared"
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
 import type { Window as HappyWindow } from "happy-dom"
-import { button, installReactDom, press, startReactApp, stopReactApps } from "./react-dom"
+import { button, installReactDom, press, startReactApp, stopReactApps, submit, type } from "./react-dom"
 import { appState, branchGraph, fakeLaneway, openedWorkspace, repositoryInfo } from "./renderer-fixtures"
 
 let browserWindow: HappyWindow
@@ -106,6 +106,69 @@ describe("React Branch Graph", () => {
         expect(document.querySelector("[role=dialog]")?.textContent).toContain("Rename")
     })
 
+    test("settings apply patterns on Enter, close on Escape, and offer no remote choice for a single remote", async () => {
+        let repository = repositoryInfo("D:\\Source\\graph-settings")
+        let graph = branchGraph(repository.id)
+        let applied: unknown[] = []
+        let reads = 0
+        let app = await startReactApp(fakeLaneway({
+            getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
+            readBranchGraph: async () => {
+                reads++
+                return { ok: true, graph }
+            },
+            setRepositoryGraphSettings: async (_id, settings) => {
+                applied.push(settings)
+                return settings
+            },
+        }))
+        await app.act(() => press(button(document.body, "Show Branch Graph")))
+        let toggle = button(panel()!, "Branch Graph settings")
+
+        await app.act(() => press(toggle))
+        let dialog = settings()!
+        expect(toggle.getAttribute("aria-expanded")).toBe("true")
+        expect(dialog.querySelector("h2")?.textContent).toBe("Branch Graph settings")
+        expect(dialog.querySelector("[role=radiogroup]")).toBeNull()
+        let before = reads
+        await app.act(() => type(patterns()!, "origin/release/**, upstream/topic/*"))
+        // Enter submits the form in a browser; Happy DOM doesn't, so the form submits as Enter would.
+        await app.act(() => submit(settings()!.querySelector("form")!))
+        expect(applied).toEqual([{ selectedRemote: "origin", remotePatterns: ["origin/release/**", "upstream/topic/*"] }])
+        expect(reads).toBeGreaterThan(before)
+        expect(settings()).toBeNull()
+
+        await app.act(() => press(toggle))
+        await app.act(() => key(patterns()!, "Escape"))
+        expect(settings()).toBeNull()
+    })
+
+    test("settings choose among several remotes, and keep a typed draft across quiet refreshes", async () => {
+        let repository = repositoryInfo("D:\\Source\\graph-settings-draft")
+        let graph: BranchGraph = { ...branchGraph(repository.id), availableRemotes: ["origin", "upstream"] }
+        let applied: unknown[] = []
+        let app = await startReactApp(fakeLaneway({
+            getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
+            readBranchGraph: async () => ({ ok: true, graph: structuredClone(graph) }),
+            setRepositoryGraphSettings: async (_id, settings) => {
+                applied.push(settings)
+                graph = { ...graph, selectedRemote: settings.selectedRemote, remotePatterns: settings.remotePatterns }
+                return settings
+            },
+        }))
+        await app.act(() => press(button(document.body, "Show Branch Graph")))
+        await app.act(() => press(button(panel()!, "Branch Graph settings")))
+
+        await app.act(() => type(patterns()!, "origin/releases/**"))
+        await app.act(() => app.controller.columns.refresh())
+        expect(patterns()!.value).toBe("origin/releases/**")
+        let upstream = [...settings()!.querySelectorAll<HTMLElement>("[role=radio], label")].find(option => option.textContent == "upstream")!
+        await app.act(() => press(upstream))
+        expect(applied).toEqual([{ selectedRemote: "upstream", remotePatterns: ["origin/releases/**"] }])
+        await app.act(() => press(button(panel()!, "Branch Graph settings")))
+        expect(patterns()!.value).toBe("origin/releases/**")
+    })
+
     test("draws only the rows near the viewport of a large graph", async () => {
         let repository = repositoryInfo("D:\\Source\\large-graph")
         let graph = branchGraph(repository.id)
@@ -165,6 +228,14 @@ function sizeGraphRows(height: number) {
                 Object.defineProperty(HTMLElement.prototype, name, descriptor)
         }
     }
+}
+
+function settings() {
+    return document.querySelector<HTMLElement>(".graph-settings")
+}
+
+function patterns() {
+    return settings()?.querySelector<HTMLInputElement>("input[type=text], input:not([type])")
 }
 
 function panel() {

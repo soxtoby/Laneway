@@ -8,6 +8,7 @@ import type { AppController } from "./app-controller"
 import type { GraphView } from "./branch-workspace"
 import { IconButton } from "./controls"
 import { useRowMenu } from "./dense-row"
+import { GraphSettings } from "./graph-settings"
 import { ArchiveIcon, CloseIcon, FolderIcon, TagIcon } from "./icons"
 import { Button } from "./ui/Button"
 import { MenuItem } from "./ui/Menu"
@@ -36,9 +37,12 @@ export function BranchGraphPanel({ controller, repositoryId, mainWorktree }: Gra
                 {/* The repository is named by the panel and its main worktree column, so the title stays generic. */}
                 <h1 className="graph-title">Branch Graph</h1>
                 {/* The engine reads the default set or every branch, so the toggle reads again rather than filtering rows. */}
-                <ToggleButton variant="quiet" isSelected={view.showAll} onChange={() => columns.toggleAll()}>
-                    {view.showAll ? "Show relevant" : "Show all"}
-                </ToggleButton>
+                <span className="graph-actions">
+                    <ToggleButton variant="quiet" isSelected={view.showAll} onChange={() => columns.toggleAll()}>
+                        {view.showAll ? "Show relevant" : "Show all"}
+                    </ToggleButton>
+                    {graph && <GraphSettings graph={graph} onApply={columns.applyGraphSettings} />}
+                </span>
             </header>
             {graph?.limited.length ? <p className="graph-limit">Limited evidence: {graph.limited.join(", ")}. No implicit fetch performed.</p> : null}
             {!graph && snapshot.loading && (

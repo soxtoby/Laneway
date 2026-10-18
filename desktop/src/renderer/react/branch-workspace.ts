@@ -1,4 +1,4 @@
-import type { BranchGraph, BranchGraphBranchNode, BranchGraphMarker, BranchGraphWorktree, ComparisonRef, DiffLayout, RecoveryRequest, Workspace, WorkspaceColumn, WorktreeRecovery } from "@laneway/shared"
+import type { BranchGraph, BranchGraphBranchNode, BranchGraphMarker, BranchGraphWorktree, ComparisonRef, DiffLayout, RecoveryRequest, RepositoryGraphSettings, Workspace, WorkspaceColumn, WorktreeRecovery } from "@laneway/shared"
 import { comparisonColumnId, type ComparisonColumnNode, comparisonNode, renameComparisonRef } from "../src/inspection/comparison-columns"
 import { columnWorktree, reconcileWorktreeColumns, recoveryColumnId, recoveryWorkspaceColumn, workspaceGraph } from "../src/worktrees/worktree-columns"
 import type { ColumnInspection, Inspection } from "./inspection"
@@ -94,6 +94,8 @@ export interface BranchWorkspace extends Store<ColumnsSnapshot> {
     fold(nodeId: string, folded: boolean): void
     /** Shows a stash marker's details beside the branch it belongs to, or hides them. */
     showMarker(marker?: BranchGraphMarker, branchId?: string): void
+    /** Saves the active repository's remote and extra remote branches, then reads its Branch Graph with them. */
+    applyGraphSettings(settings: RepositoryGraphSettings): Promise<void>
     /** Opens the Branch Comparison Column from `from` to `to` beside `sourceId`, or brings the open one into view. */
     openComparison(sourceId: string, from: ComparisonRef, to: ComparisonRef): void
     /**
@@ -570,6 +572,17 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
                 if (branchId)
                     state.selectedId = branchId
             }, false)
+        },
+        async applyGraphSettings(settings) {
+            let repositoryId = activeId
+            if (!repositoryId)
+                return
+            try {
+                await api.setRepositoryGraphSettings(repositoryId, settings)
+            } catch (error) {
+                return notify({ code: "graph.settings.failed", message: errorMessage(error) })
+            }
+            await read(repositoryId, false)
         },
         openComparison(sourceId, from, to) {
             let id = comparisonColumnId(from, to)

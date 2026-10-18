@@ -121,8 +121,9 @@ A step is done when its listed tests pass against the React renderer and the scr
   - **Remix modules:** the rest of `branch-workspace/` (graph view, settings, marker details, rebase) and `command-lens.tsx`.
   - **Landed so far:**
     - The Branch Graph panel (`branch-graph.tsx`), between the repositories and the columns. The header's graph button shows and hides it, as choosing the repository already shown does. Rows are a React Aria GridList in a `Virtualizer` at the 40px row height `branch-graph-layout.ts` lays the rails out for; the layout carries over, and the rails take their colours from the theme's lane colours. Choosing a row selects it; Open, Enter, or a double-click opens its column. Left and Right fold and unfold the selected branch's stack, F2 renames it, Delete deletes it, and its menu also creates a branch at its tip. "Show all" reads every branch; markers open their stash, and stash details and unassigned stashes show below the rows. `branch-workspace.ts` keeps each repository's Graph Selection, folded stacks, and the Show all choice. Tests in `react-branch-graph.test.tsx`.
+    - Branch Graph settings (`graph-settings.tsx`): a popover from the graph's toolbar chooses the remote when there are several, applying at once, and the remote-only branches to show besides, applying on Enter or Apply; either reads the graph again. Its draft lives in the popover, so quiet refreshes leave it alone.
     - The shell is bounded by the window: column tabs scroll within the header rather than widening it, which revealing a column could otherwise scroll the whole window to.
-  - **Tests to port:** Lens navigation, quiet refreshes, Branch Graph settings, the "Branch Graph rebase" block.
+  - **Tests to port:** Lens navigation, quiet refreshes, the "Branch Graph rebase" block.
 - [ ] **8. Pull latest and conflicts.**
   - **Scope:** Pull latest progress, cancellation, and outcomes; confirmation notices; conflict and merge resolution, including Continue and resolve now after a conflicting transfer.
   - **Remix modules:** `pull-latest.tsx`, `conflict-resolution.tsx`, `conflict-content.tsx`, `merge-resolution.tsx`.
