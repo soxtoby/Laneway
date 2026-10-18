@@ -1,6 +1,6 @@
 # React Aria migration
 
-Plan for [ADR-0021](adr/0021-use-react-aria-components-for-the-electron-renderer.md), agreed on 2026-10-17. Tick a step when it lands.
+Plan for [ADR-0021](adr/0021-use-react-aria-components-for-the-electron-renderer.md), agreed on 2026-10-17. Every step landed, and master fast-forwarded to the `react-aria` branch on 2026-10-18.
 
 ## Approach
 
@@ -123,7 +123,7 @@ A step is done when its listed tests pass against the React renderer and the scr
     - Continue and resolve now, after a rebase or a transfer with conflicts. A rebase opens the column of the lowest moved branch with conflicts, as the Remix renderer did; a transfer opens its first conflict where it shows, in its column with only conflicted commits showing.
     - Tests: `react-conflict-electron.test.ts`, ported from `conflict-electron.test.ts`, resolves the fixture's conflict through production IPC across restarts; resolving now has tests in `react-rebase.test.tsx` and `react-composition.test.tsx`.
     - The kit's `Button` keeps classes passed to it beside its own, rather than replacing them.
-- [ ] **9. Cutover.**
+- [x] **9. Cutover.**
   - **Landed:**
     - The Remix renderer, `styles.css`, the `remix` dependency and its pin, and the Remix skill are gone, with the Remix-only tests and fixtures: `renderer.test.ts`, `renderer-styles.test.ts`, `composition-browser.test.ts`, `conflict-electron.test.ts`, `local-electron.test.ts`, `image-diff-electron.test.ts`, and `image-diff.test.ts`, each ported in its step.
     - The framework-free modules React reused moved into `react/`, and their tests followed them: `auxiliary-columns.ts`, `branch-graph-layout.ts`, `comparison-columns.ts`, `diff-context.ts`, `diff-patch.ts`, `discard.ts`, `file-paths.ts`, `icon-nodes.ts`, `inspection-diff-session.ts`, `lucide-catalog.ts`, `repository-icon-images.ts`, `worktree-columns.ts`, and the global typings.
@@ -132,7 +132,7 @@ A step is done when its listed tests pass against the React renderer and the scr
     - The commit prototype was deleted rather than ported: it was a throwaway for a decision taken on 2026-09-13 (ADR-0012), and `core-local-operations.md` says where to recover it.
     - The conventions moved to [the renderer conventions](renderer.md), which AGENTS.md points to in place of its Remix section.
     - Simon's calls on 2026-10-18: a branch deletes at once, with any commits only it holds, and its notice offers Undo; a worktree is removed at once unless it has Working Changes, keeping commits only it holds on a protective branch, with Undo in its notice; toasts show their message without the notice code.
-  - **Remaining:** rebase onto master a final time, run the full suite, and merge the branch.
+  - **Merged:** master hadn't moved since the branch began, so after the full suite passed, master fast-forwarded to the branch.
 
 ## Open questions
 
