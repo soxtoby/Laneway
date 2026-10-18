@@ -27,6 +27,12 @@
     --warning-background: oklch(from var(--orange) var(--lightness-100) calc(c * 0.4) h);
     --warning-border: oklch(from var(--orange) var(--lightness-600) c h);
 
+    /* Workspace Column kinds: the Main Worktree, other worktrees, branches, and recoveries. */
+    --identity-main: var(--tint-1000);
+    --identity-worktree: oklch(from var(--green) var(--lightness-1000) c h);
+    --identity-branch: oklch(from var(--blue) var(--lightness-1000) c h);
+    --identity-recovery: oklch(from var(--orange) var(--lightness-1000) c h);
+
     /* File status marks. */
     --status-modified: var(--tint-1100);
     --status-added: oklch(from var(--green) var(--lightness-1100) c h);

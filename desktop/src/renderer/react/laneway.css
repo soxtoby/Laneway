@@ -151,15 +151,22 @@
     flex: 1 1 auto;
     min-width: 0;
     display: flex;
-    align-items: start;
-    gap: var(--spacing-2);
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Workspace Columns: each a card at its own width, with a divider after it that resizes it. */
+.column-row {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
     padding: var(--spacing-2);
     overflow: auto;
 }
 
 .column {
     width: 380px;
-    max-height: 100%;
+    min-height: 0;
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;
@@ -168,20 +175,222 @@
     border: 0.5px solid var(--border-color);
     border-radius: var(--radius-lg);
     overflow: hidden;
+    outline: none;
+
+    &:focus-visible {
+        outline: 2px solid var(--focus-ring-color);
+        outline-offset: -2px;
+    }
+
+    .maximized > & {
+        flex: 1 1 auto;
+        width: auto;
+    }
+
+    &.collapsed {
+        width: 52px;
+    }
+}
+
+.column-divider {
+    flex: 0 0 auto;
+    width: var(--spacing-2);
+    margin-inline: 1px;
+    border-radius: var(--radius-sm);
+    cursor: col-resize;
+    outline: none;
+
+    &:hover {
+        background: var(--highlight-hover);
+    }
+
+    &:focus-visible {
+        background: var(--focus-ring-color);
+    }
+}
+
+/* A collapsed column is one button that expands it: its name runs down the strip. */
+.expand-column {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: var(--spacing-3) 0;
+    border: none;
+    background: none;
+    color: var(--text-color);
+    font: inherit;
+    cursor: default;
+    outline: none;
+
+    &:hover {
+        background: var(--highlight-hover);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--focus-ring-color);
+        outline-offset: -2px;
+    }
+}
+
+.expand-column-icon {
+    flex: none;
+    width: var(--spacing-4);
+    height: var(--spacing-4);
+}
+
+.expand-column-name,
+.expand-column-summary {
+    min-height: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    writing-mode: vertical-rl;
+}
+
+.expand-column-name {
+    font-weight: 600;
+}
+
+.expand-column-summary {
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+}
+
+/* The column's kind, in its header and tab: a worktree's folder, a branch, a recovery, or a comparison. */
+.column-kind {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    display: grid;
+    place-items: center;
+
+    > svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    &[data-identity="main"] {
+        color: var(--identity-main);
+    }
+
+    &[data-identity="worktree"] {
+        color: var(--identity-worktree);
+    }
+
+    &[data-identity="branch"] {
+        color: var(--identity-branch);
+    }
+
+    &[data-identity="recovery"] {
+        color: var(--identity-recovery);
+    }
+
+    &[data-identity="comparison"] {
+        color: var(--text-color-placeholder);
+    }
+}
+
+.column-tab {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-1);
+
+    &.collapsed {
+        color: var(--text-color-placeholder);
+    }
+}
+
+.column-tab-name {
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.columns-progress {
+    flex: none;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, var(--highlight-background), transparent);
+    background-size: 50% 100%;
+    background-repeat: no-repeat;
+    animation: columns-progress 1.2s ease-in-out infinite;
+}
+
+@keyframes columns-progress {
+    from {
+        background-position: -50% 0;
+    }
+
+    to {
+        background-position: 150% 0;
+    }
+}
+
+.columns-message {
+    margin: auto;
+    max-width: 360px;
+    display: grid;
+    justify-items: center;
+    gap: var(--spacing-2);
+    text-align: center;
+
+    p {
+        margin: 0;
+        color: var(--text-color-placeholder);
+    }
+}
+
+.column-placeholder {
+    margin: 0;
+    padding: var(--spacing-3);
+    color: var(--text-color-placeholder);
+}
+
+/* Worktrees in trouble: an interrupted removal to resolve, or a directory that can't be found. */
+.worktree-recovery,
+.missing-worktree {
+    margin: 0 var(--spacing-2) var(--spacing-2);
+    padding: var(--spacing-3);
+    display: grid;
+    gap: var(--spacing-2);
+    border: 1px solid var(--warning-border);
+    border-radius: var(--radius);
+    background: var(--warning-background);
+    overflow-wrap: anywhere;
+
+    h3,
+    p {
+        margin: 0;
+    }
+
+    h3 {
+        font-size: var(--font-size);
+    }
+}
+
+.recovery-actions {
+    display: flex;
+    gap: var(--spacing-2);
+}
+
+.recovery-path,
+.recovery-help {
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+}
+
+.recovery-error {
+    color: var(--invalid-color);
 }
 
 .column-header {
     display: flex;
     align-items: center;
     gap: var(--spacing-1);
-    padding: var(--spacing-2) var(--spacing-2) var(--spacing-2) var(--spacing-3);
-
-    > svg {
-        flex: 0 0 auto;
-        width: var(--spacing-5);
-        height: var(--spacing-5);
-        color: var(--tint-1000);
-    }
+    padding: var(--spacing-2) var(--spacing-2) var(--spacing-2) var(--spacing-1);
 }
 
 .column-title {

@@ -55,10 +55,11 @@ A step is done when its listed tests pass against the React renderer and the scr
   - **Scope:** the side panel with drag-to-reorder (built in the spike), closing, adding, locating a missing repository, and the name and icon editor.
   - **Remix modules:** `repository-rail.tsx`, `repository-icon.tsx`, `repository-identity.tsx`.
   - **Tests ported:** customizing a repository, the inferred favicon, and reordering, to `react-repository-panel.test.tsx`. React Aria's drag and drop replaces the Remix rail's own pointer drag: rows show a drop line instead of stepping aside, and the drag handle adds keyboard drag, so the test drags by keyboard; mouse drags were checked in a real window.
-- [ ] **3. Workspace Columns.**
-  - **Scope:** layout and persistence, column tabs, resizing, maximizing, collapsing, the auxiliary-column lifecycle, and missing-worktree and recovery columns. Replaces the spike's column preview.
-  - **Remix modules:** the shell in `app.tsx`, `branch-workspace/branch-columns.tsx`, `column-divider.tsx`, `worktrees/worktree-columns.ts`, `worktrees/missing-worktree.tsx`, `worktrees/worktree-recovery.tsx`.
-  - **Tests to port:** restoring and persisting Workspace Columns, maximizing, retained collapse, recovery columns, missing worktrees.
+- [x] **3. Workspace Columns.**
+  - **Scope:** layout and persistence, column tabs, resizing, maximizing, collapsing, reordering by keyboard or header drag, and recovery columns. `branch-workspace.ts` reads the Branch Graph and owns the columns; until steps 4 and 5, column bodies still show the spike's Working Changes and commits (`column-body.tsx`).
+  - **Remix modules:** the shell in `app.tsx`, `branch-workspace/branch-columns.tsx`, `column-divider.tsx`, `worktrees/worktree-columns.ts`, `worktrees/worktree-recovery.tsx`.
+  - **Tests ported:** restoring and persisting Workspace Columns, maximizing, retained collapse, and recovery columns, to `react-workspace-columns.test.tsx`; the controller's own rules are in `react-branch-workspace.test.ts`.
+  - **Moved on:** a missing worktree's column shows its panel, but Repair and Remove go through worktree previews, so they and the missing-worktree tests move to step 5. Auxiliary columns are opened by Inspection, so their lifecycle moves to step 6.
 - [ ] **4. Working Changes and committing.**
   - **Scope:** file list layouts, grouping, and folding; discard with Undo; copying paths; mousedown activation; the commit composer and composition.
   - **Remix modules:** `inspection/file-list.tsx`, `inspection/file-list-view.tsx`, `mouse-activation.ts`, `commit-composer.tsx`, `composition.tsx`, `inspection/commit-message.tsx`.
@@ -67,16 +68,16 @@ A step is done when its listed tests pass against the React renderer and the scr
   - **Scope:**
     - Commits, rewording, and Create branch here.
     - Renaming branches and worktrees inline.
-    - Creating, switching, and removing worktrees from their previews.
+    - Creating, switching, and removing worktrees from their previews, and repairing or removing a missing worktree.
     - Stashes, undo, and redo.
-  - **Remix modules:** `trail-commit.tsx`, `reword.tsx`, `editable-name.tsx`, `overflow-menu.tsx`, `context-menu.tsx`, `branch-workspace/local-branch-actions.tsx`, `worktrees/worktree-controls.tsx`, `worktrees/worktree-actions.tsx`.
-  - **Tests to port:** rewording, Create branch here, the worktree creation preview, inline renames, detached worktrees, branch deletion.
+  - **Remix modules:** `trail-commit.tsx`, `reword.tsx`, `editable-name.tsx`, `overflow-menu.tsx`, `context-menu.tsx`, `branch-workspace/local-branch-actions.tsx`, `worktrees/worktree-controls.tsx`, `worktrees/worktree-actions.tsx`, `worktrees/missing-worktree.tsx`.
+  - **Tests to port:** rewording, Create branch here, the worktree creation preview, inline renames, detached worktrees, branch deletion, missing worktrees.
 - [ ] **6. Inspection.**
   - **Scope:**
     - Diff columns: combined and split views, selection, hidden-line gaps, and virtualized large patches.
     - Image diffs.
-    - File History, Commit Diff, and breakout columns.
-    - Branch Comparison.
+    - File History, Commit Diff, and breakout columns, with the auxiliary-column lifecycle (`auxiliary-columns.ts`).
+    - Branch Comparison. Until then, saved comparison columns keep their place and show their description.
   - **Remix modules:** `inspection/`.
   - **Tests to port:**
     - The "Working Changes inspection" and "Branch Comparison" blocks, the File History tests, and the diff column placement and resize tests.

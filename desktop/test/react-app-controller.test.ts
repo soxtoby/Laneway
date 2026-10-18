@@ -1,7 +1,6 @@
 import type { Workspace } from "@laneway/shared"
 import { describe, expect, test } from "bun:test"
 import { type AppSnapshot, createAppController } from "../src/renderer/react/app-controller"
-import type { ColumnPreview } from "../src/renderer/react/column-preview"
 import type { Notice } from "../src/renderer/react/notice"
 import { appState, fakeLaneway, inspectionScenario, openedWorkspace, repositoryInfo } from "./renderer-fixtures"
 
@@ -110,7 +109,7 @@ describe("app controller", () => {
         firstGraph.resolve({ ok: true, graph: scenario.graph })
         await settle()
 
-        expect(ready(controller.snapshot()).preview).toEqual({ status: "failed", error: "Second has no graph." })
+        expect(controller.columns.snapshot()).toMatchObject({ repositoryId: second, error: "Second has no graph.", columns: [] })
     })
 
     test("a change to the active repository refreshes its columns, keeping the current ones until the new ones arrive", async () => {
@@ -125,21 +124,22 @@ describe("app controller", () => {
             },
             readBranchGraph: async id => {
                 await refresh?.promise
-                return scenario.api.readBranchGraph(id)
+                return structuredClone(await scenario.api.readBranchGraph(id))
             },
         }))
         await settle()
-        let shown = ready(controller.snapshot()).preview
+        let shown = controller.columns.snapshot()
+        scenario.graph.branches[1]!.ahead = 2
 
         refresh = Promise.withResolvers()
         changed!({ repositoryId: scenario.saved().activeRepositoryId! })
         await settle()
-        expect(ready(controller.snapshot()).preview).toBe(shown)
+        expect(controller.columns.snapshot()).toBe(shown)
 
         refresh.resolve()
         await settle()
-        expect(columnNames(ready(controller.snapshot()).preview)).toEqual(["inspection"])
-        expect(ready(controller.snapshot()).preview).not.toBe(shown)
+        expect(columnNames(controller)).toEqual(["inspection"])
+        expect(controller.columns.snapshot()).not.toBe(shown)
     })
 
     test("cancelling the open dialog leaves no notice, and an opened repository is confirmed", async () => {
@@ -177,8 +177,8 @@ function ids(snapshot: AppSnapshot) {
     return ready(snapshot).workspace.repositories.map(repository => repository.id)
 }
 
-function columnNames(preview: ColumnPreview | undefined) {
-    return preview?.status == "ready" ? preview.columns.map(column => column.worktree.name) : preview
+function columnNames(controller: ReturnType<typeof createAppController>) {
+    return controller.columns.snapshot().columns.map(column => column.name)
 }
 
 function twoRepositories(): Workspace {

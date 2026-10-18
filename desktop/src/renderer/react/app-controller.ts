@@ -1,5 +1,5 @@
-import type { Appearance, OpenRepository, RepositoryIdentity, Workspace } from "@laneway/shared"
-import { type ColumnPreview, readColumnPreview } from "./column-preview"
+import type { Appearance, OpenRepository, RepositoryIdentity, Workspace, WorkspaceColumn } from "@laneway/shared"
+import { type BranchWorkspace, createBranchWorkspace } from "./branch-workspace"
 import { createGitSettings, type GitSettings } from "./git-settings"
 import { errorMessage, type Notice } from "./notice"
 import { createRepositoryEntry, type RepositoryEntry } from "./repository-entry"
@@ -17,8 +17,6 @@ export type AppSnapshot =
         workspace: Workspace
         /** Opening or selecting a repository is under way. */
         opening: boolean
-        /** The active repository's columns; absent when it is missing or nothing is open. */
-        preview?: ColumnPreview
         notice?: Notice
     }
 
@@ -28,6 +26,8 @@ export interface AppController extends Store<AppSnapshot> {
     readonly entry: RepositoryEntry
     readonly gitSettings: GitSettings
     readonly identity: RepositoryIdentityEditor
+    /** The active repository's Workspace Columns. */
+    readonly columns: BranchWorkspace
     /** Loads the app state; also retries after a failed start. */
     start(): Promise<void>
     toggleAppearance(): Promise<void>
@@ -50,14 +50,11 @@ export interface AppController extends Store<AppSnapshot> {
 
 export function createAppController(api: Api): AppController {
     let store = createStore<AppSnapshot>({ status: "starting" })
-    // A preview read overtaken by a later one is dropped.
-    let previewRead = 0
-    let previewRepositoryId: string | undefined
     let identitySave: ReturnType<typeof setTimeout> | undefined
     let unsubscribe = [
         api.onRepositoryChanged(change => {
             if (ready()?.workspace.activeRepositoryId == change.repositoryId)
-                void loadPreview()
+                void columns.refresh()
         }),
         api.onEntryProgress(progress => entry.updateProgress(progress)),
     ]
@@ -77,34 +74,14 @@ export function createAppController(api: Api): AppController {
         return workspace.repositories.find(repository => repository.id == workspace.activeRepositoryId)
     }
 
-    // Each workspace change that can move the active repository reloads its columns.
+    // Each workspace change that can move the active repository shows that repository's columns.
     function showWorkspace(workspace: Workspace) {
         update({ workspace })
-        void loadPreview()
-    }
-
-    // A refresh keeps the current columns on screen until the new ones arrive; another repository's don't.
-    async function loadPreview() {
-        let current = ready()
-        let active = current && activeRepository(current.workspace)
-        let read = ++previewRead
-        if (active?.status != "available") {
-            previewRepositoryId = undefined
-            update({ preview: undefined })
-            return
-        }
-        if (active.id != previewRepositoryId) {
-            previewRepositoryId = active.id
-            update({ preview: { status: "loading" } })
-        }
-        let preview: ColumnPreview
-        try {
-            preview = await readColumnPreview(api, active)
-        } catch (error) {
-            preview = { status: "failed", error: errorMessage(error) }
-        }
-        if (read == previewRead)
-            update({ preview })
+        let active = activeRepository(workspace)
+        if (active?.status == "available")
+            columns.activate(active.id)
+        else
+            columns.deactivate()
     }
 
     async function whileOpening(action: () => Promise<void>) {
@@ -131,6 +108,32 @@ export function createAppController(api: Api): AppController {
         commit: (id, chosen) => controller.customizeRepository(id, chosen),
     })
 
+    let columns = createBranchWorkspace({
+        api,
+        notify,
+        workspace: () => ready()?.workspace,
+        saveColumns: (repositoryId, layout) => saveRepository(repositoryId, layout),
+        checkMissing: async repositoryId => {
+            let { workspace } = await api.getState()
+            if (workspace.repositories.some(repository => repository.id == repositoryId && repository.status == "missing"))
+                showWorkspace(workspace)
+        },
+    })
+
+    async function saveRepository(repositoryId: string, layout: { columns: WorkspaceColumn[]; focusedColumnId?: string; layoutInitialized: boolean }) {
+        let current = ready()
+        if (!current)
+            return
+        let repositories = current.workspace.repositories.map(repository => repository.id == repositoryId ? { ...repository, ...layout } : repository)
+        let workspace = { ...current.workspace, repositories }
+        update({ workspace })
+        try {
+            update({ workspace: await api.updateWorkspace(workspace) })
+        } catch (error) {
+            notify({ code: "workspace.write-failed", message: errorMessage(error) })
+        }
+    }
+
     async function saveWorkspace() {
         let current = ready()
         if (!current)
@@ -148,6 +151,7 @@ export function createAppController(api: Api): AppController {
         entry,
         gitSettings,
         identity,
+        columns,
 
         async start() {
             store.publish({ status: "starting" })
@@ -157,7 +161,7 @@ export function createAppController(api: Api): AppController {
                 store.publish({ status: "ready", appearance: state.appearance, workspace: state.workspace, opening: false })
                 if (state.workspace.persistenceError?.code == "workspace.partial")
                     notify({ code: state.workspace.persistenceError.code, message: state.workspace.persistenceError.message })
-                void loadPreview()
+                showWorkspace(state.workspace)
             } catch (error) {
                 store.publish({ status: "failed", error: errorMessage(error) })
             }

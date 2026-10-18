@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { Archive, ArrowDownToLine, Ellipsis, ExternalLink, FaceSlightlySmiling, Folder, GitBranch, type IconNode, Image, ImagePlus, ListTree, Maximize2, Minus, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Redo2, Search, SlidersHorizontal, Sun, Type, Undo2, X } from "lucide"
+import { Archive, ArrowDownToLine, ChevronsLeft, ChevronsRight, Ellipsis, ExternalLink, FaceSlightlySmiling, Folder, GitBranch, GitCompareArrows, type IconNode, Image, ImagePlus, ListTree, Maximize2, Minimize2, Minus, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Redo2, Search, SlidersHorizontal, Sun, TriangleAlert, Type, Undo2, X } from "lucide"
 import { createElement } from "react"
 import { lucideIcon } from "./ui/icons"
 
@@ -24,6 +24,11 @@ export let SettingsIcon = lucideIcon(SlidersHorizontal, "sliders-horizontal")
 export let SunIcon = lucideIcon(Sun, "sun")
 export let UndoIcon = lucideIcon(Undo2, "undo-2")
 export let CloseIcon = lucideIcon(X, "x")
+export let CollapseColumnIcon = lucideIcon(ChevronsLeft, "chevrons-left")
+export let ExpandColumnIcon = lucideIcon(ChevronsRight, "chevrons-right")
+export let RestoreIcon = lucideIcon(Minimize2, "minimize-2")
+export let WarningIcon = lucideIcon(TriangleAlert, "triangle-alert")
+export let CompareIcon = lucideIcon(GitCompareArrows, "git-compare-arrows")
 export let IconTypeIcon = lucideIcon(Image, "image")
 export let EmojiTypeIcon = lucideIcon(FaceSlightlySmiling, "face-slightly-smiling")
 export let MonogramTypeIcon = lucideIcon(Type, "type")
