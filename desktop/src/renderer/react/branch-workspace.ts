@@ -1,5 +1,5 @@
-import type { BranchGraph, BranchGraphBranchNode, BranchGraphWorktree, BranchHistoryCommit, ComparisonRef, DiffLayout, RecoveryRequest, Workspace, WorkspaceColumn, WorktreeRecovery } from "@laneway/shared"
-import { type ComparisonColumnNode, comparisonNode } from "../src/inspection/comparison-columns"
+import type { BranchGraph, BranchGraphBranchNode, BranchGraphWorktree, ComparisonRef, DiffLayout, RecoveryRequest, Workspace, WorkspaceColumn, WorktreeRecovery } from "@laneway/shared"
+import { comparisonColumnId, type ComparisonColumnNode, comparisonNode, renameComparisonRef } from "../src/inspection/comparison-columns"
 import { columnWorktree, reconcileWorktreeColumns, recoveryColumnId, recoveryWorkspaceColumn, workspaceGraph } from "../src/worktrees/worktree-columns"
 import type { ColumnInspection, Inspection } from "./inspection"
 import { errorMessage, type Notice } from "./notice"
@@ -33,11 +33,6 @@ export type ColumnView = ColumnNode & {
     worktree?: BranchGraphWorktree
 }
 
-/** A branch column's recent commits, which it shows until the Commit Trail moves (migration step 5). */
-export interface ColumnContents {
-    commits?: BranchHistoryCommit[]
-}
-
 export interface ColumnsSnapshot {
     repositoryId?: string
     graph?: BranchGraph
@@ -52,7 +47,8 @@ export interface ColumnsSnapshot {
     recoveryErrors: Record<string, string>
     /** An interrupted worktree removal waits to be resolved, so local operations wait too. */
     blocked: boolean
-    contents: Record<string, ColumnContents>
+    /** The column last opened by an operation, which the view brings into view and focuses; `serial` tells repeats apart. */
+    revealed?: { id: string; serial: number }
 }
 
 export interface BranchWorkspace extends Store<ColumnsSnapshot> {
@@ -66,6 +62,13 @@ export interface BranchWorkspace extends Store<ColumnsSnapshot> {
      */
     mutating(busy: boolean): void
     focus(id: string): void
+    /** Opens a column, or expands it if it is collapsed, and brings it into view with focus. */
+    open(id: string): void
+    /**
+     * Follows a branch rename: its column, and any comparison naming it, keep their place, width, and state
+     * under the new name. The saved layout follows at once, so the next read reconciles against it.
+     */
+    renamed(oldRef: string, newRef: string): void
     /** Collapses or expands a column. */
     toggleCollapsed(id: string): void
     /** A worktree's column collapses instead, as it stays while the worktree does. */
@@ -90,6 +93,8 @@ interface RepositoryColumns {
     recoveryErrors: Record<string, string>
     loading: boolean
     refreshing: boolean
+    /** The read under way, which another read waits for. */
+    reading?: Promise<void>
     error?: string
     openedIds: string[]
     widths: Record<string, number>
@@ -102,7 +107,7 @@ interface RepositoryColumns {
     dragOrigin?: string[]
     /** The remote's default branch has been asked for once, after the first read. */
     remoteRefreshed: boolean
-    contents: Record<string, ColumnContents>
+    revealed?: { id: string; serial: number }
 }
 
 interface BranchWorkspaceOptions {
@@ -119,7 +124,7 @@ interface BranchWorkspaceOptions {
 
 /** The active repository's Workspace Columns: which are open and how they are laid out, read from its Branch Graph. */
 export function createBranchWorkspace({ api, notify, inspection, workspace, saveColumns, checkMissing }: BranchWorkspaceOptions): BranchWorkspace {
-    let store = createStore<ColumnsSnapshot>({ loading: false, columns: [], recoveryErrors: {}, blocked: false, contents: {} })
+    let store = createStore<ColumnsSnapshot>({ loading: false, columns: [], recoveryErrors: {}, blocked: false })
     let states = new Map<string, RepositoryColumns>()
     let activeId: string | undefined
     // A disk change that lands mid-read is replayed once that read settles.
@@ -144,7 +149,6 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
                 comparisons: Object.fromEntries(
                     columns.flatMap(column => column.kind == "comparison" ? [[column.id, { from: column.from, to: column.to }]] : []),
                 ),
-                contents: {},
                 remoteRefreshed: false,
             }
             states.set(repositoryId, state)
@@ -160,16 +164,22 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
     function publish() {
         let state = activeId ? stateFor(activeId) : undefined
         let columns = activeId && state ? columnViews(activeId, state) : []
-        // The inspection keeps files for exactly the columns on screen.
+        // The inspection keeps files and commits for exactly the columns on screen.
         if (activeId && state?.graph) {
             inspection.retain(
                 activeId,
-                columns.map(view => ({ id: view.id, worktreePath: view.worktree?.path, worktreeMissing: view.worktree?.missing })),
+                columns.map(view => ({
+                    id: view.id,
+                    worktreePath: view.worktree?.path,
+                    worktreeMissing: view.worktree?.missing,
+                    branch: view.kind == "branch" ? view.branch : undefined,
+                })),
+                workspaceGraph(state.graph),
             )
         }
         store.publish(
             !activeId || !state
-                ? { loading: false, columns: [], recoveryErrors: {}, blocked: false, contents: {} }
+                ? { loading: false, columns: [], recoveryErrors: {}, blocked: false }
                 : {
                     repositoryId: activeId,
                     graph: state.graph,
@@ -181,7 +191,7 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
                     recoveryBusy: state.recoveryBusy,
                     recoveryErrors: state.recoveryErrors,
                     blocked: state.recoveries.length > 0,
-                    contents: state.contents,
+                    revealed: state.revealed,
                 },
         )
     }
@@ -265,12 +275,31 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
         await saveColumns(repositoryId, { columns, focusedColumnId: state.focusedId, layoutInitialized })
     }
 
-    async function read(repositoryId: string, quiet: boolean, refreshRemote = false) {
+    // A quiet read asked for mid-read is replayed once that read settles. Any other waits for it and then reads,
+    // so an operation's own refresh always sees what the operation did.
+    async function read(repositoryId: string, quiet: boolean, refreshRemote = false): Promise<void> {
         let state = stateFor(repositoryId)
-        if (state.loading || state.refreshing) {
-            changedWhileReading ||= quiet
-            return
+        if (state.reading) {
+            if (quiet) {
+                changedWhileReading = true
+                return
+            }
+            await state.reading
+            return read(repositoryId, quiet, refreshRemote)
         }
+        state.reading = readNow(repositoryId, state, quiet, refreshRemote)
+        try {
+            await state.reading
+        } finally {
+            state.reading = undefined
+        }
+        if (changedWhileReading && repositoryId == activeId) {
+            changedWhileReading = false
+            void read(repositoryId, true)
+        }
+    }
+
+    async function readNow(repositoryId: string, state: RepositoryColumns, quiet: boolean, refreshRemote: boolean) {
         let changed = !quiet || state.error != undefined
         state.error = undefined
         if (state.graph)
@@ -289,7 +318,6 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
                 changed ||= JSON.stringify(state.graph) != JSON.stringify(result.graph) || JSON.stringify(state.recoveries) != JSON.stringify(recoveries)
                 let layoutInitialized = applyGraph(repositoryId, state, result.graph, recoveries)
                 await persist(repositoryId, layoutInitialized)
-                changed = await readContents(repositoryId, state) || changed
             } else if (result.error.code != "git.cancelled") {
                 changed = true
                 await checkMissing(repositoryId)
@@ -305,10 +333,6 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
             state.refreshing = false
             if (changed && repositoryId == activeId)
                 publish()
-            if (changedWhileReading && repositoryId == activeId) {
-                changedWhileReading = false
-                void read(repositoryId, true)
-            }
         }
     }
 
@@ -374,34 +398,6 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
         return layoutInitialized
     }
 
-    async function readContents(repositoryId: string, state: RepositoryColumns) {
-        let views = columnViews(repositoryId, state).filter(view => view.kind == "branch")
-        let entries = await Promise.all(views.map(async (view): Promise<[string, ColumnContents]> => {
-            let contents: ColumnContents = {}
-            let reads: Promise<void>[] = []
-            if (view.kind == "branch") {
-                let branch = view.branch
-                let baseTips = branch.base.status == "known" ? [branch.base.tip] : branch.base.candidates.map(candidate => candidate.tip)
-                reads.push(
-                    api.readBranchHistory(repositoryId, {
-                        requestId: `columns:history:${view.id}`,
-                        branchRef: branch.preferredRef,
-                        tip: branch.tip,
-                        baseTips,
-                        remoteTips: state.graph!.remoteTips,
-                        limit: 50,
-                    }).then(result => void (contents.commits = result.ok ? result.page.commits : [])),
-                )
-            }
-            await Promise.all(reads)
-            return [view.id, contents]
-        }))
-        let contents = Object.fromEntries(entries)
-        let changed = JSON.stringify(contents) != JSON.stringify(state.contents)
-        state.contents = contents
-        return changed
-    }
-
     // The first read shows the local Branch Graph at once; the remote's default branch follows quietly.
     async function ensure(repositoryId: string) {
         let state = stateFor(repositoryId)
@@ -458,6 +454,56 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
         focus(id) {
             if (activeId && stateFor(activeId).focusedId != id)
                 change(activeId, state => state.focusedId = id)
+        },
+        open(id) {
+            change(activeId, state => {
+                if (!state.openedIds.includes(id))
+                    state.openedIds.push(id)
+                state.collapsedIds = state.collapsedIds.filter(candidate => candidate != id)
+                state.focusedId = id
+                state.widths[id] ??= defaultColumnWidth
+                state.maximizedId = undefined
+                state.revealed = { id, serial: (state.revealed?.serial ?? 0) + 1 }
+            })
+        },
+        renamed(oldRef, newRef) {
+            let repositoryId = activeId
+            if (!repositoryId)
+                return
+            let state = stateFor(repositoryId)
+            let ids = new Map([[`branch:${oldRef}`, `branch:${newRef}`]])
+            for (let [id, comparison] of Object.entries(state.comparisons)) {
+                let renamed = { from: renameComparisonRef(comparison.from, oldRef, newRef), to: renameComparisonRef(comparison.to, oldRef, newRef) }
+                let newId = comparisonColumnId(renamed.from, renamed.to)
+                if (newId != id) {
+                    delete state.comparisons[id]
+                    state.comparisons[newId] = renamed
+                    ids.set(id, newId)
+                }
+            }
+            let rename = (id: string) => ids.get(id) ?? id
+            state.openedIds = state.openedIds.map(rename)
+            state.collapsedIds = state.collapsedIds.map(rename)
+            state.focusedId = state.focusedId && rename(state.focusedId)
+            state.maximizedId = state.maximizedId && rename(state.maximizedId)
+            for (let [oldId, newId] of ids) {
+                state.widths[newId] = state.widths[oldId] ?? defaultColumnWidth
+                state.diffLayouts[newId] = state.diffLayouts[oldId] ?? "unified"
+            }
+            // Nothing shows until the next read brings the renamed branch; the saved layout must already name it.
+            let saved = savedRepository(repositoryId)
+            if (saved) {
+                let columns = saved.columns.map((column): WorkspaceColumn => {
+                    let id = rename(column.id)
+                    if (id == column.id)
+                        return column
+                    if (column.kind == "branch")
+                        return { ...column, id, ref: newRef }
+                    return column.kind == "comparison" ? { ...column, id, ...state.comparisons[id] } : column
+                })
+                let focusedColumnId = saved.focusedColumnId && rename(saved.focusedColumnId)
+                void saveColumns(repositoryId, { columns, focusedColumnId, layoutInitialized: saved.layoutInitialized })
+            }
         },
 
         toggleCollapsed,

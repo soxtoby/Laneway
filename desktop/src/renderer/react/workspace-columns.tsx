@@ -1,7 +1,8 @@
 /** @jsxImportSource react */
-import type { FileListView, WorktreeRecovery } from "@laneway/shared"
+import type { BranchGraph, FileListView, WorktreeRecovery } from "@laneway/shared"
 import clsx from "clsx"
-import { type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, useEffect, useRef } from "react"
+import { type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, useEffect, useMemo, useRef } from "react"
+import { workspaceGraph } from "../src/worktrees/worktree-columns"
 import type { AppController } from "./app-controller"
 import { type BranchWorkspace, type ColumnsSnapshot, type ColumnView, defaultColumnWidth, minimumColumnWidth, workingSummary } from "./branch-workspace"
 import { ColumnBody } from "./column-body"
@@ -21,8 +22,10 @@ export function WorkspaceColumns({ controller, fileListView }: { controller: App
     let snapshot = useSnapshot(columns)
     let inspected = useSnapshot(inspection)
     let dragging = useRef<{ id: string; dropped: boolean }>(undefined)
+    let graph = useMemo(() => snapshot.graph && workspaceGraph(snapshot.graph), [snapshot.graph])
     useRefreshes(columns)
     useDiscardUndo(inspection)
+    useReveal(snapshot.revealed)
 
     // Escape restores a maximized column's neighbours.
     useEffect(() => {
@@ -90,6 +93,7 @@ export function WorkspaceColumns({ controller, fileListView }: { controller: App
                         column={column}
                         snapshot={snapshot}
                         inspected={inspected.repositoryId == snapshot.repositoryId ? inspected : undefined}
+                        graph={graph!}
                         controller={controller}
                         fileListView={fileListView}
                         header={header}
@@ -114,11 +118,13 @@ interface HeaderDrag {
     end(): void
 }
 
-function ColumnFrame({ column, snapshot, inspected, controller, fileListView, header }: {
+function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListView, header }: {
     column: ColumnView
     snapshot: ColumnsSnapshot
     /** The active repository's files, once the inspection has them. */
     inspected?: InspectionSnapshot
+    /** The Branch Graph with each local branch as its own node, as the columns show them. */
+    graph: BranchGraph
     controller: AppController
     fileListView: FileListView
     header: HeaderDrag
@@ -126,8 +132,18 @@ function ColumnFrame({ column, snapshot, inspected, controller, fileListView, he
     let { columns } = controller
     let files = inspected?.columns[column.id]
     let maximized = snapshot.maximizedId == column.id
+    // F2 renames a branch column's branch and Delete deletes it, from anywhere in the column but a field.
     // Ctrl+Shift+< and > move the column; it keeps focus in its new place.
-    let move = (event: KeyboardEvent) => {
+    let keyDown = (event: KeyboardEvent) => {
+        let editing = event.target instanceof HTMLElement && event.target.closest("input, textarea, select")
+        if (column.kind == "branch" && (event.key == "F2" || event.key == "Delete") && !editing && !event.defaultPrevented) {
+            event.preventDefault()
+            if (event.key == "F2" && column.branch.localRefs.length > 0)
+                controller.branches.rename(snapshot.repositoryId!, column.branch)
+            else if (event.key == "Delete" && column.branch.localRefs.length > 0)
+                controller.branches.delete(snapshot.repositoryId!, column.branch)
+            return
+        }
         if (!event.ctrlKey || !event.shiftKey || (event.key != "<" && event.key != ">"))
             return
         event.preventDefault()
@@ -151,7 +167,7 @@ function ColumnFrame({ column, snapshot, inspected, controller, fileListView, he
             tabIndex={-1}
             style={column.collapsed || maximized ? undefined : { width: column.width }}
             onFocus={() => columns.focus(column.id)}
-            onKeyDown={move}
+            onKeyDown={keyDown}
         >
             {column.collapsed
                 ? (
@@ -208,11 +224,11 @@ function ColumnFrame({ column, snapshot, inspected, controller, fileListView, he
                             )
                             : (
                                 <ColumnBody
+                                    controller={controller}
+                                    repositoryId={snapshot.repositoryId!}
+                                    graph={graph}
                                     column={column}
-                                    contents={snapshot.contents[column.id]}
                                     inspected={files}
-                                    inspection={controller.inspection}
-                                    createComposer={path => controller.composer(snapshot.repositoryId!, column.id, path, snapshot.blocked)}
                                     blocked={snapshot.blocked}
                                     view={fileListView}
                                     onViewChange={view => void controller.setFileListView(view)}
@@ -356,6 +372,21 @@ function MissingWorktree({ path }: { path: string }) {
             <p>{path}</p>
         </section>
     )
+}
+
+// A column an operation opened, such as a newly created branch's, comes into view with focus once it shows,
+// after any dialog that opened it has returned focus.
+function useReveal(revealed?: { id: string; serial: number }) {
+    useEffect(() => {
+        if (!revealed)
+            return
+        let frame = requestAnimationFrame(() => {
+            let element = columnElement(revealed.id)
+            element?.focus({ preventScroll: true })
+            element?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" })
+        })
+        return () => cancelAnimationFrame(frame)
+    }, [revealed])
 }
 
 // A discard still showing its Undo notice takes Ctrl+Z; the Operation History's undo arrives in migration step 5.

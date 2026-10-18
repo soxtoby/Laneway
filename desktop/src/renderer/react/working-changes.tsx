@@ -262,7 +262,17 @@ function StashCard({ columnId, stash, inspected, inspection, view, root, actions
     let untrackedFiles = untracked ? inspected?.files[untracked] : undefined
     let message = stashMessage(stash)
     let list = (group: string, label: string, listed?: FilesState) => (
-        <FileList columnId={columnId} group={group} label={label} files={listed} inspected={inspected} inspection={inspection} view={view} root={root} />
+        <FileList
+            columnId={columnId}
+            group={group}
+            label={label}
+            files={listed}
+            inspected={inspected}
+            inspection={inspection}
+            view={view}
+            root={root}
+            empty="No changes in this stash"
+        />
     )
     return (
         <div className="branch-stash" data-expanded={open || undefined}>
@@ -312,10 +322,12 @@ interface FileListProps {
     /** Whether files can be chosen together for a bulk action. */
     selectable?: boolean
     menuItems?(file: ChangedFile): ReactNode
+    /** What an empty list says, such as "No changes in this stash". */
+    empty?: string
 }
 
 /** One list of a column's files, with its reading and failure states and, once files are chosen, how many. */
-function FileList({ columnId, group, label, files, inspected, inspection, view, root, selectable, menuItems }: FileListProps) {
+export function FileList({ columnId, group, label, files, inspected, inspection, view, root, selectable, menuItems, empty }: FileListProps) {
     if (!files)
         return null
     let listed = files.inventory?.files.filter(file => !file.ignored) ?? []
@@ -329,7 +341,7 @@ function FileList({ columnId, group, label, files, inspected, inspection, view, 
                     {files.error} <Button variant="quiet" onPress={() => inspection.retry(columnId, group)}>Retry</Button>
                 </p>
             )}
-            {!working && files.inventory && !listed.length && <p className="column-placeholder">No changes in this stash</p>}
+            {!working && files.inventory && !listed.length && <p className="column-placeholder">{empty}</p>}
             {listed.length > 0 && (
                 <FileTree
                     label={label}

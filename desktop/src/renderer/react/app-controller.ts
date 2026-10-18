@@ -1,11 +1,13 @@
-import type { Appearance, FileListView, OpenRepository, RepositoryIdentity, Workspace, WorkspaceColumn } from "@laneway/shared"
+import type { Appearance, BranchHistoryCommit, FileListView, OpenRepository, RepositoryIdentity, Workspace, WorkspaceColumn } from "@laneway/shared"
 import { type BranchWorkspace, createBranchWorkspace } from "./branch-workspace"
 import { type CommitComposer, createCommitComposer } from "./commit-composer"
 import { createGitSettings, type GitSettings } from "./git-settings"
 import { createInspection, type Inspection } from "./inspection"
+import { createLocalBranches, type LocalBranches } from "./local-branches"
 import { errorMessage, type Notice } from "./notice"
 import { createRepositoryEntry, type RepositoryEntry } from "./repository-entry"
 import { createRepositoryIdentityEditor, type RepositoryIdentityEditor } from "./repository-identity"
+import { createReword, type Reword } from "./reword"
 import { createStore, type Store } from "./store"
 
 type Api = Window["laneway"]
@@ -32,8 +34,10 @@ export interface AppController extends Store<AppSnapshot> {
     readonly identity: RepositoryIdentityEditor
     /** The active repository's Workspace Columns. */
     readonly columns: BranchWorkspace
-    /** The files each column shows. */
+    /** The files and commits each column shows. */
     readonly inspection: Inspection
+    /** Creating, renaming, and deleting local branches. */
+    readonly branches: LocalBranches
     /** Loads the app state; also retries after a failed start. */
     start(): Promise<void>
     toggleAppearance(): Promise<void>
@@ -41,6 +45,8 @@ export interface AppController extends Store<AppSnapshot> {
     setFileListView(view: FileListView): Promise<void>
     /** Commits and stashes a column's worktree; an operation refreshes the column, and the Branch Graph when it changed. */
     composer(repositoryId: string, columnId: string, path: string, blocked: boolean): CommitComposer
+    /** Rewords a commit on a local branch; `close` runs once it is rewritten. */
+    reword(repositoryId: string, branchRef: string, commit: BranchHistoryCommit, close: () => void): Reword
     openRepository(): Promise<void>
     selectRepository(id: string): Promise<void>
     closeRepository(id: string): Promise<void>
@@ -132,6 +138,25 @@ export function createAppController(api: Api): AppController {
         },
     })
 
+    // History rewrites leave chosen files stale and move commits that the graph and every worktree show.
+    async function rewritten() {
+        inspection.rewritten()
+        await columns.refresh(false)
+        inspection.refreshWorking()
+    }
+
+    let branches = createLocalBranches({
+        api,
+        mutating: busy => columns.mutating(busy),
+        completed: async (_repositoryId, request) => {
+            if (request.action == "branch-rename")
+                columns.renamed(`refs/heads/${request.name}`, `refs/heads/${request.newName}`)
+            await columns.refresh(false)
+            if (request.action == "branch-create")
+                columns.open(`branch:refs/heads/${request.name}`)
+        },
+    })
+
     async function saveRepository(repositoryId: string, layout: { columns: WorkspaceColumn[]; focusedColumnId?: string; layoutInitialized: boolean }) {
         let current = ready()
         if (!current)
@@ -165,6 +190,7 @@ export function createAppController(api: Api): AppController {
         identity,
         columns,
         inspection,
+        branches,
 
         async start() {
             store.publish({ status: "starting" })
@@ -215,6 +241,19 @@ export function createAppController(api: Api): AppController {
                     if (refreshGraph)
                         await columns.refresh(false)
                 },
+            }),
+
+        reword: (repositoryId, branchRef, commit, close) =>
+            createReword({
+                api,
+                repositoryId,
+                branch: branchRef,
+                commit,
+                selectedRemote: columns.snapshot().graph?.selectedRemote,
+                notify,
+                mutating: busy => columns.mutating(busy),
+                changed: rewritten,
+                close,
             }),
 
         openRepository: () =>

@@ -53,11 +53,15 @@ export function DenseTreeItem({ className, menu, content, children, ...props }: 
     )
 }
 
-function useRowMenu(menu?: RowMenu) {
-    let row = useRef<HTMLDivElement>(null)
+/**
+ * A row's context menu: `openMenu` handles the row's `contextmenu` event, and `actions` draws its hover menu
+ * button from whether the row is hovered or holds keyboard focus.
+ */
+export function useRowMenu<T extends HTMLElement = HTMLDivElement>(menu?: RowMenu) {
+    let row = useRef<T>(null)
     let openContextMenu = useContextMenu()
 
-    let openMenu = (event: MouseEvent<HTMLDivElement>) => {
+    let openMenu = (event: MouseEvent<T>) => {
         // Right-clicks inside the row's hover menu reach here through React's portal bubbling.
         if (!menu || !row.current?.contains(event.target as Node))
             return

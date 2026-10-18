@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
-import { type FormEvent, type ReactNode, useEffect, useRef } from "react"
+import type { FormEvent, ReactNode } from "react"
+import { FormError } from "./form-error"
 import { type CloneForm, entryErrorMessage, type EntryOperation, type InitializeForm, type RepositoryEntry } from "./repository-entry"
 import { Button } from "./ui/Button"
 import { Dialog, Heading } from "./ui/Dialog"
@@ -86,7 +87,7 @@ function CloneFields({ entry, clone, operation }: { entry: RepositoryEntry; clon
                 spellCheck="false"
             />
             {clone.progress && <ProgressBar label={clone.progress} isIndeterminate />}
-            <EntryError message={clone.error && entryErrorMessage(clone.error)} />
+            <FormError message={clone.error && entryErrorMessage(clone.error)} />
             <div className="dialog-actions">
                 <Button variant="secondary" isDisabled={operation == "cancelling"} onPress={() => void entry.dismiss()}>
                     {operation == "cancelling" ? "Stopping…" : busy ? "Cancel clone" : "Cancel"}
@@ -135,25 +136,13 @@ function InitializeFields({ entry, initialize, operation }: { entry: RepositoryE
                 spellCheck="false"
             />
             <p className="field-note">Existing files stay untouched. Git creates only its repository data.</p>
-            <EntryError message={initialize.error && entryErrorMessage(initialize.error)} />
+            <FormError message={initialize.error && entryErrorMessage(initialize.error)} />
             <div className="dialog-actions">
                 <Button variant="secondary" isDisabled={busy} onPress={() => void entry.dismiss()}>Cancel</Button>
                 <Button type="submit" variant="accent" isDisabled={busy}>Initialize and open</Button>
             </div>
         </Form>
     )
-}
-
-/** A failed clone or initialize, focused when it appears so it is read out. */
-function EntryError({ message }: { message?: string }) {
-    let alert = useRef<HTMLDivElement>(null)
-    useEffect(() => {
-        if (message)
-            alert.current?.focus()
-    }, [message])
-    if (!message)
-        return null
-    return <div ref={alert} className="entry-error" role="alert" tabIndex={-1}>{message}</div>
 }
 
 function submitWith(submit: () => Promise<void>) {

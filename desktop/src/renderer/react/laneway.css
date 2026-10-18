@@ -902,54 +902,7 @@
     white-space: nowrap;
 }
 
-/* Branch heading */
-
-.branch-header {
-    height: var(--spacing-8);
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-2);
-    padding-inline: var(--spacing-2) var(--spacing-1);
-    border-radius: var(--radius);
-    background: var(--tint-100);
-    border: 0.5px solid var(--tint-300);
-
-    > svg {
-        width: var(--spacing-4);
-        height: var(--spacing-4);
-        color: var(--tint-1100);
-    }
-}
-
-.branch-name {
-    font-weight: 600;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.badge {
-    flex: 0 0 auto;
-    padding: 0 var(--spacing-2);
-    border-radius: 999px;
-    font-size: var(--font-size-sm);
-    line-height: 20px;
-    background: var(--gray-200);
-    color: var(--text-color);
-
-    &[data-variant="ahead"] {
-        background: var(--highlight-background);
-        color: var(--highlight-foreground);
-    }
-}
-
-/* Dense lists: the File List and Commit Trail share one row. */
-
-.dense-list {
-    display: flex;
-    flex-direction: column;
-    outline: none;
-}
+/* Dense rows, shared by file lists and the repository panel. */
 
 .dense-row {
     flex: 0 0 auto;
@@ -1032,54 +985,325 @@
     color: var(--text-color-placeholder);
 }
 
-.commit-content {
-    grid-template-columns: var(--spacing-7) minmax(0, 1fr) auto var(--spacing-6);
-    padding-inline-start: 0;
+/* Commit Trail: the column's branch, then each base below it, as cards of commits on one line. */
+
+.commit-trail {
+    display: grid;
+    gap: var(--spacing-2);
 }
 
-.commit-time {
-    color: var(--text-color-placeholder);
-    font-size: var(--font-size-sm);
+.stack-branch {
+    overflow: clip;
+    border: 1px solid var(--branch-border);
+    border-radius: var(--radius);
+    background: var(--gray-50);
+
+    /* A branch whose remote already has its tip takes the remote's tone. */
+    &.remote {
+        --branch-background: var(--remote-background);
+        --branch-background-hover: var(--remote-background-hover);
+        --branch-border: var(--remote-border);
+        --branch-color: var(--remote-color);
+    }
 }
 
-.graph-cell {
+.stack-heading {
+    min-height: 34px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    background: var(--branch-background);
+    font-size: var(--font-size);
+    font-weight: 600;
+
+    &:has(.stack-toggle[data-hovered]) {
+        background: var(--branch-background-hover);
+    }
+
+    &:has(.stack-toggle[data-focus-visible]) {
+        outline: 2px solid var(--focus-ring-color);
+        outline-offset: -2px;
+    }
+
+    .stack-branch:has(> .stack-commits) > & {
+        border-bottom: 1px solid var(--border-color);
+    }
+}
+
+.stack-title,
+.stack-toggle {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: 0 var(--spacing-3);
+}
+
+.stack-toggle {
+    padding-inline-start: var(--spacing-2);
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    outline: none;
+
+    > .toggle-chevron {
+        flex: 0 0 auto;
+        width: var(--spacing-3);
+        height: var(--spacing-3);
+    }
+}
+
+.stack-icon,
+.branch-conflict {
+    flex: 0 0 auto;
+    width: var(--spacing-4);
+    height: var(--spacing-4);
+}
+
+.stack-icon {
+    color: var(--branch-color);
+}
+
+.branch-conflict {
+    color: var(--warning-color);
+}
+
+.stack-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.stack-commits > .react-aria-Button {
+    height: var(--spacing-7);
+    margin: var(--spacing-1) var(--spacing-2);
+}
+
+/* A commit: its node on the branch's line, its subject, and once unfolded its message and files. */
+.trail-commit {
     position: relative;
-    align-self: stretch;
-}
 
-.graph-line {
-    position: absolute;
-    left: 13px;
-    width: 2px;
-    top: 0;
-    bottom: 0;
-    background: var(--graph-line);
-
-    &[data-first] {
-        top: 50%;
-    }
-
-    &[data-last] {
-        bottom: 50%;
+    /* The line runs over row tints and under the nodes. */
+    &::before {
+        content: "";
+        position: absolute;
+        z-index: 1;
+        top: 0;
+        bottom: 0;
+        left: 15px;
+        width: 2px;
+        background: var(--graph-line);
     }
 }
 
-.graph-dot {
+.commit-row {
+    position: relative;
+    box-sizing: border-box;
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-1);
+    padding-inline: 30px var(--spacing-1);
+    border-bottom: 1px solid var(--border-color);
+
+    &:hover {
+        background: var(--highlight-hover);
+    }
+
+    &:has(.commit-toggle[data-focus-visible]) {
+        outline: 2px solid var(--focus-ring-color);
+        outline-offset: -2px;
+    }
+
+    &:is(:hover, :focus-within) .row-actions {
+        opacity: 1;
+    }
+
+    .trail-commit[data-expanded] > & {
+        background: var(--branch-background);
+    }
+}
+
+.commit-node {
     position: absolute;
-    left: 8px;
-    top: 50%;
-    translate: 0 -50%;
+    z-index: 2;
+    top: 10px;
+    left: 10px;
     width: 12px;
     height: 12px;
     box-sizing: border-box;
-    border-radius: 50%;
     border: 2px solid var(--graph-dot);
+    border-radius: 50%;
     background: var(--gray-50);
 
-    &[data-head] {
-        border-color: var(--highlight-background-pressed);
-        background: var(--highlight-background);
+    .trail-commit[data-remote] & {
+        border-color: var(--remote-color);
     }
+
+    .trail-commit[data-expanded] & {
+        background: var(--graph-dot);
+    }
+
+    .trail-commit[data-remote][data-expanded] & {
+        background: var(--remote-color);
+    }
+}
+
+.commit-toggle {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 31px;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    outline: none;
+
+    /* An unfolded commit shows its whole subject. */
+    .trail-commit[data-expanded] & {
+        padding-block: var(--spacing-1);
+
+        .commit-subject {
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+    }
+}
+
+.commit-subject {
+    min-width: 0;
+}
+
+.message-indicator {
+    flex: 0 0 auto;
+    width: var(--spacing-3);
+    height: var(--spacing-3);
+    color: var(--text-color-placeholder);
+}
+
+/* An unfolded commit's message and files sit in a tray beside the line. */
+.commit-files {
+    padding: var(--spacing-1) var(--spacing-1) var(--spacing-1) 26px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--tray-background);
+}
+
+.commit-message {
+    display: grid;
+    grid-template-columns: var(--spacing-4) minmax(0, 1fr);
+    align-items: start;
+    padding: var(--spacing-1) var(--spacing-2) var(--spacing-1) 0;
+    font-size: var(--font-size-sm);
+}
+
+.commit-message-toggle {
+    grid-column: 1 / -1;
+    min-width: 0;
+    min-height: 20px;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-1);
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-color-placeholder);
+    font: inherit;
+    text-align: start;
+    outline: none;
+
+    &[aria-expanded="true"] {
+        grid-column: 1;
+    }
+
+    &[data-hovered] {
+        color: var(--text-color);
+    }
+
+    &[data-focus-visible] {
+        outline: 2px solid var(--focus-ring-color);
+    }
+
+    > .toggle-chevron {
+        flex: 0 0 auto;
+        width: var(--spacing-3);
+        height: var(--spacing-3);
+    }
+}
+
+.commit-message-preview {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.commit-message-body {
+    grid-column: 2;
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    user-select: text;
+}
+
+/* A merge commit's parent, or an ambiguous branch's base, chosen beside its label. */
+.trail-choice.react-aria-Select {
+    width: auto;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    margin: var(--spacing-1) var(--spacing-2);
+    font-size: var(--font-size-sm);
+
+    .react-aria-Label {
+        flex: 0 0 auto;
+    }
+
+    .react-aria-Button {
+        flex: 1 1 auto;
+        height: var(--spacing-7);
+    }
+}
+
+/* Rewording edits the message in place, with the commit composer's fields. */
+.reword-form {
+    display: grid;
+    gap: var(--spacing-2);
+    padding: var(--spacing-2) var(--spacing-2) var(--spacing-2) 30px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--changes-background);
+
+    .react-aria-TextField {
+        width: 100%;
+    }
+
+    .react-aria-TextArea {
+        min-height: 72px;
+        resize: vertical;
+    }
+
+    .react-aria-Button {
+        height: var(--spacing-7);
+    }
+
+    p {
+        margin: 0;
+        overflow-wrap: anywhere;
+    }
+}
+
+.reword-warning {
+    color: var(--warning-color);
+    font-weight: 600;
 }
 
 /* Repository panel */
@@ -1608,12 +1832,12 @@
     .react-aria-ProgressBar {
         width: auto;
     }
+}
 
-    .entry-error {
-        max-width: none;
-        white-space: pre-line;
-        overflow-wrap: anywhere;
-    }
+.form-error {
+    max-width: none;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
 }
 
 .field-with-action {

@@ -1,4 +1,4 @@
-import type { ChangedFile, ChangesInventory, DiffSource } from "@laneway/shared"
+import type { BranchGraph, BranchGraphBranchNode, BranchHistoryPage, ChangedFile, ChangesInventory, DiffSource } from "@laneway/shared"
 import { createDiscards } from "../src/inspection/discard"
 import { errorMessage, type Notice } from "./notice"
 import { createStore, type Store } from "./store"
@@ -11,8 +11,19 @@ export interface FilesState {
     inventory?: ChangesInventory
     loading: boolean
     error?: string
-    /** Whether the list shows, for lists that fold away such as a stash's. */
+    /** Whether the list shows, for lists that fold away such as a stash's or a commit's. */
     open: boolean
+}
+
+/** A branch's commits in a column's Commit Trail, read a page at a time. */
+export interface HistoryState {
+    /** The branch tip, bases, and remote tips it was read for; when they move, it is read again. */
+    key: string
+    loading: boolean
+    /** Whether its commits show; the column's own branch always shows them. */
+    open: boolean
+    page?: BranchHistoryPage
+    error?: string
 }
 
 export interface ColumnInspection {
@@ -22,6 +33,10 @@ export interface ColumnInspection {
     /** Whole files chosen for a bulk action, as `group:path`; they all belong to one list. */
     selected: string[]
     showIgnored: boolean
+    /** Histories by branch ID: the column's branch, and the bases below it that have been unfolded. */
+    history: Record<string, HistoryState>
+    /** The base chosen for a branch whose base is ambiguous, by branch ID. */
+    bases: Record<string, string>
 }
 
 export interface InspectionSnapshot {
@@ -35,11 +50,16 @@ export interface InspectedColumn {
     /** The worktree whose Working Changes the column shows; absent or missing means none are read. */
     worktreePath?: string
     worktreeMissing?: boolean
+    /** A branch column's branch, whose history the column shows. */
+    branch?: BranchGraphBranchNode
 }
 
 export interface Inspection extends Store<InspectionSnapshot> {
-    /** Keeps lists for these columns of the active repository, reading Working Changes for any new worktree. */
-    retain(repositoryId: string, columns: InspectedColumn[]): void
+    /**
+     * Keeps lists for these columns of the active repository, reading Working Changes for any new worktree and
+     * the history of any new branch; histories whose branch moved in `graph` are read again.
+     */
+    retain(repositoryId: string, columns: InspectedColumn[], graph: BranchGraph): void
     /** Reads every Working Changes list again, keeping each on screen until a different one arrives. */
     refreshWorking(): void
     /** Reads a column's Working Changes again; `quiet` keeps the current list until a different one arrives. */
@@ -48,6 +68,18 @@ export interface Inspection extends Store<InspectionSnapshot> {
     retry(columnId: string, group: string): void
     /** Shows or hides a stash's files, reading them, and its untracked files, the first time. */
     toggleStash(columnId: string, objectId: string): void
+    /** Reads a branch's history in the column again, or its next page. */
+    readHistory(columnId: string, branchId: string, more?: boolean): void
+    /** Shows or hides a base branch's history below the column's branch. */
+    toggleHistory(columnId: string, branchId: string): void
+    /** Shows or hides a commit's files, reading them the first time. */
+    toggleCommit(columnId: string, objectId: string): void
+    /** Compares a merge commit with another of its parents. */
+    chooseParent(columnId: string, objectId: string, parentId: string): void
+    /** Continues an ambiguous branch's history into one of its candidate bases, or none. */
+    chooseBase(columnId: string, branchId: string, baseId?: string): void
+    /** Drops choices that rewritten history made stale. */
+    rewritten(): void
     /** Toggles whole files together: all already chosen clears them, otherwise all become chosen. */
     select(columnId: string, group: string, files: ChangedFile[]): void
     clearSelection(columnId: string): void
@@ -59,9 +91,14 @@ export interface Inspection extends Store<InspectionSnapshot> {
     undoDiscard(): boolean
 }
 
+interface History extends HistoryState {
+    generation: number
+}
+
 interface ColumnState extends ColumnInspection {
     id: string
     generations: Record<string, number>
+    history: Record<string, History>
 }
 
 interface InspectionOptions {
@@ -69,10 +106,11 @@ interface InspectionOptions {
     notify(notice: Notice): () => void
 }
 
-/** The files each Workspace Column shows, read from Git as the column needs them. */
+/** The files and commits each Workspace Column shows, read from Git as the column needs them. */
 export function createInspection({ api, notify }: InspectionOptions): Inspection {
     let store = createStore<InspectionSnapshot>({ columns: {} })
     let repositories = new Map<string, Map<string, ColumnState>>()
+    let graphs = new Map<string, BranchGraph>()
     let activeId: string | undefined
     let discards = createDiscards({
         api,
@@ -95,9 +133,17 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
                     files: { ...state.files },
                     selected: state.selected,
                     showIgnored: state.showIgnored,
+                    history: { ...state.history },
+                    bases: { ...state.bases },
                 }]),
             ),
         })
+    }
+
+    // A column closed while its read was under way no longer shows anything.
+    function publishFor(repositoryId: string, state: ColumnState) {
+        if (repositoryId == activeId && repositories.get(repositoryId)?.get(state.id) == state)
+            publish()
     }
 
     function columnState(columnId: string) {
@@ -113,9 +159,9 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
         let generation = (state.generations[group] ?? 0) + 1
         state.generations[group] = generation
         let keep = quiet && files.inventory != undefined && JSON.stringify(files.source) == JSON.stringify(source)
-        state.files[group] = keep ? files : { ...files, source, loading: true, error: undefined }
-        if (!keep && repositoryId == activeId)
-            publish()
+        state.files[group] = keep ? files : { ...files, source, loading: true, error: undefined, open: true }
+        if (!keep)
+            publishFor(repositoryId, state)
 
         let next: FilesState
         try {
@@ -149,8 +195,47 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
                 }
             }
         }
-        if (repositoryId == activeId)
-            publish()
+        publishFor(repositoryId, state)
+    }
+
+    async function readHistory(repositoryId: string, state: ColumnState, branch: BranchGraphBranchNode, more = false) {
+        let graph = graphs.get(repositoryId)
+        if (!graph)
+            return
+        let key = historyKey(graph, branch)
+        let current = state.history[branch.id]
+        if (!current || current.key != key)
+            current = { key, loading: false, open: true, generation: current?.generation ?? 0 }
+        if (current.loading)
+            return
+        let generation = current.generation + 1
+        state.history[branch.id] = { ...current, open: true, loading: true, error: undefined, generation }
+        publishFor(repositoryId, state)
+
+        let update: Partial<History>
+        try {
+            let result = await api.readBranchHistory(repositoryId, {
+                requestId: `inspection:${state.id}:history:${branch.id}`,
+                branchRef: branch.preferredRef,
+                tip: branch.tip,
+                baseTips: baseTips(branch),
+                remoteTips: graph.remoteTips,
+                limit: 50,
+                ...(more ? { offset: current.page?.nextOffset } : {}),
+            })
+            if (state.history[branch.id]?.generation != generation)
+                return
+            if (!result.ok)
+                throw new Error(result.error.message)
+            let earlier = more ? current.page?.commits ?? [] : []
+            update = { page: { ...result.page, commits: [...earlier, ...result.page.commits] } }
+        } catch (error) {
+            if (state.history[branch.id]?.generation != generation)
+                return
+            update = { error: errorMessage(error) }
+        }
+        state.history[branch.id] = { ...state.history[branch.id]!, ...update, loading: false }
+        publishFor(repositoryId, state)
     }
 
     function discardTarget(columnId: string, group: string, file: ChangedFile) {
@@ -181,14 +266,23 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
         return Promise.resolve()
     }
 
+    function branchFor(branchId: string) {
+        return activeId ? graphs.get(activeId)?.branches.find(branch => branch.id == branchId) : undefined
+    }
+
+    function forget(state: ColumnState, group: string) {
+        state.selected = state.selected.filter(id => !id.startsWith(`${group}:`))
+    }
+
     return {
         subscribe: store.subscribe,
         snapshot: store.snapshot,
 
-        retain(repositoryId, columns) {
+        retain(repositoryId, columns, graph) {
             // The Workspace Columns retain on every change of theirs, so only a change here publishes.
             let changed = activeId != repositoryId
             activeId = repositoryId
+            graphs.set(repositoryId, graph)
             let states = repositories.get(repositoryId) ?? new Map<string, ColumnState>()
             repositories.set(repositoryId, states)
             for (let [id, state] of states) {
@@ -202,12 +296,25 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             for (let column of columns) {
                 let worktreePath = column.worktreeMissing ? undefined : column.worktreePath
                 let state = states.get(column.id)
-                if (state && state.worktreePath == worktreePath)
+                if (!state || state.worktreePath != worktreePath) {
+                    state = { id: column.id, worktreePath, files: {}, selected: [], showIgnored: false, history: {}, bases: {}, generations: {} }
+                    states.set(column.id, state)
+                    changed = true
+                    void readWorkingFor(repositoryId, state, false)
+                    if (column.branch)
+                        void readHistory(repositoryId, state, column.branch)
                     continue
-                state = { id: column.id, worktreePath, files: {}, selected: [], showIgnored: false, generations: {} }
-                states.set(column.id, state)
-                changed = true
-                void readWorkingFor(repositoryId, state, false)
+                }
+                // A moved branch, base, or remote tip shows different commits.
+                for (let [branchId, current] of Object.entries(state.history)) {
+                    let branch = graph.branches.find(candidate => candidate.id == branchId)
+                    if (!branch || current.key == historyKey(graph, branch))
+                        continue
+                    state.history[branchId] = { key: historyKey(graph, branch), loading: false, open: current.open, generation: current.generation + 1 }
+                    changed = true
+                    if (current.open)
+                        void readHistory(repositoryId, state, branch)
+                }
             }
             if (changed)
                 publish()
@@ -252,6 +359,66 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             })
         },
 
+        readHistory(columnId, branchId, more = false) {
+            let state = columnState(columnId)
+            let branch = branchFor(branchId)
+            if (state && branch && activeId)
+                void readHistory(activeId, state, branch, more)
+        },
+
+        toggleHistory(columnId, branchId) {
+            let state = columnState(columnId)
+            let branch = branchFor(branchId)
+            let graph = activeId ? graphs.get(activeId) : undefined
+            if (!state || !branch || !graph || !activeId)
+                return
+            let current = state.history[branchId]
+            if (!current || current.key != historyKey(graph, branch))
+                return void readHistory(activeId, state, branch)
+            if (!current.open && !current.page)
+                return void readHistory(activeId, state, branch)
+            state.history[branchId] = { ...current, open: !current.open }
+            publish()
+        },
+
+        toggleCommit(columnId, objectId) {
+            let state = columnState(columnId)
+            if (!state || !activeId)
+                return
+            let files = state.files[objectId]
+            if (!files)
+                return void read(activeId, state, objectId, { kind: "commit", objectId })
+            if (files.open)
+                forget(state, objectId)
+            state.files[objectId] = { ...files, open: !files.open }
+            publish()
+        },
+
+        chooseParent(columnId, objectId, parentId) {
+            let state = columnState(columnId)
+            if (!state || !activeId)
+                return
+            forget(state, objectId)
+            void read(activeId, state, objectId, { kind: "commit", objectId, parentId })
+        },
+
+        chooseBase(columnId, branchId, baseId) {
+            let state = columnState(columnId)
+            if (!state)
+                return
+            if (baseId)
+                state.bases[branchId] = baseId
+            else
+                delete state.bases[branchId]
+            publish()
+        },
+
+        rewritten() {
+            for (let state of activeId ? repositories.get(activeId)?.values() ?? [] : [])
+                state.selected = []
+            publish()
+        },
+
         select(columnId, group, files) {
             let state = columnState(columnId)
             if (!state)
@@ -291,4 +458,34 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
 
         undoDiscard: () => discards.undo(),
     }
+}
+
+/**
+ * The branches a column's Commit Trail shows: its own, then each base below it while the base is known
+ * or has been chosen from the candidates.
+ */
+export function branchStack(graph: BranchGraph, branch: BranchGraphBranchNode, bases: Record<string, string>) {
+    let stack: BranchGraphBranchNode[] = []
+    let next: BranchGraphBranchNode | undefined = branch
+    while (next && !stack.includes(next)) {
+        let current: BranchGraphBranchNode = next
+        stack.push(current)
+        let chosen = bases[current.id]
+        let baseId = current.base.status == "known"
+            ? current.base.branchId
+            : current.base.candidates.some(candidate => candidate.branchId == chosen)
+            ? chosen
+            : undefined
+        next = graph.branches.find(candidate => candidate.id == baseId)
+    }
+    return stack
+}
+
+function baseTips(branch: BranchGraphBranchNode) {
+    return branch.base.status == "known" ? [branch.base.tip] : branch.base.candidates.map(candidate => candidate.tip)
+}
+
+// Any remote branch can publish this branch's commits, so moving any of them reads its history again.
+function historyKey(graph: BranchGraph, branch: BranchGraphBranchNode) {
+    return JSON.stringify([branch.tip, baseTips(branch), graph.remoteTips, branch.unresolved])
 }

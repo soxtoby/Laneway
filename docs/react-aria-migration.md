@@ -80,8 +80,13 @@ A step is done when its listed tests pass against the React renderer and the scr
     - Renaming branches and worktrees inline, with `editable-name.tsx`.
     - Creating, switching, and removing worktrees from their previews, and repairing or removing a missing worktree.
     - Undo and redo, which Ctrl+Z reaches once no discard is waiting.
-  - **Remix modules:** `trail-commit.tsx`, `reword.tsx`, `composition.tsx`, `inspection/commit-message.tsx`, `overflow-menu.tsx`, `context-menu.tsx`, `branch-workspace/local-branch-actions.tsx`, `worktrees/worktree-controls.tsx`, `worktrees/worktree-actions.tsx`, `worktrees/missing-worktree.tsx`.
+  - **Remix modules:** `reword.tsx`, `composition.tsx`, `inspection/commit-message.tsx`, `overflow-menu.tsx`, `context-menu.tsx`, `branch-workspace/local-branch-actions.tsx`, the Commit Trail part of `inspection/inspection.tsx`, `worktrees/worktree-controls.tsx`, `worktrees/worktree-actions.tsx`, `worktrees/missing-worktree.tsx`.
   - **Tests to port:** rewording, Create branch here, composition, the worktree creation preview, inline renames, detached worktrees, branch deletion, missing worktrees, and the compose and branch phases of `local-electron.test.ts`.
+  - **Landed so far:**
+    - The Commit Trail (`commit-trail.tsx`): the column's branch and the bases below it, paged, with ambiguous bases chosen after the last page; commits that unfold to their message and files, with merge parents to compare; commits and branches the remote already has in the remote tone.
+    - Rewording (`reword.ts`), and creating, renaming, and deleting branches (`local-branches.ts`, `local-branch-dialog.tsx`): Create branch here from a commit's menu, F2 and Delete on a branch column, and the column's branch renamed in place.
+    - Tests in `react-commit-trail.test.tsx`: remote commits and branches, unfolding commits, ambiguous bases, Create branch here, rewording, inline renames, and branch deletion.
+    - Branch deletion keeps the Remix renderer's confirmation dialog, which the Destructive actions convention would replace with Undo once undo and redo land.
 - [ ] **6. Inspection.**
   - **Scope:**
     - Diff columns: combined and split views, selection, hidden-line gaps, and virtualized large patches.
@@ -89,7 +94,8 @@ A step is done when its listed tests pass against the React renderer and the scr
     - Image diffs.
     - File History, Commit Diff, and breakout columns, with the auxiliary-column lifecycle (`auxiliary-columns.ts`).
     - Branch Comparison. Until then, saved comparison columns keep their place and show their description.
-  - **Remix modules:** `inspection/`.
+    - Arrow keys through a column's branches, commits, and files (`inspection/column-navigation.ts`).
+  - **Remix modules:** `inspection/` and `trail-commit.tsx`, File History's commit column.
   - **Tests to port:**
     - The "Working Changes inspection" and "Branch Comparison" blocks, the File History tests, the diff column placement and resize tests, and the line discards in the discarding test.
     - The Electron test `image-diff-electron.test.ts`.

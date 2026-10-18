@@ -5,6 +5,7 @@ import type { AppController, AppSnapshot } from "./app-controller"
 import { ContextMenuHost } from "./context-menu"
 import { GitSettingsDialog } from "./git-settings-dialog"
 import { ArchiveIcon, MoonIcon, PullIcon, RedoIcon, SearchIcon, SettingsIcon, SunIcon, UndoIcon } from "./icons"
+import { LocalBranchDialog } from "./local-branch-dialog"
 import { MissingRepository } from "./missing-repository"
 import { Notices } from "./notices"
 import { EntryDialogs } from "./repository-entry-dialogs"
@@ -92,6 +93,7 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
             )}
             <EntryDialogs entry={entry} busy={snapshot.opening} />
             <GitSettingsDialog gitSettings={gitSettings} />
+            <LocalBranchDialog branches={controller.branches} />
             <RepositoryIdentityDialog editor={identity} repositories={workspace.repositories} api={api} />
             <Notices controller={controller} notice={notice} />
         </div>

@@ -38,7 +38,7 @@ app.on("browser-window-created", (_event, window) => {
                 const background = selector => hex(getComputedStyle(document.querySelector(selector)).backgroundColor);
                 const height = selector => document.querySelector(selector).getBoundingClientRect().height;
                 const fileRow = '[aria-label="Working Changes"] [role=row]';
-                const commitRow = '[aria-label^="Commits on"] [role=row]';
+                const commitRow = '.commit-trail .commit-row';
                 const repositoryRow = '[aria-label="Open repositories"] [role=row]';
                 const colors = () => ({
                     body: background('body'),
