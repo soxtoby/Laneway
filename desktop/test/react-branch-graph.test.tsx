@@ -99,7 +99,7 @@ describe("React Branch Graph", () => {
             "Rebase onto…",
             "Create branch here…",
             "Rename branch…",
-            "Delete branch…",
+            "Delete branch",
         ])
         await app.act(() => key(document.querySelector<HTMLElement>("[role=menu]")!, "Escape"))
         await app.act(() => key(row(feature.id), "F2"))

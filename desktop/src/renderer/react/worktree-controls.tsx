@@ -93,7 +93,7 @@ export function WorktreeMenu({ column, graph, busy, onPrepare, chooseDirectory }
                             isDisabled={worktree.locked}
                             onAction={() => onPrepare({ action: "remove", path: worktree.path, preserve: true, allowIgnoredLoss: false })}
                         >
-                            {worktree.missing ? "Remove missing worktree" : "Remove worktree…"}
+                            {worktree.missing ? "Remove missing worktree" : "Remove worktree"}
                         </MenuItem>
                     )}
                 </Menu>

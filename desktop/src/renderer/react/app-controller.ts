@@ -5,6 +5,7 @@ import { type CommandLens, createCommandLens, type LensResult } from "./command-
 import { type CommitComposer, createCommitComposer } from "./commit-composer"
 import { type Composition, createComposition } from "./composition"
 import { type Conflicts, createConflicts } from "./conflicts"
+import { undoWindowMs } from "./discard"
 import { createGitSettings, type GitSettings } from "./git-settings"
 import { createInspection, type Inspection } from "./inspection"
 import { createLocalBranches, type LocalBranches } from "./local-branches"
@@ -169,10 +170,30 @@ export function createAppController(api: Api): AppController {
         inspection.refreshWorking()
     }
 
+    // An operation that goes without asking shows Undo for the undo window. Undo undoes the Operation History's
+    // latest operation, so the notice goes as soon as another operation starts.
+    let withdrawUndo = () => {}
+    function offerUndo(repositoryId: string, code: string, message: string) {
+        withdrawUndo = notify({
+            code,
+            message,
+            transient: true,
+            duration: undoWindowMs,
+            action: { label: "Undo", run: () => void worktrees.transition(repositoryId, "undo") },
+        })
+    }
+
+    function mutating(busy: boolean) {
+        if (busy)
+            withdrawUndo()
+        columns.mutating(busy)
+    }
+
     let branches = createLocalBranches({
         api,
-        mutating: busy => columns.mutating(busy),
-        completed: async (_repositoryId, request) => {
+        notify,
+        mutating,
+        completed: async (repositoryId, request, preview) => {
             if (request.action == "branch-rename") {
                 columns.renamed(`refs/heads/${request.name}`, `refs/heads/${request.newName}`)
                 inspection.renamed(`refs/heads/${request.name}`, `refs/heads/${request.newName}`)
@@ -180,22 +201,34 @@ export function createAppController(api: Api): AppController {
             await columns.refresh(false)
             if (request.action == "branch-create")
                 columns.open(`branch:refs/heads/${request.name}`)
+            if (request.action == "branch-delete") {
+                let commits = preview.uniqueCommits ? " and the commits only it held" : ""
+                offerUndo(repositoryId, "branch.deleted", `Deleted branch ${request.name}${commits}.`)
+            }
         },
     })
 
     let worktrees = createWorktreeActions({
         api,
-        mutating: busy => columns.mutating(busy),
-        completed: async (_repositoryId, request, columnId) => {
+        mutating,
+        completed: async (repositoryId, request, columnId) => {
             if (request.action == "switch" && columnId)
                 columns.switched(columnId, request.path)
             await columns.refresh(false)
             inspection.refreshWorking()
+            if (request.action == "remove")
+                offerUndo(repositoryId, "worktree.removed", `Removed worktree ${request.path.split(/[\\/]/).pop()}.`)
         },
         transitioned: rewritten,
     })
 
-    let conflicts = createConflicts({ api, changed: rewritten })
+    let conflicts = createConflicts({
+        api,
+        changed: async () => {
+            withdrawUndo()
+            await rewritten()
+        },
+    })
 
     // A transfer that chose to resolve now opens its first conflict where it shows: Working Changes a stash couldn't
     // restore in their column, or a conflicted commit in the column whose stack holds it.
@@ -211,7 +244,7 @@ export function createAppController(api: Api): AppController {
     let composition = createComposition({
         api,
         notify,
-        mutating: busy => columns.mutating(busy),
+        mutating,
         changed: rewritten,
         resolve: repositoryId => void resolveFirstConflict(repositoryId),
     })
@@ -219,7 +252,7 @@ export function createAppController(api: Api): AppController {
     let rebase = createBranchRebase({
         api,
         notify,
-        mutating: busy => columns.mutating(busy),
+        mutating,
         completed: rewritten,
         // The lowest unresolved branch's column shows every conflict above it.
         resolve(_repositoryId, names) {
@@ -236,7 +269,7 @@ export function createAppController(api: Api): AppController {
     let pull = createPullLatest({
         api,
         notify,
-        mutating: busy => columns.mutating(busy),
+        mutating,
         scope: () => columns.snapshot().columns.flatMap(column => column.kind == "branch" ? [column.branch.preferredRef] : []),
         graph: () => columns.snapshot().graph,
         completed: async () => {
@@ -247,7 +280,7 @@ export function createAppController(api: Api): AppController {
 
     let stashes = createStashes({
         api,
-        mutating: busy => columns.mutating(busy),
+        mutating,
         completed: async () => {
             await columns.refresh(false)
             inspection.refreshWorking()
@@ -339,7 +372,7 @@ export function createAppController(api: Api): AppController {
                 path,
                 blocked,
                 notify,
-                mutating: busy => columns.mutating(busy),
+                mutating,
                 changed: async refreshGraph => {
                     await inspection.readWorking(columnId, true)
                     if (refreshGraph)
@@ -355,7 +388,7 @@ export function createAppController(api: Api): AppController {
                 commit,
                 selectedRemote: columns.snapshot().graph?.selectedRemote,
                 notify,
-                mutating: busy => columns.mutating(busy),
+                mutating,
                 changed: rewritten,
                 close,
             }),

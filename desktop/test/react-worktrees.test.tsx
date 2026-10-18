@@ -32,6 +32,7 @@ describe("React worktree actions", () => {
         await scenario.api.updateWorkspace(saved)
         let workingReads: string[] = []
         let previews: WorktreeRequest[] = []
+        let executions: WorktreeRequest[] = []
         let chosenPaths: (string | undefined)[] = []
         let app = await startReactApp({
             ...scenario.api,
@@ -48,6 +49,10 @@ describe("React worktree actions", () => {
                 previews.push(request)
                 return { ok: true, preview: worktreePreview(request, { affected: [worktree.path], token: "missing" }) }
             },
+            executeWorktree: async (_id, request) => {
+                executions.push(request)
+                return { ok: true }
+            },
         })
         let column = columnElement(branch.id)
 
@@ -63,8 +68,8 @@ describe("React worktree actions", () => {
         await app.act(() => press(button(dialog(), "Cancel")))
         await app.act(() => press(button(column, "Remove")))
         expect(previews[1]).toEqual({ action: "remove", path: worktree.path, preserve: true, allowIgnoredLoss: false })
-        expect(dialog().textContent).toContain("Remove this worktree and its column.")
-        await app.act(() => press(button(dialog(), "Cancel")))
+        expect(executions).toEqual([{ action: "remove", path: worktree.path, preserve: true, allowIgnoredLoss: true }])
+        expect(document.querySelector("[role=dialog]") == null).toBe(true)
 
         await app.act(() => press(button(column, "Collapse missing")))
         expect(column.textContent).toContain("Missing")
@@ -155,7 +160,40 @@ describe("React worktree actions", () => {
         expect(document.querySelector("[role=dialog]")).toBeNull()
     })
 
-    test("a worktree renames in place, switches branch by search, and removes from its menu, keeping its changes", async () => {
+    test("a worktree without Working Changes is removed at once, keeping commits only it holds, with Undo in the notice", async () => {
+        let scenario = inspectionScenario()
+        scenario.graph.branches[1]!.checkedOut[0]!.main = false
+        let executions: { request: WorktreeRequest; token: string }[] = []
+        let transitions: string[] = []
+        let app = await startReactApp({
+            ...scenario.api,
+            previewWorktree: async (_id, request) => ({ ok: true, preview: worktreePreview(request, { uniqueCommits: true, token: "clean" }) }),
+            executeWorktree: async (_id, request, token) => {
+                executions.push({ request, token })
+                return { ok: true }
+            },
+            transitionOperation: async (_id, action) => {
+                transitions.push(action)
+                return { ok: true }
+            },
+        })
+        let header = columnElement("branch:refs/heads/feature/laneway").querySelector<HTMLElement>("header")!
+
+        await app.act(() => press(button(header, "Worktree actions")))
+        await app.act(() => press(menuItem("Remove worktree")))
+
+        expect(executions).toEqual([{
+            request: { action: "remove", path: "D:\\Source\\inspection", preserve: true, allowIgnoredLoss: true },
+            token: "clean",
+        }])
+        expect(document.querySelector("[role=dialog]") == null).toBe(true)
+        let toast = document.querySelector<HTMLElement>("[role=alertdialog]")!
+        expect(toast.textContent).toContain("Removed worktree inspection.")
+        await app.act(() => press(button(toast, "Undo")))
+        expect(transitions).toEqual(["undo"])
+    })
+
+    test("a worktree renames in place, switches branch by search, and asks before removing its Working Changes", async () => {
         let scenario = inspectionScenario()
         scenario.graph.branches[1]!.checkedOut[0]!.main = false
         let requests: WorktreeRequest[] = []
@@ -204,7 +242,7 @@ describe("React worktree actions", () => {
         preview = request => worktreePreview(request, { affected: ["D:\\Source\\inspection"], ignored: ["generated.bin"], ignoredCount: 1, dirty: true })
         await app.act(() => press(button(header(), "Worktree actions")))
         expect(menuItems()).not.toContain("New worktree")
-        await app.act(() => press(menuItem("Remove worktree…")))
+        await app.act(() => press(menuItem("Remove worktree")))
         expect(requests[2]).toEqual({ action: "remove", path: "D:\\Source\\inspection", preserve: true, allowIgnoredLoss: false })
         expect(dialog().textContent).toContain("Working Changes detected")
         expect(dialog().textContent).toContain("outside undo: generated.bin.")

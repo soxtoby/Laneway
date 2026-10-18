@@ -279,31 +279,52 @@ describe("React Commit Trail", () => {
         expect(scenario.saved().repositories[0]!.columns.map(column => column.id)).toContain("branch:refs/heads/feature/renamed")
     })
 
-    test("Delete on a branch column reviews the deletion once and deletes with that review", async () => {
+    test("Delete on a branch column deletes the branch and the commits only it holds at once, with Undo in the notice", async () => {
         let scenario = inspectionScenario()
-        let calls: { action: string; token?: string }[] = []
+        let calls: { request: LocalRequest; token?: string }[] = []
+        let transitions: string[] = []
         let app = await startReactApp({
             ...scenario.api,
             localOperation: async (id, request, token) => {
-                calls.push({ action: request.action, token })
+                calls.push({ request, token })
                 if (token)
                     return performed()
                 let preview = (await scenario.api.localOperation(id, request)) as Extract<LocalActionResult, { ok: true }>
-                return { ok: true, result: { ...preview.result, preview: { ...preview.result.preview!, token: "reviewed", uniqueCommits: false } } }
+                return { ok: true, result: { ...preview.result, preview: { ...preview.result.preview!, token: "reviewed", uniqueCommits: true } } }
+            },
+            transitionOperation: async (_id, action) => {
+                transitions.push(action)
+                return { ok: true }
             },
         })
         let column = document.querySelector<HTMLElement>("[data-column-id='branch:refs/heads/feature/laneway']")!
 
         await app.act(() => key(column, "Delete"))
-        let dialog = document.querySelector<HTMLElement>("[role=dialog]")!
-        expect(dialog.textContent).toContain("Delete feature/laneway?")
-        await app.act(() => press(button(dialog, "Delete")))
 
-        expect(calls.filter(call => call.action == "branch-delete")).toEqual([{ action: "branch-delete", token: undefined }, {
-            action: "branch-delete",
+        let deletion: LocalRequest = { action: "branch-delete", name: "feature/laneway", confirmed: true }
+        expect(calls.filter(call => call.request.action == "branch-delete")).toEqual([{ request: deletion, token: undefined }, {
+            request: deletion,
             token: "reviewed",
         }])
-        expect(document.querySelector("[role=dialog]")).toBeNull()
+        expect(document.querySelector("[role=dialog]") == null).toBe(true)
+        expect(toast()?.textContent).toContain("Deleted branch feature/laneway and the commits only it held.")
+        await app.act(() => press(button(toast()!, "Undo")))
+        expect(transitions).toEqual(["undo"])
+    })
+
+    test("a deletion's Undo notice goes as soon as another operation starts, since Undo undoes the latest one", async () => {
+        let scenario = inspectionScenario()
+        let app = await startReactApp({
+            ...scenario.api,
+            localOperation: async (id, request, token) => token ? performed() : scenario.api.localOperation(id, request),
+        })
+        let column = document.querySelector<HTMLElement>("[data-column-id='branch:refs/heads/feature/laneway']")!
+        await app.act(() => key(column, "Delete"))
+        expect(toast()?.textContent).toContain("Deleted branch feature/laneway.")
+
+        await app.act(() => press(button(document.body, "Undo last operation")))
+
+        expect(toast() == null).toBe(true)
     })
 })
 

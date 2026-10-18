@@ -54,8 +54,9 @@ app.on("browser-window-created", (_event, window) => {
                     const renamed = await wait(() => document.querySelector('[data-column-id="branch:refs/heads/renamed"]'));
                     await wait(() => !document.querySelector('[role=dialog]'));
                     key(renamed, 'Delete');
-                    (await wait(() => button('Delete', document.querySelector('[role=dialog]') ?? document))).click();
                     await wait(() => !document.querySelector('[data-column-id="branch:refs/heads/renamed"]'));
+                    if (document.querySelector('[role=dialog]')) throw new Error('Deleting the branch asked first');
+                    await wait(() => document.querySelector('[role=alertdialog]')?.textContent.includes('Deleted branch renamed.'));
                     return { branches: true };
                 }
                 (await wait(() => button('Commit…'))).click();

@@ -35,7 +35,7 @@ describe("React app", () => {
         expect(attempts).toBe(2)
     })
 
-    test("a notice shows as a toast whose action runs once and closes it", async () => {
+    test("a notice shows as a toast of its message alone, whose action runs once and closes it", async () => {
         let app = await startApp(fakeLaneway())
         let undone = 0
         let closed = 0
@@ -49,7 +49,7 @@ describe("React app", () => {
             })
         )
         let toast = document.querySelector("[role=alertdialog]")
-        expect(toast?.textContent).toContain("Discarded changes.")
+        expect(toast?.querySelector(".react-aria-ToastContent")?.textContent).toBe("Discarded changes.")
 
         await app.act(() => press(button(toast!, "Undo")))
 

@@ -236,7 +236,7 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
             if (event.key == "F2" && column.branch.localRefs.length > 0)
                 controller.branches.rename(snapshot.repositoryId!, column.branch)
             else if (event.key == "Delete" && column.branch.localRefs.length > 0)
-                controller.branches.delete(snapshot.repositoryId!, column.branch)
+                void controller.branches.delete(snapshot.repositoryId!, column.branch)
             return
         }
         if (!event.ctrlKey || !event.shiftKey || (event.key != "<" && event.key != ">"))

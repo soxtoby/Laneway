@@ -49,6 +49,7 @@ export function WorktreeDialog({ worktrees }: { worktrees: WorktreeActions }) {
     )
 }
 
+// A removal reaches the dialog only when the worktree has Working Changes; any other goes at once.
 function PreviewDetails({ preview, preserve, busy, worktrees }: { preview: WorktreePreview; preserve: boolean; busy: boolean; worktrees: WorktreeActions }) {
     let request = preview.request
     return (
@@ -73,27 +74,14 @@ function PreviewDetails({ preview, preserve, busy, worktrees }: { preview: Workt
             )}
             {request.action == "remove" && (
                 <>
-                    {preview.dirty || preview.uniqueCommits
-                        ? (
-                            <div className="worktree-keep">
-                                <strong>{preview.dirty ? "Working Changes detected" : "Worktree-only commits detected"}</strong>
-                                <p>
-                                    {preview.dirty
-                                        ? "Keep these changes available after removing the worktree."
-                                        : "Keep these commits reachable after removing the worktree."}
-                                </p>
-                                <Checkbox isSelected={preserve} onChange={worktrees.setPreserve} isDisabled={busy}>
-                                    {preview.uniqueCommits
-                                        ? preview.dirty ? "Create a protective branch and stash Working Changes" : "Create a protective branch"
-                                        : "Stash Working Changes"}
-                                </Checkbox>
-                            </div>
-                        )
-                        : <p>Remove this worktree and its column.</p>}
+                    <div className="worktree-keep">
+                        <strong>Working Changes detected</strong>
+                        <p>Keep these changes available after removing the worktree.</p>
+                        <Checkbox isSelected={preserve} onChange={worktrees.setPreserve} isDisabled={busy}>
+                            {preview.uniqueCommits ? "Create a protective branch and stash Working Changes" : "Stash Working Changes"}
+                        </Checkbox>
+                    </div>
                     {!preserve && <p>Delete Working Changes and Worktree-only Commits from visible state. Git state remains retained for undo.</p>}
-                    {preview.worktrees.some(item => item.missing && item.path == request.path) && (
-                        <p>Remove the missing registration. Unavailable file contents cannot be recovered.</p>
-                    )}
                     {preview.ignoredCount > 0 && (
                         <p>
                             Deletes ignored files, which are outside undo: {preview.ignored.slice(0, 3).join(", ")}

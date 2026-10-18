@@ -19,10 +19,14 @@ export interface WorktreeActionsSnapshot {
 
 /**
  * Creating, switching, renaming, repairing, unlocking, and removing worktrees, each reviewed by the engine
- * first and confirmed in a dialog; and undoing or redoing the Operation History.
+ * first and confirmed in a dialog, except a removal without Working Changes, which runs at once; and undoing
+ * or redoing the Operation History.
  */
 export interface WorktreeActions extends Store<WorktreeActionsSnapshot> {
-    /** Reviews an operation; the dialog then shows what it would do. `columnId` is the column it was asked from. */
+    /**
+     * Reviews an operation; the dialog then shows what it would do, unless it removes a worktree without Working
+     * Changes. `columnId` is the column it was asked from.
+     */
     prepare(repositoryId: string, request: WorktreeRequest, columnId?: string): Promise<void>
     setPreserve(preserve: boolean): void
     /** Runs the reviewed operation with the review's token. */
@@ -48,6 +52,17 @@ export function createWorktreeActions({ api, completed, transitioned, mutating }
     let state = store.snapshot
     let set = (change: Partial<WorktreeActionsSnapshot>) => store.publish({ ...state(), ...change })
     let columnId: string | undefined
+
+    // Choosing what a removal keeps leaves the token valid; the engine re-reads the worktree under
+    // its lock and refuses if anything reviewed has changed since.
+    async function run(repositoryId: string, preview: WorktreePreview, preserve: boolean) {
+        let request = preview.request.action == "remove" ? { ...preview.request, preserve, allowIgnoredLoss: true } : preview.request
+        let result = await api.executeWorktree(repositoryId, request, preview.token)
+        if (!result.ok)
+            throw new Error(result.error.message)
+        set({ preview: undefined })
+        await completed(repositoryId, request, columnId)
+    }
 
     async function act(action: () => Promise<void>) {
         if (state().busy)
@@ -75,7 +90,12 @@ export function createWorktreeActions({ api, completed, transitioned, mutating }
                 let result = await api.previewWorktree(repositoryId, request)
                 if (!result.ok)
                     throw new Error(result.error.message)
-                set({ preview: result.preview })
+                // A worktree without Working Changes has nothing to choose about, so it goes at once; commits
+                // only it holds stay on a protective branch.
+                if (result.preview.request.action == "remove" && !result.preview.dirty)
+                    await run(repositoryId, result.preview, true)
+                else
+                    set({ preview: result.preview })
             }),
 
         setPreserve: preserve => set({ preserve }),
@@ -83,16 +103,8 @@ export function createWorktreeActions({ api, completed, transitioned, mutating }
         execute: () =>
             act(async () => {
                 let { repositoryId, preview, preserve } = state()
-                if (!repositoryId || !preview)
-                    return
-                // Choosing what a removal keeps leaves the token valid; the engine re-reads the worktree under
-                // its lock and refuses if anything reviewed has changed since.
-                let request = preview.request.action == "remove" ? { ...preview.request, preserve, allowIgnoredLoss: true } : preview.request
-                let result = await api.executeWorktree(repositoryId, request, preview.token)
-                if (!result.ok)
-                    throw new Error(result.error.message)
-                set({ preview: undefined })
-                await completed(repositoryId, request, columnId)
+                if (repositoryId && preview)
+                    await run(repositoryId, preview, preserve)
             }),
 
         transition: (repositoryId, action, basename) =>

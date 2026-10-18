@@ -185,7 +185,7 @@ function GraphRows(
             if (event.key == "F2")
                 branches.rename(repositoryId, selected)
             else
-                branches.delete(repositoryId, selected)
+                void branches.delete(repositoryId, selected)
         }
     }
     return (
@@ -261,7 +261,7 @@ function GraphRows(
                                                 <MenuItem onAction={() => branches.rename(repositoryId, branch)}>Rename branch…</MenuItem>
                                             )}
                                             {branch.localRefs.length > 0 && (
-                                                <MenuItem onAction={() => branches.delete(repositoryId, branch)}>Delete branch…</MenuItem>
+                                                <MenuItem onAction={() => void branches.delete(repositoryId, branch)}>Delete branch</MenuItem>
                                             )}
                                         </>
                                     )}

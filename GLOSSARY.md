@@ -61,7 +61,7 @@ A registered linked worktree whose directory is unavailable at its recorded path
 _Avoid_: Deleted worktree, stale worktree
 
 **Worktree Removal**:
-An explicit operation that unregisters and deletes a linked worktree after offering to preserve its Working Changes and Worktree-only Commits, recursively stashing populated submodules where needed. Laneway privately retains all affected Git state for undo, while ignored files remain outside undo; preserved stashes remain Branch Markers until explicitly applied, unless undo reapplies them while recreating the worktree.
+An explicit operation that unregisters and deletes a linked worktree, preserving its Working Changes and Worktree-only Commits and recursively stashing populated submodules where needed. Only a worktree with Working Changes asks first, and there the user may let both go. Laneway privately retains all affected Git state for undo, while ignored files remain outside undo; preserved stashes remain Branch Markers until explicitly applied, unless undo reapplies them while recreating the worktree.
 _Avoid_: Close column, prune worktree
 
 **Worktree Rename**:

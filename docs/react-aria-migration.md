@@ -74,7 +74,7 @@ A step is done when its listed tests pass against the React renderer and the scr
     - `react-local-electron.test.ts` now has the branch and compose phases of `local-electron.test.ts`.
   - **Moved on:**
     - A conflicting transfer offers only Continue and resolve later until conflict resolution moves in step 8.
-    - Branch deletion and worktree removal keep the Remix renderer's confirmation dialogs. Both are undoable, so the Destructive actions convention could replace them with an Undo notice; that is a behaviour change for master first.
+    - Branch deletion and worktree removal kept the Remix renderer's confirmation dialogs until step 9.
 - [x] **6. Inspection.**
   - **Scope:**
     - Diff columns: combined and split views, selection, hidden-line gaps, and virtualized large patches.
@@ -131,6 +131,7 @@ A step is done when its listed tests pass against the React renderer and the scr
     - `jsxImportSource` is `react`, and files dropped their pragmas. ESLint covers every `.ts` and `.tsx`, with the hooks rules across the renderer and its tests.
     - The commit prototype was deleted rather than ported: it was a throwaway for a decision taken on 2026-09-13 (ADR-0012), and `core-local-operations.md` says where to recover it.
     - The conventions moved to [the renderer conventions](renderer.md), which AGENTS.md points to in place of its Remix section.
+    - Simon's calls on 2026-10-18: a branch deletes at once, with any commits only it holds, and its notice offers Undo; a worktree is removed at once unless it has Working Changes, keeping commits only it holds on a protective branch, with Undo in its notice; toasts show their message without the notice code.
   - **Remaining:** rebase onto master a final time, run the full suite, and merge the branch.
 
 ## Open questions
