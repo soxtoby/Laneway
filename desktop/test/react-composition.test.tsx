@@ -36,7 +36,7 @@ describe("React composition", () => {
                 return performed()
             },
         })
-        expect(list("working-staged")).toBeNull()
+        expect(list("working-staged") == null).toBe(true)
         await app.act(() => press(button(working(), "Commit…")))
         expect(list("working-staged")?.textContent).toContain("Drop files here to stage them")
 
@@ -78,7 +78,7 @@ describe("React composition", () => {
         ]])
         expect(calls[0]!.request).toMatchObject({ source: { kind: "commit", objectId: scenario.graph.branches[1]!.tip, branch: "refs/heads/feature/laneway" } })
         expect(toast()?.textContent).toContain("Changes transferred.")
-        expect(trail().querySelector("[aria-label='Review transfer']")).toBeNull()
+        expect(trail().querySelector("[aria-label='Review transfer']") == null).toBe(true)
     })
 
     test("chosen commit files move to Working Changes, and published history waits behind a warning", async () => {
@@ -107,7 +107,7 @@ describe("React composition", () => {
         expect(reviewPanel.querySelector("[role=alert]")?.textContent).toContain("Rewrites history already published on feature/laneway")
         await app.act(() => press(button(reviewPanel, "Transfer")))
         expect(calls.map(call => call.token)).toEqual([undefined, "reviewed-1"])
-        expect(working().querySelector("[aria-label='Review transfer']")).toBeNull()
+        expect(working().querySelector("[aria-label='Review transfer']") == null).toBe(true)
     })
 
     test("files landing on a seam ask for the new commit's message before the review, and Escape cancels a choice", async () => {
@@ -118,7 +118,7 @@ describe("React composition", () => {
 
         await app.act(() => key(button(row, "Move or copy src/file.txt"), "m"))
         await app.act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })))
-        expect(trail().querySelector("[data-transfer-target]")).toBeNull()
+        expect(trail().querySelector("[data-transfer-target]") == null).toBe(true)
 
         await app.act(() => key(button(row, "Move or copy src/file.txt"), "m"))
         let seam = trail().querySelector<HTMLElement>(".transfer-seam[aria-label='New commit on feature/laneway']")!

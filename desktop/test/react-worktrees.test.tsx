@@ -59,7 +59,7 @@ describe("React worktree actions", () => {
         expect(column.querySelector("[aria-label='Missing worktree']")?.textContent).toContain("Worktree directory missing")
         expect(column.querySelector(".state-chip")?.textContent).toBe("Missing")
         expect(column.querySelector(".commit-trail")?.textContent).toContain("Inspect changes")
-        expect(column.querySelector("[aria-label='Working Changes']")).toBeNull()
+        expect(column.querySelector("[aria-label='Working Changes']") == null).toBe(true)
         expect(workingReads).not.toContain(worktree.path)
 
         await app.act(() => press(button(column, "Repair")))
@@ -100,7 +100,7 @@ describe("React worktree actions", () => {
         let column = () => columnElement("virtual:detached")
         let refresh = () => app.act(() => app.controller.columns.refresh(false))
         expect(button(column(), "Repair").hasAttribute("disabled")).toBe(false)
-        expect(column().querySelector("[aria-label='Working Changes']")).toBeNull()
+        expect(column().querySelector("[aria-label='Working Changes']") == null).toBe(true)
 
         worktree.missing = false
         await refresh()
@@ -116,7 +116,7 @@ describe("React worktree actions", () => {
         expect(workingReads.filter(path => path == worktree.path)).toHaveLength(reads)
         await app.act(() => press(button(column(), "Expand detached")))
         expect(column().querySelector("[aria-label='Missing worktree']")).not.toBeNull()
-        expect(column().querySelector("[aria-label='Working Changes']")).toBeNull()
+        expect(column().querySelector("[aria-label='Working Changes']") == null).toBe(true)
     })
 
     test("checking a branch out in a new worktree previews the destination and runs only once confirmed", async () => {
@@ -157,7 +157,7 @@ describe("React worktree actions", () => {
         expect(executions).toEqual([{ request: { action: "create", branch: "refs/heads/main", move: true }, token: "current" }])
         // Each review is one preview; confirming hands its token straight to the engine.
         expect(previews).toBe(2)
-        expect(document.querySelector("[role=dialog]")).toBeNull()
+        expect(document.querySelector("[role=dialog]") == null).toBe(true)
     })
 
     test("a worktree without Working Changes is removed at once, keeping commits only it holds, with Undo in the notice", async () => {
@@ -220,7 +220,7 @@ describe("React worktree actions", () => {
         await app.act(() => type(field(), "cancelled"))
         await app.act(() => key(field(), "Escape"))
         expect(requests).toEqual([])
-        expect(header().querySelector("input")).toBeNull()
+        expect(header().querySelector("input") == null).toBe(true)
         await app.act(() => press(button(header(), "Rename worktree")))
         await app.act(() => type(field(), "renamed"))
         await app.act(() => key(field(), "Enter"))
@@ -321,7 +321,7 @@ describe("React worktree actions", () => {
             token: "stashes",
         }])
         await app.act(() => press(button(dialog(), "Close")))
-        expect(document.querySelector("[role=dialog]")).toBeNull()
+        expect(document.querySelector("[role=dialog]") == null).toBe(true)
     })
 })
 

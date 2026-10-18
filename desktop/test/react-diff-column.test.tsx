@@ -68,7 +68,7 @@ describe("React diff column", () => {
         let toggle = button(column, "Collapse other.txt")
         await app.act(() => press(toggle))
         expect(toggle.getAttribute("aria-expanded")).toBe("false")
-        expect(file(column, "other.txt").querySelector(".diff-panel")).toBeNull()
+        expect(file(column, "other.txt").querySelector(".diff-panel") == null).toBe(true)
         await app.act(() => press(button(column, "Expand other.txt")))
         await settle(app)
         expect(diffRoot(file(column, "other.txt")).querySelectorAll(".diff-line.selected")).toHaveLength(1)
@@ -98,7 +98,7 @@ describe("React diff column", () => {
         // Closing it gives back the diffs that were open under their rows, and the source column takes focus.
         await app.act(() => press(button(column, "Close diff column")))
         await app.act(frame)
-        expect(diffColumn()).toBeNull()
+        expect(diffColumn() == null).toBe(true)
         expect(document.activeElement == columns()[0]).toBe(true)
         expect(first!.querySelector(".diff-panel")).not.toBeNull()
         await settle(app)
@@ -109,7 +109,7 @@ describe("React diff column", () => {
         expect(diffColumn()!.querySelectorAll(".diff-panel")).toHaveLength(2)
         // Folding the commit closes its diff column with its diffs.
         await app.act(() => press(button(trail(), "Inspect changes")))
-        expect(diffColumn()).toBeNull()
+        expect(diffColumn() == null).toBe(true)
         await app.act(() => press(button(trail(), "Inspect changes")))
         expect(document.querySelectorAll(".diff-panel")).toHaveLength(0)
     })
@@ -147,7 +147,7 @@ describe("React diff column", () => {
 
         await stopReactApps()
         let restarted = await startReactApp(scenario.api)
-        expect(diffColumn()).toBeNull()
+        expect(diffColumn() == null).toBe(true)
         await restarted.act(() => press(button(workingChanges(), "Open diff column")))
         expect(diffColumn()!.querySelector("[aria-label='Diff for src/file.txt']")).not.toBeNull()
         expect(diffColumn()!.querySelector(".diff-lines.split")).not.toBeNull()
@@ -260,10 +260,10 @@ describe("React diff column", () => {
         expect(pending.size).toBe(2)
 
         await app.act(() => press(button(branchColumn, "Close column")))
-        expect(diffColumn()).toBeNull()
+        expect(diffColumn() == null).toBe(true)
         expect([...pending.keys()].every(id => cancelled.includes(id))).toBe(true)
         await app.act(() => [...pending.values()].forEach(finish => finish({ ok: true, page: scenario.page })))
-        expect(diffColumn()).toBeNull()
+        expect(diffColumn() == null).toBe(true)
     })
 })
 

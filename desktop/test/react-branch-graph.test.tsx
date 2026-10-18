@@ -50,7 +50,7 @@ describe("React Branch Graph", () => {
                 return { ok: true, graph: allBranches ? everything : graph }
             },
         }))
-        expect(panel()).toBeNull()
+        expect(panel() == null).toBe(true)
 
         await app.act(() => press(button(document.body, "Show Branch Graph")))
         expect(names()).toEqual(["feature/laneway", "other/team", "main"])
@@ -76,7 +76,7 @@ describe("React Branch Graph", () => {
 
         // Choosing the repository already shown hides its Branch Graph.
         await app.act(() => press(document.querySelector<HTMLElement>(".repository-row")!))
-        expect(panel()).toBeNull()
+        expect(panel() == null).toBe(true)
     })
 
     test("Enter opens the selected branch, and its menu and F2 act on it", async () => {
@@ -129,18 +129,18 @@ describe("React Branch Graph", () => {
         let dialog = settings()!
         expect(toggle.getAttribute("aria-expanded")).toBe("true")
         expect(dialog.querySelector("h2")?.textContent).toBe("Branch Graph settings")
-        expect(dialog.querySelector("[role=radiogroup]")).toBeNull()
+        expect(dialog.querySelector("[role=radiogroup]") == null).toBe(true)
         let before = reads
         await app.act(() => type(patterns()!, "origin/release/**, upstream/topic/*"))
         // Enter submits the form in a browser; Happy DOM doesn't, so the form submits as Enter would.
         await app.act(() => submit(settings()!.querySelector("form")!))
         expect(applied).toEqual([{ selectedRemote: "origin", remotePatterns: ["origin/release/**", "upstream/topic/*"] }])
         expect(reads).toBeGreaterThan(before)
-        expect(settings()).toBeNull()
+        expect(settings() == null).toBe(true)
 
         await app.act(() => press(toggle))
         await app.act(() => key(patterns()!, "Escape"))
-        expect(settings()).toBeNull()
+        expect(settings() == null).toBe(true)
     })
 
     test("settings choose among several remotes, and keep a typed draft across quiet refreshes", async () => {
@@ -194,7 +194,7 @@ describe("React Branch Graph", () => {
             void app.controller.columns.refresh()
         })
         expect(reads).toBe(3)
-        expect(panel()!.querySelector("[role=status]")).toBeNull()
+        expect(panel()!.querySelector("[role=status]") == null).toBe(true)
         expect(toolbar.innerHTML).toBe(before)
         await app.act(() => finish())
         expect(toolbar.innerHTML).toBe(before)

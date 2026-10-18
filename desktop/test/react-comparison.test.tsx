@@ -83,7 +83,7 @@ describe("React Branch Comparison", () => {
         // A comparison only reads, so its files can't be chosen, moved, or discarded.
         let row = comparison()!.querySelector<HTMLElement>(".branch-comparison .file-row")!
         expect(comparison()!.querySelectorAll(".branch-comparison .file-row")).toHaveLength(1)
-        expect(row.querySelector("[slot=selection], .transfer-grip")).toBeNull()
+        expect(row.querySelector("[slot=selection], .transfer-grip") == null).toBe(true)
         await app.act(() => press(row.querySelector<HTMLElement>(".file-path")!))
         expect(patches).toBe(1)
         expect(row.querySelector(".pierre-diff")).not.toBeNull()
@@ -98,7 +98,7 @@ describe("React Branch Comparison", () => {
             expect(diffColumn.querySelector("header")!.textContent).toContain(`Diff · ${main!.name} → ${feature!.name}`)
             expect(openDiffColumn().getAttribute("aria-pressed")).toBe("true")
             await app.act(() => press(button(diffColumn, "Close diff column")))
-            expect(document.querySelector(".diff-column")).toBeNull()
+            expect(document.querySelector(".diff-column") == null).toBe(true)
         }
 
         let saved = scenario.saved().repositories[0]!.columns
@@ -123,8 +123,8 @@ describe("React Branch Comparison", () => {
         expect(document.querySelector<HTMLElement>(".file-history")!.dataset.sourceColumnId).toBe(comparison()!.dataset.columnId)
 
         await app.act(() => press(button(header(), "Close column")))
-        expect(comparison()).toBeNull()
-        expect(document.querySelector(".file-history")).toBeNull()
+        expect(comparison() == null).toBe(true)
+        expect(document.querySelector(".file-history") == null).toBe(true)
         expect(scenario.saved().repositories[0]!.columns).toHaveLength(1)
     })
 
@@ -139,7 +139,7 @@ describe("React Branch Comparison", () => {
         await app.act(() => press(compares[0]!))
         expect(comparison()!.querySelector(".column-kind")?.getAttribute("title")).toBe(`Changes on ${feature!.name} since it left ${main!.name}`)
         expect(comparison()!.querySelector("[aria-label='Maximize column']")).not.toBeNull()
-        expect(comparison()!.querySelector(".column-path")).toBeNull()
+        expect(comparison()!.querySelector(".column-path") == null).toBe(true)
     })
 })
 

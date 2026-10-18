@@ -74,7 +74,7 @@ describe("React Workspace Columns", () => {
         let app = await startReactApp(scenario.api)
         expect(columnIds()).toEqual([branch.id, main.id])
         let first = column(branch.id)
-        expect(first.querySelector("[aria-label='Close column']")).toBeNull()
+        expect(first.querySelector("[aria-label='Close column']") == null).toBe(true)
         expect(divider(branch.id).getAttribute("aria-label")).toBe("Resize branch column")
 
         await app.act(() => key(divider(branch.id), "ArrowRight"))
@@ -157,7 +157,7 @@ describe("React worktree recovery", () => {
             await app.act(() => press(button(recoveryColumn, action == "restore" ? "Recover" : "Remove")))
 
             expect(requests).toEqual([{ operationId: recovery.operationId, action }])
-            expect(document.querySelector("[aria-label='Worktree recovery']")).toBeNull()
+            expect(document.querySelector("[aria-label='Worktree recovery']") == null).toBe(true)
             let restored = savedColumns(scenario.saved()).find(column => column.id == failed.id)
             if (action == "restore")
                 expect(restored).toMatchObject({ width: 420, worktreeId: recovery.worktreeId })

@@ -30,7 +30,7 @@ describe("React Branch Graph rebase", () => {
 
         await app.act(() => choose(app, "feature/laneway"))
         await app.act(() => press(name("other/team")))
-        expect(dialog()).toBeNull()
+        expect(dialog() == null).toBe(true)
         expect(calls.map(call => [call.request.source, call.request.target, call.request.descendants, call.token])).toEqual([[feature, team, true, undefined], [
             feature,
             team,
@@ -66,7 +66,7 @@ describe("React Branch Graph rebase", () => {
         expect(calls.at(-1)?.request.target).toEqual({ kind: "branch", branch: "refs/remotes/origin/main", tip: upstreamTip })
         await app.act(() => press(button(dialog()!, "Rebase")))
         expect(calls.at(-1)).toMatchObject({ token: "reviewed-2", request: { target: { branch: "refs/remotes/origin/main" } } })
-        expect(dialog()).toBeNull()
+        expect(dialog() == null).toBe(true)
         expect(notice()).toContain("onto origin/main.")
     })
 
@@ -108,7 +108,7 @@ describe("React Branch Graph rebase", () => {
         await app.act(() => press(name("other/team")))
         await app.act(() => press(button(dialog()!, "Continue and resolve now")))
 
-        expect(dialog()).toBeNull()
+        expect(dialog() == null).toBe(true)
         expect([...document.querySelectorAll(".column-row > .column")].map(column => column.getAttribute("aria-label"))).toEqual(["child"])
     })
 
@@ -153,7 +153,7 @@ describe("React Branch Graph rebase", () => {
         // One commit's node spans both rows, so siblings don't read as a stack.
         expect(row("feature/laneway").querySelector(".graph-node-fill")).not.toBeNull()
         expect(row("feature/sibling").querySelector(".graph-node-fill")).not.toBeNull()
-        expect(row("other/team").querySelector(".graph-node-fill")).toBeNull()
+        expect(row("other/team").querySelector(".graph-node-fill") == null).toBe(true)
 
         let identities = workspaceGraph(graph)
         let branch = (name: string) => identities.branches.find(candidate => candidate.name == name)!

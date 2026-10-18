@@ -30,7 +30,7 @@ describe("React app", () => {
 
         await app.act(() => press(button(document.body, "Retry")))
 
-        expect(document.querySelector("[role=alert]")).toBeNull()
+        expect(document.querySelector("[role=alert]") == null).toBe(true)
         expect(document.body.textContent).toContain("No repository open")
         expect(attempts).toBe(2)
     })
@@ -77,7 +77,7 @@ describe("React app", () => {
         await app.act(() => press([...menu!.querySelectorAll<HTMLElement>("[role=menuitem]")].find(item => item.textContent == "Close repository")!))
 
         expect(closedIds).toEqual([scenario.saved().activeRepositoryId!])
-        expect(document.querySelector("[aria-label='Open repositories'] [role=row]")).toBeNull()
+        expect(document.querySelector("[aria-label='Open repositories'] [role=row]") == null).toBe(true)
     })
 
     test("the saved appearance shows in the header, and toggling it saves the other one", async () => {
@@ -139,7 +139,7 @@ describe("React repository entry", () => {
         await app.act(() => submit(dialog.querySelector("form")!))
 
         expect(requests).toEqual([["D:\\Source", "new-project", "trunk"]])
-        expect(document.querySelector("[role=dialog]")).toBeNull()
+        expect(document.querySelector("[role=dialog]") == null).toBe(true)
         expect(repositoryNames()).toEqual(["new-project"])
         expect(document.querySelector("[role=alertdialog]")?.textContent).toContain("Repository initialized and opened.")
     })

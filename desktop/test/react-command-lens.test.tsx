@@ -34,7 +34,7 @@ describe("React Command Lens", () => {
         expect(results()).toEqual(["feature/laneway"])
         await app.act(() => press(result("feature/laneway")))
         await app.act(frame)
-        expect(lens()).toBeNull()
+        expect(lens() == null).toBe(true)
         expect(selected()).toBe("branch:refs/heads/feature/laneway")
         expect(document.querySelectorAll(".column-row > .column")).toHaveLength(0)
         expect(rows().contains(document.activeElement)).toBe(true)

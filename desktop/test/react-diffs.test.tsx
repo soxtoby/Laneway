@@ -47,7 +47,7 @@ describe("React diffs", () => {
         // Closing the first while its read is still out drops that read's result.
         await app.act(() => openRow(first!))
         await complete("src/file.txt")
-        expect(diffPanel(first!)).toBeNull()
+        expect(diffPanel(first!) == null).toBe(true)
         expect(second!.querySelector(".pierre-diff")).toBe(secondViewer)
         expect(diffRoot(second!).querySelectorAll(".diff-line.selected")).toHaveLength(1)
     })
@@ -97,10 +97,10 @@ describe("React diffs", () => {
 
         await app.act(() => openRow(staged!))
         expect(views).toEqual(["staged"])
-        expect(document.querySelector(".diff-views")).toBeNull()
+        expect(document.querySelector(".diff-views") == null).toBe(true)
         await app.act(() => gutter(staged!, "Select deletion line 1").click())
         expect(diffRoot(staged!).querySelectorAll(".diff-line.selected")).toHaveLength(1)
-        expect(diffRoot(staged!).querySelector(".diff-line.addition.selected")).toBeNull()
+        expect(diffRoot(staged!).querySelector(".diff-line.addition.selected") == null).toBe(true)
         await app.act(() => openRow(unstaged!))
         expect(views).toEqual(["staged", "unstaged"])
         await app.act(() => gutter(unstaged!, "Select addition line 1").click())
@@ -175,7 +175,7 @@ describe("React diffs", () => {
             await new Promise(resolve => setTimeout(resolve, 20))
         })
         expect(diffRoot(row).querySelector("[data-line='1']")?.textContent?.trimEnd()).toBe("line 1")
-        expect(diffRoot(row).querySelector("[data-line='8']")).toBeNull()
+        expect(diffRoot(row).querySelector("[data-line='8']") == null).toBe(true)
         expect(diffRoot(row).querySelector(".addition.selected")?.textContent?.trimEnd()).toBe("new 5")
         await app.act(() => press(button(row, "Side by side")))
         await app.act(async () => {
@@ -183,7 +183,7 @@ describe("React diffs", () => {
             await new Promise(resolve => setTimeout(resolve, 20))
         })
         expect(diffRoot(row).querySelector("[data-line='8']")?.textContent?.trimEnd()).toBe("line 8")
-        expect(diffRoot(row).querySelector("[data-line='16']")).toBeNull()
+        expect(diffRoot(row).querySelector("[data-line='16']") == null).toBe(true)
         await app.act(async () => {
             show(4).click()
             await new Promise(resolve => setTimeout(resolve, 20))
@@ -215,13 +215,13 @@ describe("React diffs", () => {
         version = "two"
         await app.act(() => app.controller.columns.refresh())
         expect(other!.textContent).toContain("File changed. Change Selection cleared.")
-        expect(diffRoot(other!).querySelector(".diff-line.selected")).toBeNull()
+        expect(diffRoot(other!).querySelector(".diff-line.selected") == null).toBe(true)
 
         await app.act(() => openRow(file!))
         await app.act(() => gutter(file!, "Select deletion line 1").click())
         await app.act(() => openRow(file!))
         await app.act(() => openRow(file!))
-        expect(diffRoot(file!).querySelector(".diff-line.selected")).toBeNull()
+        expect(diffRoot(file!).querySelector(".diff-line.selected") == null).toBe(true)
     })
 
     test("a large patch draws only the lines in view, and folding its commit closes its diffs", async () => {
@@ -238,11 +238,11 @@ describe("React diffs", () => {
         await app.act(() => openRow(commitFileRows()[0]!))
 
         expect(diffRoot(commitFileRows()[0]!).querySelectorAll(".diff-line").length).toBeLessThanOrEqual(80)
-        expect(document.querySelector(".diff-views")).toBeNull()
+        expect(document.querySelector(".diff-views") == null).toBe(true)
         await app.act(() => press(button(trail(), "Inspect changes")))
-        expect(document.querySelector(".commit-files")).toBeNull()
+        expect(document.querySelector(".commit-files") == null).toBe(true)
         await app.act(() => press(button(trail(), "Inspect changes")))
-        expect(document.querySelector(".diff-panel")).toBeNull()
+        expect(document.querySelector(".diff-panel") == null).toBe(true)
     })
 
     test("chosen lines discard from the unstaged side only, with Undo in the notice", async () => {
@@ -260,7 +260,7 @@ describe("React diffs", () => {
 
         await app.act(() => openRow(staged!))
         await app.act(() => gutter(staged!, "Select deletion line 1").click())
-        expect(staged!.querySelector(".discard-lines")).toBeNull()
+        expect(staged!.querySelector(".discard-lines") == null).toBe(true)
         await app.act(() => openRow(unstaged!))
         await app.act(() => gutter(unstaged!, "Select addition line 1").click())
         await app.act(() => press(button(unstaged!, "Discard selected")))
@@ -304,8 +304,8 @@ describe("React diffs", () => {
             await new Promise(resolve => setTimeout(resolve, 20))
         })
         expect(imageReads).toEqual(["art/logo.png"])
-        expect(row.querySelector(".pierre-diff")).toBeNull()
-        expect(row.querySelector(".diff-summary")).toBeNull()
+        expect(row.querySelector(".pierre-diff") == null).toBe(true)
+        expect(row.querySelector(".diff-summary") == null).toBe(true)
         expect(row.querySelector(".image-diff [role=alert]")?.textContent).toBe("Pictures unavailable here")
         expect(button(row, "Side by side").getAttribute("aria-pressed")).toBe("true")
         await app.act(() => press(button(row, "Swipe")))

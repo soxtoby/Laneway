@@ -17,7 +17,7 @@ describe("React column navigation", () => {
     test("the file filter opens on demand, narrows and marks every list, and clears with Escape", async () => {
         let app = await startReactApp(inspectionScenario().api)
         let search = button(column(), "Filter files")
-        expect(column().querySelector(".column-filter")).toBeNull()
+        expect(column().querySelector(".column-filter") == null).toBe(true)
 
         await app.act(() => press(search))
         await app.act(frame)
@@ -29,7 +29,7 @@ describe("React column navigation", () => {
         expect(marks(".commit-files")).toBe("src/fi")
 
         await app.act(() => type(input(), "no-matching-file"))
-        expect(column().querySelector(".working-changes .file-row")).toBeNull()
+        expect(column().querySelector(".working-changes .file-row") == null).toBe(true)
         expect(column().querySelector(".commit-files")?.textContent).toContain("No files match the filter")
         // Asking again returns to the open filter, keeping its text.
         await app.act(() => press(search))
@@ -37,7 +37,7 @@ describe("React column navigation", () => {
         expect(input().value).toBe("no-matching-file")
 
         await app.act(() => key(input(), "Escape"))
-        expect(column().querySelector(".column-filter")).toBeNull()
+        expect(column().querySelector(".column-filter") == null).toBe(true)
         expect(column().querySelector(".working-changes .file-row")).not.toBeNull()
         expect(column().querySelectorAll("mark")).toHaveLength(0)
         expect(focused(search)).toBe(true)
@@ -76,7 +76,7 @@ describe("React column navigation", () => {
         await app.act(() => key(first, "ArrowRight"))
         expect(first.querySelector(".diff-panel")).not.toBeNull()
         await app.act(() => key(first, "ArrowLeft"))
-        expect(first.querySelector(".diff-panel")).toBeNull()
+        expect(first.querySelector(".diff-panel") == null).toBe(true)
         expect(focused(first)).toBe(true)
         await app.act(() => key(first, "ArrowLeft"))
         expect(focused(commit)).toBe(true)

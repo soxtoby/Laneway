@@ -79,7 +79,7 @@ describe("React Commit Trail", () => {
         expect(sources.at(-1)).toEqual({ kind: "commit", objectId: scenario.graph.branches[1]!.tip, parentId: second })
 
         await app.act(() => press(toggle))
-        expect(trail().querySelector(".commit-files")).toBeNull()
+        expect(trail().querySelector(".commit-files") == null).toBe(true)
     })
 
     test("an ambiguous branch's history continues into the base chosen after its last page", async () => {
@@ -109,7 +109,7 @@ describe("React Commit Trail", () => {
             },
         })
         expect(requests[0]).toMatchObject({ limit: 50, baseTips: candidates.map(candidate => candidate.tip) })
-        expect(trail().querySelector(".trail-choice")).toBeNull()
+        expect(trail().querySelector(".trail-choice") == null).toBe(true)
 
         await app.act(() => press(button(trail(), "Load more")))
         expect(requests[1]).toMatchObject({ offset: 1 })
@@ -154,7 +154,7 @@ describe("React Commit Trail", () => {
         await app.act(() => press(button(dialog, "Create branch")))
 
         expect(requests).toEqual([{ action: "branch-create", name: "alias", commit: scenario.graph.branches[1]!.tip }])
-        expect(document.querySelector("[role=dialog]")).toBeNull()
+        expect(document.querySelector("[role=dialog]") == null).toBe(true)
         expect(document.querySelector("[data-column-id='branch:refs/heads/alias']")).not.toBeNull()
     })
 
@@ -207,7 +207,7 @@ describe("React Commit Trail", () => {
             },
             token: undefined,
         }])
-        expect(trail().querySelector("[aria-label='Reword commit Inspect changes']")).toBeNull()
+        expect(trail().querySelector("[aria-label='Reword commit Inspect changes']") == null).toBe(true)
         expect(graphReads).toBeGreaterThan(reads)
         expect(toast()?.textContent).toContain("Commit reworded.")
 
@@ -221,7 +221,7 @@ describe("React Commit Trail", () => {
         expect(rewords.map(call => call.token)).toEqual([undefined])
         await app.act(() => press(button(form, "Rewrite history")))
         expect(rewords.map(call => call.token)).toEqual([undefined, "reword"])
-        expect(trail().querySelector("[aria-label='Reword commit Inspect changes']")).toBeNull()
+        expect(trail().querySelector("[aria-label='Reword commit Inspect changes']") == null).toBe(true)
     })
 
     test("the column's branch renames in place from its heading, and a refused name keeps the editor open", async () => {
@@ -255,11 +255,11 @@ describe("React Commit Trail", () => {
 
         // F2 on the name edits in place instead of opening the rename dialog.
         await app.act(() => key(button(heading(), "Rename branch feature/laneway"), "F2"))
-        expect(document.querySelector("[role=dialog]")).toBeNull()
+        expect(document.querySelector("[role=dialog]") == null).toBe(true)
         expect(field().getAttribute("aria-label")).toBe("New name for branch feature/laneway")
         await app.act(() => type(field(), "feature/abandoned"))
         await app.act(() => key(field(), "Escape"))
-        expect(heading().querySelector("input")).toBeNull()
+        expect(heading().querySelector("input") == null).toBe(true)
 
         await app.act(() => press(button(heading(), "Rename branch feature/laneway")))
         await app.act(() => type(field(), "main"))

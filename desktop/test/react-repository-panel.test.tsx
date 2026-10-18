@@ -69,7 +69,7 @@ describe("React repository panel", () => {
         expect(saves.at(-1)?.repositories[0]?.icon).toBeUndefined()
 
         await app.act(() => press(button(editor, "Done")))
-        expect(document.querySelector("[role=dialog]")).toBeNull()
+        expect(document.querySelector("[role=dialog]") == null).toBe(true)
     })
 
     test("a repository's favicon shows until another of its images is chosen", async () => {
@@ -194,7 +194,7 @@ describe("React repository panel", () => {
         await app.act(() => press(button(unavailable, "Locate")))
 
         expect(located).toEqual([repository.id])
-        expect(document.querySelector("[aria-labelledby='missing-repository-heading']")).toBeNull()
+        expect(document.querySelector("[aria-labelledby='missing-repository-heading']") == null).toBe(true)
     })
 })
 

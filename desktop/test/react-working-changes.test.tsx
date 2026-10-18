@@ -187,7 +187,7 @@ describe("React Working Changes", () => {
             },
         })
         let header = () => workingChanges().querySelector(".commit-header")!
-        expect(document.querySelector(".staged-divider")).toBeNull()
+        expect(document.querySelector(".staged-divider") == null).toBe(true)
         expect(header().textContent).toContain("Working Changes")
         expect(button(header(), "More commit actions").querySelector("svg")).not.toBeNull()
 
@@ -205,7 +205,7 @@ describe("React Working Changes", () => {
         expect(tree("Staged files").textContent).not.toContain("other.txt")
 
         await app.act(() => press(button(workingChanges(), "Cancel")))
-        expect(document.querySelector("[aria-label='Commit title']")).toBeNull()
+        expect(document.querySelector("[aria-label='Commit title']") == null).toBe(true)
         expect(header().textContent).toContain("Commit…")
         expect(tree("Staged files").textContent).toContain("src/file.txt")
         expect(document.querySelector(".staged-divider")).not.toBeNull()
@@ -221,9 +221,9 @@ describe("React Working Changes", () => {
         expect(mutations.map(request => request.action)).toEqual(["stage", "commit"])
         expect(mutations[1]).toMatchObject({ action: "commit", title: "Keep snapshot" })
         expect(draft.title).toBe("")
-        expect(document.querySelector("[aria-label='Commit title']")).toBeNull()
+        expect(document.querySelector("[aria-label='Commit title']") == null).toBe(true)
         expect(selectionSummary()).toBeUndefined()
-        expect(document.querySelector(".commit-notice")).toBeNull()
+        expect(document.querySelector(".commit-notice") == null).toBe(true)
         expect(toast()?.textContent).toContain("Commit created.")
         expect(header().textContent).toContain("No Working Changes")
     })
@@ -304,7 +304,7 @@ describe("React Working Changes", () => {
         }, { action: "stash-create", path: "D:\\Source\\inspection", label: "Parked again" }])
         // Stashes change what the Branch Graph shows, so each one reads it again.
         expect(graphReads).toBe(before + 3)
-        expect(document.querySelector("[aria-label='Stash label']")).toBeNull()
+        expect(document.querySelector("[aria-label='Stash label']") == null).toBe(true)
     })
 
     test("a detached worktree lists its proposed branch below Working Changes with an editable name, which its commit creates", async () => {
@@ -334,7 +334,7 @@ describe("React Working Changes", () => {
         await app.act(() => type(name, "feature/detached"))
         await app.act(() => name.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })))
         expect(draft.branch).toBe("feature/detached")
-        expect(document.querySelector("[aria-label='New name for new branch']")).toBeNull()
+        expect(document.querySelector("[aria-label='New name for new branch']") == null).toBe(true)
         expect(button(card, "Rename new branch").textContent).toBe("feature/detached")
 
         await app.act(() => press(button(workingChanges(), "Commit…")))

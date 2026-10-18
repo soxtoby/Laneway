@@ -64,7 +64,7 @@ describe("React File History", () => {
         await app.act(() => press(button(history, "Close file history")))
         expect(cancellations).toBeGreaterThan(0)
         await app.act(() => release.get(3)!())
-        expect(historyColumn()).toBeNull()
+        expect(historyColumn() == null).toBe(true)
         expect(cursors.at(-1)).toBe("5".repeat(40))
     })
 
@@ -107,7 +107,7 @@ describe("React File History", () => {
         // Its diffs lay out apart from the Workspace Column's, which keeps its saved layout.
         expect(scenario.saved().repositories[0]!.columns[0]!.diffLayout ?? "unified").toBe("unified")
         await app.act(() => press(button(history, "History commit")))
-        expect(history.querySelector(".diff-panel")).toBeNull()
+        expect(history.querySelector(".diff-panel") == null).toBe(true)
 
         await app.act(() => press(button(history, "Actions for History commit")))
         await app.act(() => press(menuItem("Complete commit diff")))
@@ -136,7 +136,7 @@ describe("React File History", () => {
         expect(histories[1]!.textContent).toContain("History · other.txt")
         expect(histories[1]!.textContent).not.toContain("Working Changes")
         await app.act(() => press(button(history, "Close file history")))
-        expect(document.querySelector(".file-history")).toBeNull()
+        expect(document.querySelector(".file-history") == null).toBe(true)
     })
 
     test("a commit diff compares another parent of a merge, closing the columns its related files opened", async () => {
@@ -203,7 +203,7 @@ describe("React File History", () => {
         // It opens beside the diff column, which it closes with.
         expect(historyColumn()!.dataset.sourceColumnId).toBe(document.querySelector<HTMLElement>(".diff-column")!.dataset.auxiliaryId)
         await app.act(() => press(button(document.querySelector<HTMLElement>(".diff-column")!, "Close diff column")))
-        expect(historyColumn()).toBeNull()
+        expect(historyColumn() == null).toBe(true)
     })
 })
 

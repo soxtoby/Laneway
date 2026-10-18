@@ -68,7 +68,7 @@ describe("React Pull latest", () => {
         expect(header().querySelector(".pull-latest")?.getAttribute("title")).toBe("Fetch and synchronize open stacks")
         await app.act(() => press(button(header(), "Pull latest")))
         expect(requested).toEqual({ branches: [main!.preferredRef, feature!.preferredRef], remote: "origin" })
-        expect(header().querySelector(".pull-latest")).toBeNull()
+        expect(header().querySelector(".pull-latest") == null).toBe(true)
         expect(header().querySelector(".pull-progress")?.textContent).toContain("Fetching…")
         expect(button(header(), "Undo last operation").hasAttribute("disabled")).toBe(true)
         await app.act(() => progress!({ repositoryId: repository.id, message: "Updating feature/laneway…", completed: 1, total: 2 }))
@@ -117,7 +117,7 @@ describe("React Pull latest", () => {
         // Resolving opens the stack's branch, expanding its collapsed column.
         await app.act(() => press(button(outcome, "Resolve in feature/laneway")))
         await app.act(() => new Promise(resolve => requestAnimationFrame(resolve)))
-        expect(document.querySelector(".pull-outcome")).toBeNull()
+        expect(document.querySelector(".pull-outcome") == null).toBe(true)
         expect((document.activeElement as HTMLElement | null)?.dataset.columnId).toBe(feature!.id)
     })
 
@@ -141,7 +141,7 @@ describe("React Pull latest", () => {
         }))
 
         await app.act(() => press(button(document.querySelector<HTMLElement>(".header")!, "Pull latest")))
-        expect(document.querySelector(".pull-outcome")).toBeNull()
+        expect(document.querySelector(".pull-outcome") == null).toBe(true)
         expect(document.querySelector("[role=alertdialog]")?.textContent).toContain("Pull complete: 1 updated, 1 already current.")
     })
 
@@ -170,6 +170,6 @@ describe("React Pull latest", () => {
         await app.act(() => press(button(document.querySelector<HTMLElement>(".header")!, "Pull latest")))
         expect(document.querySelector(".pull-outcome .pull-error")?.textContent).toBe("Could not reach origin.")
         await app.act(() => press(button(document.querySelector<HTMLElement>(".pull-outcome")!, "Close")))
-        expect(document.querySelector(".pull-outcome")).toBeNull()
+        expect(document.querySelector(".pull-outcome") == null).toBe(true)
     })
 })
