@@ -97,6 +97,7 @@ describe("React Branch Graph", () => {
             row(feature.id).dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: 20, clientY: 20 }))
         )
         expect([...document.querySelectorAll("[role=menu] [role=menuitem]")].map(item => item.textContent)).toEqual([
+            "Rebase onto…",
             "Create branch here…",
             "Rename branch…",
             "Delete branch…",

@@ -1,4 +1,5 @@
 import type { Appearance, BranchHistoryCommit, FileListView, OpenRepository, RepositoryIdentity, Workspace, WorkspaceColumn } from "@laneway/shared"
+import { type BranchRebase, createBranchRebase } from "./branch-rebase"
 import { type BranchWorkspace, createBranchWorkspace } from "./branch-workspace"
 import { type CommitComposer, createCommitComposer } from "./commit-composer"
 import { type Composition, createComposition } from "./composition"
@@ -45,6 +46,8 @@ export interface AppController extends Store<AppSnapshot> {
     readonly worktrees: WorktreeActions
     /** Every stash in the repository, applied or dropped. */
     readonly stashes: Stashes
+    /** Rebasing branches from the Branch Graph. */
+    readonly rebase: BranchRebase
     /** Moving and copying files, commits, and branches between columns. */
     readonly composition: Composition
     /** Loads the app state; also retries after a failed start. */
@@ -189,6 +192,13 @@ export function createAppController(api: Api): AppController {
         changed: rewritten,
     })
 
+    let rebase = createBranchRebase({
+        api,
+        notify,
+        mutating: busy => columns.mutating(busy),
+        completed: rewritten,
+    })
+
     let stashes = createStashes({
         api,
         mutating: busy => columns.mutating(busy),
@@ -234,6 +244,7 @@ export function createAppController(api: Api): AppController {
         branches,
         worktrees,
         stashes,
+        rebase,
         composition,
 
         async start() {

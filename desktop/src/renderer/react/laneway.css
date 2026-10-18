@@ -3124,6 +3124,7 @@
 
 /* Rows are exactly as tall as the rails' geometry; their separators are shadows so it stays exact. */
 .graph-row {
+    position: relative;
     height: 40px;
     box-sizing: border-box;
     display: flex;
@@ -3442,4 +3443,105 @@
 .graph-settings-actions {
     display: flex;
     justify-content: end;
+}
+
+/* A branch dragged in the Branch Graph: the row it would rebase onto, the row it came from, and a worktree column's
+   header it would switch. */
+.graph-row {
+    &[data-drop-target],
+    &[data-rebase="target"] {
+        outline: 2px solid var(--focus-ring-color);
+        outline-offset: -2px;
+        background: var(--selection-background);
+    }
+
+    &[data-dragging],
+    &[data-rebase="source"] {
+        opacity: 0.6;
+    }
+}
+
+.column-header[data-drop-target] {
+    outline: 2px solid var(--focus-ring-color);
+    outline-offset: -2px;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    background: var(--selection-background);
+}
+
+/* Reviewing a branch rebase. */
+.rebase-dialog {
+    width: min(520px, calc(100vw - 32px));
+
+    p {
+        margin: var(--spacing-1) 0;
+        overflow-wrap: anywhere;
+    }
+}
+
+.rebase-destinations {
+    display: grid;
+    gap: var(--spacing-1);
+    margin-block-end: var(--spacing-2);
+}
+
+.rebase-destination {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: var(--spacing-2);
+    align-items: baseline;
+
+    &::before {
+        content: "";
+        grid-row: span 2;
+        width: 12px;
+        height: 12px;
+        box-sizing: border-box;
+        border: 1px solid var(--border-color);
+        border-radius: 50%;
+    }
+
+    &[data-selected]::before {
+        border: 4px solid var(--highlight-background);
+    }
+
+    &[data-focus-visible]::before {
+        outline: 2px solid var(--focus-ring-color);
+        outline-offset: 1px;
+    }
+
+    small {
+        grid-column: 2;
+        color: var(--text-color-placeholder);
+    }
+}
+
+.rebase-commits {
+    ol {
+        display: grid;
+        gap: 2px;
+        margin: var(--spacing-1) 0;
+        padding: 0;
+        list-style: none;
+        font-size: var(--font-size-sm);
+    }
+
+    li {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    code {
+        color: var(--text-color-placeholder);
+        font-family: var(--font-family-mono);
+    }
+}
+
+.rebase-warning {
+    color: var(--warning-color);
+    font-weight: 600;
+}
+
+.rebase-status {
+    color: var(--text-color-placeholder);
 }

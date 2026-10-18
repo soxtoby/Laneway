@@ -9,6 +9,7 @@ import { ArchiveIcon, GraphIcon, MoonIcon, PullIcon, RedoIcon, SearchIcon, Setti
 import { LocalBranchDialog } from "./local-branch-dialog"
 import { MissingRepository } from "./missing-repository"
 import { Notices } from "./notices"
+import { RebaseDialog } from "./rebase-dialog"
 import { EntryDialogs } from "./repository-entry-dialogs"
 import { RepositoryIdentityDialog } from "./repository-identity-dialog"
 import { RepositoryPanel } from "./repository-panel"
@@ -116,6 +117,7 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
             <LocalBranchDialog branches={branches} />
             <WorktreeDialog worktrees={worktrees} />
             <StashesDialog stashes={stashes} />
+            <RebaseDialog rebase={controller.rebase} />
             <RepositoryIdentityDialog editor={identity} repositories={workspace.repositories} api={api} />
             <Notices controller={controller} notice={notice} />
         </div>

@@ -2,10 +2,11 @@
 import type { BranchGraph, FileListView, WorktreeRecovery, WorktreeRequest } from "@laneway/shared"
 import clsx from "clsx"
 import { type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, useEffect, useMemo, useRef } from "react"
-import { Button as AriaButton, ToggleButton } from "react-aria-components"
+import { Button as AriaButton, ToggleButton, useDrop } from "react-aria-components"
 import { defaultAuxiliaryColumnWidth } from "../src/auxiliary-columns"
 import { workspaceGraph } from "../src/worktrees/worktree-columns"
 import type { AppController } from "./app-controller"
+import { branchDragType } from "./branch-graph"
 import { type BranchWorkspace, type ColumnsSnapshot, type ColumnView, defaultColumnWidth, minimumColumnWidth, workingSummary } from "./branch-workspace"
 import { ColumnBody, columnRoot, ColumnScopes } from "./column-body"
 import { ColumnFilter } from "./column-filter"
@@ -79,6 +80,8 @@ export function WorkspaceColumns({ controller, fileListView }: { controller: App
             if (!dragging.current)
                 return
             event.preventDefault()
+            // A header's branch drop target may have refused the drag first; a column's own drag is still welcome.
+            event.dataTransfer.dropEffect = "move"
             columns.dragOver(dragging.current.id, column.id)
         },
         drop(event: DragEvent) {
@@ -187,6 +190,19 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
     let prepare = (request: WorktreeRequest) => void controller.worktrees.prepare(snapshot.repositoryId!, request, column.id)
     let files = inspected?.columns[column.id]
     let maximized = snapshot.maximizedId == column.id
+    let headerRef = useRef<HTMLElement>(null)
+    // A branch dragged from the Branch Graph onto a worktree column's header switches that worktree to it.
+    let switchable = column.kind != "recovery" && column.kind != "comparison" && column.worktree != undefined && !column.worktree.missing
+    let { dropProps, isDropTarget } = useDrop({
+        ref: headerRef,
+        isDisabled: !switchable,
+        getDropOperation: types => types.has(branchDragType) ? "move" : "cancel",
+        async onDrop(event) {
+            let item = event.items.find(candidate => candidate.kind == "text" && candidate.types.has(branchDragType))
+            if (item?.kind == "text" && column.worktree)
+                prepare({ action: "switch", path: column.worktree.path, branch: await item.getText(branchDragType), move: true })
+        },
+    })
     let filterButton = useRef<HTMLButtonElement>(null)
     let filterInput = useRef<HTMLInputElement>(null)
     let filterable = column.kind != "recovery"
@@ -267,13 +283,22 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                 : (
                     <>
                         <header
+                            {...dropProps}
+                            ref={headerRef}
                             className="column-header"
+                            data-drop-target={isDropTarget || undefined}
                             draggable={!snapshot.maximizedId}
                             title="Drag to reorder · Ctrl+Shift+< / >"
                             onDoubleClick={toggleMaximized}
                             onDragStart={event => header.start(column, event)}
-                            onDragOver={event => header.over(column, event)}
-                            onDrop={header.drop}
+                            onDragOver={event => {
+                                dropProps.onDragOver?.(event)
+                                header.over(column, event)
+                            }}
+                            onDrop={event => {
+                                dropProps.onDrop?.(event)
+                                header.drop(event)
+                            }}
                             onDragEnd={header.end}
                         >
                             <IconButton label={`Collapse ${column.name}`} onPress={() => columns.toggleCollapsed(column.id)}>

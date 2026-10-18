@@ -1,19 +1,24 @@
 /** @jsxImportSource react */
 import type { BranchGraph, BranchGraphBranchNode, BranchGraphMarker } from "@laneway/shared"
-import { type KeyboardEvent, useMemo } from "react"
-import { Button as AriaButton, GridList, GridListItem, ListLayout, Virtualizer } from "react-aria-components"
+import { type KeyboardEvent, useEffect, useMemo, useRef } from "react"
+import { Button as AriaButton, GridList, GridListItem, ListLayout, useDragAndDrop, Virtualizer } from "react-aria-components"
 import { graphRowHeight, type GraphRowLayout, layoutBranchGraph } from "../src/branch-workspace/branch-graph-layout"
 import { branchNodeFor, localIdentities, workspaceGraph } from "../src/worktrees/worktree-columns"
 import type { AppController } from "./app-controller"
+import { canRebaseOnto, rebaseable } from "./branch-rebase"
 import type { GraphView } from "./branch-workspace"
 import { IconButton } from "./controls"
 import { useRowMenu } from "./dense-row"
 import { GraphSettings } from "./graph-settings"
 import { ArchiveIcon, CloseIcon, FolderIcon, TagIcon } from "./icons"
 import { Button } from "./ui/Button"
+import { GripVertical } from "./ui/icons"
 import { MenuItem } from "./ui/Menu"
 import { ToggleButton } from "./ui/ToggleButton"
 import { useSnapshot } from "./use-snapshot"
+
+/** What a Branch Graph row carries when dragged: the branch's ref. */
+export let branchDragType = "application/x-laneway-branch"
 
 interface GraphPanelProps {
     controller: AppController
@@ -90,15 +95,63 @@ export function BranchGraphPanel({ controller, repositoryId, mainWorktree }: Gra
 function GraphRows(
     { controller, repositoryId, mainWorktree, graph, rows, view }: GraphPanelProps & { graph: BranchGraph; rows: GraphRowLayout[]; view: GraphView },
 ) {
-    let { columns, branches } = controller
+    let { columns, branches, rebase } = controller
     let identities = useMemo(() => workspaceGraph(graph), [graph])
     let items = useMemo(() => rows.map(row => ({ id: row.node.id, row })), [rows])
     let selected = identities.branches.find(branch => branch.id == view.selectedId)
-    // Left folds the selected branch's stack and Right unfolds it; F2 renames and Delete deletes it.
+    let rebasing = useSnapshot(rebase)
+    let choosing = rebasing.choosing?.repositoryId == repositoryId ? identities.branches.find(branch => branch.id == rebasing.choosing?.sourceId) : undefined
+    // While a rebase chooses its destination, a row chosen with the pointer is the destination; arrows only select.
+    let pointer = useRef(false)
+    let dragged = useRef<string>(undefined)
+    useEffect(() => {
+        if (!choosing)
+            return
+        let escape = (event: globalThis.KeyboardEvent) => {
+            if (event.key == "Escape") {
+                event.preventDefault()
+                rebase.stopChoosing()
+            }
+        }
+        window.addEventListener("keydown", escape)
+        return () => window.removeEventListener("keydown", escape)
+    }, [choosing, rebase])
+    // A branch dropped on another row rebases onto it; dropped on a worktree column's header, it switches that worktree.
+    let { dragAndDropHooks } = useDragAndDrop({
+        getItems: keys =>
+            [...keys].map(key => {
+                let branch = identities.branches.find(candidate => candidate.id == key)
+                return branch && !branch.remoteOnly ? { [branchDragType]: branch.preferredRef, "text/plain": branch.name } : { "text/plain": String(key) }
+            }),
+        onDragStart: event => {
+            dragged.current = String([...event.keys][0])
+        },
+        onDragEnd: () => {
+            dragged.current = undefined
+        },
+        acceptedDragTypes: [branchDragType],
+        getDropOperation: target => {
+            let source = identities.branches.find(branch => branch.id == dragged.current)
+            let destination = target.type == "item" && target.dropPosition == "on" ? identities.branches.find(branch => branch.id == target.key) : undefined
+            return source && destination && canRebaseOnto(identities, source, destination) ? "move" : "cancel"
+        },
+        onItemDrop: event => {
+            if (dragged.current && event.target.dropPosition == "on")
+                void rebase.start(repositoryId, identities, dragged.current, String(event.target.key))
+        },
+    })
+    // Left folds the selected branch's stack and Right unfolds it; F2 renames, Delete deletes, and M rebases it.
     let keyDown = (event: KeyboardEvent) => {
+        pointer.current = false
         if (!selected || event.altKey || event.ctrlKey || event.metaKey || event.target instanceof HTMLElement && event.target.closest("button"))
             return
-        if (event.key == "ArrowLeft" || event.key == "ArrowRight") {
+        if (event.key.toLowerCase() == "m" && !event.shiftKey) {
+            if (rebaseable(selected)) {
+                event.preventDefault()
+                event.stopPropagation()
+                rebase.choose(repositoryId, selected)
+            }
+        } else if (event.key == "ArrowLeft" || event.key == "ArrowRight") {
             event.preventDefault()
             event.stopPropagation()
             // Branches stack on a whole Branch Node, so folding any identity at its tip folds them all.
@@ -113,7 +166,13 @@ function GraphRows(
         }
     }
     return (
-        <div className="graph-rows-area" onKeyDownCapture={keyDown}>
+        <div
+            className="graph-rows-area"
+            onKeyDownCapture={keyDown}
+            onPointerDownCapture={() => {
+                pointer.current = true
+            }}
+        >
             <Virtualizer layout={ListLayout} layoutOptions={{ rowHeight: graphRowHeight }}>
                 <GridList
                     aria-label="Branches and graph nodes"
@@ -121,11 +180,28 @@ function GraphRows(
                     items={items}
                     selectionMode="single"
                     selectionBehavior="replace"
+                    // Choosing the selected row again keeps it selected, as Graph Selection only moves.
+                    disallowEmptySelection
                     keyboardNavigationBehavior="tab"
+                    dragAndDropHooks={dragAndDropHooks}
                     selectedKeys={view.selectedId ? [view.selectedId] : []}
-                    onSelectionChange={keys => keys != "all" && columns.select(keys.size ? String([...keys][0]) : undefined)}
-                    onAction={key => identities.branches.some(branch => branch.id == key) && columns.open(String(key))}
-                    dependencies={[identities]}
+                    onSelectionChange={keys => {
+                        if (keys == "all")
+                            return
+                        let key = keys.size ? String([...keys][0]) : undefined
+                        columns.select(key)
+                        if (choosing && pointer.current && key && key != choosing.id)
+                            rebase.chooseDestination(repositoryId, identities, key)
+                        pointer.current = false
+                    }}
+                    // Enter opens the selected branch, or rebases onto it while a rebase chooses its destination.
+                    onAction={key => {
+                        if (choosing)
+                            rebase.chooseDestination(repositoryId, identities, String(key))
+                        else if (identities.branches.some(branch => branch.id == key))
+                            columns.open(String(key))
+                    }}
+                    dependencies={[identities, choosing, view.selectedId]}
                 >
                     {({ row }) => {
                         let branch = row.node.kind == "branch" ? identities.branches.find(candidate => candidate.id == row.node.id) : undefined
@@ -134,6 +210,11 @@ function GraphRows(
                                 <BranchRow
                                     row={row}
                                     branch={branch}
+                                    rebase={choosing?.id == branch.id
+                                        ? "source"
+                                        : choosing && view.selectedId == branch.id && canRebaseOnto(identities, choosing, branch)
+                                        ? "target"
+                                        : undefined}
                                     onOpen={() => columns.open(branch.id)}
                                     onMarker={marker => {
                                         columns.showMarker(marker, branch.id)
@@ -141,6 +222,16 @@ function GraphRows(
                                     }}
                                     menu={() => (
                                         <>
+                                            {rebaseable(branch) && (
+                                                <MenuItem
+                                                    onAction={() => {
+                                                        columns.select(branch.id)
+                                                        rebase.choose(repositoryId, branch)
+                                                    }}
+                                                >
+                                                    Rebase onto…
+                                                </MenuItem>
+                                            )}
                                             <MenuItem onAction={() => branches.createAt(repositoryId, branch.tip)}>Create branch here…</MenuItem>
                                             {branch.localRefs.length > 0 && (
                                                 <MenuItem onAction={() => branches.rename(repositoryId, branch)}>Rename branch…</MenuItem>
@@ -160,50 +251,70 @@ function GraphRows(
     )
 }
 
-function BranchRow({ row, branch, onOpen, onMarker, menu }: {
+function BranchRow({ row, branch, rebase, onOpen, onMarker, menu }: {
     row: GraphRowLayout
     branch: BranchGraphBranchNode
+    /** Its part in a rebase whose destination is being chosen. */
+    rebase?: "source" | "target"
     onOpen(): void
     onMarker(marker: BranchGraphMarker): void
     menu(): React.ReactNode
 }) {
     let { row: rowRef, openMenu } = useRowMenu({ label: `Actions for ${branch.name}`, items: menu })
     return (
-        <GridListItem ref={rowRef} id={branch.id} textValue={branch.name} className="graph-row" data-node-id={branch.id} onContextMenu={openMenu}>
-            <GraphRail row={row} />
-            <span className="graph-copy">
-                <strong className="graph-name" title={branch.name}>{branch.name}</strong>
-                <span className="graph-details">
-                    <small className="graph-kind">{branchKind(branch)}</small>
-                    {branch.checkedOut.map(worktree => (
-                        <span key={worktree.path} className="graph-chip worktree" title={worktree.path}>
-                            <FolderIcon />
-                            {worktree.name}
+        <GridListItem
+            ref={rowRef}
+            id={branch.id}
+            textValue={branch.name}
+            className="graph-row"
+            data-node-id={branch.id}
+            data-rebase={rebase}
+            onContextMenu={openMenu}
+        >
+            {({ isFocusVisibleWithin }) => (
+                <>
+                    <GraphRail row={row} />
+                    <span className="graph-copy">
+                        <strong className="graph-name" title={branch.name}>{branch.name}</strong>
+                        <span className="graph-details">
+                            <small className="graph-kind">{branchKind(branch)}</small>
+                            {branch.checkedOut.map(worktree => (
+                                <span key={worktree.path} className="graph-chip worktree" title={worktree.path}>
+                                    <FolderIcon />
+                                    {worktree.name}
+                                </span>
+                            ))}
+                            {branch.tags.map(tag => (
+                                <span key={tag} className="graph-chip tag">
+                                    <TagIcon />
+                                    {tag}
+                                </span>
+                            ))}
+                            {branch.unresolved && (
+                                <span className="graph-chip unresolved" title={branch.unresolved.recovery ?? "This stack contains deferred conflicts"}>
+                                    Unresolved
+                                </span>
+                            )}
+                            {branch.markers.map(marker => (
+                                <AriaButton
+                                    key={marker.id}
+                                    className="graph-marker"
+                                    aria-label={`Stash ${marker.label}`}
+                                    onPress={() => onMarker(marker)}
+                                >
+                                    <ArchiveIcon />
+                                </AriaButton>
+                            ))}
+                            {(branch.ahead > 0 || branch.behind > 0) && <span className="graph-chip divergence">↑{branch.ahead} ↓{branch.behind}</span>}
                         </span>
-                    ))}
-                    {branch.tags.map(tag => (
-                        <span key={tag} className="graph-chip tag">
-                            <TagIcon />
-                            {tag}
-                        </span>
-                    ))}
-                    {branch.unresolved && (
-                        <span className="graph-chip unresolved" title={branch.unresolved.recovery ?? "This stack contains deferred conflicts"}>Unresolved</span>
-                    )}
-                    {branch.markers.map(marker => (
-                        <AriaButton
-                            key={marker.id}
-                            className="graph-marker"
-                            aria-label={`Stash ${marker.label}`}
-                            onPress={() => onMarker(marker)}
-                        >
-                            <ArchiveIcon />
-                        </AriaButton>
-                    ))}
-                    {(branch.ahead > 0 || branch.behind > 0) && <span className="graph-chip divergence">↑{branch.ahead} ↓{branch.behind}</span>}
-                </span>
-            </span>
-            <AriaButton className="graph-open" onPress={onOpen}>Open</AriaButton>
+                    </span>
+                    {/* Drags the branch by keyboard too: onto another row to rebase, or a worktree column's header to switch it. */}
+                    <AriaButton slot="drag" className="drag-handle" aria-label={`Drag ${branch.name}`} data-visible={isFocusVisibleWithin || undefined}>
+                        <GripVertical />
+                    </AriaButton>
+                    <AriaButton className="graph-open" onPress={onOpen}>Open</AriaButton>
+                </>
+            )}
         </GridListItem>
     )
 }
@@ -213,11 +324,19 @@ function SimpleRow({ row }: { row: GraphRowLayout }) {
     let node = row.node as Extract<GraphRowLayout["node"], { kind: "tag" | "worktree" }>
     return (
         <GridListItem id={node.id} textValue={node.name} className="graph-row simple" data-node-id={node.id}>
-            <GraphRail row={row} />
-            <span className="graph-copy" title={node.title}>
-                <strong className="graph-name">{node.name}</strong>
-                <small className="graph-kind">{node.kind == "tag" ? "Tag" : "Detached worktree"}</small>
-            </span>
+            {({ isFocusVisibleWithin }) => (
+                <>
+                    <GraphRail row={row} />
+                    <span className="graph-copy" title={node.title}>
+                        <strong className="graph-name">{node.name}</strong>
+                        <small className="graph-kind">{node.kind == "tag" ? "Tag" : "Detached worktree"}</small>
+                    </span>
+                    {/* Every row drags in a draggable list, but only a branch's drag lands anywhere. */}
+                    <AriaButton slot="drag" className="drag-handle" aria-label={`Drag ${node.name}`} data-visible={isFocusVisibleWithin || undefined}>
+                        <GripVertical />
+                    </AriaButton>
+                </>
+            )}
         </GridListItem>
     )
 }
