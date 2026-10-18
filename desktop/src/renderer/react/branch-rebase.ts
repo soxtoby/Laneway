@@ -46,7 +46,10 @@ export interface BranchRebase extends Store<RebaseSnapshot> {
     setDestination(destination: RebaseDestination): void
     setDescendants(descendants: boolean): void
     review(): Promise<void>
-    execute(): Promise<void>
+    /** Runs the reviewed rebase; with `resolveNow`, its conflicts open to resolve straight away. */
+    execute(resolveNow?: boolean): Promise<void>
+    /** Whether a rebase with conflicts can go on to resolve them now. */
+    readonly resolves: boolean
     cancel(): void
 }
 
@@ -56,10 +59,12 @@ interface RebaseOptions {
     mutating(busy: boolean): void
     /** Runs after a rebase, which rewrites the branches it moves. */
     completed(repositoryId: string): Promise<void>
+    /** Opens the rebased stack to resolve its conflicts now: the named branches, the rebased one first. */
+    resolve?(repositoryId: string, branches: string[]): void
 }
 
 /** Rebasing a Branch Node's own commits onto another branch, by drag and drop or by keyboard. */
-export function createBranchRebase({ api, notify: show, mutating, completed }: RebaseOptions): BranchRebase {
+export function createBranchRebase({ api, notify: show, mutating, completed, resolve }: RebaseOptions): BranchRebase {
     let store = createStore<RebaseSnapshot>({ busy: false, executing: false })
     let state = store.snapshot
     let set = (change: Partial<RebaseSnapshot>) => store.publish({ ...state(), ...change })
@@ -140,7 +145,7 @@ export function createBranchRebase({ api, notify: show, mutating, completed }: R
         }
     }
 
-    async function execute() {
+    async function execute(resolveNow = false) {
         let current = state().pending
         let reviewed = current?.preview?.composition
         if (!current?.preview || !reviewed || state().busy)
@@ -167,6 +172,8 @@ export function createBranchRebase({ api, notify: show, mutating, completed }: R
             })
             set({ pending: undefined })
             await completed(current.repositoryId)
+            if (resolveNow)
+                resolve?.(current.repositoryId, [shortName(current.source.preferredRef), ...moved])
         } catch (error) {
             fail(current, error)
         } finally {
@@ -262,6 +269,7 @@ export function createBranchRebase({ api, notify: show, mutating, completed }: R
 
         review: prepare,
         execute,
+        resolves: resolve != undefined,
 
         cancel() {
             if (state().executing)

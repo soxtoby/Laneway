@@ -89,10 +89,29 @@ export function RebaseDialog({ rebase }: { rebase: BranchRebase }) {
                             {!current.preview && current.error && (
                                 <Button variant="secondary" isDisabled={busy} onPress={() => void rebase.review()}>Review again</Button>
                             )}
-                            {/* Resolving conflicts now waits for conflict resolution's own screen (migration step 8). */}
-                            <Button variant="accent" isDisabled={busy || !reviewed || reviewed.noop} onPress={() => void rebase.execute()} autoFocus>
-                                {reviewed?.conflicts.length ? "Continue and resolve later" : "Rebase"}
-                            </Button>
+                            {reviewed?.conflicts.length
+                                ? (
+                                    <>
+                                        <Button variant="secondary" isDisabled={busy} onPress={() => void rebase.execute(false)}>
+                                            Continue and resolve later
+                                        </Button>
+                                        {rebase.resolves && (
+                                            <Button variant="accent" isDisabled={busy} onPress={() => void rebase.execute(true)} autoFocus>
+                                                Continue and resolve now
+                                            </Button>
+                                        )}
+                                    </>
+                                )
+                                : (
+                                    <Button
+                                        variant="accent"
+                                        isDisabled={busy || !reviewed || reviewed.noop}
+                                        onPress={() => void rebase.execute(false)}
+                                        autoFocus
+                                    >
+                                        Rebase
+                                    </Button>
+                                )}
                         </div>
                     </>
                 )}

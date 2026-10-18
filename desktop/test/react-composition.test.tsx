@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import type { CompositionPreview, CompositionRequest, LocalActionResult, LocalRequest } from "@laneway/shared"
+import type { CompositionPreview, CompositionRequest, ConflictResult, LocalActionResult, LocalRequest } from "@laneway/shared"
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
 import type { Window as HappyWindow } from "happy-dom"
 import { button, installReactDom, press, startReactApp, stopReactApps, type } from "./react-dom"
@@ -140,7 +140,79 @@ describe("React composition", () => {
         ]])
         expect(calls[0]!.request).toMatchObject({ source: { kind: "working" }, view: "unstaged", files: [{ path: "src/file.txt" }] })
     })
+
+    test("a transfer going on to resolve now opens its conflicted commit, showing only conflicted commits", async () => {
+        let scenario = inspectionScenario()
+        let { api, calls, review } = composing(scenario)
+        let conflicted = false
+        review({ conflicts: [{ subject: "commit 22222222", files: ["src/file.txt"] }] })
+        let app = await startReactApp({
+            ...api,
+            readBranchGraph: async () => ({ ok: true, graph: structuredClone(scenario.graph) }),
+            readBranchHistory: async (...args) => {
+                let result = await scenario.api.readBranchHistory(...args)
+                if (!result.ok || !conflicted)
+                    return result
+                return { ...result, page: { ...result.page, commits: result.page.commits.map(commit => ({ ...commit, conflictId: "conflict-1" })) } }
+            },
+            localOperation: async (id, request, token) => {
+                let result = await api.localOperation(id, request, token)
+                if (token) {
+                    conflicted = true
+                    Object.assign(scenario.graph.branches[1]!, { unresolved: { subjects: ["conflict-1"] } })
+                }
+                return result
+            },
+            conflictOperation: async (_id, request) => ({
+                ok: true,
+                result: {
+                    type: "result",
+                    command: "conflict",
+                    conflicts: [{ id: "conflict-1", kind: "commit", branch: "feature/laneway", title: "Inspect changes", files: 1 }],
+                    recovery: [],
+                    view: request.action == "inspect" ? conflictView("conflict-1") : undefined,
+                },
+            }),
+        })
+        let commit = trail().querySelector<HTMLElement>(".trail-commit")!
+        await app.act(() => key(button(commit, "Move or copy Inspect changes"), "m"))
+        await app.act(() => key(document.activeElement!, "ArrowDown"))
+        await app.act(() => key(document.activeElement!, "ArrowDown"))
+        await app.act(() => key(document.activeElement!, "Enter"))
+
+        await app.act(() => press(button(document.querySelector<HTMLElement>("[aria-label='Review transfer']")!, "Continue and resolve now")))
+
+        expect(calls.map(call => call.token)).toEqual([undefined, "reviewed-1"])
+        expect(button(document.body, "Show only conflicted commits").getAttribute("aria-pressed")).toBe("true")
+        let resolution = trail().querySelector<HTMLElement>(".trail-commit [aria-label='Conflict resolution']")
+        expect(resolution?.querySelector(".conflict-file")?.getAttribute("data-file")).toBe("src/file.txt")
+    })
 })
+
+function conflictView(id: string): NonNullable<ConflictResult["view"]> {
+    let objectId = "2".repeat(40)
+    let text = "before\n"
+    let file = { path: "src/file.txt", base: null, left: null, right: null, provisional: null, text: true }
+    return {
+        subject: { id, input: objectId, tree: objectId, leftLabel: "Before this commit", rightLabel: "This commit", markerSize: 7, files: [file] },
+        sourceCommit: objectId,
+        candidate: { subject: id, input: objectId, revision: "1", files: {} },
+        files: [{
+            ...file,
+            baseText: text,
+            leftText: text,
+            rightText: text,
+            resultText: null,
+            suggestionText: null,
+            diff: "",
+            resolved: false,
+            hunks: [],
+        }],
+        reviewTree: objectId,
+        resultTree: objectId,
+        ready: false,
+    }
+}
 
 function composing(scenario: ReturnType<typeof inspectionScenario>) {
     let calls: { request: CompositionRequest; token?: string }[] = []

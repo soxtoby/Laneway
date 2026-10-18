@@ -16,8 +16,10 @@ interface ButtonProps extends RACButtonProps {
 }
 
 export function Button(props: ButtonProps) {
+    // Laneway places some buttons with its own classes, kept alongside the kit's.
+    let className = composeRenderProps(props.className, extra => extra ? `react-aria-Button button-base ${extra}` : "react-aria-Button button-base")
     return (
-        <RACButton {...props} className="react-aria-Button button-base" data-variant={props.variant || "primary"}>
+        <RACButton {...props} className={className} data-variant={props.variant || "primary"}>
             {composeRenderProps(props.children, (children, { isPending }) => (
                 <>
                     {!isPending && labelled(children)}

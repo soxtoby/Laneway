@@ -312,6 +312,19 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                         <h2 className="column-name">{column.name}</h2>
                                     </div>
                                 )}
+                            {column.kind == "branch" && (column.branch.unresolved || files?.conflictsOnly) && (
+                                <TooltipTrigger>
+                                    <ToggleButton
+                                        className="icon-button conflicts-only"
+                                        aria-label="Show only conflicted commits"
+                                        isSelected={files?.conflictsOnly == true}
+                                        onChange={selected => controller.inspection.setConflictsOnly(column.id, selected)}
+                                    >
+                                        <WarningIcon />
+                                    </ToggleButton>
+                                    <Tooltip>Show only conflicted commits</Tooltip>
+                                </TooltipTrigger>
+                            )}
                             {filterable && (
                                 <TooltipTrigger>
                                     <AriaButton

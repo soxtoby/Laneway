@@ -57,6 +57,8 @@ export interface ColumnInspection {
     diffColumn?: { group: string; focus?: string }
     /** The column's file filter, while it is open. */
     filter?: FileFilter
+    /** The Commit Trail shows only commits with conflicts to resolve. */
+    conflictsOnly?: boolean
 }
 
 /** Narrows every list in a column to the files whose path contains `text`, with the chosen status or any. */
@@ -223,6 +225,10 @@ export interface Inspection extends Store<InspectionSnapshot> {
     setFilter(columnId: string, filter: FileFilter): void
     /** Closes the column's file filter, showing every file again. */
     closeFilter(columnId: string): void
+    /** Shows only the commits with conflicts in a column's Commit Trail, reading its unresolved branches' whole histories. */
+    setConflictsOnly(columnId: string, conflictsOnly: boolean): void
+    /** Opens the conflicted commit `conflictId` in the column whose stack holds it, showing only conflicted commits. */
+    resolveConflict(conflictId: string): void
     /** Follows a renamed branch in the histories read from it. */
     renamed(oldRef: string, newRef: string): void
     /** Reads a diff again after it failed, or its next page. */
@@ -268,6 +274,8 @@ interface ColumnState extends ColumnInspection {
     branchId?: string
     /** The compared tips a comparison was read at; when a compared branch moves, it is read again. */
     comparisonKey?: string
+    /** A conflicted commit to open once its history shows it. */
+    openConflict?: string
     /** For an auxiliary column's state, the Workspace Column it descends from, and its own auxiliary column. */
     root?: ColumnState
     auxiliaryId?: string
@@ -375,6 +383,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             diffs: { ...state.diffs },
             diffColumn: state.diffColumn && { group: state.diffColumn.group, focus: state.diffColumn.focus },
             filter: state.filter,
+            conflictsOnly: state.conflictsOnly,
         }
     }
 
@@ -803,7 +812,45 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             update = { error: errorMessage(error) }
         }
         state.history[branch.id] = { ...state.history[branch.id]!, ...update, loading: false }
+        openConflictCommit(repositoryId, state)
         publishFor(repositoryId, state)
+        // Showing only conflicted commits reads the whole history, so none is missed.
+        if (state.conflictsOnly && !update.error && update.page?.nextOffset != undefined && alive(state))
+            void readHistory(repositoryId, state, branch, true)
+    }
+
+    // Each unresolved branch in the column's stack shows, read to its end.
+    function readConflictHistories(repositoryId: string, state: ColumnState) {
+        let graph = graphs.get(repositoryId)
+        let branch = graph?.branches.find(candidate => candidate.id == state.branchId)
+        if (!graph || !branch)
+            return
+        for (let item of branchStack(graph, branch, state.bases)) {
+            if (!item.unresolved)
+                continue
+            let current = state.history[item.id]
+            if (!current || current.key != historyKey(graph, item) || !current.page)
+                void readHistory(repositoryId, state, item)
+            else {
+                state.history[item.id] = { ...current, open: true }
+                if (current.page.nextOffset != undefined)
+                    void readHistory(repositoryId, state, item, true)
+            }
+        }
+    }
+
+    function openConflictCommit(repositoryId: string, state: ColumnState) {
+        let conflictId = state.openConflict
+        let commit = conflictId
+            && Object.values(state.history).flatMap(history => history.page?.commits ?? []).find(candidate => candidate.conflictId == conflictId)
+        if (!commit)
+            return
+        state.openConflict = undefined
+        let files = state.files[commit.objectId]
+        if (!files)
+            void read(repositoryId, state, commit.objectId, { kind: "commit", objectId: commit.objectId })
+        else if (!files.open)
+            state.files[commit.objectId] = { ...files, open: true }
     }
 
     function discardTarget(columnId: string, group: string, file: ChangedFile) {
@@ -1242,6 +1289,30 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             if (state?.filter) {
                 state.filter = undefined
                 publish()
+            }
+        },
+
+        setConflictsOnly(columnId, conflictsOnly) {
+            let state = columnState(columnId)
+            if (!state || !activeId)
+                return
+            state.conflictsOnly = conflictsOnly
+            if (conflictsOnly)
+                readConflictHistories(activeId, state)
+            publish()
+        },
+
+        resolveConflict(conflictId) {
+            let graph = activeId ? graphs.get(activeId) : undefined
+            for (let state of activeId ? repositories.get(activeId)?.values() ?? [] : []) {
+                let branch = graph?.branches.find(candidate => candidate.id == state.branchId)
+                if (!graph || !branch || !branchStack(graph, branch, state.bases).some(item => item.unresolved?.subjects.includes(conflictId)))
+                    continue
+                state.openConflict = conflictId
+                state.conflictsOnly = true
+                readConflictHistories(activeId!, state)
+                openConflictCommit(activeId!, state)
+                return publish()
             }
         },
 

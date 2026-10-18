@@ -599,7 +599,10 @@ function ConflictFileRow(
                                     </summary>
                                     <div class="resolution-menu-items">
                                         {path && (
-                                            <button disabled={busy} mix={on("click", () => void action({ action: "use-file", file: file.path, path }))}>
+                                            <button
+                                                disabled={busy}
+                                                mix={on("click", () => void action({ action: "use-file", file: file.path, path }))}
+                                            >
                                                 Use current file
                                             </button>
                                         )}

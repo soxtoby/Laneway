@@ -176,3 +176,34 @@ export function ImageModeIcon({ mode }: { mode: "side-by-side" | "swipe" | "onio
         </DiffStroke>
     )
 }
+
+// Conflict resolution's whole-file choices and merge tool, as the Remix renderer drew them.
+function ResolutionStroke({ d }: { d: string }) {
+    return (
+        <svg
+            width={14}
+            height={14}
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+        >
+            <path d={d} />
+        </svg>
+    )
+}
+
+export function TakeLeftIcon() {
+    return <ResolutionStroke d="M11 2h3v12h-3M2 8h7M6 5l3 3-3 3" />
+}
+
+export function TakeRightIcon() {
+    return <ResolutionStroke d="M5 2H2v12h3m9-6H7m3-3L7 8l3 3" />
+}
+
+export function MergeToolIcon() {
+    return <ResolutionStroke d="M2 3h4v10H2ZM10 3h4v10h-4M6 8h4m-2-2 2 2-2 2" />
+}

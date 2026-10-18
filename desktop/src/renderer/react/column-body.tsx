@@ -4,6 +4,7 @@ import type { ReactNode } from "react"
 import type { AppController } from "./app-controller"
 import type { ColumnView } from "./branch-workspace"
 import { CommitTrail } from "./commit-trail"
+import { ConflictControls } from "./conflict-resolution"
 import { DiffScopeContext } from "./diff-panel"
 import type { ColumnInspection } from "./inspection"
 import { TransferScopeContext } from "./transfer"
@@ -26,7 +27,7 @@ interface ColumnBodyProps {
 export function ColumnBody({ controller, repositoryId, graph, column, inspected, blocked, view, onViewChange }: ColumnBodyProps) {
     if (column.kind == "recovery")
         return null
-    let { inspection, branches } = controller
+    let { inspection, branches, conflicts } = controller
     // A comparison only reads, so its files can't be chosen to move or discard.
     if (column.kind == "comparison") {
         return (
@@ -53,6 +54,9 @@ export function ColumnBody({ controller, repositoryId, graph, column, inspected,
     return (
         <ColumnScopes controller={controller} repositoryId={repositoryId} graph={graph} column={column}>
             <div className="column-body">
+                {column.kind == "branch" && column.branch.unresolved && !column.worktree?.missing && (
+                    <ConflictControls conflicts={conflicts} repositoryId={repositoryId} branch={column.branch} path={path} />
+                )}
                 {path
                     ? (
                         // A cleared recovery recreates the composer, so its preview runs again.
@@ -84,6 +88,8 @@ export function ColumnBody({ controller, repositoryId, graph, column, inspected,
                         createBranchAt={commit => branches.createAt(repositoryId, commit.objectId)}
                         reword={(branch, commit, close) => controller.reword(repositoryId, branch.preferredRef, commit, close)}
                         compare={(from, to) => controller.columns.openComparison(column.id, from, to)}
+                        conflicts={conflicts}
+                        repositoryId={repositoryId}
                     />
                 )}
             </div>

@@ -1,9 +1,11 @@
 import type { Appearance, BranchHistoryCommit, FileListView, OpenRepository, RepositoryIdentity, Workspace, WorkspaceColumn } from "@laneway/shared"
+import { workspaceGraph } from "../src/worktrees/worktree-columns"
 import { type BranchRebase, createBranchRebase } from "./branch-rebase"
 import { type BranchWorkspace, createBranchWorkspace } from "./branch-workspace"
 import { type CommandLens, createCommandLens, type LensResult } from "./command-lens"
 import { type CommitComposer, createCommitComposer } from "./commit-composer"
 import { type Composition, createComposition } from "./composition"
+import { type Conflicts, createConflicts } from "./conflicts"
 import { createGitSettings, type GitSettings } from "./git-settings"
 import { createInspection, type Inspection } from "./inspection"
 import { createLocalBranches, type LocalBranches } from "./local-branches"
@@ -51,6 +53,8 @@ export interface AppController extends Store<AppSnapshot> {
     /** Rebasing branches from the Branch Graph. */
     readonly rebase: BranchRebase
     readonly lens: CommandLens
+    /** Resolving conflicts that rewrites deferred. */
+    readonly conflicts: Conflicts
     readonly pull: PullLatest
     /** Moving and copying files, commits, and branches between columns. */
     readonly composition: Composition
@@ -191,11 +195,25 @@ export function createAppController(api: Api): AppController {
         transitioned: rewritten,
     })
 
+    let conflicts = createConflicts({ api, changed: rewritten })
+
+    // A transfer that chose to resolve now opens its first conflict where it shows: Working Changes a stash couldn't
+    // restore in their column, or a conflicted commit in the column whose stack holds it.
+    async function resolveFirstConflict(repositoryId: string) {
+        let response = await api.conflictOperation(repositoryId, { action: "list" })
+        let first = response.ok ? response.result.conflicts.find(conflict => !conflict.suspended) : undefined
+        if (first?.kind == "working")
+            conflicts.open(repositoryId, first.id)
+        else if (first)
+            inspection.resolveConflict(first.id)
+    }
+
     let composition = createComposition({
         api,
         notify,
         mutating: busy => columns.mutating(busy),
         changed: rewritten,
+        resolve: repositoryId => void resolveFirstConflict(repositoryId),
     })
 
     let rebase = createBranchRebase({
@@ -203,6 +221,13 @@ export function createAppController(api: Api): AppController {
         notify,
         mutating: busy => columns.mutating(busy),
         completed: rewritten,
+        // The lowest unresolved branch's column shows every conflict above it.
+        resolve(_repositoryId, names) {
+            let branches = columns.snapshot().graph ? workspaceGraph(columns.snapshot().graph!).branches : []
+            let name = names.find(candidate => branches.some(branch => branch.name == candidate && branch.unresolved)) ?? names[0]
+            if (name)
+                columns.open(`branch:refs/heads/${name}`)
+        },
     })
 
     let lens = createCommandLens({ api, workspace: () => ready()?.workspace })
@@ -267,6 +292,7 @@ export function createAppController(api: Api): AppController {
         stashes,
         rebase,
         lens,
+        conflicts,
         pull,
         composition,
 

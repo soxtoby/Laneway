@@ -3723,3 +3723,221 @@
         color: var(--warning-color);
     }
 }
+
+/* Conflict resolution, in place in a conflicted commit or a branch's Working Changes conflict. */
+.conflict-resolution {
+    display: grid;
+    gap: var(--spacing-1);
+    min-width: 0;
+
+    > .resolution-mode {
+        justify-self: start;
+        height: var(--spacing-6);
+        margin: 0 var(--spacing-2);
+    }
+}
+
+.conflict-files {
+    display: grid;
+}
+
+.conflict-file-row {
+    height: 28px;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-1);
+    padding-inline: var(--spacing-1);
+    border-radius: var(--radius-sm);
+
+    &:hover {
+        background: var(--highlight-hover);
+    }
+}
+
+.conflict-file-toggle {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: 0 var(--spacing-1);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-color);
+    font: inherit;
+    text-align: start;
+    outline: none;
+
+    > .toggle-chevron {
+        flex: 0 0 auto;
+        width: var(--spacing-3);
+        height: var(--spacing-3);
+    }
+
+    &[aria-expanded="true"] > .toggle-chevron {
+        rotate: 90deg;
+    }
+
+    &[data-disabled] > .toggle-chevron {
+        visibility: hidden;
+    }
+
+    &[data-focus-visible] {
+        outline: 2px solid var(--focus-ring-color);
+        outline-offset: -2px;
+    }
+
+    .file-path {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+}
+
+.resolved-mark,
+.pending-mark {
+    flex: 0 0 auto;
+    display: inline-grid;
+
+    > svg {
+        width: 14px;
+        height: 14px;
+    }
+}
+
+.resolved-mark {
+    color: var(--status-added);
+}
+
+.pending-mark,
+.commit-conflict {
+    color: var(--warning-color);
+}
+
+.conflict-file-actions {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.conflict-file-content {
+    margin: 0 0 var(--spacing-1);
+    border-block: 1px solid var(--border-color);
+    background: var(--gray-50);
+}
+
+.merge-sides {
+    display: grid;
+    gap: var(--spacing-1);
+    padding: var(--spacing-1) var(--spacing-3);
+    background: var(--tray-background);
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+
+    > div {
+        display: grid;
+    }
+
+    strong {
+        color: var(--text-color);
+        font-weight: 500;
+    }
+
+    span {
+        overflow-wrap: anywhere;
+    }
+}
+
+.pierre-merge {
+    min-height: 40px;
+    max-height: min(65vh, 640px);
+    overflow: auto;
+    user-select: text;
+}
+
+.review-heading {
+    padding: var(--spacing-1) var(--spacing-3);
+    background: var(--changes-background);
+    color: var(--text-color-placeholder);
+    font-size: 11px;
+}
+
+.resolution-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: var(--spacing-2) var(--spacing-3);
+    border-top: 1px solid var(--border-color);
+    background: var(--tray-background);
+
+    > .accept-resolution {
+        margin-inline-start: auto;
+    }
+}
+
+.resolution-progress {
+    flex: 0 0 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-1) var(--spacing-3);
+    white-space: nowrap;
+
+    strong {
+        font-weight: 500;
+    }
+
+    span {
+        color: var(--text-color-placeholder);
+        font-size: 11px;
+    }
+}
+
+.resolution-error {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: var(--spacing-2) var(--spacing-3);
+    color: var(--invalid-color);
+
+    span {
+        flex: 1;
+    }
+}
+
+/* A branch's conflicts outside its commits, at the top of its column. */
+.conflict-controls {
+    display: grid;
+    gap: var(--spacing-2);
+    padding: var(--spacing-2);
+    border: 1px solid var(--warning-border);
+    border-radius: var(--radius);
+    background: var(--warning-background);
+
+    p {
+        margin: 0;
+        overflow-wrap: anywhere;
+    }
+}
+
+.conflict-controls-title {
+    color: var(--warning-color);
+}
+
+.working-conflict,
+.conflict-recovery {
+    display: grid;
+    gap: var(--spacing-1);
+}
+
+.conflict-recovery-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-1);
+}

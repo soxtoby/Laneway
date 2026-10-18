@@ -99,6 +99,20 @@ describe("React Branch Graph rebase", () => {
         expect(notice()).toContain("with conflicts to resolve before publishing.")
     })
 
+    test("goes on with conflicts to resolve now by opening the lowest moved branch that has them", async () => {
+        let { api, graph, review, rebased } = scenario()
+        let app = await openGraph(api)
+        review({ conflicts: [{ subject: "commit 55555555", files: ["src/file.txt"] }] })
+        rebased(() => Object.assign(graph.branches.find(branch => branch.name == "child")!, { unresolved: { subjects: ["commit:5555"] } }))
+
+        await app.act(() => choose(app, "feature/laneway"))
+        await app.act(() => press(name("other/team")))
+        await app.act(() => press(button(dialog()!, "Continue and resolve now")))
+
+        expect(dialog()).toBeNull()
+        expect([...document.querySelectorAll(".column-row > .column")].map(column => column.getAttribute("aria-label"))).toEqual(["child"])
+    })
+
     test("chooses a destination by keyboard or from the row's menu, and Escape stops choosing", async () => {
         let { api, calls } = scenario()
         let app = await openGraph(api)
@@ -179,13 +193,16 @@ function scenario(configure: (graph: BranchGraph) => void = () => {}) {
     configure(graph)
     let calls: { request: CompositionRequest; token?: string }[] = []
     let reviewed: Partial<CompositionPreview> = {}
+    let afterRebase = () => {}
     let api = fakeLaneway({
         getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
-        readBranchGraph: async () => ({ ok: true, graph }),
+        readBranchGraph: async () => ({ ok: true, graph: structuredClone(graph) }),
         localOperation: async (_id, request, token) => {
             calls.push({ request: request as CompositionRequest, token })
-            if (token)
+            if (token) {
+                afterRebase()
                 return { ok: true, result: { type: "result", command: "local", status: "performed" } }
+            }
             let composition: CompositionPreview = {
                 branches: ["feature/laneway", "child"],
                 removed: [],
@@ -218,7 +235,13 @@ function scenario(configure: (graph: BranchGraph) => void = () => {}) {
             }
         },
     })
-    return { api, graph, calls, review: (value: Partial<CompositionPreview>) => reviewed = value }
+    return {
+        api,
+        graph,
+        calls,
+        review: (value: Partial<CompositionPreview>) => reviewed = value,
+        rebased: (change: () => void) => afterRebase = change,
+    }
 }
 
 async function openGraph(api: Window["laneway"]) {

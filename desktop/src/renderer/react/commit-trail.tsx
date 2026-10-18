@@ -4,6 +4,8 @@ import clsx from "clsx"
 import { useState } from "react"
 import { Button as AriaButton } from "react-aria-components"
 import type { ColumnView } from "./branch-workspace"
+import { ConflictResolution } from "./conflict-resolution"
+import type { Conflicts } from "./conflicts"
 import { IconButton, MoreMenu } from "./controls"
 import { useRowMenu } from "./dense-row"
 import { EditableName } from "./editable-name"
@@ -34,6 +36,9 @@ export interface CommitTrailProps {
     reword(branch: BranchGraphBranchNode, commit: BranchHistoryCommit, close: () => void): Reword
     /** Opens the Branch Comparison Column from `from` to `to` beside this column. */
     compare(from: ComparisonRef, to: ComparisonRef): void
+    /** Resolves the conflicts that rewrites deferred in the column's commits. */
+    conflicts: Conflicts
+    repositoryId: string
 }
 
 /**
@@ -154,7 +159,9 @@ function StackBranch(props: StackBranchProps) {
                             {history.error} <Button variant="quiet" onPress={() => inspection.readHistory(column.id, branch.id)}>Retry</Button>
                         </p>
                     )}
-                    {history?.page?.commits.map(commit => <TrailCommit key={commit.objectId} {...props} commit={commit} />)}
+                    {history?.page?.commits.filter(commit => !inspected?.conflictsOnly || commit.conflictId).map(commit => (
+                        <TrailCommit key={commit.objectId} {...props} commit={commit} />
+                    ))}
                     {history?.page?.nextOffset != undefined && (
                         <Button
                             variant="quiet"
@@ -252,6 +259,16 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
                         }}
                     />
                 )}
+                {/* A commit with deferred conflicts opens to resolve them. */}
+                {commit.conflictId && (
+                    <IconButton
+                        label={`Resolve conflicts in ${commit.subject}`}
+                        small
+                        onPress={() => open || inspection.toggleCommit(column.id, commit.objectId)}
+                    >
+                        <WarningIcon className="commit-conflict" />
+                    </IconButton>
+                )}
                 <AriaButton className="commit-toggle" aria-expanded={open} onPress={() => inspection.toggleCommit(column.id, commit.objectId)}>
                     <span className="commit-subject">{commit.subject}</span>
                     {commit.body && !open && <MoreIcon className="message-indicator" role="img" aria-label="Has message body" aria-hidden={false} />}
@@ -288,18 +305,48 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
                             ))}
                         </Select>
                     )}
-                    <FileList
-                        columnId={column.id}
-                        group={commit.objectId}
-                        label={`Files in commit ${commit.subject}`}
-                        files={files}
-                        inspected={inspected}
-                        inspection={inspection}
-                        view={view}
-                        root={props.root}
-                        selectable
-                        empty="No changes against this parent"
-                    />
+                    {commit.conflictId
+                        ? (
+                            <ConflictResolution
+                                conflicts={props.conflicts}
+                                repositoryId={props.repositoryId}
+                                subject={commit.conflictId}
+                                path={props.root}
+                                files={conflicted => (
+                                    <FileList
+                                        columnId={column.id}
+                                        group={commit.objectId}
+                                        label={`Files in commit ${commit.subject}`}
+                                        files={conflicted && files.inventory
+                                            ? {
+                                                ...files,
+                                                inventory: { ...files.inventory, files: files.inventory.files.filter(file => !conflicted.includes(file.path)) },
+                                            }
+                                            : files}
+                                        inspected={inspected}
+                                        inspection={inspection}
+                                        view={view}
+                                        root={props.root}
+                                        selectable
+                                        empty={conflicted ? "" : "No changes against this parent"}
+                                    />
+                                )}
+                            />
+                        )
+                        : (
+                            <FileList
+                                columnId={column.id}
+                                group={commit.objectId}
+                                label={`Files in commit ${commit.subject}`}
+                                files={files}
+                                inspected={inspected}
+                                inspection={inspection}
+                                view={view}
+                                root={props.root}
+                                selectable
+                                empty="No changes against this parent"
+                            />
+                        )}
                 </div>
             )}
             {scope && seamBelow && (
