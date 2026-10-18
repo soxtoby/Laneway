@@ -1,6 +1,6 @@
 import type { BranchGraph, BranchGraphBranchNode, BranchGraphMarker, BranchGraphWorktree, ComparisonRef, DiffLayout, RecoveryRequest, RepositoryGraphSettings, Workspace, WorkspaceColumn, WorktreeRecovery } from "@laneway/shared"
 import { comparisonColumnId, type ComparisonColumnNode, comparisonNode, renameComparisonRef } from "../src/inspection/comparison-columns"
-import { columnWorktree, reconcileWorktreeColumns, recoveryColumnId, recoveryWorkspaceColumn, workspaceGraph } from "../src/worktrees/worktree-columns"
+import { branchNodeFor, columnWorktree, reconcileWorktreeColumns, recoveryColumnId, recoveryWorkspaceColumn, workspaceGraph } from "../src/worktrees/worktree-columns"
 import type { ColumnInspection, Inspection } from "./inspection"
 import { errorMessage, type Notice } from "./notice"
 import { baseName } from "./repositories"
@@ -96,6 +96,11 @@ export interface BranchWorkspace extends Store<ColumnsSnapshot> {
     showMarker(marker?: BranchGraphMarker, branchId?: string): void
     /** Saves the active repository's remote and extra remote branches, then reads its Branch Graph with them. */
     applyGraphSettings(settings: RepositoryGraphSettings): Promise<void>
+    /**
+     * Shows a node in a repository's Branch Graph: reads every branch when the node is filtered out, unfolds the stack
+     * it sits in, selects it, and scrolls to it. Choosing another node first, or showing relevant branches, gives it up.
+     */
+    reveal(repositoryId: string, nodeId: string): void
     /** Opens the Branch Comparison Column from `from` to `to` beside `sourceId`, or brings the open one into view. */
     openComparison(sourceId: string, from: ComparisonRef, to: ComparisonRef): void
     /**
@@ -154,6 +159,8 @@ interface RepositoryColumns {
     foldedIds: string[]
     marker?: BranchGraphMarker
     graphRevealed?: { id: string; serial: number }
+    /** A node to reveal once the graph shows it. */
+    pendingReveal?: string
 }
 
 interface BranchWorkspaceOptions {
@@ -180,8 +187,9 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
     })
     let states = new Map<string, RepositoryColumns>()
     let activeId: string | undefined
-    // A disk change that lands mid-read is replayed once that read settles.
+    // A disk change that lands mid-read is replayed once that read settles, asking the remote too if it was asked to.
     let changedWhileReading = false
+    let refreshWhileReading = false
     let mutations = 0
 
     function stateFor(repositoryId: string) {
@@ -356,6 +364,7 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
         if (state.reading) {
             if (quiet) {
                 changedWhileReading = true
+                refreshWhileReading ||= refreshRemote
                 return
             }
             await state.reading
@@ -368,8 +377,10 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
             state.reading = undefined
         }
         if (changedWhileReading && repositoryId == activeId) {
+            let refresh = refreshWhileReading
             changedWhileReading = false
-            void read(repositoryId, true)
+            refreshWhileReading = false
+            void read(repositoryId, true, refresh)
         }
     }
 
@@ -391,6 +402,7 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
                 let recoveries = result.worktreeRecoveries ?? []
                 changed ||= JSON.stringify(state.graph) != JSON.stringify(result.graph) || JSON.stringify(state.recoveries) != JSON.stringify(recoveries)
                 let layoutInitialized = applyGraph(repositoryId, state, result.graph, recoveries)
+                revealPending(state)
                 await persist(repositoryId, layoutInitialized)
             } else if (result.error.code != "git.cancelled") {
                 changed = true
@@ -476,6 +488,26 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
         return layoutInitialized
     }
 
+    function revealPending(state: RepositoryColumns) {
+        let graph = state.graph
+        let nodeId = state.pendingReveal
+        let identities = graph && workspaceGraph(graph)
+        let shown = identities && [...identities.branches, ...graph!.tags, ...graph!.virtualBranches].some(node => node.id == nodeId)
+        if (!graph || !nodeId || !shown)
+            return
+        // A branch hides under any folded Branch Node below it in its stack.
+        let below = new Set<string>()
+        for (let branch = branchNodeFor(graph, nodeId); branch?.base.status == "known" && !below.has(branch.base.branchId);) {
+            below.add(branch.base.branchId)
+            branch = branchNodeFor(graph, branch.base.branchId)
+        }
+        state.foldedIds = state.foldedIds.filter(id => !below.has(id))
+        state.pendingReveal = undefined
+        state.selectedId = nodeId
+        state.marker = undefined
+        state.graphRevealed = { id: nodeId, serial: (state.graphRevealed?.serial ?? 0) + 1 }
+    }
+
     // The first read shows the local Branch Graph at once; the remote's default branch follows quietly.
     async function ensure(repositoryId: string) {
         let state = stateFor(repositoryId)
@@ -552,14 +584,31 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
         toggleAll() {
             if (!activeId)
                 return
-            change(activeId, state => state.showAll = !state.showAll, false)
+            change(activeId, state => {
+                state.showAll = !state.showAll
+                state.pendingReveal = undefined
+            }, false)
             void read(activeId, false)
         },
         select(nodeId) {
             change(activeId, state => {
                 state.selectedId = nodeId
                 state.marker = undefined
+                state.pendingReveal = undefined
             }, false)
+        },
+        reveal(repositoryId, nodeId) {
+            let state = stateFor(repositoryId)
+            state.graphShown = true
+            state.pendingReveal = nodeId
+            revealPending(state)
+            // A node the relevant branches leave out shows once every branch is read.
+            if (state.pendingReveal) {
+                state.showAll = true
+                void read(repositoryId, false)
+            }
+            if (repositoryId == activeId)
+                publish()
         },
         fold(nodeId, folded) {
             change(activeId, state => {

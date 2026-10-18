@@ -112,19 +112,20 @@ A step is done when its listed tests pass against the React renderer and the scr
   - **Moved on:**
     - A branch column whose branch goes away closes its File History columns with it; the Remix renderer kept them showing at the end of the row without their source column.
     - Showing ignored files: the Remix renderer reads them on request but never drew a control for it, so there was nothing to move. The inspection keeps `setShowIgnored` for when one is designed.
-- [ ] **7. Branch Graph and Command Lens.**
+- [x] **7. Branch Graph and Command Lens.**
   - **Scope:**
     - The virtualized graph and its settings.
     - Opening and filtering branches.
     - Rebasing by drag and drop or keyboard.
     - The Command Lens.
   - **Remix modules:** the rest of `branch-workspace/` (graph view, settings, marker details, rebase) and `command-lens.tsx`.
-  - **Landed so far:**
+  - **Landed:**
     - The Branch Graph panel (`branch-graph.tsx`), between the repositories and the columns. The header's graph button shows and hides it, as choosing the repository already shown does. Rows are a React Aria GridList in a `Virtualizer` at the 40px row height `branch-graph-layout.ts` lays the rails out for; the layout carries over, and the rails take their colours from the theme's lane colours. Choosing a row selects it; Open, Enter, or a double-click opens its column. Left and Right fold and unfold the selected branch's stack, F2 renames it, Delete deletes it, and its menu also creates a branch at its tip. "Show all" reads every branch; markers open their stash, and stash details and unassigned stashes show below the rows. `branch-workspace.ts` keeps each repository's Graph Selection, folded stacks, and the Show all choice. Tests in `react-branch-graph.test.tsx`.
     - Branch Graph settings (`graph-settings.tsx`): a popover from the graph's toolbar chooses the remote when there are several, applying at once, and the remote-only branches to show besides, applying on Enter or Apply; either reads the graph again. Its draft lives in the popover, so quiet refreshes leave it alone.
     - Rebasing from the graph (`branch-rebase.ts`, `rebase-dialog.tsx`): a branch dragged onto another row, or chosen with M or "Rebase onto…" and then a destination and Enter or a click, is reviewed and rebased with its dependents straight away unless something needs deciding. Then the kit's modal asks which tip, whether dependents move, and whether to rewrite published history or go on with conflicts; until step 8, conflicts continue to be resolved later. Rows drag through React Aria's GridList drag and drop, with a drag handle for the keyboard; a branch dropped on a worktree column's header reviews switching that worktree to it. Tests in `react-rebase.test.tsx`, ported from the "Branch Graph rebase" block; the drags themselves are checked in a real window, as Happy DOM has no layout to drop by.
+    - The Command Lens (`command-lens.ts`, `command-lens-dialog.tsx`): Ctrl+K or the header's button opens it in the kit's modal, with React Aria's Autocomplete over a menu of results. It reads every branch of each open repository as it opens, so it finds branches the graph filters out, and offers moving the focused column. A branch shows in its repository's Branch Graph through `reveal` in `branch-workspace.ts`: it reads every branch when the branch is filtered out, unfolds its stack, selects it, and scrolls to it, unless another node is chosen first. Tests in `react-command-lens.test.tsx`, and a quiet refresh leaving the panel still in `react-branch-graph.test.tsx`.
+    - A quiet read asked for mid-read now keeps its remote refresh when it is replayed, so the first read of a remote's default branch is no longer dropped when another read is under way.
     - The shell is bounded by the window: column tabs scroll within the header rather than widening it, which revealing a column could otherwise scroll the whole window to.
-  - **Tests to port:** Lens navigation, quiet refreshes.
 - [ ] **8. Pull latest and conflicts.**
   - **Scope:** Pull latest progress, cancellation, and outcomes; confirmation notices; conflict and merge resolution, including Continue and resolve now after a conflicting transfer.
   - **Remix modules:** `pull-latest.tsx`, `conflict-resolution.tsx`, `conflict-content.tsx`, `merge-resolution.tsx`.

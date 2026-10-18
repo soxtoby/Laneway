@@ -1,8 +1,9 @@
 /** @jsxImportSource react */
-import type { ReactNode } from "react"
+import { type ReactNode, useEffect } from "react"
 import type { IconImageApi } from "../src/repository-icon-images"
 import type { AppController, AppSnapshot } from "./app-controller"
 import { BranchGraphPanel } from "./branch-graph"
+import { CommandLensDialog } from "./command-lens-dialog"
 import { ContextMenuHost } from "./context-menu"
 import { GitSettingsDialog } from "./git-settings-dialog"
 import { ArchiveIcon, GraphIcon, MoonIcon, PullIcon, RedoIcon, SearchIcon, SettingsIcon, SunIcon, UndoIcon } from "./icons"
@@ -48,10 +49,12 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
     let operating = columnsBusy || worktreesBusy || branchesBusy
     let settings = useSnapshot(gitSettings).settings
     let busy = snapshot.opening || entering
+    useLensShortcut(controller.lens.open)
     let active = workspace.repositories.find(repository => repository.id == workspace.activeRepositoryId)
     return (
         <div className="shell">
             <Header
+                onOpenLens={controller.lens.open}
                 graph={active?.status == "available" ? { shown: graphView.shown, toggle: columns.toggleGraph } : undefined}
                 tabs={active?.status == "available" && <ColumnTabs columns={columns} />}
                 actions={active?.status == "available"
@@ -118,6 +121,7 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
             <WorktreeDialog worktrees={worktrees} />
             <StashesDialog stashes={stashes} />
             <RebaseDialog rebase={controller.rebase} />
+            <CommandLensDialog controller={controller} workspace={workspace} />
             <RepositoryIdentityDialog editor={identity} repositories={workspace.repositories} api={api} />
             <Notices controller={controller} notice={notice} />
         </div>
@@ -125,6 +129,7 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
 }
 
 interface HeaderProps {
+    onOpenLens(): void
     /** The open repository's Branch Graph, which shows beside its columns. */
     graph?: { shown: boolean; toggle(): void }
     tabs: ReactNode
@@ -137,7 +142,7 @@ interface HeaderProps {
 }
 
 // Pull latest stands in until its screen moves (migration step 8).
-function Header({ graph, tabs, actions, appearance, busy, onToggleAppearance, onOpenSettings }: HeaderProps) {
+function Header({ onOpenLens, graph, tabs, actions, appearance, busy, onToggleAppearance, onOpenSettings }: HeaderProps) {
     let appearanceLabel = appearance == "dark" ? "Switch to light appearance" : "Switch to dark appearance"
     return (
         <header className="header drag-region">
@@ -157,7 +162,7 @@ function Header({ graph, tabs, actions, appearance, busy, onToggleAppearance, on
             )}
             {tabs}
             <span className="spacer" />
-            <HeaderButton label="Command Lens">
+            <HeaderButton label="Command Lens" tooltip="Command Lens (Ctrl+K)" onPress={onOpenLens}>
                 <SearchIcon />
             </HeaderButton>
             {actions && (
@@ -188,6 +193,20 @@ function Header({ graph, tabs, actions, appearance, busy, onToggleAppearance, on
             </HeaderButton>
         </header>
     )
+}
+
+// Ctrl+K opens the Command Lens from anywhere.
+function useLensShortcut(open: () => void) {
+    useEffect(() => {
+        let keyDown = (event: KeyboardEvent) => {
+            if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() == "k") {
+                event.preventDefault()
+                open()
+            }
+        }
+        window.addEventListener("keydown", keyDown)
+        return () => window.removeEventListener("keydown", keyDown)
+    }, [open])
 }
 
 function HeaderButton({ label, tooltip = label, children, isDisabled, onPress }: {

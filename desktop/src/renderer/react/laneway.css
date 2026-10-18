@@ -3545,3 +3545,87 @@
 .rebase-status {
     color: var(--text-color-placeholder);
 }
+
+/* The Command Lens: a search over open repositories, their branches, and column commands. */
+.command-lens {
+    width: 560px;
+    max-width: 100%;
+    padding: var(--spacing-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3);
+
+    .react-aria-SearchField {
+        width: 100%;
+    }
+
+    .lens-results {
+        max-height: 360px;
+        overflow: auto;
+    }
+
+    .react-aria-MenuItem {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-2);
+    }
+}
+
+.lens-kind {
+    flex: 0 0 auto;
+    min-width: 52px;
+    padding: 0 var(--spacing-1);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-color-placeholder);
+    font: 600 10px / 18px var(--font-family);
+    text-align: center;
+    text-transform: uppercase;
+
+    &[data-kind="branch"] {
+        border-color: var(--branch-border);
+        color: var(--branch-color);
+    }
+
+    &[data-kind="repository"] {
+        border-color: var(--changes-border);
+        color: var(--warning-color);
+    }
+}
+
+.lens-copy {
+    min-width: 0;
+    display: grid;
+
+    strong,
+    small {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    small {
+        color: var(--text-color-placeholder);
+        font: 10.5px var(--font-family-mono);
+    }
+}
+
+.lens-guidance {
+    margin: 0;
+    padding: var(--spacing-2);
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+}
+
+/* A focused result takes the accent fill, so its badge and detail take its ink. */
+.command-lens .react-aria-MenuItem:is([data-focused], [data-pressed]) {
+    .lens-kind {
+        border-color: currentColor;
+        color: inherit;
+    }
+
+    .lens-copy small {
+        color: inherit;
+        opacity: 0.8;
+    }
+}

@@ -1,6 +1,7 @@
 import type { Appearance, BranchHistoryCommit, FileListView, OpenRepository, RepositoryIdentity, Workspace, WorkspaceColumn } from "@laneway/shared"
 import { type BranchRebase, createBranchRebase } from "./branch-rebase"
 import { type BranchWorkspace, createBranchWorkspace } from "./branch-workspace"
+import { type CommandLens, createCommandLens, type LensResult } from "./command-lens"
 import { type CommitComposer, createCommitComposer } from "./commit-composer"
 import { type Composition, createComposition } from "./composition"
 import { createGitSettings, type GitSettings } from "./git-settings"
@@ -48,6 +49,7 @@ export interface AppController extends Store<AppSnapshot> {
     readonly stashes: Stashes
     /** Rebasing branches from the Branch Graph. */
     readonly rebase: BranchRebase
+    readonly lens: CommandLens
     /** Moving and copying files, commits, and branches between columns. */
     readonly composition: Composition
     /** Loads the app state; also retries after a failed start. */
@@ -61,6 +63,8 @@ export interface AppController extends Store<AppSnapshot> {
     reword(repositoryId: string, branchRef: string, commit: BranchHistoryCommit, close: () => void): Reword
     openRepository(): Promise<void>
     selectRepository(id: string): Promise<void>
+    /** Goes where a Command Lens result points: a repository, a branch in its Branch Graph, or a column command. */
+    activateLensResult(result: LensResult): Promise<void>
     closeRepository(id: string): Promise<void>
     /** Asks for a directory, starting from `path`. */
     chooseDirectory(path?: string): Promise<string | undefined>
@@ -199,6 +203,8 @@ export function createAppController(api: Api): AppController {
         completed: rewritten,
     })
 
+    let lens = createCommandLens({ api, workspace: () => ready()?.workspace })
+
     let stashes = createStashes({
         api,
         mutating: busy => columns.mutating(busy),
@@ -245,6 +251,7 @@ export function createAppController(api: Api): AppController {
         worktrees,
         stashes,
         rebase,
+        lens,
         composition,
 
         async start() {
@@ -339,6 +346,16 @@ export function createAppController(api: Api): AppController {
                     notify({ code: "repository.select.failed", message: errorMessage(error) })
                 }
             }),
+
+        async activateLensResult(result) {
+            lens.close()
+            if (result.kind == "command")
+                return columns.move(result.nodeId, result.delta)
+            if (result.repositoryId != ready()?.workspace.activeRepositoryId)
+                await controller.selectRepository(result.repositoryId)
+            if (result.kind == "branch")
+                columns.reveal(result.repositoryId, result.nodeId)
+        },
 
         async closeRepository(id) {
             try {

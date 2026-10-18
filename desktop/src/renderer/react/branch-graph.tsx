@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import type { BranchGraph, BranchGraphBranchNode, BranchGraphMarker } from "@laneway/shared"
-import { type KeyboardEvent, useEffect, useMemo, useRef } from "react"
+import { type KeyboardEvent, useEffect, useEffectEvent, useMemo, useRef } from "react"
 import { Button as AriaButton, GridList, GridListItem, ListLayout, useDragAndDrop, Virtualizer } from "react-aria-components"
 import { graphRowHeight, type GraphRowLayout, layoutBranchGraph } from "../src/branch-workspace/branch-graph-layout"
 import { branchNodeFor, localIdentities, workspaceGraph } from "../src/worktrees/worktree-columns"
@@ -103,6 +103,30 @@ function GraphRows(
     let choosing = rebasing.choosing?.repositoryId == repositoryId ? identities.branches.find(branch => branch.id == rebasing.choosing?.sourceId) : undefined
     // While a rebase chooses its destination, a row chosen with the pointer is the destination; arrows only select.
     let pointer = useRef(false)
+    let list = useRef<HTMLDivElement>(null)
+    // A revealed node scrolls to the top of the rows when it is out of view, and its row takes focus once it shows.
+    let rowIndex = useEffectEvent((id: string) => rows.findIndex(row => row.node.id == id))
+    useEffect(() => {
+        let element = list.current
+        let index = view.revealed ? rowIndex(view.revealed.id) : -1
+        if (!view.revealed || !element || index < 0)
+            return
+        let top = index * graphRowHeight
+        if (top < element.scrollTop || top + graphRowHeight > element.scrollTop + element.clientHeight)
+            element.scrollTop = top
+        let id = view.revealed.id
+        // The virtualizer draws the row once it has seen the scroll, which can take a frame or two.
+        let frame = 0
+        let focus = (attempts: number) => {
+            let row = [...element.querySelectorAll<HTMLElement>("[data-node-id]")].find(candidate => candidate.dataset.nodeId == id)
+            if (row || attempts == 0)
+                (row ?? element).focus({ preventScroll: true })
+            else
+                frame = requestAnimationFrame(() => focus(attempts - 1))
+        }
+        frame = requestAnimationFrame(() => focus(3))
+        return () => cancelAnimationFrame(frame)
+    }, [view.revealed])
     let dragged = useRef<string>(undefined)
     useEffect(() => {
         if (!choosing)
@@ -175,6 +199,7 @@ function GraphRows(
         >
             <Virtualizer layout={ListLayout} layoutOptions={{ rowHeight: graphRowHeight }}>
                 <GridList
+                    ref={list}
                     aria-label="Branches and graph nodes"
                     className="graph-rows"
                     items={items}

@@ -170,6 +170,38 @@ describe("React Branch Graph", () => {
         expect(patterns()!.value).toBe("origin/releases/**")
     })
 
+    test("a quiet refresh leaves the panel's toolbar and rows still while it reads", async () => {
+        let repository = repositoryInfo("D:\Source\refresh-graph")
+        let graph = branchGraph(repository.id)
+        let reads = 0
+        let finish = () => {}
+        let pending = new Promise<void>(resolve => finish = resolve)
+        let app = await startReactApp(fakeLaneway({
+            getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
+            readBranchGraph: async () => {
+                reads++
+                if (reads > 2)
+                    await pending
+                return { ok: true, graph }
+            },
+        }))
+        await app.act(() => press(button(document.body, "Show Branch Graph")))
+        let toolbar = panel()!.querySelector<HTMLElement>(".graph-toolbar")!
+        let before = toolbar.innerHTML
+        let shown = names()
+
+        // The refresh waits on its read, so it starts here and finishes below.
+        await app.act(() => {
+            void app.controller.columns.refresh()
+        })
+        expect(reads).toBe(3)
+        expect(panel()!.querySelector("[role=status]")).toBeNull()
+        expect(toolbar.innerHTML).toBe(before)
+        await app.act(() => finish())
+        expect(toolbar.innerHTML).toBe(before)
+        expect(names()).toEqual(shown)
+    })
+
     test("draws only the rows near the viewport of a large graph", async () => {
         let repository = repositoryInfo("D:\\Source\\large-graph")
         let graph = branchGraph(repository.id)
