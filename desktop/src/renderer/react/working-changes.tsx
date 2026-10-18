@@ -12,7 +12,7 @@ import { EditableName } from "./editable-name"
 import { fileListViewOptions } from "./file-list-view"
 import { type FileInspection, FileTree } from "./file-tree"
 import { ArchiveIcon, ChevronDownIcon, CloseIcon, DetachedIcon, FolderIcon, OpenColumnIcon, TreeIcon } from "./icons"
-import { type ColumnInspection, diffKey, type FilesState, type Inspection } from "./inspection"
+import { type ColumnInspection, diffKey, type FilesState, type Inspection, matchesFilter } from "./inspection"
 import { TransferGrip, TransferReview, transferSource, useTransferScope, useTransferTarget } from "./transfer"
 import { Button } from "./ui/Button"
 import { ChevronRight } from "./ui/icons"
@@ -383,7 +383,9 @@ export function FileList(
     let { target, props } = useTransferTarget<HTMLDivElement>(scope?.composition, staging)
     if (!files)
         return null
-    let listed = files.inventory?.files.filter(file => !file.ignored) ?? []
+    let filter = inspected?.filter
+    let listed = files.inventory?.files.filter(file => !file.ignored && (!filter || matchesFilter(filter, file))) ?? []
+    let hidden = filter != undefined && files.inventory?.files.some(file => !file.ignored) == true
     let selected = inspected?.selected ?? []
     let chosen = selected.filter(id => id.startsWith(`${group}:`)).length
     let working = group.startsWith("working-")
@@ -475,7 +477,7 @@ export function FileList(
                     {files.error} <Button variant="quiet" onPress={() => inspection.retry(columnId, group)}>Retry</Button>
                 </p>
             )}
-            {!working && files.inventory && !listed.length && <p className="column-placeholder">{empty}</p>}
+            {!working && files.inventory && !listed.length && <p className="column-placeholder">{hidden ? "No files match the filter" : empty}</p>}
             {listed.length > 0 && (
                 <FileTree
                     label={label}
@@ -488,6 +490,7 @@ export function FileList(
                         : undefined}
                     root={root}
                     hideStagedBadge={working}
+                    highlight={filter?.text}
                     menuItems={items}
                     leading={leading}
                     inspect={inspect}

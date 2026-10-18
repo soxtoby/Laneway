@@ -89,16 +89,16 @@ A step is done when its listed tests pass against the React renderer and the scr
   - **Moved on:**
     - A conflicting transfer offers only Continue and resolve later until conflict resolution moves in step 8.
     - Branch deletion and worktree removal keep the Remix renderer's confirmation dialogs. Both are undoable, so the Destructive actions convention could replace them with an Undo notice; that is a behaviour change for master first.
-- [ ] **6. Inspection.**
+- [x] **6. Inspection.**
   - **Scope:**
     - Diff columns: combined and split views, selection, hidden-line gaps, and virtualized large patches.
     - Discarding selected lines, the Working Changes diff column button, the file filter, and showing ignored files.
     - Image diffs.
     - File History, Commit Diff, and breakout columns, with the auxiliary-column lifecycle (`auxiliary-columns.ts`).
-    - Branch Comparison. Until then, saved comparison columns keep their place and show their description.
+    - Branch Comparison.
     - Arrow keys through a column's branches, commits, and files (`inspection/column-navigation.ts`).
   - **Remix modules:** `inspection/` and `trail-commit.tsx`, File History's commit column.
-  - **Landed so far:**
+  - **Landed:**
     - Inline diffs: a file's row opens its diff beneath it, drawn by Pierre in `diff-renderer.ts` (the imperative part of `inspection/diff.tsx`) with only the lines near the viewport. The diff session, `diff-context.ts`, and `diff-patch.ts` carry over. Diffs lay out unified or side by side per column, show whitespace, reveal hidden lines from the whole file, page large patches, and choose lines to discard or move. Tests in `react-diffs.test.tsx`.
     - Image diffs (`image-diff.tsx`, `image-files.ts`): a changed picture's versions side by side, or stacked to swipe, fade, or difference, chosen in its row and kept for every picture; either version or the comparison enlarges in the kit's modal. `react-image-diff-electron.test.ts` ports `image-diff-electron.test.ts`; the viewer's expected width drops the Remix viewer's 2px border, as the kit's modal draws an outline.
     - The diff column (`diff-column.tsx`): "Break out diff", Working Changes' "Open diff column", and a commit's "Show full diff" open a list's whole diff beside its column. The inspection keeps auxiliary columns per repository in `AuxiliaryColumns`, rooted at the Workspace Columns, and publishes them by source column; `workspace-columns.tsx` draws them after their source column's divider. Choosing a file in the source column scrolls the diff column to it; files fold, show whole, resize, and maximize with the source column, and nothing is restored after a restart. Its header matches its source column's line for line, so the card's header band runs across the seam. Tests in `react-diff-column.test.tsx`, and the card join, header alignment, and maximized split in `react-renderer-styles.test.ts`.
@@ -106,10 +106,12 @@ A step is done when its listed tests pass against the React renderer and the scr
     - File History and Commit Diff columns (`file-history.tsx`, with their reads in `file-histories.ts` from `inspection/file-history.tsx` and `trail-commit.tsx`): "File history" in a file's menu, in Working Changes, commits, stashes, the diff column, and the auxiliary columns themselves, opens beside where it was chosen. Entries unfold to the file's diff in that commit; their menu blames the file or opens the whole commit, whose parent can change and whose related files open more histories. Each keeps a column state of its own for its files and diffs, laid out unified for the session, and chooses files and lines only in commits its Workspace Column's branch can compose while that branch stays put. Histories page through sparse scans, refresh quietly with the columns, and follow renamed branches. Closing one returns focus to the column it came from. Tests in `react-file-history.test.tsx`.
     - A composable history entry offers a grip that moves its change to the file, in place of the Remix renderer's checkbox: each entry holds one file, so there is nothing to choose it with.
     - Branch Comparison Columns: a branch heading above its base in the Commit Trail compares the branch with that base, opening the comparison beside its column (`openComparison` in `branch-workspace.ts`). Its files read once, then again quietly with their open diffs when a compared branch moves; they can't be chosen, moved, or discarded. Its header opens its whole diff in a diff column, and a file's menu opens its history at either end. Tests in `react-comparison.test.tsx`, ported from the "Branch Comparison" block.
+    - The file filter (`column-filter.tsx`): a column's "Filter files" button or Ctrl+F opens it under the header, Escape closes it, and it narrows every list in the column and its diff column to the paths and status asked for, marking where the text shows and closing the diffs of files it hides.
+    - Arrow keys (`column-navigation.ts`, after `inspection/column-navigation.ts`): captured on the column, Up and Down move through its base branch headings, commit headings, and file and folder rows across lists; Right and Left unfold and fold commits and open and close diffs, folders fold as their trees do, and with the diff column open moving onto a file shows it there.
+    - Tests in `react-column-navigation.test.tsx`. The rest of the "Working Changes inspection" block and the discarding test's line discards are covered by the tests above; activating rows on mousedown is the Remix renderer's own and has no React counterpart, as React Aria presses rows itself.
   - **Moved on:**
     - A branch column whose branch goes away closes its File History columns with it; the Remix renderer kept them showing at the end of the row without their source column.
-  - **Tests to port:**
-    - The "Working Changes inspection" block, and the line discards in the discarding test.
+    - Showing ignored files: the Remix renderer reads them on request but never drew a control for it, so there was nothing to move. The inspection keeps `setShowIgnored` for when one is designed.
 - [ ] **7. Branch Graph and Command Lens.**
   - **Scope:**
     - The virtualized graph and its settings.

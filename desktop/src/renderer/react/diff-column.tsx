@@ -7,7 +7,7 @@ import { useRowMenu } from "./dense-row"
 import { DiffControls, DiffPanel } from "./diff-panel"
 import { CopyPathButton, FileLabel, FileMenuItems } from "./file-tree"
 import { ChevronDownIcon, CloseIcon, CollapseAllIcon, ExpandAllIcon, FileStatusIcon, MaximizeIcon, RestoreIcon } from "./icons"
-import { type ColumnInspection, type DiffColumnView, diffKey, type FileDiffState, type Inspection } from "./inspection"
+import { type ColumnInspection, type DiffColumnView, diffKey, type FileDiffState, type Inspection, matchesFilter } from "./inspection"
 import { ChevronRight } from "./ui/icons"
 import { MenuItem } from "./ui/Menu"
 
@@ -38,7 +38,9 @@ export let minimumDiffColumnWidth = 380
 export function DiffColumn({ view, sourceName, stacked, inspected, inspection, root, maximized, onMaximize, onClose }: DiffColumnProps) {
     let scroller = useRef<HTMLDivElement>(null)
     let files = inspected?.files[view.group]
-    let listed = files?.inventory?.files.filter(file => !file.ignored) ?? []
+    // Its source column's filter narrows it as it does the source's own list.
+    let filter = inspected?.filter
+    let listed = files?.inventory?.files.filter(file => !file.ignored && (!filter || matchesFilter(filter, file))) ?? []
     let stopAiming = useArrival(scroller, view, listed, inspected)
     let title = diffColumnTitle(view, sourceName)
     let fold = (paths: string[], folded: boolean) => {

@@ -55,6 +55,20 @@ export interface ColumnInspection {
     diffs: Record<string, FileDiffState>
     /** The list and file the column's diff column shows, while it has one. */
     diffColumn?: { group: string; focus?: string }
+    /** The column's file filter, while it is open. */
+    filter?: FileFilter
+}
+
+/** Narrows every list in a column to the files whose path contains `text`, with the chosen status or any. */
+export interface FileFilter {
+    text: string
+    status: string
+}
+
+export function matchesFilter(filter: FileFilter, file: ChangedFile) {
+    let path = `${file.oldPath ?? ""} ${file.path}`.toLowerCase()
+    let status = filter.status == "all" || file.status == filter.status || filter.status == "conflicted" && file.conflicted
+    return status && path.includes(filter.text.toLowerCase())
 }
 
 /** A list's whole diff, in an auxiliary column beside the Workspace Column it came from. */
@@ -203,6 +217,12 @@ export interface Inspection extends Store<InspectionSnapshot> {
     findRelated(id: string, more?: boolean): void
     /** Lays out an auxiliary column's diffs, for the session only. */
     setLayout(columnId: string, layout: DiffLayout): void
+    /** Opens the column's file filter, empty, unless it is already open. */
+    openFilter(columnId: string): void
+    /** Narrows the column's lists, closing the diffs of files the filter hides. */
+    setFilter(columnId: string, filter: FileFilter): void
+    /** Closes the column's file filter, showing every file again. */
+    closeFilter(columnId: string): void
     /** Follows a renamed branch in the histories read from it. */
     renamed(oldRef: string, newRef: string): void
     /** Reads a diff again after it failed, or its next page. */
@@ -354,6 +374,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             bases: { ...state.bases },
             diffs: { ...state.diffs },
             diffColumn: state.diffColumn && { group: state.diffColumn.group, focus: state.diffColumn.focus },
+            filter: state.filter,
         }
     }
 
@@ -1192,6 +1213,36 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             let found = commitColumn(id)
             if (found)
                 void histories.related(found.value.commit, more)
+        },
+
+        openFilter(columnId) {
+            let state = columnState(columnId)
+            if (state && !state.filter) {
+                state.filter = { text: "", status: "all" }
+                publish()
+            }
+        },
+
+        setFilter(columnId, filter) {
+            let state = columnState(columnId)
+            if (!state)
+                return
+            state.filter = filter
+            // The diff column keeps its own list's diffs, which it filters as it shows them.
+            for (let diff of Object.values(state.diffs)) {
+                let file = state.files[diff.group]?.inventory?.files.find(candidate => candidate.path == diff.path)
+                if (file && diff.group != state.diffColumn?.group && !matchesFilter(filter, file))
+                    closeDiff(state, diff)
+            }
+            publish()
+        },
+
+        closeFilter(columnId) {
+            let state = columnState(columnId)
+            if (state?.filter) {
+                state.filter = undefined
+                publish()
+            }
         },
 
         setLayout(columnId, layout) {

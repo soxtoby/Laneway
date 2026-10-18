@@ -32,6 +32,8 @@ interface FileTreeProps {
     leading?(files: ChangedFile[], label: string): ReactNode
     /** Opens a file's diff under its row when the row is pressed; without it rows don't open. */
     inspect?: FileInspection
+    /** Text the column's filter looks for, marked where it shows in file names and folders. */
+    highlight?: string
 }
 
 /** A list's diffs: which files show one, and what the row draws for it. */
@@ -51,7 +53,7 @@ export interface FileInspection {
  * A list of changed files, flat or in folders and optionally grouped, as React Aria's Tree. A file's
  * checkbox chooses it for bulk actions; a folder's or group's chooses every file it holds.
  */
-export function FileTree({ label, files, view, group, selected, onSelect, root, menuItems, hideStagedBadge, leading, inspect }: FileTreeProps) {
+export function FileTree({ label, files, view, group, selected, onSelect, root, menuItems, hideStagedBadge, leading, inspect, highlight }: FileTreeProps) {
     let nodes = fileTreeNodes(files, view)
     let folders = foldingNodes(nodes)
     // Folders start open; a folded one remembers that by its key while the list stays.
@@ -111,7 +113,12 @@ export function FileTree({ label, files, view, group, selected, onSelect, root, 
             onAction={act}
         >
             {nodes.map(node => (
-                <FileTreeRow key={node.key} node={node} flat={view.layout == "flat"} props={{ onSelect, root, menuItems, hideStagedBadge, leading, inspect }} />
+                <FileTreeRow
+                    key={node.key}
+                    node={node}
+                    flat={view.layout == "flat"}
+                    props={{ onSelect, root, menuItems, hideStagedBadge, leading, inspect, highlight }}
+                />
             ))}
         </Tree>
     )
@@ -121,7 +128,7 @@ function FileTreeRow(
     { node, flat, props }: {
         node: FileTreeNode
         flat: boolean
-        props: Pick<FileTreeProps, "onSelect" | "root" | "menuItems" | "hideStagedBadge" | "leading" | "inspect">
+        props: Pick<FileTreeProps, "onSelect" | "root" | "menuItems" | "hideStagedBadge" | "leading" | "inspect" | "highlight">
     },
 ) {
     if (node.kind == "file") {
@@ -140,7 +147,7 @@ function FileTreeRow(
                             {props.leading?.([file], file.path)}
                             {props.onSelect && <Checkbox slot="selection" aria-label={`Select file ${file.path}`} />}
                             <FileStatusIcon status={file.conflicted ? "conflicted" : file.status} />
-                            <FileLabel file={file} showFolder={flat || !!file.oldPath} />
+                            <FileLabel file={file} showFolder={flat || !!file.oldPath} highlight={props.highlight} />
                             <CopyPathButton path={file.path} />
                             {file.staged && !props.hideStagedBadge && <span className="file-badge">staged</span>}
                             {file.submodule && <span className="file-badge">submodule</span>}
@@ -167,7 +174,9 @@ function FileTreeRow(
                         <ChevronRight />
                     </AriaButton>
                     {node.kind == "folder" && <FolderIcon className="folder-icon" />}
-                    <span className="folder-name">{node.label}</span>
+                    <span className="folder-name">
+                        <Highlighted text={node.label} highlight={props.highlight} />
+                    </span>
                     {node.kind == "group" && <span className="file-group-count">{node.files.length}</span>}
                 </div>
             )}
@@ -192,15 +201,46 @@ export function FileMenuItems({ file, root, items }: { file: ChangedFile; root?:
 }
 
 /** The file's name, after its folder when the list doesn't show folders, and after its old path when renamed. */
-export function FileLabel({ file, showFolder }: { file: ChangedFile; showFolder: boolean }) {
+export function FileLabel({ file, showFolder, highlight }: { file: ChangedFile; showFolder: boolean; highlight?: string }) {
     let separator = file.path.lastIndexOf("/") + 1
     let folder = `${file.oldPath ? `${file.oldPath} → ` : ""}${showFolder ? file.path.slice(0, separator) : ""}`
+    let name = file.path.slice(separator)
+    // A match can run from the folder into the name, so it is found across the whole label.
+    let found = highlight ? occurrences(folder + name, highlight) : []
     return (
         <span className="file-path">
-            {folder && <span className="file-directory">{folder}</span>}
-            <span className="file-name">{file.path.slice(separator)}</span>
+            {folder && <span className="file-directory">{marked(folder, 0, found)}</span>}
+            <span className="file-name">{marked(name, folder.length, found)}</span>
         </span>
     )
+}
+
+function Highlighted({ text, highlight }: { text: string; highlight?: string }) {
+    return marked(text, 0, highlight ? occurrences(text, highlight) : [])
+}
+
+/** Where `needle` occurs in `text`, ignoring case, as start and end offsets. */
+function occurrences(text: string, needle: string) {
+    let found: [number, number][] = []
+    let lower = text.toLowerCase(), wanted = needle.toLowerCase()
+    for (let at = lower.indexOf(wanted); wanted && at != -1; at = lower.indexOf(wanted, at + wanted.length))
+        found.push([at, at + wanted.length])
+    return found
+}
+
+/** `text`, which starts at `offset` in the label, with the parts of `found` that fall in it marked. */
+function marked(text: string, offset: number, found: [number, number][]) {
+    let parts: ReactNode[] = []
+    let at = 0
+    for (let [start, end] of found) {
+        let from = Math.max(start - offset, at), to = Math.min(end - offset, text.length)
+        if (to <= from)
+            continue
+        parts.push(text.slice(at, from), <mark key={from}>{text.slice(from, to)}</mark>)
+        at = to
+    }
+    parts.push(text.slice(at))
+    return parts
 }
 
 /** Copies the file's repository-relative path; it shows while the row is hovered or focused, and confirms the copy. */

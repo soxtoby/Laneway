@@ -2,16 +2,18 @@
 import type { BranchGraph, FileListView, WorktreeRecovery, WorktreeRequest } from "@laneway/shared"
 import clsx from "clsx"
 import { type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, useEffect, useMemo, useRef } from "react"
-import { ToggleButton } from "react-aria-components"
+import { Button as AriaButton, ToggleButton } from "react-aria-components"
 import { defaultAuxiliaryColumnWidth } from "../src/auxiliary-columns"
 import { workspaceGraph } from "../src/worktrees/worktree-columns"
 import type { AppController } from "./app-controller"
 import { type BranchWorkspace, type ColumnsSnapshot, type ColumnView, defaultColumnWidth, minimumColumnWidth, workingSummary } from "./branch-workspace"
 import { ColumnBody, columnRoot, ColumnScopes } from "./column-body"
+import { ColumnFilter } from "./column-filter"
+import { navigationKeyDown } from "./column-navigation"
 import { IconButton } from "./controls"
 import { DiffColumn, minimumDiffColumnWidth } from "./diff-column"
 import { CommitDiffColumn, FileHistoryColumn } from "./file-history"
-import { BranchIcon, CloseIcon, CollapseColumnIcon, CompareIcon, ExpandColumnIcon, FolderIcon, MaximizeIcon, OpenColumnIcon, RestoreIcon, WarningIcon } from "./icons"
+import { BranchIcon, CloseIcon, CollapseColumnIcon, CompareIcon, ExpandColumnIcon, FolderIcon, MaximizeIcon, OpenColumnIcon, RestoreIcon, SearchIcon, WarningIcon } from "./icons"
 import type { AuxiliaryView, InspectionSnapshot } from "./inspection"
 import { Button } from "./ui/Button"
 import { Tab, TabList, Tabs } from "./ui/Tabs"
@@ -185,10 +187,35 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
     let prepare = (request: WorktreeRequest) => void controller.worktrees.prepare(snapshot.repositoryId!, request, column.id)
     let files = inspected?.columns[column.id]
     let maximized = snapshot.maximizedId == column.id
+    let filterButton = useRef<HTMLButtonElement>(null)
+    let filterInput = useRef<HTMLInputElement>(null)
+    let filterable = column.kind != "recovery"
+    // A filter that is already open takes focus again; a new one focuses its field as it shows.
+    let openFilter = () => {
+        controller.inspection.openFilter(column.id)
+        filterInput.current?.focus()
+    }
+    let closeFilter = () => {
+        controller.inspection.closeFilter(column.id)
+        filterButton.current?.focus({ preventScroll: true })
+    }
     // F2 renames a branch column's branch and Delete deletes it, from anywhere in the column but a field.
-    // Ctrl+Shift+< and > move the column; it keeps focus in its new place.
+    // Ctrl+Shift+< and > move the column; it keeps focus in its new place. Ctrl+F filters its files and Escape
+    // closes the filter.
     let keyDown = (event: KeyboardEvent) => {
         let editing = event.target instanceof HTMLElement && event.target.closest("input, textarea, select")
+        if (filterable && (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() == "f") {
+            event.preventDefault()
+            event.stopPropagation()
+            openFilter()
+            return
+        }
+        if (event.key == "Escape" && files?.filter && !event.defaultPrevented) {
+            event.preventDefault()
+            event.stopPropagation()
+            closeFilter()
+            return
+        }
         if (column.kind == "branch" && (event.key == "F2" || event.key == "Delete") && !editing && !event.defaultPrevented) {
             event.preventDefault()
             if (event.key == "F2" && column.branch.localRefs.length > 0)
@@ -221,6 +248,7 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
             style={column.collapsed || maximized && !split ? undefined : { width: column.width }}
             onFocus={() => columns.focus(column.id)}
             onKeyDown={keyDown}
+            onKeyDownCapture={event => filterable && navigationKeyDown(event, files?.diffColumn != undefined)}
         >
             {column.collapsed
                 ? (
@@ -259,6 +287,20 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                         <h2 className="column-name">{column.name}</h2>
                                     </div>
                                 )}
+                            {filterable && (
+                                <TooltipTrigger>
+                                    <AriaButton
+                                        ref={filterButton}
+                                        className="icon-button"
+                                        aria-label="Filter files"
+                                        aria-expanded={files?.filter != undefined}
+                                        onPress={openFilter}
+                                    >
+                                        <SearchIcon />
+                                    </AriaButton>
+                                    <Tooltip>Filter files (Ctrl+F)</Tooltip>
+                                </TooltipTrigger>
+                            )}
                             {(column.kind == "branch" || column.kind == "virtual") && (
                                 <WorktreeMenu column={column} graph={graph} busy={busy} onPrepare={prepare} chooseDirectory={controller.chooseDirectory} />
                             )}
@@ -286,6 +328,14 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                 </IconButton>
                             )}
                         </header>
+                        {filterable && files?.filter && (
+                            <ColumnFilter
+                                filter={files.filter}
+                                inputRef={filterInput}
+                                onChange={filter => controller.inspection.setFilter(column.id, filter)}
+                                onClose={closeFilter}
+                            />
+                        )}
                         {column.worktree?.missing && column.kind != "recovery" && (
                             <MissingWorktree worktree={column.worktree} busy={busy} onPrepare={prepare} chooseDirectory={controller.chooseDirectory} />
                         )}

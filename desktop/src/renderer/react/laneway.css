@@ -2986,3 +2986,34 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+/* A column's file filter, under its header: the path to look for, a status, and a close button. */
+.column-filter {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-1);
+    padding: 0 var(--spacing-2) var(--spacing-2);
+
+    .column-filter-text {
+        flex: 1 1 auto;
+        min-width: 0;
+
+        .react-aria-Input {
+            width: 100%;
+        }
+    }
+
+    .column-filter-status.react-aria-Select {
+        flex: 0 0 auto;
+        width: 140px;
+    }
+}
+
+/* Where a filter's text shows in a file's path. */
+.file-path mark,
+.folder-name mark {
+    border-radius: 2px;
+    background: var(--selection-background-hover);
+    color: inherit;
+}
