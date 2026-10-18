@@ -1,8 +1,9 @@
-import type { Appearance, OpenRepository, Workspace } from "@laneway/shared"
+import type { Appearance, OpenRepository, RepositoryIdentity, Workspace } from "@laneway/shared"
 import { type ColumnPreview, readColumnPreview } from "./column-preview"
 import { createGitSettings, type GitSettings } from "./git-settings"
 import { errorMessage, type Notice } from "./notice"
 import { createRepositoryEntry, type RepositoryEntry } from "./repository-entry"
+import { createRepositoryIdentityEditor, type RepositoryIdentityEditor } from "./repository-identity"
 import { createStore, type Store } from "./store"
 
 type Api = Window["laneway"]
@@ -26,12 +27,17 @@ type Ready = Extract<AppSnapshot, { status: "ready" }>
 export interface AppController extends Store<AppSnapshot> {
     readonly entry: RepositoryEntry
     readonly gitSettings: GitSettings
+    readonly identity: RepositoryIdentityEditor
     /** Loads the app state; also retries after a failed start. */
     start(): Promise<void>
     toggleAppearance(): Promise<void>
     openRepository(): Promise<void>
     selectRepository(id: string): Promise<void>
     closeRepository(id: string): Promise<void>
+    /** Asks for a missing repository's new location. */
+    locateRepository(id: string): Promise<void>
+    /** Shows a repository's new name and icon at once, and saves them once changes pause. */
+    customizeRepository(id: string, identity: RepositoryIdentity): void
     /** Takes every open repository's id in the new order. */
     reorderRepositories(ids: string[]): Promise<void>
     /** Replaces a Workspace State that can't be read with an empty one. */
@@ -47,6 +53,7 @@ export function createAppController(api: Api): AppController {
     // A preview read overtaken by a later one is dropped.
     let previewRead = 0
     let previewRepositoryId: string | undefined
+    let identitySave: ReturnType<typeof setTimeout> | undefined
     let unsubscribe = [
         api.onRepositoryChanged(change => {
             if (ready()?.workspace.activeRepositoryId == change.repositoryId)
@@ -118,12 +125,29 @@ export function createAppController(api: Api): AppController {
 
     let entry = createRepositoryEntry({ api, notify, workspaceOpened: showWorkspace, openRepository: () => controller.openRepository() })
     let gitSettings = createGitSettings({ api, notify })
+    let identity = createRepositoryIdentityEditor({
+        api,
+        workspace: () => ready()?.workspace,
+        commit: (id, chosen) => controller.customizeRepository(id, chosen),
+    })
+
+    async function saveWorkspace() {
+        let current = ready()
+        if (!current)
+            return
+        try {
+            update({ workspace: await api.updateWorkspace(current.workspace) })
+        } catch (error) {
+            notify({ code: "workspace.save.failed", message: errorMessage(error) })
+        }
+    }
 
     let controller: AppController = {
         subscribe: store.subscribe,
         snapshot: store.snapshot,
         entry,
         gitSettings,
+        identity,
 
         async start() {
             store.publish({ status: "starting" })
@@ -184,6 +208,34 @@ export function createAppController(api: Api): AppController {
             }
         },
 
+        async locateRepository(id) {
+            try {
+                showWorkspace(await api.locateRepository(id))
+            } catch (error) {
+                notify({ code: "repository.locate.failed", message: errorMessage(error) })
+            }
+        },
+
+        // Typing a name coalesces into one save shortly after it pauses.
+        customizeRepository(id, chosen) {
+            let current = ready()
+            if (!current)
+                return
+            let repositories = current.workspace.repositories.map(repository => {
+                if (repository.id != id)
+                    return repository
+                let customized = { ...repository, ...chosen }
+                if (!chosen.label)
+                    delete customized.label
+                if (!chosen.icon)
+                    delete customized.icon
+                return customized
+            })
+            update({ workspace: { ...current.workspace, repositories } })
+            clearTimeout(identitySave)
+            identitySave = setTimeout(() => void saveWorkspace(), 200)
+        },
+
         // The new order shows at once; a dropped repository already appears in its slot while the workspace saves.
         async reorderRepositories(ids) {
             let current = ready()
@@ -219,6 +271,7 @@ export function createAppController(api: Api): AppController {
         },
 
         dispose() {
+            clearTimeout(identitySave)
             for (let stop of unsubscribe)
                 stop()
             store.clear()

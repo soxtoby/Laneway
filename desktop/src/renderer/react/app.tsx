@@ -10,8 +10,10 @@ import { IconButton, MoreMenu } from "./controls"
 import { DenseRow } from "./dense-row"
 import { GitSettingsDialog } from "./git-settings-dialog"
 import { AddIcon, ArchiveIcon, BranchIcon, CloseIcon, DeletedIcon, FolderIcon, MaximizeIcon, ModifiedIcon, MoonIcon, MoreIcon, OpenColumnIcon, PullIcon, RedoIcon, SearchIcon, SettingsIcon, SunIcon, TreeIcon, UndoIcon } from "./icons"
+import { MissingRepository } from "./missing-repository"
 import { Notices } from "./notices"
 import { EntryDialogs } from "./repository-entry-dialogs"
+import { RepositoryIdentityDialog } from "./repository-identity-dialog"
 import { RepositoryPanel } from "./repository-panel"
 import { Starting, StartupFailed, WorkspaceRecovery } from "./startup"
 import { Button } from "./ui/Button"
@@ -40,7 +42,7 @@ export function App({ api, controller }: { api: IconImageApi; controller: AppCon
 
 function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: AppController; snapshot: Extract<AppSnapshot, { status: "ready" }> }) {
     let { workspace, preview, appearance, notice } = snapshot
-    let { entry, gitSettings } = controller
+    let { entry, gitSettings, identity } = controller
     let entering = useSnapshot(entry).operation != "idle"
     let settings = useSnapshot(gitSettings).settings
     let busy = snapshot.opening || entering
@@ -63,15 +65,23 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
                             repositories={workspace.repositories}
                             activeId={workspace.activeRepositoryId}
                             api={api}
+                            busy={busy}
                             onSelect={id => void controller.selectRepository(id)}
                             onReorder={ids => void controller.reorderRepositories(ids)}
+                            onCustomize={identity.open}
                             onClose={id => void controller.closeRepository(id)}
                             onAdd={entry.openAdd}
                         />
                         <main className="columns">
                             {preview?.status == "loading" && <ProgressCircle isIndeterminate aria-label="Loading repository" />}
                             {preview?.status == "failed" && <p>{preview.error}</p>}
-                            {active.status == "missing" && <p>{active.error.message}</p>}
+                            {active.status == "missing" && (
+                                <MissingRepository
+                                    repository={active}
+                                    onLocate={() => void controller.locateRepository(active.id)}
+                                    onClose={() => void controller.closeRepository(active.id)}
+                                />
+                            )}
                             {columns.map(column => <Column key={column.id} column={column} controller={controller} />)}
                         </main>
                     </div>
@@ -93,6 +103,7 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
             )}
             <EntryDialogs entry={entry} busy={snapshot.opening} />
             <GitSettingsDialog gitSettings={gitSettings} />
+            <RepositoryIdentityDialog editor={identity} repositories={workspace.repositories} api={api} />
             <Notices controller={controller} notice={notice} />
         </div>
     )

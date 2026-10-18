@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
-import { Archive, ArrowDownToLine, Ellipsis, ExternalLink, Folder, GitBranch, ListTree, Maximize2, Minus, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Redo2, Search, SlidersHorizontal, Sun, Undo2, X } from "lucide"
+import { Archive, ArrowDownToLine, Ellipsis, ExternalLink, FaceSlightlySmiling, Folder, GitBranch, type IconNode, Image, ImagePlus, ListTree, Maximize2, Minus, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Redo2, Search, SlidersHorizontal, Sun, Type, Undo2, X } from "lucide"
+import { createElement } from "react"
 import { lucideIcon } from "./ui/icons"
 
 // Application icons, drawn from the same Lucide nodes as the Remix renderer's (ADR 0020).
@@ -23,3 +24,16 @@ export let SettingsIcon = lucideIcon(SlidersHorizontal, "sliders-horizontal")
 export let SunIcon = lucideIcon(Sun, "sun")
 export let UndoIcon = lucideIcon(Undo2, "undo-2")
 export let CloseIcon = lucideIcon(X, "x")
+export let IconTypeIcon = lucideIcon(Image, "image")
+export let EmojiTypeIcon = lucideIcon(FaceSlightlySmiling, "face-slightly-smiling")
+export let MonogramTypeIcon = lucideIcon(Type, "type")
+export let ImageTypeIcon = lucideIcon(ImagePlus, "image-plus")
+
+/** Any Lucide icon by its node data, such as one chosen from the catalog for a Repository Icon. */
+export function LucideGlyph({ node }: { node: IconNode }) {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            {node.map(([tag, attributes], index) => createElement(tag, { key: index, ...attributes }))}
+        </svg>
+    )
+}

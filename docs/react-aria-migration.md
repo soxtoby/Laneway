@@ -51,10 +51,10 @@ A step is done when its listed tests pass against the React renderer and the scr
   - **Scope:** Welcome, open, clone, and initialize with progress and cancellation; Git settings; the fatal bootstrap state and the Workspace State recovery banner.
   - **Remix modules:** `workspace.tsx`, `repository-entry/`, `settings.tsx`.
   - **Tests ported:** the "repository entry renderer" block, to `react-app.test.tsx`. The controllers, `repository-entry.ts` and `git-settings.ts`, have their own tests in `react-repository-entry.test.ts`.
-- [ ] **2. Repository panel.**
+- [x] **2. Repository panel.**
   - **Scope:** the side panel with drag-to-reorder (built in the spike), closing, adding, locating a missing repository, and the name and icon editor.
   - **Remix modules:** `repository-rail.tsx`, `repository-icon.tsx`, `repository-identity.tsx`.
-  - **Tests to port:** customizing a repository, the inferred favicon, dragging a repository along the rail.
+  - **Tests ported:** customizing a repository, the inferred favicon, and reordering, to `react-repository-panel.test.tsx`. React Aria's drag and drop replaces the Remix rail's own pointer drag: rows show a drop line instead of stepping aside, and the drag handle adds keyboard drag, so the test drags by keyboard; mouse drags were checked in a real window.
 - [ ] **3. Workspace Columns.**
   - **Scope:** layout and persistence, column tabs, resizing, maximizing, collapsing, the auxiliary-column lifecycle, and missing-worktree and recovery columns. Replaces the spike's column preview.
   - **Remix modules:** the shell in `app.tsx`, `branch-workspace/branch-columns.tsx`, `column-divider.tsx`, `worktrees/worktree-columns.ts`, `worktrees/missing-worktree.tsx`, `worktrees/worktree-recovery.tsx`.

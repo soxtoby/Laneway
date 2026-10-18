@@ -114,9 +114,11 @@
     }
 }
 
-/* Accent buttons are bright amber with dark ink, like the selected and highlighted states. They
-   derive their gradient and edges from the fill where they are drawn, so the panel's fill applies there. */
-.button-base[data-variant="accent"] {
+/* Accent buttons are bright amber with dark ink, and so are selected toggles and segments, which the
+   kit draws in a darker tint meant for white text. They derive their gradient and edges from the fill
+   where they are drawn, so the panel's fill applies there. */
+.button-base[data-variant="accent"],
+.button-base[data-selected] {
     --button-background: var(--highlight-background);
     --button-gradient: oklch(from var(--highlight-background) calc(l + 0.04) c h);
     --button-border: oklch(from var(--highlight-background) calc(l - 0.08) c h);

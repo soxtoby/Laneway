@@ -49,7 +49,10 @@ app.on("browser-window-created", (_event, window) => {
 
                 await wait(() => document.querySelector(fileRow) && document.querySelector(commitRow), 'the column');
                 const light = colors();
-                const geometry = { header: height('header'), fileRow: height(fileRow), commitRow: height(commitRow), repositoryRow: height(repositoryRow) };
+                const geometry = { header: height('header'), fileRow: height(fileRow), commitRow: height(commitRow), collapsedRepositoryRow: height(repositoryRow) };
+                document.querySelector('button[aria-label="Expand repository sidebar"]').click();
+                await wait(() => document.querySelector('button[aria-label="Collapse repository sidebar"]'), 'the expanded panel');
+                geometry.repositoryRow = height(repositoryRow);
 
                 const row = document.querySelector(fileRow);
                 const rect = row.getBoundingClientRect();

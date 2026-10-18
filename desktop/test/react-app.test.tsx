@@ -2,28 +2,16 @@
 import type { EntryProgress, EntryResult } from "@laneway/shared"
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
 import type { Window as HappyWindow } from "happy-dom"
-import type { App as AppComponent } from "../src/renderer/react/app"
-import type { AppController, createAppController as createController } from "../src/renderer/react/app-controller"
-import { button, field, installReactDom, press, renderReact, submit, type } from "./react-dom"
+import { button, field, installReactDom, press, startReactApp as startApp, stopReactApps, submit, type } from "./react-dom"
 import { appState, fakeLaneway, inspectionScenario, openedWorkspace, repositoryInfo } from "./renderer-fixtures"
 
 let browserWindow: HappyWindow
-let App: typeof AppComponent
-let createAppController: typeof createController
-let running: { unmount(): Promise<void>; controller: AppController }[] = []
 
-beforeAll(async () => {
+beforeAll(() => {
     browserWindow = installReactDom()
-    ;({ App } = await import("../src/renderer/react/app"))
-    ;({ createAppController } = await import("../src/renderer/react/app-controller"))
 })
 
-afterEach(async () => {
-    for (let app of running.splice(0)) {
-        await app.unmount()
-        app.controller.dispose()
-    }
-})
+afterEach(stopReactApps)
 
 afterAll(() => browserWindow.close())
 
@@ -153,7 +141,7 @@ describe("React repository entry", () => {
 
         expect(requests).toEqual([["D:\\Source", "new-project", "trunk"]])
         expect(document.querySelector("[role=dialog]")).toBeNull()
-        expect(document.querySelector("[aria-label='Open repositories']")?.textContent).toContain("new-project")
+        expect(repositoryNames()).toEqual(["new-project"])
         expect(document.querySelector("[role=alertdialog]")?.textContent).toContain("Repository initialized and opened.")
     })
 
@@ -240,10 +228,6 @@ describe("React repository entry", () => {
     })
 })
 
-async function startApp(api: Window["laneway"]) {
-    let controller = createAppController(api)
-    let view = await renderReact(<App api={api} controller={controller} />)
-    running.push({ unmount: view.unmount, controller })
-    await view.act(() => controller.start())
-    return { ...view, controller }
+function repositoryNames() {
+    return [...document.querySelectorAll("[aria-label='Open repositories'] [role=row]")].map(row => row.getAttribute("aria-label"))
 }

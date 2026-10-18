@@ -1,15 +1,21 @@
 /** @jsxImportSource react */
 import type { ReactNode } from "react"
-import { Button as AriaButton } from "react-aria-components"
+import { Button as AriaButton, type ButtonProps } from "react-aria-components"
 import { MoreIcon } from "./icons"
 import { Menu, MenuTrigger } from "./ui/Menu"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 
+interface IconButtonProps extends Pick<ButtonProps, "onPress" | "isDisabled" | "aria-expanded"> {
+    label: string
+    children: ReactNode
+    small?: boolean
+}
+
 /** A compact icon button for rows and column headers, with a tooltip. */
-export function IconButton({ label, children, onPress, small }: { label: string; children: ReactNode; onPress?: () => void; small?: boolean }) {
+export function IconButton({ label, children, small, ...props }: IconButtonProps) {
     return (
         <TooltipTrigger>
-            <AriaButton className={small ? "icon-button small" : "icon-button"} aria-label={label} onPress={onPress}>{children}</AriaButton>
+            <AriaButton {...props} className={small ? "icon-button small" : "icon-button"} aria-label={label}>{children}</AriaButton>
             <Tooltip>{label}</Tooltip>
         </TooltipTrigger>
     )

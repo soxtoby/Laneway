@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { Check as CheckNode, ChevronRight as ChevronRightNode, Dot as DotNode, GripVertical as GripVerticalNode, type IconNode, X as XNode } from "lucide"
+import { Check as CheckNode, ChevronRight as ChevronRightNode, Dot as DotNode, GripVertical as GripVerticalNode, type IconNode, Search as SearchNode, X as XNode } from "lucide"
 import { createElement, type SVGProps } from "react"
 
 export type IconProps = SVGProps<SVGSVGElement> & { size?: number | string }
@@ -37,4 +37,5 @@ export let Check = lucideIcon(CheckNode, "check")
 export let ChevronRight = lucideIcon(ChevronRightNode, "chevron-right")
 export let Dot = lucideIcon(DotNode, "dot")
 export let GripVertical = lucideIcon(GripVerticalNode, "grip-vertical")
+export let Search = lucideIcon(SearchNode, "search")
 export let X = lucideIcon(XNode, "x")

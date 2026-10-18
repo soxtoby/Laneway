@@ -30,8 +30,34 @@ export function installReactDom() {
     define("window", browserWindow)
     define("document", browserWindow.document)
     define("navigator", browserWindow.navigator)
+    // Happy DOM runs no animations; React Aria's selection indicator asks for an element's.
+    let elementPrototype = browserWindow.Element.prototype as unknown as { getAnimations?(): unknown[] }
+    elementPrototype.getAnimations ??= () => []
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
     return browserWindow
+}
+
+let running: { unmount(): Promise<void>; dispose(): void }[] = []
+
+/** Renders and starts the React app on a fake API; `stopReactApps` takes it down after the test. */
+export async function startReactApp(api: Window["laneway"]) {
+    let [{ createElement }, { App }, { createAppController }] = await Promise.all([
+        import("react"),
+        import("../src/renderer/react/app"),
+        import("../src/renderer/react/app-controller"),
+    ])
+    let controller = createAppController(api)
+    let view = await renderReact(createElement(App, { api, controller }))
+    running.push({ unmount: view.unmount, dispose: controller.dispose })
+    await view.act(() => controller.start())
+    return { ...view, controller }
+}
+
+export async function stopReactApps() {
+    for (let app of running.splice(0)) {
+        await app.unmount()
+        app.dispose()
+    }
 }
 
 export async function renderReact(node: ReactNode) {
