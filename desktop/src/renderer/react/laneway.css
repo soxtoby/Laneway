@@ -3629,3 +3629,97 @@
         opacity: 0.8;
     }
 }
+
+/* Pull latest in the header while it runs: the engine's progress and Cancel. */
+.pull-progress {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    max-width: 320px;
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+}
+
+.pull-progress-message {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pull-latest {
+    display: inline-flex;
+}
+
+/* A Pull latest that needs attention: each fetch, then each stack's outcome. */
+.pull-outcome {
+    width: min(520px, calc(100vw - 32px));
+
+    p {
+        margin: var(--spacing-1) 0;
+        overflow-wrap: anywhere;
+    }
+}
+
+.pull-fetches {
+    display: grid;
+    gap: var(--spacing-1);
+    margin: var(--spacing-1) 0;
+    padding: 0;
+    list-style: none;
+
+    li {
+        display: flex;
+        align-items: baseline;
+        gap: var(--spacing-2);
+    }
+
+    small {
+        color: var(--text-color-placeholder);
+    }
+}
+
+.pull-counts,
+.pull-note,
+.pull-stack small {
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+}
+
+.pull-error {
+    color: var(--invalid-color);
+}
+
+.pull-stack {
+    margin: var(--spacing-1) 0;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    background: var(--tray-background);
+
+    .react-aria-Heading .react-aria-Button {
+        gap: var(--spacing-2);
+    }
+}
+
+.pull-status {
+    flex: 0 0 auto;
+    padding: 0 var(--spacing-2);
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+
+    &[data-status="updated"] {
+        color: var(--status-added);
+    }
+
+    &:is([data-status="needs-resolution"], [data-status="failed"]) {
+        border-color: var(--invalid-color);
+        color: var(--invalid-color);
+    }
+
+    &:is([data-status="skipped"], [data-status="cancelled"]) {
+        color: var(--warning-color);
+    }
+}

@@ -44,10 +44,13 @@ app.on("browser-window-created", (_event, window) => {
                     body: background('body'),
                     header: background('header'),
                     panel: background('.repository-panel'),
-                    accent: background('.button-base[data-variant="accent"]'),
+                    // Disabled accent buttons, such as Pull latest without a remote, keep the kit's grey.
+                    accent: background('.button-base[data-variant="accent"]:not([data-disabled])'),
                 });
 
                 await wait(() => document.querySelector(fileRow) && document.querySelector(commitRow), 'the column');
+                await wait(() => document.querySelector('.button-base[data-variant="accent"]:not([data-disabled])'), 'an enabled accent button');
+                await wait(() => document.getAnimations().length == 0, 'the enabled button to settle');
                 const light = colors();
                 const geometry = { header: height('header'), fileRow: height(fileRow), commitRow: height(commitRow), collapsedRepositoryRow: height(repositoryRow) };
                 document.querySelector('button[aria-label="Expand repository sidebar"]').click();

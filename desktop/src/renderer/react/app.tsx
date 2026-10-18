@@ -10,6 +10,7 @@ import { ArchiveIcon, GraphIcon, MoonIcon, PullIcon, RedoIcon, SearchIcon, Setti
 import { LocalBranchDialog } from "./local-branch-dialog"
 import { MissingRepository } from "./missing-repository"
 import { Notices } from "./notices"
+import { PullDialog } from "./pull-dialog"
 import { RebaseDialog } from "./rebase-dialog"
 import { EntryDialogs } from "./repository-entry-dialogs"
 import { RepositoryIdentityDialog } from "./repository-identity-dialog"
@@ -43,7 +44,8 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
     let { entry, gitSettings, identity, columns, worktrees, branches, stashes } = controller
     let entering = useSnapshot(entry).operation != "idle"
     // Repository operations wait for any other that is under way.
-    let { busy: columnsBusy, graphView } = useSnapshot(columns)
+    let { busy: columnsBusy, graphView, graph } = useSnapshot(columns)
+    let pulling = useSnapshot(controller.pull).running
     let worktreesBusy = useSnapshot(worktrees).busy
     let branchesBusy = useSnapshot(branches).busy
     let operating = columnsBusy || worktreesBusy || branchesBusy
@@ -60,6 +62,17 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
                 actions={active?.status == "available"
                     ? {
                         busy: operating,
+                        pull: {
+                            available: graph != undefined && graph.availableRemotes.length > 0,
+                            hint: !graph
+                                ? "Loading the Branch Graph…"
+                                : graph.availableRemotes.length == 0
+                                ? "Add a remote to pull."
+                                : "Fetch and synchronize open stacks",
+                            running: pulling[active.id],
+                            start: () => void controller.pull.start(active.id),
+                            cancel: () => void controller.pull.cancel(active.id),
+                        },
                         stashes: () => void stashes.open(active.id, active.info.mainWorktree),
                         undo: () => void worktrees.transition(active.id, "undo"),
                         redo: () => void worktrees.transition(active.id, "redo"),
@@ -121,6 +134,7 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
             <WorktreeDialog worktrees={worktrees} />
             <StashesDialog stashes={stashes} />
             <RebaseDialog rebase={controller.rebase} />
+            <PullDialog pull={controller.pull} onResolve={(_repositoryId, branch) => columns.open(`branch:refs/heads/${branch}`)} />
             <CommandLensDialog controller={controller} workspace={workspace} />
             <RepositoryIdentityDialog editor={identity} repositories={workspace.repositories} api={api} />
             <Notices controller={controller} notice={notice} />
@@ -134,14 +148,22 @@ interface HeaderProps {
     graph?: { shown: boolean; toggle(): void }
     tabs: ReactNode
     /** The open repository's operations; absent when none is open. */
-    actions?: { busy: boolean; stashes(): void; undo(): void; redo(): void }
+    actions?: { busy: boolean; pull: PullControl; stashes(): void; undo(): void; redo(): void }
     appearance: "light" | "dark"
     busy: boolean
     onToggleAppearance(): void
     onOpenSettings(): void
 }
 
-// Pull latest stands in until its screen moves (migration step 8).
+/** Pull latest in the header: unavailable without a remote, and while it runs, its progress and Cancel. */
+interface PullControl {
+    available: boolean
+    hint: string
+    running?: { message: string }
+    start(): void
+    cancel(): void
+}
+
 function Header({ onOpenLens, graph, tabs, actions, appearance, busy, onToggleAppearance, onOpenSettings }: HeaderProps) {
     let appearanceLabel = appearance == "dark" ? "Switch to light appearance" : "Switch to dark appearance"
     return (
@@ -167,10 +189,22 @@ function Header({ onOpenLens, graph, tabs, actions, appearance, busy, onToggleAp
             </HeaderButton>
             {actions && (
                 <>
-                    <Button variant="accent">
-                        <PullIcon />
-                        Pull latest
-                    </Button>
+                    {actions.pull.running
+                        ? (
+                            <span className="pull-progress" role="status">
+                                <span className="pull-progress-message">{actions.pull.running.message}</span>
+                                <Button variant="secondary" aria-label="Cancel pull" onPress={actions.pull.cancel}>Cancel</Button>
+                            </span>
+                        )
+                        : (
+                            // The hint explains a disabled button too, so it is a native title on a wrapper.
+                            <span className="pull-latest" title={actions.pull.hint}>
+                                <Button variant="accent" isDisabled={actions.busy || !actions.pull.available} onPress={actions.pull.start}>
+                                    <PullIcon />
+                                    Pull latest
+                                </Button>
+                            </span>
+                        )}
                     <Button variant="secondary" isDisabled={actions.busy} onPress={actions.stashes}>
                         <ArchiveIcon />
                         Stashes

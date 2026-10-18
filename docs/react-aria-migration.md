@@ -129,7 +129,10 @@ A step is done when its listed tests pass against the React renderer and the scr
 - [ ] **8. Pull latest and conflicts.**
   - **Scope:** Pull latest progress, cancellation, and outcomes; confirmation notices; conflict and merge resolution, including Continue and resolve now after a conflicting transfer.
   - **Remix modules:** `pull-latest.tsx`, `conflict-resolution.tsx`, `conflict-content.tsx`, `merge-resolution.tsx`.
-  - **Tests to port:** the Pull latest tests, notices, `conflict-electron.test.ts`.
+  - **Landed so far:**
+    - Pull latest (`pull-latest.ts`, `pull-dialog.tsx`): the header's button pulls the active repository's open stacks from its selected remote, showing the engine's progress and Cancel while it runs and holding other operations until it ends. A clean pull is confirmed in passing; one that needs attention opens a dialog with each fetch and each stack's outcome, where a stack left to resolve opens its branch's column. Without a remote the button is disabled, and its title says why. Tests in `react-pull-latest.test.tsx`; the renderer styles test now measures an enabled accent button, as Pull latest is rightly grey there.
+    - Notices moved with step 0.
+  - **Tests to port:** `conflict-electron.test.ts`.
 - [ ] **9. Cutover.**
   - **Remove Remix:**
     - Delete the Remix renderer, `styles.css`, and the `remix` dependency and its pin.

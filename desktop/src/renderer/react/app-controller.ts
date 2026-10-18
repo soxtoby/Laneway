@@ -8,6 +8,7 @@ import { createGitSettings, type GitSettings } from "./git-settings"
 import { createInspection, type Inspection } from "./inspection"
 import { createLocalBranches, type LocalBranches } from "./local-branches"
 import { errorMessage, type Notice } from "./notice"
+import { createPullLatest, type PullLatest } from "./pull-latest"
 import { createRepositoryEntry, type RepositoryEntry } from "./repository-entry"
 import { createRepositoryIdentityEditor, type RepositoryIdentityEditor } from "./repository-identity"
 import { createReword, type Reword } from "./reword"
@@ -50,6 +51,7 @@ export interface AppController extends Store<AppSnapshot> {
     /** Rebasing branches from the Branch Graph. */
     readonly rebase: BranchRebase
     readonly lens: CommandLens
+    readonly pull: PullLatest
     /** Moving and copying files, commits, and branches between columns. */
     readonly composition: Composition
     /** Loads the app state; also retries after a failed start. */
@@ -205,6 +207,19 @@ export function createAppController(api: Api): AppController {
 
     let lens = createCommandLens({ api, workspace: () => ready()?.workspace })
 
+    // A pull starts from the header, so it pulls the active repository's open stacks.
+    let pull = createPullLatest({
+        api,
+        notify,
+        mutating: busy => columns.mutating(busy),
+        scope: () => columns.snapshot().columns.flatMap(column => column.kind == "branch" ? [column.branch.preferredRef] : []),
+        graph: () => columns.snapshot().graph,
+        completed: async () => {
+            await columns.refresh(false)
+            inspection.refreshWorking()
+        },
+    })
+
     let stashes = createStashes({
         api,
         mutating: busy => columns.mutating(busy),
@@ -252,6 +267,7 @@ export function createAppController(api: Api): AppController {
         stashes,
         rebase,
         lens,
+        pull,
         composition,
 
         async start() {
@@ -430,6 +446,7 @@ export function createAppController(api: Api): AppController {
         dispose() {
             clearTimeout(identitySave)
             composition.dispose()
+            pull.dispose()
             for (let stop of unsubscribe)
                 stop()
             store.clear()
