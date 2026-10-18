@@ -64,6 +64,16 @@ app.on("browser-window-created", (_event, window) => {
                 document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
                 await wait(() => !document.querySelector('[role=menu]'), 'the context menu to close');
 
+                // Commit stays grey, not amber, until the commit has a title.
+                const compose = await wait(() => [...document.querySelectorAll('.commit-split button')].find(button => button.textContent == 'Commit…' && !button.disabled), 'the commit preview');
+                compose.click();
+                const commit = await wait(() => [...document.querySelectorAll('[aria-label="Working Changes"] button')].find(button => button.textContent.startsWith('Commit all changes')), 'the commit form');
+                await wait(() => document.getAnimations().length == 0, 'the form to settle');
+                const [red, green, blue] = hex(getComputedStyle(commit).backgroundColor).slice(1).match(/../g).map(channel => parseInt(channel, 16));
+                const disabledCommit = { disabled: commit.disabled, grey: Math.max(red, green, blue) - Math.min(red, green, blue) <= 8 };
+                [...document.querySelectorAll('[aria-label="Working Changes"] button')].find(button => button.textContent == 'Cancel').click();
+                await wait(() => !document.querySelector('[aria-label="Commit title"]'), 'the commit form to close');
+
                 // A dialog taller than half the window stays centred.
                 document.querySelector('header button[aria-label="Git settings"]').click();
                 const dialog = await wait(() => document.querySelector('[role=dialog]'), 'Git settings');
@@ -81,7 +91,7 @@ app.on("browser-window-created", (_event, window) => {
                 await wait(() => document.getAnimations().length == 0, 'the appearance transitions');
                 const dark = colors();
 
-                return { light, dark, geometry, contextMenu, settingsDialog, styleElements: document.querySelectorAll('style').length };
+                return { light, dark, geometry, contextMenu, disabledCommit, settingsDialog, styleElements: document.querySelectorAll('style').length };
             })()`)
             writeFileSync(join(directory, "result.json"), JSON.stringify({ ...result, problems }))
             app.quit()

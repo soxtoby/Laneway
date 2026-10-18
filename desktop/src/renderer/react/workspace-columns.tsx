@@ -1,12 +1,13 @@
 /** @jsxImportSource react */
-import type { WorktreeRecovery } from "@laneway/shared"
+import type { FileListView, WorktreeRecovery } from "@laneway/shared"
 import clsx from "clsx"
 import { type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, useEffect, useRef } from "react"
+import type { AppController } from "./app-controller"
 import { type BranchWorkspace, type ColumnsSnapshot, type ColumnView, defaultColumnWidth, minimumColumnWidth, workingSummary } from "./branch-workspace"
 import { ColumnBody } from "./column-body"
 import { IconButton } from "./controls"
 import { BranchIcon, CloseIcon, CollapseColumnIcon, CompareIcon, ExpandColumnIcon, FolderIcon, MaximizeIcon, RestoreIcon, WarningIcon } from "./icons"
-import type { Notice } from "./notice"
+import type { Inspection, InspectionSnapshot } from "./inspection"
 import { Button } from "./ui/Button"
 import { Tab, TabList, Tabs } from "./ui/Tabs"
 import { useSnapshot } from "./use-snapshot"
@@ -15,10 +16,13 @@ import { useSnapshot } from "./use-snapshot"
 let pollInterval = 5_000
 
 /** The active repository's Workspace Columns, side by side, each resizable, collapsible, and movable. */
-export function WorkspaceColumns({ columns, notify }: { columns: BranchWorkspace; notify(notice: Notice): void }) {
+export function WorkspaceColumns({ controller, fileListView }: { controller: AppController; fileListView: FileListView }) {
+    let { columns, inspection } = controller
     let snapshot = useSnapshot(columns)
+    let inspected = useSnapshot(inspection)
     let dragging = useRef<{ id: string; dropped: boolean }>(undefined)
     useRefreshes(columns)
+    useDiscardUndo(inspection)
 
     // Escape restores a maximized column's neighbours.
     useEffect(() => {
@@ -81,7 +85,15 @@ export function WorkspaceColumns({ columns, notify }: { columns: BranchWorkspace
         <section className={clsx("column-row", snapshot.maximizedId && "maximized")}>
             {visible.flatMap(
                 column => [
-                    <ColumnFrame key={column.id} column={column} snapshot={snapshot} columns={columns} notify={notify} header={header} />,
+                    <ColumnFrame
+                        key={column.id}
+                        column={column}
+                        snapshot={snapshot}
+                        inspected={inspected.repositoryId == snapshot.repositoryId ? inspected : undefined}
+                        controller={controller}
+                        fileListView={fileListView}
+                        header={header}
+                    />,
                     !column.collapsed && !snapshot.maximizedId && (
                         <ColumnDivider
                             key={`${column.id}:divider`}
@@ -102,13 +114,17 @@ interface HeaderDrag {
     end(): void
 }
 
-function ColumnFrame({ column, snapshot, columns, notify, header }: {
+function ColumnFrame({ column, snapshot, inspected, controller, fileListView, header }: {
     column: ColumnView
     snapshot: ColumnsSnapshot
-    columns: BranchWorkspace
-    notify(notice: Notice): void
+    /** The active repository's files, once the inspection has them. */
+    inspected?: InspectionSnapshot
+    controller: AppController
+    fileListView: FileListView
     header: HeaderDrag
 }) {
+    let { columns } = controller
+    let files = inspected?.columns[column.id]
     let maximized = snapshot.maximizedId == column.id
     // Ctrl+Shift+< and > move the column; it keeps focus in its new place.
     let move = (event: KeyboardEvent) => {
@@ -148,7 +164,7 @@ function ColumnFrame({ column, snapshot, columns, notify, header }: {
                     >
                         <ExpandColumnIcon className="expand-column-icon" />
                         <span className="expand-column-name">{column.name}</span>
-                        <span className="expand-column-summary">{workingSummary(column, snapshot.contents[column.id])}</span>
+                        <span className="expand-column-summary">{workingSummary(column, files)}</span>
                     </button>
                 )
                 : (
@@ -190,7 +206,18 @@ function ColumnFrame({ column, snapshot, columns, notify, header }: {
                                     onResolve={action => void columns.recover(column.recovery, action)}
                                 />
                             )
-                            : <ColumnBody column={column} contents={snapshot.contents[column.id]} notify={notify} />}
+                            : (
+                                <ColumnBody
+                                    column={column}
+                                    contents={snapshot.contents[column.id]}
+                                    inspected={files}
+                                    inspection={controller.inspection}
+                                    createComposer={path => controller.composer(snapshot.repositoryId!, column.id, path, snapshot.blocked)}
+                                    blocked={snapshot.blocked}
+                                    view={fileListView}
+                                    onViewChange={view => void controller.setFileListView(view)}
+                                />
+                            )}
                     </>
                 )}
         </article>
@@ -329,6 +356,22 @@ function MissingWorktree({ path }: { path: string }) {
             <p>{path}</p>
         </section>
     )
+}
+
+// A discard still showing its Undo notice takes Ctrl+Z; the Operation History's undo arrives in migration step 5.
+function useDiscardUndo(inspection: Inspection) {
+    useEffect(() => {
+        let undo = (event: globalThis.KeyboardEvent) => {
+            if (event.defaultPrevented || !event.ctrlKey || event.altKey || event.shiftKey || event.key.toLowerCase() != "z")
+                return
+            if (event.composedPath().some(node => node instanceof HTMLElement && node.matches("input, textarea, select, [contenteditable=true]")))
+                return
+            if (inspection.undoDiscard())
+                event.preventDefault()
+        }
+        window.addEventListener("keydown", undo)
+        return () => window.removeEventListener("keydown", undo)
+    }, [inspection])
 }
 
 function useRefreshes(columns: BranchWorkspace) {

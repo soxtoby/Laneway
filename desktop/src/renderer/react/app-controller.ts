@@ -1,6 +1,8 @@
-import type { Appearance, OpenRepository, RepositoryIdentity, Workspace, WorkspaceColumn } from "@laneway/shared"
+import type { Appearance, FileListView, OpenRepository, RepositoryIdentity, Workspace, WorkspaceColumn } from "@laneway/shared"
 import { type BranchWorkspace, createBranchWorkspace } from "./branch-workspace"
+import { type CommitComposer, createCommitComposer } from "./commit-composer"
 import { createGitSettings, type GitSettings } from "./git-settings"
+import { createInspection, type Inspection } from "./inspection"
 import { errorMessage, type Notice } from "./notice"
 import { createRepositoryEntry, type RepositoryEntry } from "./repository-entry"
 import { createRepositoryIdentityEditor, type RepositoryIdentityEditor } from "./repository-identity"
@@ -17,6 +19,8 @@ export type AppSnapshot =
         workspace: Workspace
         /** Opening or selecting a repository is under way. */
         opening: boolean
+        /** How every file list lays out and groups its files. */
+        fileListView: FileListView
         notice?: Notice
     }
 
@@ -28,9 +32,15 @@ export interface AppController extends Store<AppSnapshot> {
     readonly identity: RepositoryIdentityEditor
     /** The active repository's Workspace Columns. */
     readonly columns: BranchWorkspace
+    /** The files each column shows. */
+    readonly inspection: Inspection
     /** Loads the app state; also retries after a failed start. */
     start(): Promise<void>
     toggleAppearance(): Promise<void>
+    /** Shows every file list in the new view at once; a failed save only loses it for the next start. */
+    setFileListView(view: FileListView): Promise<void>
+    /** Commits and stashes a column's worktree; an operation refreshes the column, and the Branch Graph when it changed. */
+    composer(repositoryId: string, columnId: string, path: string, blocked: boolean): CommitComposer
     openRepository(): Promise<void>
     selectRepository(id: string): Promise<void>
     closeRepository(id: string): Promise<void>
@@ -108,9 +118,11 @@ export function createAppController(api: Api): AppController {
         commit: (id, chosen) => controller.customizeRepository(id, chosen),
     })
 
+    let inspection = createInspection({ api, notify })
     let columns = createBranchWorkspace({
         api,
         notify,
+        inspection,
         workspace: () => ready()?.workspace,
         saveColumns: (repositoryId, layout) => saveRepository(repositoryId, layout),
         checkMissing: async repositoryId => {
@@ -152,13 +164,14 @@ export function createAppController(api: Api): AppController {
         gitSettings,
         identity,
         columns,
+        inspection,
 
         async start() {
             store.publish({ status: "starting" })
             try {
                 let state = await api.getState()
                 gitSettings.load(state.settings)
-                store.publish({ status: "ready", appearance: state.appearance, workspace: state.workspace, opening: false })
+                store.publish({ status: "ready", appearance: state.appearance, workspace: state.workspace, opening: false, fileListView: state.fileListView })
                 if (state.workspace.persistenceError?.code == "workspace.partial")
                     notify({ code: state.workspace.persistenceError.code, message: state.workspace.persistenceError.message })
                 showWorkspace(state.workspace)
@@ -179,6 +192,30 @@ export function createAppController(api: Api): AppController {
                 notify({ code: "settings.appearance.failed", message: errorMessage(error) })
             }
         },
+
+        async setFileListView(view) {
+            update({ fileListView: view })
+            try {
+                await api.setFileListView(view)
+            } catch (error) {
+                notify({ code: "settings.file-list-view.failed", message: errorMessage(error) })
+            }
+        },
+
+        composer: (repositoryId, columnId, path, blocked) =>
+            createCommitComposer({
+                api,
+                repositoryId,
+                path,
+                blocked,
+                notify,
+                mutating: busy => columns.mutating(busy),
+                changed: async refreshGraph => {
+                    await inspection.readWorking(columnId, true)
+                    if (refreshGraph)
+                        await columns.refresh(false)
+                },
+            }),
 
         openRepository: () =>
             whileOpening(async () => {

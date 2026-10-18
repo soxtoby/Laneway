@@ -71,7 +71,7 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
                                         onClose={() => void controller.closeRepository(active.id)}
                                     />
                                 )
-                                : <WorkspaceColumns columns={columns} notify={controller.notify} />}
+                                : <WorkspaceColumns controller={controller} fileListView={snapshot.fileListView} />}
                         </main>
                     </div>
                 )

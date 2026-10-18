@@ -40,7 +40,7 @@ export function TextArea({
 }: TextFieldProps<HTMLTextAreaElement>) {
     return (
         <AriaTextField {...props}>
-            <Label>{label}</Label>
+            {label && <Label>{label}</Label>}
             <AriaTextArea ref={inputRef} className="react-aria-TextArea inset" placeholder={placeholder} />
             {description && <Description>{description}</Description>}
             <FieldError>{errorMessage}</FieldError>

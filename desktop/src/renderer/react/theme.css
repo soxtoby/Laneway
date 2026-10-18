@@ -15,10 +15,21 @@
     --selection-background: oklch(from var(--tint) l c h / 20%);
     --selection-background-hover: oklch(from var(--tint) l c h / 30%);
 
-    /* Repository Icon tiles, stash rows, and the Commit Trail graph. */
+    /* Repository Icon tiles and the Commit Trail graph. */
     --tile-background: var(--gray-100);
+
+    /* Working Changes cards: amber for a worktree's own changes, purple for stashes, and pink for the
+       branch a detached worktree's commit creates. */
+    --changes-background: oklch(from var(--tint) l c h / 14%);
+    --changes-background-hover: oklch(from var(--tint) l c h / 24%);
+    --changes-border: oklch(from var(--tint) l c h / 55%);
     --stash-background: oklch(from var(--purple) var(--lightness-100) calc(c * 0.4) h);
+    --stash-background-hover: oklch(from var(--purple) var(--lightness-200) calc(c * 0.5) h);
     --stash-border: oklch(from var(--purple) var(--lightness-400) calc(c * 0.6) h);
+    --stash-color: oklch(from var(--purple) var(--lightness-1000) c h);
+    --virtual-background: oklch(from var(--pink) var(--lightness-100) calc(c * 0.4) h);
+    --virtual-border: oklch(from var(--pink) var(--lightness-400) calc(c * 0.6) h);
+    --virtual-color: oklch(from var(--pink) var(--lightness-1000) c h);
     --graph-line: var(--tint-800);
     --graph-dot: var(--tint-1000);
 
@@ -115,6 +126,8 @@
         --selection-background-hover: oklch(from var(--tint) l c h / 26%);
         --stash-background: oklch(from var(--purple) var(--lightness-100) calc(c * 0.35) h);
         --stash-border: oklch(from var(--purple) var(--lightness-300) calc(c * 0.5) h);
+        --virtual-background: oklch(from var(--pink) var(--lightness-100) calc(c * 0.35) h);
+        --virtual-border: oklch(from var(--pink) var(--lightness-300) calc(c * 0.5) h);
         --tone-lightness: 76%;
         --tone-chroma: 0.15;
     }
@@ -122,9 +135,8 @@
 
 /* Accent buttons are bright amber with dark ink, and so are selected toggles and segments, which the
    kit draws in a darker tint meant for white text. They derive their gradient and edges from the fill
-   where they are drawn, so the panel's fill applies there. */
-.button-base[data-variant="accent"],
-.button-base[data-selected] {
+   where they are drawn, so the panel's fill applies there. Disabled ones keep the kit's grey. */
+.button-base:is([data-variant="accent"], [data-selected]):not([data-disabled]) {
     --button-background: var(--highlight-background);
     --button-gradient: oklch(from var(--highlight-background) calc(l + 0.04) c h);
     --button-border: oklch(from var(--highlight-background) calc(l - 0.08) c h);

@@ -1,6 +1,7 @@
-import type { BranchGraph, BranchGraphBranchNode, BranchGraphWorktree, BranchHistoryCommit, ChangedFile, ComparisonRef, DiffLayout, RecoveryRequest, Workspace, WorkspaceColumn, WorktreeRecovery } from "@laneway/shared"
+import type { BranchGraph, BranchGraphBranchNode, BranchGraphWorktree, BranchHistoryCommit, ComparisonRef, DiffLayout, RecoveryRequest, Workspace, WorkspaceColumn, WorktreeRecovery } from "@laneway/shared"
 import { type ComparisonColumnNode, comparisonNode } from "../src/inspection/comparison-columns"
 import { columnWorktree, reconcileWorktreeColumns, recoveryColumnId, recoveryWorkspaceColumn, workspaceGraph } from "../src/worktrees/worktree-columns"
+import type { ColumnInspection, Inspection } from "./inspection"
 import { errorMessage, type Notice } from "./notice"
 import { baseName } from "./repositories"
 import { createStore, type Store } from "./store"
@@ -32,12 +33,8 @@ export type ColumnView = ColumnNode & {
     worktree?: BranchGraphWorktree
 }
 
-/**
- * What a column shows until Working Changes and the Commit Trail move (migration steps 4 and 5): its
- * worktree's changed files and its branch's recent commits.
- */
+/** A branch column's recent commits, which it shows until the Commit Trail moves (migration step 5). */
 export interface ColumnContents {
-    changes?: { files: ChangedFile[] } | { error: string }
     commits?: BranchHistoryCommit[]
 }
 
@@ -53,6 +50,8 @@ export interface ColumnsSnapshot {
     /** The recovery under way, which every recovery column waits for. */
     recoveryBusy?: string
     recoveryErrors: Record<string, string>
+    /** An interrupted worktree removal waits to be resolved, so local operations wait too. */
+    blocked: boolean
     contents: Record<string, ColumnContents>
 }
 
@@ -61,6 +60,11 @@ export interface BranchWorkspace extends Store<ColumnsSnapshot> {
     deactivate(): void
     /** Reads the active repository again; a quiet read changes nothing on screen unless something changed. */
     refresh(quiet?: boolean): Promise<void>
+    /**
+     * Marks a local operation as running or finished. While any run, quiet refreshes wait, as the
+     * operation's own files change on disk and its completion refreshes once.
+     */
+    mutating(busy: boolean): void
     focus(id: string): void
     /** Collapses or expands a column. */
     toggleCollapsed(id: string): void
@@ -104,6 +108,8 @@ interface RepositoryColumns {
 interface BranchWorkspaceOptions {
     api: Api
     notify(notice: Notice): void
+    /** Keeps the files of the open columns, and refreshes their Working Changes with the Branch Graph. */
+    inspection: Pick<Inspection, "retain" | "refreshWorking">
     workspace(): Workspace | undefined
     /** Saves the repository's Workspace Columns. */
     saveColumns(repositoryId: string, layout: { columns: WorkspaceColumn[]; focusedColumnId?: string; layoutInitialized: boolean }): Promise<void>
@@ -112,12 +118,13 @@ interface BranchWorkspaceOptions {
 }
 
 /** The active repository's Workspace Columns: which are open and how they are laid out, read from its Branch Graph. */
-export function createBranchWorkspace({ api, notify, workspace, saveColumns, checkMissing }: BranchWorkspaceOptions): BranchWorkspace {
-    let store = createStore<ColumnsSnapshot>({ loading: false, columns: [], recoveryErrors: {}, contents: {} })
+export function createBranchWorkspace({ api, notify, inspection, workspace, saveColumns, checkMissing }: BranchWorkspaceOptions): BranchWorkspace {
+    let store = createStore<ColumnsSnapshot>({ loading: false, columns: [], recoveryErrors: {}, blocked: false, contents: {} })
     let states = new Map<string, RepositoryColumns>()
     let activeId: string | undefined
     // A disk change that lands mid-read is replayed once that read settles.
     let changedWhileReading = false
+    let mutations = 0
 
     function stateFor(repositoryId: string) {
         let state = states.get(repositoryId)
@@ -152,19 +159,28 @@ export function createBranchWorkspace({ api, notify, workspace, saveColumns, che
 
     function publish() {
         let state = activeId ? stateFor(activeId) : undefined
+        let columns = activeId && state ? columnViews(activeId, state) : []
+        // The inspection keeps files for exactly the columns on screen.
+        if (activeId && state?.graph) {
+            inspection.retain(
+                activeId,
+                columns.map(view => ({ id: view.id, worktreePath: view.worktree?.path, worktreeMissing: view.worktree?.missing })),
+            )
+        }
         store.publish(
             !activeId || !state
-                ? { loading: false, columns: [], recoveryErrors: {}, contents: {} }
+                ? { loading: false, columns: [], recoveryErrors: {}, blocked: false, contents: {} }
                 : {
                     repositoryId: activeId,
                     graph: state.graph,
                     loading: state.loading,
                     error: state.error,
-                    columns: columnViews(activeId, state),
+                    columns,
                     focusedId: state.focusedId,
                     maximizedId: state.maximizedId,
                     recoveryBusy: state.recoveryBusy,
                     recoveryErrors: state.recoveryErrors,
+                    blocked: state.recoveries.length > 0,
                     contents: state.contents,
                 },
         )
@@ -358,23 +374,11 @@ export function createBranchWorkspace({ api, notify, workspace, saveColumns, che
         return layoutInitialized
     }
 
-    // A missing worktree has nothing to read, so its column keeps only the branch's commits.
     async function readContents(repositoryId: string, state: RepositoryColumns) {
-        let views = columnViews(repositoryId, state).filter(view => view.kind == "branch" || view.kind == "virtual")
+        let views = columnViews(repositoryId, state).filter(view => view.kind == "branch")
         let entries = await Promise.all(views.map(async (view): Promise<[string, ColumnContents]> => {
             let contents: ColumnContents = {}
-            let worktree = view.worktree
             let reads: Promise<void>[] = []
-            if (worktree && !worktree.missing) {
-                reads.push(
-                    api.readChanges(repositoryId, `columns:changes:${view.id}`, { source: { kind: "working", worktreePath: worktree.path } }).then(
-                        result =>
-                            void (contents.changes = result.ok
-                                ? { files: result.inventory.files.filter(file => !file.ignored) }
-                                : { error: result.error.message }),
-                    ),
-                )
-            }
             if (view.kind == "branch") {
                 let branch = view.branch
                 let baseTips = branch.base.status == "known" ? [branch.base.tip] : branch.base.candidates.map(candidate => candidate.tip)
@@ -441,8 +445,14 @@ export function createBranchWorkspace({ api, notify, workspace, saveColumns, che
         },
 
         refresh: async (quiet = true) => {
-            if (activeId)
-                await read(activeId, quiet)
+            if (!activeId || quiet && mutations > 0)
+                return
+            await read(activeId, quiet)
+            if (quiet)
+                inspection.refreshWorking()
+        },
+        mutating(busy) {
+            mutations += busy ? 1 : -1
         },
 
         focus(id) {
@@ -532,8 +542,9 @@ export function createBranchWorkspace({ api, notify, workspace, saveColumns, che
             if (!repositoryId)
                 return
             let state = stateFor(repositoryId)
-            if (state.recoveryBusy)
+            if (state.recoveryBusy || mutations > 0)
                 return
+            mutations++
             change(repositoryId, state => {
                 state.recoveryBusy = recovery.operationId
                 delete state.recoveryErrors[recovery.operationId]
@@ -548,6 +559,7 @@ export function createBranchWorkspace({ api, notify, workspace, saveColumns, che
                 state.recoveryErrors[recovery.operationId] = errorMessage(error)
             } finally {
                 state.recoveryBusy = undefined
+                mutations--
             }
             await read(repositoryId, false)
         },
@@ -584,7 +596,7 @@ function identity(node: ColumnNode, worktree?: BranchGraphWorktree): { name: str
 }
 
 /** What a collapsed column says about its Working Changes. */
-export function workingSummary(column: ColumnView, contents?: ColumnContents) {
+export function workingSummary(column: ColumnView, inspected?: ColumnInspection) {
     if (column.kind == "recovery")
         return "Recovery required"
     if (column.kind == "comparison")
@@ -593,11 +605,11 @@ export function workingSummary(column: ColumnView, contents?: ColumnContents) {
         return "Branch"
     if (column.worktree.missing)
         return "Missing"
-    let changes = contents?.changes
-    if (!changes)
-        return "Reading Working Changes…"
-    if ("error" in changes)
+    let working = inspected?.files.working
+    if (working?.error)
         return "Working Changes unavailable"
-    let count = changes.files.length
+    if (!working?.inventory)
+        return "Reading Working Changes…"
+    let count = working.inventory.files.filter(file => !file.ignored).length
     return count ? `${count} changed ${count == 1 ? "file" : "files"}` : "Clean"
 }

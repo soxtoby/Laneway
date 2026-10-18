@@ -27,6 +27,7 @@ A step is done when its listed tests pass against the React renderer and the scr
 - **Appearance:** the main process sets Electron's `nativeTheme.themeSource` from the appearance setting, so the kit's `prefers-color-scheme` rules follow it without edits. The window's background and title bar overlay can't read the stylesheets, so `main/window-colors.ts` repeats the header's colours, and `react-renderer-styles.test.ts` checks that they still match.
 - **CSP:** plain stylesheets only. `meta#react-aria-pressable-style` with its rule in the page CSS stops React Aria's one inline style. Only the dev server gets a nonce, for Vite's style tags and Fast Refresh's preamble script. Keep `style-src 'self'` and `script-src 'self'` unchanged.
 - **Density:** commit rows are 32px, file rows 28px, repository rows 40px (36px collapsed) with 28px tiles. Dense collections are React Aria GridLists of `DenseRow`s sharing one row style; the kit's GridList is a card grid.
+- **Activation:** React Aria's own press timing replaces the Remix renderer's mousedown activation (`mouse-activation.ts`): collection items select and menus open on pointer down, and buttons act on release, which leaves native drags free to start from any row.
 - **Row menus:** a `DenseRow` takes its menu items once. Right-click opens them at the pointer, and Shift+F10 under the row, through the app's one `ContextMenuHost`; the same items appear in the row's hover menu button. The host sits outside every list, because a menu rendered inside a row passes its focus events to the list through React's portal bubbling.
 - **Dialogs** are the kit's `Modal` and `Dialog`, open while their controller says so. Escape and Cancel go through the controller, which can keep a dialog open while Git runs. Forms use the kit's `Form` and `TextField`, and a failure shows in the form as an alert that takes focus.
 - **Tests:** React DOM tests install Happy DOM with `installReactDom` from `test/react-dom.ts` before importing views. React Aria acts on pointer presses, so tests press with pointer events rather than `click()`.
@@ -60,27 +61,37 @@ A step is done when its listed tests pass against the React renderer and the scr
   - **Remix modules:** the shell in `app.tsx`, `branch-workspace/branch-columns.tsx`, `column-divider.tsx`, `worktrees/worktree-columns.ts`, `worktrees/worktree-recovery.tsx`.
   - **Tests ported:** restoring and persisting Workspace Columns, maximizing, retained collapse, and recovery columns, to `react-workspace-columns.test.tsx`; the controller's own rules are in `react-branch-workspace.test.ts`.
   - **Moved on:** a missing worktree's column shows its panel, but Repair and Remove go through worktree previews, so they and the missing-worktree tests move to step 5. Auxiliary columns are opened by Inspection, so their lifecycle moves to step 6.
-- [ ] **4. Working Changes and committing.**
-  - **Scope:** file list layouts, grouping, and folding; discard with Undo; copying paths; mousedown activation; the commit composer and composition.
-  - **Remix modules:** `inspection/file-list.tsx`, `inspection/file-list-view.tsx`, `mouse-activation.ts`, `commit-composer.tsx`, `composition.tsx`, `inspection/commit-message.tsx`.
-  - **Tests to port:** the view menu, copying paths, discarding, the commit composer, mousedown activation, and the Electron test `local-electron.test.ts`.
+- [x] **4. Working Changes and committing.**
+  - **Scope:**
+    - Working Changes as a card with the staged list above the unstaged one; file list layouts, grouping, folding, and choosing whole files; discard with Undo and Ctrl+Z; copying paths.
+    - A branch's stashes above its Working Changes: their files, stashing, applying, and dropping.
+    - The commit composer: drafts, Stage all and Unstage all, hook review, and the branch a detached worktree's commit creates, named in place.
+    - `inspection.ts` reads each column's files and `commit-composer.ts` commits and stashes a worktree; `editable-name.tsx` is the in-place name editor that step 5's renames reuse.
+  - **Remix modules:** `inspection/file-list.tsx`, `inspection/file-list-view.tsx`, `commit-composer.tsx`, `editable-name.tsx`, and the Working Changes part of `inspection/inspection.tsx`; `inspection/discard.ts` carries over.
+  - **Tests ported:** the view menu, copying paths, discarding, the commit composer, and the two detached-worktree tests, to `react-working-changes.test.tsx`, with stashes and hook review added there. The draft and commit phases of `local-electron.test.ts` are in `react-local-electron.test.ts`.
+  - **Moved on:**
+    - Composition moves files between lists, stashes, columns, and commits, and is also how a single file is staged, so it moves to step 5 with the Commit Trail it lands on. So do `local-electron.test.ts`'s compose and branch phases.
+    - Line discards, the diff column button, the File history menu item, and showing ignored files belong to diffs and filters, so they move to step 6.
+    - Mousedown activation is not ported; see the Activation convention.
 - [ ] **5. Commit Trail and local operations.**
   - **Scope:**
     - Commits, rewording, and Create branch here.
-    - Renaming branches and worktrees inline.
+    - Composition: moving or copying files and commits between lists, stashes, columns, and commits, including staging single files.
+    - Renaming branches and worktrees inline, with `editable-name.tsx`.
     - Creating, switching, and removing worktrees from their previews, and repairing or removing a missing worktree.
-    - Stashes, undo, and redo.
-  - **Remix modules:** `trail-commit.tsx`, `reword.tsx`, `editable-name.tsx`, `overflow-menu.tsx`, `context-menu.tsx`, `branch-workspace/local-branch-actions.tsx`, `worktrees/worktree-controls.tsx`, `worktrees/worktree-actions.tsx`, `worktrees/missing-worktree.tsx`.
-  - **Tests to port:** rewording, Create branch here, the worktree creation preview, inline renames, detached worktrees, branch deletion, missing worktrees.
+    - Undo and redo, which Ctrl+Z reaches once no discard is waiting.
+  - **Remix modules:** `trail-commit.tsx`, `reword.tsx`, `composition.tsx`, `inspection/commit-message.tsx`, `overflow-menu.tsx`, `context-menu.tsx`, `branch-workspace/local-branch-actions.tsx`, `worktrees/worktree-controls.tsx`, `worktrees/worktree-actions.tsx`, `worktrees/missing-worktree.tsx`.
+  - **Tests to port:** rewording, Create branch here, composition, the worktree creation preview, inline renames, detached worktrees, branch deletion, missing worktrees, and the compose and branch phases of `local-electron.test.ts`.
 - [ ] **6. Inspection.**
   - **Scope:**
     - Diff columns: combined and split views, selection, hidden-line gaps, and virtualized large patches.
+    - Discarding selected lines, the Working Changes diff column button, the file filter, and showing ignored files.
     - Image diffs.
     - File History, Commit Diff, and breakout columns, with the auxiliary-column lifecycle (`auxiliary-columns.ts`).
     - Branch Comparison. Until then, saved comparison columns keep their place and show their description.
   - **Remix modules:** `inspection/`.
   - **Tests to port:**
-    - The "Working Changes inspection" and "Branch Comparison" blocks, the File History tests, and the diff column placement and resize tests.
+    - The "Working Changes inspection" and "Branch Comparison" blocks, the File History tests, the diff column placement and resize tests, and the line discards in the discarding test.
     - The Electron test `image-diff-electron.test.ts`.
 - [ ] **7. Branch Graph and Command Lens.**
   - **Scope:**

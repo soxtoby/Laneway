@@ -91,6 +91,7 @@ function setUp(
     let columns = createBranchWorkspace({
         api,
         notify: notice => notices.push(notice),
+        inspection: { retain: () => {}, refreshWorking: () => {} },
         workspace: () => workspace,
         saveColumns: async (id, layout) => {
             workspace = { ...workspace, repositories: workspace.repositories.map(item => item.id == id ? { ...item, ...layout } : item) }

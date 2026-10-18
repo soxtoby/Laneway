@@ -13,5 +13,6 @@ Local changes:
 - The `"use client"` directives are gone; this is a client-only renderer.
 - `Modal.css` centres the modal in a fixed overlay. The upstream sticky offset left any modal taller than half the window against its top edge, and Laneway's page never scrolls.
 - `ProgressBar.tsx` types its fill's style as `CSSProperties` rather than `any`, for the lint rules.
+- `TextField.tsx`'s `TextArea` leaves out its label when it has none, as `TextField` does, so an `aria-label` names it alone.
 
 Laneway's colours and density are set in `../theme.css` by overriding the starter's variables, not by editing `theme.css` here.

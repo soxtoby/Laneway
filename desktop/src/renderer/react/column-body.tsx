@@ -1,43 +1,57 @@
 /** @jsxImportSource react */
-import type { BranchHistoryCommit, ChangedFile } from "@laneway/shared"
+import type { BranchHistoryCommit, FileListView } from "@laneway/shared"
 import { GridList } from "react-aria-components"
 import type { ColumnContents, ColumnView } from "./branch-workspace"
-import { IconButton, MoreMenu } from "./controls"
+import type { CommitComposer } from "./commit-composer"
+import { MoreMenu } from "./controls"
 import { DenseRow } from "./dense-row"
-import { AddIcon, ArchiveIcon, BranchIcon, CloseIcon, DeletedIcon, ModifiedIcon, OpenColumnIcon, TreeIcon } from "./icons"
-import type { Notice } from "./notice"
-import { Button } from "./ui/Button"
-import { Checkbox } from "./ui/Checkbox"
-import { Disclosure, DisclosureHeader, DisclosurePanel } from "./ui/Disclosure"
+import { BranchIcon } from "./icons"
+import type { ColumnInspection, Inspection } from "./inspection"
 import { MenuItem } from "./ui/Menu"
+import { StashedChanges, WorkingChanges } from "./working-changes"
+
+interface ColumnBodyProps {
+    column: ColumnView
+    contents?: ColumnContents
+    inspected?: ColumnInspection
+    inspection: Inspection
+    createComposer(path: string): CommitComposer
+    /** Local operations wait for an interrupted worktree removal. */
+    blocked: boolean
+    view: FileListView
+    onViewChange(view: FileListView): void
+}
 
 /**
- * A column's Working Changes, stashes, and commits as the spike drew them, standing in until Working
- * Changes and the Commit Trail move (migration steps 4 and 5). A missing worktree has no Working Changes.
+ * A column's Working Changes and stashes, then its branch's commits as the spike drew them until the
+ * Commit Trail moves (migration step 5). A missing worktree has no Working Changes.
  */
-export function ColumnBody({ column, contents, notify }: { column: ColumnView; contents?: ColumnContents; notify(notice: Notice): void }) {
+export function ColumnBody({ column, contents, inspected, inspection, createComposer, blocked, view, onViewChange }: ColumnBodyProps) {
     if (column.kind == "comparison")
         return <p className="column-placeholder">{column.description}</p>
     if (column.kind == "recovery")
         return null
-    let changes = contents?.changes
+    let path = column.worktree && !column.worktree.missing ? column.worktree.path : undefined
     return (
         <div className="column-body">
-            {column.kind == "branch" && column.branch.markers.filter(marker => marker.kind == "stash").map(stash => (
-                <div key={stash.id} className="stash-row">
-                    <ArchiveIcon />
-                    <span className="stash-label">{stash.label}</span>
-                    <Button variant="secondary">Apply</Button>
-                    <IconButton label="Drop stash">
-                        <CloseIcon />
-                    </IconButton>
-                </div>
-            ))}
-            {column.worktree && !column.worktree.missing && (
-                changes && "error" in changes
-                    ? <p className="column-placeholder">Working Changes unavailable: {changes.error}</p>
-                    : <WorkingChanges files={changes?.files} notify={notify} />
-            )}
+            {path
+                ? (
+                    // A cleared recovery recreates the composer, so its preview runs again.
+                    <WorkingChanges
+                        key={`${path}:${blocked}`}
+                        column={column}
+                        path={path}
+                        inspected={inspected}
+                        inspection={inspection}
+                        createComposer={() => createComposer(path)}
+                        blocked={blocked}
+                        view={view}
+                        onViewChange={onViewChange}
+                    />
+                )
+                : column.kind == "branch" && column.branch.markers.length > 0 && (
+                    <StashedChanges column={column} inspected={inspected} inspection={inspection} view={view} />
+                )}
             {column.kind == "branch" && (
                 <>
                     <div className="branch-header">
@@ -57,90 +71,6 @@ export function ColumnBody({ column, contents, notify }: { column: ColumnView; c
             )}
         </div>
     )
-}
-
-function WorkingChanges({ files, notify }: { files?: ChangedFile[]; notify(notice: Notice): void }) {
-    let title = !files ? "Reading Working Changes…" : files.length == 0 ? "No Working Changes" : `Working Changes (${files.length})`
-    return (
-        <div className="working-changes">
-            <Disclosure defaultExpanded>
-                <div className="changes-header">
-                    <DisclosureHeader>{title}</DisclosureHeader>
-                    <IconButton label="Show as tree">
-                        <TreeIcon />
-                    </IconButton>
-                    <IconButton label="Open in a column">
-                        <OpenColumnIcon />
-                    </IconButton>
-                </div>
-                <DisclosurePanel>
-                    {files && files.length > 0 && <FileList files={files} notify={notify} />}
-                    <div className="commit-bar">
-                        <Button variant="accent" isDisabled={!files?.length}>Commit…</Button>
-                    </div>
-                </DisclosurePanel>
-            </Disclosure>
-        </div>
-    )
-}
-
-/** Changed files at Laneway's density, with the kit's Checkbox for selection. */
-function FileList({ files, notify }: { files: ChangedFile[]; notify(notice: Notice): void }) {
-    return (
-        <GridList aria-label="Working Changes" selectionMode="multiple" className="dense-list">
-            {files.map(file => {
-                let slash = file.path.lastIndexOf("/") + 1
-                return (
-                    <DenseRow
-                        key={file.path}
-                        id={file.path}
-                        textValue={file.path}
-                        className="compact"
-                        menu={{ label: `Actions for ${file.path}`, items: () => <FileMenuItems path={file.path} notify={notify} /> }}
-                    >
-                        {({ actions }) => (
-                            <div className="row-content file-content">
-                                <Checkbox slot="selection" />
-                                <FileStatus file={file} />
-                                <span className="file-path">
-                                    <span className="file-directory">{file.path.slice(0, slash)}</span>
-                                    {file.path.slice(slash)}
-                                </span>
-                                {actions}
-                            </div>
-                        )}
-                    </DenseRow>
-                )
-            })}
-        </GridList>
-    )
-}
-
-// The undo window replaces a confirmation dialog. The spike's discard only shows the notices.
-function FileMenuItems({ path, notify }: { path: string; notify(notice: Notice): void }) {
-    let discard = () =>
-        notify({
-            code: "discard.applied",
-            message: `Discarded changes to ${path}.`,
-            transient: true,
-            duration: 6_000,
-            action: { label: "Undo", run: () => notify({ code: "discard.undone", message: `Restored ${path}.`, transient: true }) },
-        })
-    return (
-        <>
-            <MenuItem onAction={discard}>Discard changes</MenuItem>
-            <MenuItem>Copy path</MenuItem>
-            <MenuItem>Show history</MenuItem>
-        </>
-    )
-}
-
-function FileStatus({ file }: { file: ChangedFile }) {
-    if (file.untracked || file.status.startsWith("A"))
-        return <AddIcon className="file-status" data-status="added" aria-label="Added" />
-    if (file.status.includes("D"))
-        return <DeletedIcon className="file-status" data-status="deleted" aria-label="Deleted" />
-    return <ModifiedIcon className="file-status" data-status="modified" aria-label="Modified" />
 }
 
 /** The Commit Trail: the same dense rows with a graph gutter. */

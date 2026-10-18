@@ -427,14 +427,85 @@
     overflow: auto;
 }
 
-.stash-row {
+/* Working Changes: a card for the worktree's changes, its stashes above it, and for a detached
+   worktree the branch its next commit creates below it. */
+
+.working-changes {
+    display: grid;
+    gap: var(--spacing-2);
+
+    .react-aria-Button {
+        height: var(--spacing-7);
+    }
+}
+
+.commit-card,
+.branch-stash,
+.virtual-branch {
+    /* clip, unlike hidden, keeps sticky headers and scrollbars pinned to the column. */
+    overflow: clip;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    background: var(--gray-50);
+}
+
+.commit-card {
+    border-color: var(--changes-border);
+
+    &.clean {
+        border-color: var(--border-color);
+    }
+}
+
+.commit-header {
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-1);
+    padding-inline-end: var(--spacing-1);
+    background: var(--changes-background);
+
+    &:has(.working-changes-toggle[data-hovered]) {
+        background: var(--changes-background-hover);
+    }
+
+    &:has(.working-changes-toggle[data-focus-visible]) {
+        outline: 2px solid var(--focus-ring-color);
+        outline-offset: -2px;
+    }
+
+    .commit-card[data-expanded]:not(.clean) > & {
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .clean > & {
+        min-height: 34px;
+        background: transparent;
+    }
+}
+
+.commit-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    font-size: var(--font-size);
+    font-weight: 600;
+}
+
+.working-changes-toggle,
+.branch-stash-toggle {
+    width: 100%;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: var(--spacing-2);
-    padding: var(--spacing-1) var(--spacing-1) var(--spacing-1) var(--spacing-2);
-    border: 1px solid var(--stash-border);
-    border-radius: var(--radius);
-    background: var(--stash-background);
+    padding: 0 0 0 var(--spacing-2);
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    outline: none;
 
     > svg {
         flex: 0 0 auto;
@@ -443,47 +514,392 @@
     }
 }
 
-.stash-label {
+.working-changes-toggle {
+    min-height: inherit;
+
+    > svg:nth-child(2) {
+        color: var(--tint-1000);
+    }
+
+    .clean & {
+        color: var(--text-color-placeholder);
+        font-weight: 500;
+
+        > svg {
+            color: inherit;
+        }
+    }
+}
+
+/* Disclosure chevrons point right when folded and down when open. */
+.toggle-chevron,
+.folder-chevron > svg {
+    color: var(--text-color-placeholder);
+    transition: rotate 150ms;
+}
+
+[aria-expanded="true"] > .toggle-chevron,
+.dense-row[data-expanded] .folder-chevron > svg {
+    rotate: 90deg;
+}
+
+.working-changes-toggle > .toggle-chevron,
+.branch-stash-toggle > .toggle-chevron {
+    width: var(--spacing-3);
+    height: var(--spacing-3);
+}
+
+/* Commit is a split button; its menu holds the rarer operations. */
+.commit-split {
+    flex: 0 0 auto;
+    display: flex;
+
+    > .react-aria-Button:first-child {
+        border-start-end-radius: 0;
+        border-end-end-radius: 0;
+    }
+
+    > .react-aria-Button:last-child {
+        width: var(--spacing-6);
+        margin-inline-start: 1px;
+        border-radius: 0 var(--radius) var(--radius) 0;
+
+        > svg {
+            width: var(--spacing-3);
+            height: var(--spacing-3);
+        }
+    }
+}
+
+.commit-content {
+    padding-block-end: var(--spacing-1);
+}
+
+/* The commit form and the reviews under it sit inside the card, inset like the rows beneath them. */
+.commit-form,
+.commit-review {
+    display: grid;
+    gap: var(--spacing-2);
+    margin: var(--spacing-2) var(--spacing-2) 0;
+
+    .react-aria-TextField {
+        width: 100%;
+    }
+
+    .react-aria-TextArea {
+        min-height: 72px;
+        resize: vertical;
+    }
+}
+
+.commit-review {
+    padding: var(--spacing-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+
+    p,
+    ul {
+        margin: 0;
+    }
+}
+
+.commit-bulk-actions,
+.commit-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: end;
+    gap: var(--spacing-2);
+}
+
+.commit-bulk-actions .react-aria-Button {
+    height: var(--spacing-6);
+    padding-inline: var(--spacing-1);
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+}
+
+.commit-notice {
+    margin: var(--spacing-2) var(--spacing-2) 0;
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+}
+
+/* Staged files sit above the divider, the rest of Working Changes below it. */
+.staged-divider {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    margin: var(--spacing-2) var(--spacing-2) var(--spacing-1);
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+
+    &::before,
+    &::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: var(--border-color);
+    }
+}
+
+.change-file-list {
+    padding-inline: var(--spacing-1);
+}
+
+.selection-summary {
+    display: flex;
+    align-items: center;
+    justify-content: end;
+    gap: var(--spacing-2);
+    padding: var(--spacing-1) var(--spacing-2) 0;
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+
+    .react-aria-Button {
+        height: var(--spacing-6);
+        padding-inline: var(--spacing-1);
+        font-size: var(--font-size-sm);
+    }
+}
+
+/* Stashes, in their own tone so they read apart from the worktree's changes. */
+.branch-stash {
+    border-color: var(--stash-border);
+}
+
+.branch-stash-row {
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-1);
+    padding-inline-end: var(--spacing-1);
+    background: var(--stash-background);
+
+    &:has(.branch-stash-toggle[data-hovered]) {
+        background: var(--stash-background-hover);
+    }
+
+    &:has(.branch-stash-toggle[data-focus-visible]) {
+        outline: 2px solid var(--focus-ring-color);
+        outline-offset: -2px;
+    }
+
+    .react-aria-Button {
+        height: var(--spacing-6);
+    }
+}
+
+.branch-stash-toggle {
     flex: 1 1 auto;
+    height: 34px;
+    font-weight: 600;
+
+    > svg:nth-child(2) {
+        color: var(--stash-color);
+    }
+
+    small {
+        flex: 0 0 auto;
+        color: var(--text-color-placeholder);
+        font-size: var(--font-size-sm);
+        font-weight: 500;
+    }
+}
+
+.branch-stash-message {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-/* Working Changes */
-
-.working-changes {
-    border-block: 0.5px solid var(--border-color);
+.branch-stash-files {
     padding-block: var(--spacing-1);
-
-    .react-aria-Disclosure {
-        width: auto;
-    }
-
-    .react-aria-DisclosurePanel > div {
-        padding: 0;
-    }
+    border-top: 1px solid var(--border-color);
 }
 
-.changes-header {
+/* The branch a detached worktree's commit creates, in the virtual tone. */
+.virtual-branch {
+    min-height: 34px;
     display: flex;
     align-items: center;
-    gap: var(--spacing-1);
+    gap: var(--spacing-2);
+    padding-inline: var(--spacing-3);
+    border-color: var(--virtual-border);
+    background: var(--virtual-background);
+    font-weight: 600;
 
-    .react-aria-Heading {
-        flex: 1 1 auto;
-    }
-
-    .disclosure-button {
-        padding-inline: var(--spacing-1);
+    small {
+        flex: 0 0 auto;
+        color: var(--text-color-placeholder);
+        font-size: var(--font-size-sm);
+        font-weight: 500;
     }
 }
 
-.commit-bar {
+.virtual-branch-icon {
+    flex: 0 0 auto;
+    color: var(--virtual-color);
+}
+
+/* A name edited in place: text until pressed, then a field. */
+.editable-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2);
+
+    small[role="alert"] {
+        flex: 0 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        color: var(--invalid-color);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+}
+
+.editable-name-button {
+    min-width: 0;
+    max-width: 100%;
+    margin-inline: calc(-1 * var(--spacing-1));
+    padding: 2px var(--spacing-1);
+    overflow: hidden;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: text;
+    outline: none;
+
+    &[data-hovered] {
+        border-color: var(--border-color);
+        background: var(--field-background);
+    }
+
+    &[data-focus-visible] {
+        outline: 2px solid var(--focus-ring-color);
+    }
+
+    &[data-disabled] {
+        cursor: default;
+    }
+}
+
+.editable-name-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 26px;
+    margin-inline-start: calc(-1 * var(--spacing-1));
+    padding: 0 var(--spacing-1);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--field-background);
+    color: var(--text-color);
+    font: inherit;
+
+    &:focus-visible {
+        outline: 2px solid var(--focus-ring-color);
+    }
+}
+
+/* File lists: React Aria Trees of dense rows, nested by `--tree-item-level`. */
+
+.file-tree {
     display: flex;
-    justify-content: end;
-    padding-top: var(--spacing-2);
+    flex-direction: column;
+    outline: none;
+}
+
+/* Each level steps in by a checkbox and its gap, so a folder's files start under its chevron. */
+.file-row,
+.folder-row {
+    .row-content {
+        display: flex;
+        padding-inline-start: calc((var(--tree-item-level, 1) - 1) * var(--spacing) * 6.5 + var(--spacing-1));
+    }
+}
+
+.file-content {
+    .react-aria-Checkbox {
+        flex: 0 0 auto;
+    }
+
+    .file-path {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+}
+
+.file-badge,
+.file-group-count {
+    flex: 0 0 auto;
+    padding: 0 var(--spacing-1);
+    border-radius: var(--radius-sm);
+    background: var(--gray-100);
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+    line-height: 18px;
+}
+
+/* Copying the path shows on the hovered or focused row, and confirms the copy. */
+.copy-path {
+    flex: 0 0 auto;
+    opacity: 0;
+
+    .dense-row:is([data-hovered], [data-focus-visible-within]) &,
+    &[data-focus-visible],
+    &[data-copied] {
+        opacity: 1;
+    }
+
+    &[data-copied] {
+        color: var(--status-added);
+    }
+}
+
+.folder-chevron {
+    flex: 0 0 auto;
+    width: var(--spacing-4);
+    height: var(--spacing-4);
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: inherit;
+    outline: none;
+
+    > svg {
+        width: var(--spacing-3);
+        height: var(--spacing-3);
+    }
+
+    &[data-focus-visible] {
+        outline: 2px solid var(--focus-ring-color);
+    }
+}
+
+.folder-icon {
+    flex: 0 0 auto;
+    width: var(--spacing-4);
+    height: var(--spacing-4);
+    color: var(--text-color-placeholder);
+}
+
+.folder-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-color-placeholder);
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* Branch heading */
@@ -583,20 +999,17 @@
     }
 }
 
-.file-content {
-    grid-template-columns: auto auto minmax(0, 1fr) var(--spacing-6);
-
-    .react-aria-CheckboxField {
-        display: flex;
-    }
-}
-
 .file-status {
+    flex: 0 0 auto;
     width: var(--spacing-4);
     height: var(--spacing-4);
 
-    &[data-status="modified"] {
+    &:is([data-status="modified"], [data-status="renamed"], [data-status="copied"]) {
         color: var(--status-modified);
+    }
+
+    &[data-status="conflicted"] {
+        color: var(--invalid-color);
     }
 
     &[data-status="added"] {

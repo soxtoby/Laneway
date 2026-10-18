@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
-import { Archive, ArrowDownToLine, ChevronsLeft, ChevronsRight, Ellipsis, ExternalLink, FaceSlightlySmiling, Folder, GitBranch, GitCompareArrows, type IconNode, Image, ImagePlus, ListTree, Maximize2, Minimize2, Minus, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Redo2, Search, SlidersHorizontal, Sun, TriangleAlert, Type, Undo2, X } from "lucide"
+import { Archive, ArrowDownToLine, ArrowRight, Check, ChevronDown, ChevronsLeft, ChevronsRight, Copy, Ellipsis, ExternalLink, FaceSlightlySmiling, Folder, GitBranch, GitCompareArrows, type IconNode, Image, ImagePlus, ListTree, Maximize2, Minimize2, Minus, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Redo2, Search, SlidersHorizontal, Sun, TriangleAlert, Type, Undo2, X } from "lucide"
 import { createElement } from "react"
+import { customIconPaths } from "../src/icon-nodes"
 import { lucideIcon } from "./ui/icons"
 
 // Application icons, drawn from the same Lucide nodes as the Remix renderer's (ADR 0020).
@@ -29,6 +30,9 @@ export let ExpandColumnIcon = lucideIcon(ChevronsRight, "chevrons-right")
 export let RestoreIcon = lucideIcon(Minimize2, "minimize-2")
 export let WarningIcon = lucideIcon(TriangleAlert, "triangle-alert")
 export let CompareIcon = lucideIcon(GitCompareArrows, "git-compare-arrows")
+export let CheckIcon = lucideIcon(Check, "check")
+export let CopyIcon = lucideIcon(Copy, "copy")
+export let ChevronDownIcon = lucideIcon(ChevronDown, "chevron-down")
 export let IconTypeIcon = lucideIcon(Image, "image")
 export let EmojiTypeIcon = lucideIcon(FaceSlightlySmiling, "face-slightly-smiling")
 export let MonogramTypeIcon = lucideIcon(Type, "type")
@@ -39,6 +43,41 @@ export function LucideGlyph({ node }: { node: IconNode }) {
     return (
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             {node.map(([tag, attributes], index) => createElement(tag, { key: index, ...attributes }))}
+        </svg>
+    )
+}
+
+let statusIcons: Record<string, typeof AddIcon> = {
+    added: AddIcon,
+    deleted: lucideIcon(Minus, "minus"),
+    modified: lucideIcon(Pencil, "pencil"),
+    renamed: lucideIcon(ArrowRight, "arrow-right"),
+    copied: lucideIcon(Copy, "copy"),
+    conflicted: lucideIcon(TriangleAlert, "triangle-alert"),
+}
+
+/** How a file changed, as an icon named for its Git status. */
+export function FileStatusIcon({ status }: { status: string }) {
+    let Icon = statusIcons[status] ?? AddIcon
+    return <Icon className="file-status" data-status={status} role="img" aria-label={status} aria-hidden={false} />
+}
+
+/** A head cut off from any branch: Laneway's own stroke, as Lucide has none (ADR 0020). */
+export function DetachedIcon({ className }: { className?: string }) {
+    return (
+        <svg
+            width={16}
+            height={16}
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+            className={className}
+        >
+            <path d={customIconPaths.detached} />
         </svg>
     )
 }
