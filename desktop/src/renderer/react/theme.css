@@ -18,8 +18,8 @@
     /* Repository Icon tiles. */
     --tile-background: var(--gray-100);
 
-    /* The Commit Trail: branches in blue and what their remote already has in teal, on a grey line
-       through amber commit nodes; an unfolded commit's files sit in a recessed tray. */
+    /* The Commit Trail: branches and their commit nodes in blue, and what their remote already has in
+       teal, on a grey line; an unfolded commit's files sit in a recessed tray. */
     --branch-background: oklch(from var(--blue) var(--lightness-100) calc(c * 0.25) h);
     --branch-background-hover: oklch(from var(--blue) var(--lightness-200) calc(c * 0.35) h);
     --branch-border: oklch(from var(--blue) var(--lightness-400) calc(c * 0.5) h);
@@ -29,6 +29,8 @@
     --remote-border: oklch(from var(--turquoise) var(--lightness-400) calc(c * 0.7) h);
     --remote-color: oklch(from var(--turquoise) var(--lightness-1000) c h);
     --tray-background: var(--gray-100);
+    --graph-line: var(--gray-400);
+    --graph-dot: var(--branch-color);
 
     /* Working Changes cards: amber for a worktree's own changes, purple for stashes, and pink for the
        branch a detached worktree's commit creates. */
@@ -42,8 +44,6 @@
     --virtual-background: oklch(from var(--pink) var(--lightness-100) calc(c * 0.4) h);
     --virtual-border: oklch(from var(--pink) var(--lightness-400) calc(c * 0.6) h);
     --virtual-color: oklch(from var(--pink) var(--lightness-1000) c h);
-    --graph-line: var(--gray-400);
-    --graph-dot: var(--tint-1000);
 
     /* Warnings and failures shown in place, such as Git being unavailable. */
     --invalid-background: oklch(from var(--invalid-color) var(--lightness-100) calc(c * 0.3) h);
@@ -67,6 +67,10 @@
     --tone-chroma: 0.17;
 
     --font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    --font-family-mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+
+    /* Chosen diff lines, washed in the accent. */
+    --diff-selection: oklch(from var(--tint) l c h / 34%);
 }
 
 [data-tone] {

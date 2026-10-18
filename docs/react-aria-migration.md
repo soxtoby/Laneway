@@ -98,6 +98,8 @@ A step is done when its listed tests pass against the React renderer and the scr
     - Branch Comparison. Until then, saved comparison columns keep their place and show their description.
     - Arrow keys through a column's branches, commits, and files (`inspection/column-navigation.ts`).
   - **Remix modules:** `inspection/` and `trail-commit.tsx`, File History's commit column.
+  - **Landed so far:**
+    - Inline diffs: a file's row opens its diff beneath it, drawn by Pierre in `diff-renderer.ts` (the imperative part of `inspection/diff.tsx`) with only the lines near the viewport. The diff session, `diff-context.ts`, and `diff-patch.ts` carry over. Diffs lay out unified or side by side per column, show whitespace, reveal hidden lines from the whole file, page large patches, and choose lines to discard or move. Tests in `react-diffs.test.tsx`.
   - **Tests to port:**
     - The "Working Changes inspection" and "Branch Comparison" blocks, the File History tests, the diff column placement and resize tests, and the line discards in the discarding test.
     - The Electron test `image-diff-electron.test.ts`.

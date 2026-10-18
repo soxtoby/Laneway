@@ -1336,6 +1336,166 @@
     font-weight: 600;
 }
 
+/* Diffs: a file's row opens its diff under it, the row sticking above its lines while they scroll past. */
+
+.file-row.inspected {
+    height: auto;
+
+    .file-content {
+        position: sticky;
+        top: 0;
+        z-index: 3;
+        height: 28px;
+        border-radius: var(--radius-sm);
+        background: var(--gray-50);
+    }
+
+    /* Only the row's own line takes the hover and choice tints, not its diff. */
+    &[data-hovered],
+    &[data-selected] {
+        background: none;
+    }
+
+    &[data-hovered] .file-content {
+        background: var(--highlight-hover);
+    }
+
+    &[data-selected] .file-content {
+        background: var(--selection-background);
+    }
+}
+
+.file-diff {
+    cursor: auto;
+    user-select: text;
+}
+
+.diff-controls {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-1);
+
+    .react-aria-ToggleButton {
+        &[data-selected] {
+            color: var(--focus-ring-color);
+            background: var(--selection-background);
+        }
+    }
+}
+
+.diff-layout-toggle {
+    display: inline-flex;
+}
+
+.diff-panel {
+    position: relative;
+    margin: 0 0 var(--spacing-1);
+    border-top: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
+    background: var(--gray-50);
+    font-size: var(--font-size-sm);
+
+    > .react-aria-Button {
+        height: var(--spacing-6);
+        margin: var(--spacing-1) var(--spacing-2);
+    }
+}
+
+.diff-views {
+    padding: var(--spacing-1) var(--spacing-2);
+}
+
+.diff-message,
+.diff-summary {
+    margin: 0;
+    padding: var(--spacing-1) var(--spacing-2);
+    color: var(--text-color-placeholder);
+    overflow-wrap: anywhere;
+
+    .react-aria-Button {
+        height: var(--spacing-6);
+    }
+}
+
+.diff-message[role="status"] {
+    color: var(--warning-color);
+    background: var(--warning-background);
+}
+
+.diff-notice {
+    height: 24px;
+    padding: 0 var(--spacing-2);
+    color: var(--text-color-placeholder);
+    font: 12px / 24px var(--font-family-mono);
+}
+
+.diff-progress {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 4;
+    margin: 0;
+    padding: 0 var(--spacing-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--gray-50);
+    color: var(--text-color-placeholder);
+
+    .react-aria-Button {
+        height: var(--spacing-6);
+    }
+}
+
+.pierre-diff {
+    overflow: visible;
+    user-select: text;
+    outline: none;
+
+    &:focus-visible {
+        outline: 2px solid var(--focus-ring-color);
+        outline-offset: -2px;
+    }
+}
+
+/* One scrollbar pinned under the visible diff drives every pane of it. */
+.diff-scrollbar {
+    position: sticky;
+    bottom: 0;
+    z-index: 4;
+    overflow: auto hidden;
+    background: var(--gray-50);
+
+    &[hidden] {
+        display: none;
+    }
+}
+
+.diff-scrollbar-track {
+    height: 1px;
+}
+
+.line-selection {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: var(--spacing-1) var(--spacing-2);
+    border-top: 1px solid var(--border-color);
+    color: var(--focus-ring-color);
+
+    .react-aria-Button {
+        height: var(--spacing-6);
+    }
+}
+
+.line-selection-count {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* Composition: grips that drag rows, destinations that mark where a drop lands, and the review at a destination. */
 
 .transfer-grip {

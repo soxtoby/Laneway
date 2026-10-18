@@ -1,5 +1,8 @@
-import type { BranchGraph, BranchGraphBranchNode, BranchHistoryPage, ChangedFile, ChangesInventory, DiffSource } from "@laneway/shared"
+import type { BranchGraph, BranchGraphBranchNode, BranchHistoryPage, ChangedFile, ChangesInventory, DiffSource, DiffView, FileDiffPage } from "@laneway/shared"
+import type { FileDiffLoadedChangedFiles } from "@pierre/diffs"
+import { readDiffContext } from "../src/inspection/diff-context"
 import { createDiscards } from "../src/inspection/discard"
+import { createDiffSession, type FileDiffState } from "../src/inspection/inspection-diff-session"
 import { errorMessage, type Notice } from "./notice"
 import { createStore, type Store } from "./store"
 
@@ -13,6 +16,13 @@ export interface FilesState {
     error?: string
     /** Whether the list shows, for lists that fold away such as a stash's or a commit's. */
     open: boolean
+}
+
+export type { FileDiffState }
+
+/** A file's diff in one of a column's lists, by its list and path. */
+export function diffKey(group: string, path: string) {
+    return JSON.stringify([group, path])
 }
 
 /** A branch's commits in a column's Commit Trail, read a page at a time. */
@@ -37,6 +47,8 @@ export interface ColumnInspection {
     history: Record<string, HistoryState>
     /** The base chosen for a branch whose base is ambiguous, by branch ID. */
     bases: Record<string, string>
+    /** Open diffs by `diffKey`; each shows under its file's row. */
+    diffs: Record<string, FileDiffState>
 }
 
 export interface InspectionSnapshot {
@@ -80,6 +92,23 @@ export interface Inspection extends Store<InspectionSnapshot> {
     chooseBase(columnId: string, branchId: string, baseId?: string): void
     /** Drops choices that rewritten history made stale. */
     rewritten(): void
+    /** Shows or hides a file's diff under its row. */
+    toggleDiff(columnId: string, group: string, path: string): void
+    /** Closes the diffs of files a folded folder or group hides. */
+    closeDiffs(columnId: string, group: string, paths: string[]): void
+    /** Reads a diff again after it failed, or its next page. */
+    readDiff(columnId: string, key: string, more?: boolean): void
+    /** Shows a Working Changes diff's staged or unstaged side, or a conflict's side. */
+    changeView(columnId: string, key: string, view: DiffView): void
+    toggleWhitespace(columnId: string, key: string): void
+    /** Toggles lines together: all already chosen clears them, otherwise all become chosen. */
+    selectLines(columnId: string, key: string, lineIds: number[]): void
+    clearLines(columnId: string, key: string): void
+    cancelDiff(columnId: string, key: string): void
+    /** Discards a Working Changes diff's chosen lines, with Undo while the notice shows. */
+    discardLines(columnId: string, key: string): Promise<void>
+    /** Reads the whole file around a diff page, so the lines between its hunks can show. */
+    readContext(page: FileDiffPage, signal: AbortSignal): Promise<FileDiffLoadedChangedFiles>
     /** Toggles whole files together: all already chosen clears them, otherwise all become chosen. */
     select(columnId: string, group: string, files: ChangedFile[]): void
     clearSelection(columnId: string): void
@@ -97,8 +126,10 @@ interface History extends HistoryState {
 
 interface ColumnState extends ColumnInspection {
     id: string
+    repositoryId: string
     generations: Record<string, number>
     history: Record<string, History>
+    session: ReturnType<typeof createDiffSession>
 }
 
 interface InspectionOptions {
@@ -135,6 +166,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
                     showIgnored: state.showIgnored,
                     history: { ...state.history },
                     bases: { ...state.bases },
+                    diffs: { ...state.diffs },
                 }]),
             ),
         })
@@ -152,6 +184,60 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
 
     function requestId(state: ColumnState, group: string) {
         return `inspection:${state.id}:files:${group}`
+    }
+
+    function diffRequestId(state: ColumnState, diff: FileDiffState) {
+        return `inspection:${state.id}:diff:${diffKey(diff.group, diff.path)}`
+    }
+
+    function createState(repositoryId: string, id: string, worktreePath?: string): ColumnState {
+        let state: ColumnState = {
+            id,
+            repositoryId,
+            worktreePath,
+            files: {},
+            selected: [],
+            showIgnored: false,
+            history: {},
+            bases: {},
+            diffs: {},
+            generations: {},
+            session: createDiffSession({
+                api,
+                repositoryId,
+                alive: () => repositories.get(repositoryId)?.get(id) == state,
+                requestId: diff => diffRequestId(state, diff),
+                update: () => publishFor(repositoryId, state),
+                settled: () => {},
+            }),
+        }
+        return state
+    }
+
+    // A diff reads its list's source at the version the list was read at, so it can't show newer lines than the list.
+    function diffInput(state: ColumnState, group: string) {
+        let files = state.files[group]
+        return { source: files?.source, inventoryVersion: files?.inventory?.version, unavailable: !!files?.error }
+    }
+
+    function closeDiff(state: ColumnState, diff: FileDiffState) {
+        diff.generation++
+        void api.cancelInspection(state.repositoryId, diffRequestId(state, diff))
+        delete state.diffs[diffKey(diff.group, diff.path)]
+    }
+
+    // Working Changes diffs belong to the staged and unstaged views of the `working` list.
+    function closeGroup(state: ColumnState, group: string) {
+        for (let diff of Object.values(state.diffs)) {
+            if (diff.group == group)
+                closeDiff(state, diff)
+        }
+    }
+
+    function diffFor(columnId: string, key: string) {
+        let state = columnState(columnId)
+        let diff = state?.diffs[key]
+        return state && diff ? { state, diff } : undefined
     }
 
     async function read(repositoryId: string, state: ColumnState, group: string, source: DiffSource, quiet = false) {
@@ -183,6 +269,18 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             next = { ...state.files[group]!, loading: false, error: errorMessage(error) }
         }
         state.files[group] = next
+        let inventory = next.inventory
+        for (let diff of Object.values(state.diffs)) {
+            if (diff.group != group && !(group == "working" && diff.group.startsWith("working-")))
+                continue
+            if (next.error || !inventory) {
+                diff.selection = undefined
+                diff.page = undefined
+            } else if (!inventory.files.some(file => file.path == diff.path && !file.ignored))
+                closeDiff(state, diff)
+            else if (quiet)
+                queueMicrotask(() => void state.session.read(diff, diffInput(state, diff.group), false, true))
+        }
         // Working Changes show as a staged list above an unstaged one, both views of the one inventory.
         if (group == "working" && next.inventory) {
             for (let view of ["staged", "unstaged"] as const) {
@@ -297,7 +395,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
                 let worktreePath = column.worktreeMissing ? undefined : column.worktreePath
                 let state = states.get(column.id)
                 if (!state || state.worktreePath != worktreePath) {
-                    state = { id: column.id, worktreePath, files: {}, selected: [], showIgnored: false, history: {}, bases: {}, generations: {} }
+                    state = createState(repositoryId, column.id, worktreePath)
                     states.set(column.id, state)
                     changed = true
                     void readWorkingFor(repositoryId, state, false)
@@ -388,8 +486,10 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             let files = state.files[objectId]
             if (!files)
                 return void read(activeId, state, objectId, { kind: "commit", objectId })
-            if (files.open)
+            if (files.open) {
                 forget(state, objectId)
+                closeGroup(state, objectId)
+            }
             state.files[objectId] = { ...files, open: !files.open }
             publish()
         },
@@ -399,6 +499,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             if (!state || !activeId)
                 return
             forget(state, objectId)
+            closeGroup(state, objectId)
             void read(activeId, state, objectId, { kind: "commit", objectId, parentId })
         },
 
@@ -414,10 +515,98 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
         },
 
         rewritten() {
-            for (let state of activeId ? repositories.get(activeId)?.values() ?? [] : [])
+            for (let state of activeId ? repositories.get(activeId)?.values() ?? [] : []) {
                 state.selected = []
+                for (let diff of Object.values(state.diffs))
+                    diff.selection = undefined
+            }
             publish()
         },
+
+        toggleDiff(columnId, group, path) {
+            let state = columnState(columnId)
+            if (!state)
+                return
+            let open = state.diffs[diffKey(group, path)]
+            if (open) {
+                closeDiff(state, open)
+                return publish()
+            }
+            let diff = state.session.create(group, path, diffInput(state, group))
+            state.diffs[diffKey(group, path)] = diff
+            if (diff.page)
+                publish()
+            else
+                void state.session.read(diff, diffInput(state, group))
+        },
+
+        closeDiffs(columnId, group, paths) {
+            let state = columnState(columnId)
+            if (!state)
+                return
+            for (let path of paths) {
+                let diff = state.diffs[diffKey(group, path)]
+                if (diff)
+                    closeDiff(state, diff)
+            }
+            publish()
+        },
+
+        readDiff(columnId, key, more = false) {
+            let found = diffFor(columnId, key)
+            if (found)
+                void found.state.session.read(found.diff, diffInput(found.state, found.diff.group), more)
+        },
+
+        changeView(columnId, key, view) {
+            let found = diffFor(columnId, key)
+            if (!found)
+                return
+            Object.assign(found.diff, { view, page: undefined, selection: undefined })
+            void found.state.session.read(found.diff, diffInput(found.state, found.diff.group))
+        },
+
+        toggleWhitespace(columnId, key) {
+            let found = diffFor(columnId, key)
+            if (found) {
+                found.diff.showWhitespace = !found.diff.showWhitespace
+                publish()
+            }
+        },
+
+        selectLines(columnId, key, lineIds) {
+            let found = diffFor(columnId, key)
+            if (found)
+                found.state.session.select(found.diff, lineIds)
+        },
+
+        clearLines(columnId, key) {
+            let found = diffFor(columnId, key)
+            if (found) {
+                found.diff.selection = undefined
+                publish()
+            }
+        },
+
+        cancelDiff(columnId, key) {
+            let found = diffFor(columnId, key)
+            if (!found)
+                return
+            Object.assign(found.diff, { generation: found.diff.generation + 1, loading: false, error: "Diff read cancelled." })
+            void api.cancelInspection(found.state.repositoryId, diffRequestId(found.state, found.diff))
+            publish()
+        },
+
+        async discardLines(columnId, key) {
+            let found = diffFor(columnId, key)
+            let page = found?.diff.page
+            let selection = found?.diff.selection
+            if (!found || !page || page.source.kind != "working" || !selection?.lineIds.length)
+                return
+            await discards.lines(found.state.repositoryId, page.source.worktreePath, found.diff.path, page.lines, selection.lineIds)
+        },
+
+        readContext: (page, signal) => readDiffContext(api, activeId ?? "", page, signal),
 
         select(columnId, group, files) {
             let state = columnState(columnId)

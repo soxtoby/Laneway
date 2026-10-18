@@ -29,6 +29,8 @@ export type ColumnView = ColumnNode & {
     identity: ColumnIdentity
     width: number
     collapsed: boolean
+    /** How the column's diffs lay out their lines. */
+    diffLayout: DiffLayout
     /** The worktree backing the column, if any; it may be missing from disk. */
     worktree?: BranchGraphWorktree
 }
@@ -90,6 +92,7 @@ export interface BranchWorkspace extends Store<ColumnsSnapshot> {
     drop(id: string): void
     cancelDrag(): void
     resize(id: string, width: number): void
+    setDiffLayout(id: string, layout: DiffLayout): void
     recover(recovery: WorktreeRecovery, action: RecoveryRequest["action"]): Promise<void>
 }
 
@@ -219,6 +222,7 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
                 id,
                 width: state.widths[id] ?? defaultColumnWidth,
                 collapsed: state.collapsedIds.includes(id),
+                diffLayout: state.diffLayouts[id] ?? "unified",
                 worktree,
             }]
         })
@@ -607,6 +611,9 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
             })
         },
 
+        setDiffLayout(id, layout) {
+            change(activeId, state => state.diffLayouts[id] = layout)
+        },
         resize(id, width) {
             change(activeId, state => state.widths[id] = Math.max(minimumColumnWidth, Math.round(width)))
         },

@@ -6,11 +6,12 @@ import type { ColumnView } from "./branch-workspace"
 import { type CommitComposer, defaultBranchName } from "./commit-composer"
 import type { Landing } from "./composition"
 import { IconButton } from "./controls"
+import { DiffControls, DiffPanel } from "./diff-panel"
 import { EditableName } from "./editable-name"
 import { fileListViewOptions } from "./file-list-view"
-import { FileTree } from "./file-tree"
+import { type FileInspection, FileTree } from "./file-tree"
 import { ArchiveIcon, ChevronDownIcon, CloseIcon, DetachedIcon, FolderIcon, TreeIcon } from "./icons"
-import type { ColumnInspection, FilesState, Inspection } from "./inspection"
+import { type ColumnInspection, diffKey, type FilesState, type Inspection } from "./inspection"
 import { TransferGrip, TransferReview, transferSource, useTransferScope, useTransferTarget } from "./transfer"
 import { Button } from "./ui/Button"
 import { ChevronRight } from "./ui/icons"
@@ -388,6 +389,22 @@ export function FileList({ columnId, group, label, files, inspected, inspection,
             )
         }
         : undefined
+    // A file's row opens its diff; a comparison's lines can't be chosen.
+    let inspect: FileInspection | undefined = inspected && {
+        isOpen: file => inspected.diffs[diffKey(group, file.path)] != undefined,
+        toggle: file => inspection.toggleDiff(columnId, group, file.path),
+        close: hidden => inspection.closeDiffs(columnId, group, hidden.map(file => file.path)),
+        controls: file => {
+            let id = diffKey(group, file.path)
+            let diff = inspected.diffs[id]
+            return diff && <DiffControls columnId={columnId} id={id} diff={diff} inspection={inspection} />
+        },
+        diff: file => {
+            let id = diffKey(group, file.path)
+            let diff = inspected.diffs[id]
+            return diff && <DiffPanel columnId={columnId} id={id} diff={diff} inspection={inspection} eligible={group != "comparison"} />
+        },
+    }
     return (
         <div ref={target} {...props} className="change-file-list" data-group={group}>
             {staging && group == "working-staged" && !listed.length && <p className="staging-hint">Drop files here to stage them</p>}
@@ -412,6 +429,7 @@ export function FileList({ columnId, group, label, files, inspected, inspection,
                     hideStagedBadge={working}
                     menuItems={menuItems}
                     leading={leading}
+                    inspect={inspect}
                 />
             )}
             {chosen > 0 && (

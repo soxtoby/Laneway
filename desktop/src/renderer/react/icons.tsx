@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { Archive, ArrowDownToLine, ArrowRight, Check, ChevronDown, ChevronsLeft, ChevronsRight, Copy, Ellipsis, ExternalLink, FaceSlightlySmiling, Folder, GitBranch, GitCompareArrows, type IconNode, Image, ImagePlus, ListTree, Maximize2, Minimize2, Minus, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Redo2, Search, SlidersHorizontal, Sun, TriangleAlert, Type, Undo2, X } from "lucide"
-import { createElement } from "react"
+import { createElement, type ReactNode } from "react"
 import { customIconPaths } from "../src/icon-nodes"
 import { lucideIcon } from "./ui/icons"
 
@@ -79,5 +79,56 @@ export function DetachedIcon({ className }: { className?: string }) {
         >
             <path d={customIconPaths.detached} />
         </svg>
+    )
+}
+
+// The diff controls' own strokes, drawn on a 16-unit grid as the Remix renderer draws them.
+function DiffStroke({ children, strokeWidth = 1.25 }: { children: ReactNode; strokeWidth?: number }) {
+    return (
+        <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={strokeWidth} aria-hidden="true">
+            {children}
+        </svg>
+    )
+}
+
+export function UnifiedDiffIcon() {
+    return (
+        <DiffStroke>
+            <rect x="2" y="2" width="12" height="12" rx="1" />
+            <path d="M4 5h8M4 8h8M4 11h8" />
+        </DiffStroke>
+    )
+}
+
+export function SplitDiffIcon() {
+    return (
+        <DiffStroke>
+            <rect x="2" y="2" width="12" height="12" rx="1" />
+            <path d="M8 2v12M4 5h2M10 5h2M4 8h2M10 8h2" />
+        </DiffStroke>
+    )
+}
+
+export function BreakoutDiffIcon() {
+    return (
+        <DiffStroke>
+            <path d="M9 2h5v5M14 2 7 9M7 3H2v11h11V9" />
+        </DiffStroke>
+    )
+}
+
+export function WhitespaceIcon() {
+    return (
+        <DiffStroke strokeWidth={1.5}>
+            <path d="M13 2H6a3.5 3.5 0 0 0 0 7h2M8 2v12M11 2v12" />
+        </DiffStroke>
+    )
+}
+
+export function EntireFileIcon() {
+    return (
+        <DiffStroke>
+            <path d="M9 1.5H3v13h10v-9L9 1.5ZM9 1.5v4h4M5 8h6M5 11h6" />
+        </DiffStroke>
     )
 }

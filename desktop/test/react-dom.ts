@@ -30,6 +30,8 @@ export function installReactDom() {
     define("window", browserWindow)
     define("document", browserWindow.document)
     define("navigator", browserWindow.navigator)
+    // Pierre registers its diff containers as custom elements when it loads.
+    define("customElements", browserWindow.customElements)
     // Happy DOM runs no animations; React Aria's selection indicator asks for an element's.
     let elementPrototype = browserWindow.Element.prototype as unknown as { getAnimations?(): unknown[] }
     elementPrototype.getAnimations ??= () => []

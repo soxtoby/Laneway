@@ -43,14 +43,19 @@ let rowSelector = ".dense-row, .commit-row, .stack-heading"
  * The grip that moves or copies a selection. Its whole row drags, Ctrl-dragging copies; pressing the grip,
  * or M or C on it, chooses the selection so the arrow keys and Enter can place it.
  */
-export function TransferGrip({ composition, selection }: { composition: Composition; selection: TransferSelection }) {
+export function TransferGrip({ composition, selection, alone }: {
+    composition: Composition
+    selection: TransferSelection
+    /** Drags by the grip alone, for a selection inside a row that drags its own files, such as chosen lines. */
+    alone?: boolean
+}) {
     let grip = useRef<HTMLButtonElement>(null)
     let { busy } = useSnapshot(composition)
     let current = useEffectEvent(() => selection)
     useEffect(() => {
-        let row = grip.current?.closest<HTMLElement>(rowSelector) ?? grip.current
+        let row = alone ? grip.current : grip.current?.closest<HTMLElement>(rowSelector) ?? grip.current
         return row ? composition.bindSource(row, () => current()) : undefined
-    }, [composition])
+    }, [composition, alone])
     return (
         <span className="transfer-grip" title="Drag to move · Ctrl-drag to copy · M or C, then a destination and Enter">
             <AriaButton

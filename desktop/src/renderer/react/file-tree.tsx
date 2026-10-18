@@ -4,6 +4,7 @@ import { type ReactNode, useEffect, useState } from "react"
 import { Button as AriaButton, type Key, type Selection, Tree } from "react-aria-components"
 import { copyText, fileName, fullPath } from "../src/inspection/file-paths"
 import { DenseTreeItem } from "./dense-row"
+import { DiffRegion } from "./diff-panel"
 import { type FileTreeNode, fileTreeNodes } from "./file-list-view"
 import { CheckIcon, CopyIcon, FileStatusIcon, FolderIcon } from "./icons"
 import { Checkbox } from "./ui/Checkbox"
@@ -28,13 +29,26 @@ interface FileTreeProps {
     hideStagedBadge?: boolean
     /** What leads a row: a grip moving the row's files, named by the file's path or the folder's or group's label. */
     leading?(files: ChangedFile[], label: string): ReactNode
+    /** Opens a file's diff under its row when the row is pressed; without it rows don't open. */
+    inspect?: FileInspection
+}
+
+/** A list's diffs: which files show one, and what the row draws for it. */
+export interface FileInspection {
+    isOpen(file: ChangedFile): boolean
+    toggle(file: ChangedFile): void
+    /** Closes the diffs of files a folded folder or group hides. */
+    close(files: ChangedFile[]): void
+    /** The diff's controls, drawn in the open row. */
+    controls(file: ChangedFile): ReactNode
+    diff(file: ChangedFile): ReactNode
 }
 
 /**
  * A list of changed files, flat or in folders and optionally grouped, as React Aria's Tree. A file's
  * checkbox chooses it for bulk actions; a folder's or group's chooses every file it holds.
  */
-export function FileTree({ label, files, view, group, selected, onSelect, root, menuItems, hideStagedBadge, leading }: FileTreeProps) {
+export function FileTree({ label, files, view, group, selected, onSelect, root, menuItems, hideStagedBadge, leading, inspect }: FileTreeProps) {
     let nodes = fileTreeNodes(files, view)
     let folders = foldingNodes(nodes)
     // Folders start open; a folded one remembers that by its key while the list stays.
@@ -59,15 +73,26 @@ export function FileTree({ label, files, view, group, selected, onSelect, root, 
             onSelect([file])
     }
 
-    let toggleFolder = (key: Key) => {
-        if (!folders.has(String(key)))
-            return
-        setFolded(current => {
-            let next = new Set(current)
+    // Folding a folder or group closes the diffs of the files it hides.
+    let fold = (keys: Set<string>) => {
+        let hidden = [...keys].filter(key => !folded.has(key)).flatMap(key => folders.get(key)?.files ?? [])
+        if (hidden.length)
+            inspect?.close(hidden)
+        setFolded(keys)
+    }
+
+    // A folder's row folds it; a file's row shows or hides its diff.
+    let act = (key: Key) => {
+        if (folders.has(String(key))) {
+            let next = new Set(folded)
             if (!next.delete(String(key)))
                 next.add(String(key))
-            return next
-        })
+            fold(next)
+            return
+        }
+        let file = files.find(candidate => candidate.path == key)
+        if (file)
+            inspect?.toggle(file)
     }
 
     return (
@@ -79,39 +104,48 @@ export function FileTree({ label, files, view, group, selected, onSelect, root, 
             selectedKeys={selectedKeys}
             onSelectionChange={changeSelection}
             expandedKeys={expandedKeys}
-            onExpandedChange={keys => setFolded(new Set([...folders.keys()].filter(key => !keys.has(key))))}
-            onAction={toggleFolder}
+            onExpandedChange={keys => fold(new Set([...folders.keys()].filter(key => !keys.has(key))))}
+            onAction={act}
         >
             {nodes.map(node => (
-                <FileTreeRow key={node.key} node={node} flat={view.layout == "flat"} props={{ onSelect, root, menuItems, hideStagedBadge, leading }} />
+                <FileTreeRow key={node.key} node={node} flat={view.layout == "flat"} props={{ onSelect, root, menuItems, hideStagedBadge, leading, inspect }} />
             ))}
         </Tree>
     )
 }
 
 function FileTreeRow(
-    { node, flat, props }: { node: FileTreeNode; flat: boolean; props: Pick<FileTreeProps, "onSelect" | "root" | "menuItems" | "hideStagedBadge" | "leading"> },
+    { node, flat, props }: {
+        node: FileTreeNode
+        flat: boolean
+        props: Pick<FileTreeProps, "onSelect" | "root" | "menuItems" | "hideStagedBadge" | "leading" | "inspect">
+    },
 ) {
     if (node.kind == "file") {
         let file = node.file
         let path = file.oldPath ? `${file.oldPath} → ${file.path}` : file.path
+        let open = props.inspect?.isOpen(file) == true
         return (
             <DenseTreeItem
                 id={node.key}
                 textValue={file.path}
-                className="compact file-row"
+                className={open ? "compact file-row inspected" : "compact file-row"}
                 menu={{ label: `Actions for ${file.path}`, items: () => <FileMenuItems file={file} root={props.root} items={props.menuItems} /> }}
                 content={({ actions }) => (
-                    <div className="row-content file-content" title={path}>
-                        {props.leading?.([file], file.path)}
-                        {props.onSelect && <Checkbox slot="selection" aria-label={`Select file ${file.path}`} />}
-                        <FileStatusIcon status={file.conflicted ? "conflicted" : file.status} />
-                        <FileLabel file={file} showFolder={flat || !!file.oldPath} />
-                        <CopyPathButton path={file.path} />
-                        {file.staged && !props.hideStagedBadge && <span className="file-badge">staged</span>}
-                        {file.submodule && <span className="file-badge">submodule</span>}
-                        {actions}
-                    </div>
+                    <>
+                        <div className="row-content file-content" title={path}>
+                            {props.leading?.([file], file.path)}
+                            {props.onSelect && <Checkbox slot="selection" aria-label={`Select file ${file.path}`} />}
+                            <FileStatusIcon status={file.conflicted ? "conflicted" : file.status} />
+                            <FileLabel file={file} showFolder={flat || !!file.oldPath} />
+                            <CopyPathButton path={file.path} />
+                            {file.staged && !props.hideStagedBadge && <span className="file-badge">staged</span>}
+                            {file.submodule && <span className="file-badge">submodule</span>}
+                            {open && props.inspect?.controls(file)}
+                            {actions}
+                        </div>
+                        {open && <DiffRegion>{props.inspect?.diff(file)}</DiffRegion>}
+                    </>
                 )}
             />
         )
