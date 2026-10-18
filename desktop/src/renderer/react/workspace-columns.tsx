@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import type { BranchGraph, FileListView, WorktreeRecovery } from "@laneway/shared"
+import type { BranchGraph, FileListView, WorktreeRecovery, WorktreeRequest } from "@laneway/shared"
 import clsx from "clsx"
 import { type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, useEffect, useMemo, useRef } from "react"
 import { workspaceGraph } from "../src/worktrees/worktree-columns"
@@ -8,10 +8,11 @@ import { type BranchWorkspace, type ColumnsSnapshot, type ColumnView, defaultCol
 import { ColumnBody } from "./column-body"
 import { IconButton } from "./controls"
 import { BranchIcon, CloseIcon, CollapseColumnIcon, CompareIcon, ExpandColumnIcon, FolderIcon, MaximizeIcon, RestoreIcon, WarningIcon } from "./icons"
-import type { Inspection, InspectionSnapshot } from "./inspection"
+import type { InspectionSnapshot } from "./inspection"
 import { Button } from "./ui/Button"
 import { Tab, TabList, Tabs } from "./ui/Tabs"
 import { useSnapshot } from "./use-snapshot"
+import { MissingWorktree, WorktreeMenu, WorktreeTitle } from "./worktree-controls"
 
 // Polls together with window focus, as the Remix renderer does: a hidden or unfocused window waits.
 let pollInterval = 5_000
@@ -24,7 +25,7 @@ export function WorkspaceColumns({ controller, fileListView }: { controller: App
     let dragging = useRef<{ id: string; dropped: boolean }>(undefined)
     let graph = useMemo(() => snapshot.graph && workspaceGraph(snapshot.graph), [snapshot.graph])
     useRefreshes(columns)
-    useDiscardUndo(inspection)
+    useUndo(controller, snapshot.repositoryId)
     useReveal(snapshot.revealed)
 
     // Escape restores a maximized column's neighbours.
@@ -130,6 +131,9 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
     header: HeaderDrag
 }) {
     let { columns } = controller
+    let worktreeBusy = useSnapshot(controller.worktrees).busy
+    let busy = snapshot.busy || worktreeBusy
+    let prepare = (request: WorktreeRequest) => void controller.worktrees.prepare(snapshot.repositoryId!, request, column.id)
     let files = inspected?.columns[column.id]
     let maximized = snapshot.maximizedId == column.id
     // F2 renames a branch column's branch and Delete deletes it, from anywhere in the column but a field.
@@ -199,10 +203,16 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                 <CollapseColumnIcon />
                             </IconButton>
                             <ColumnKind column={column} />
-                            <div className="column-title">
-                                <h2 className="column-name">{column.name}</h2>
-                                {column.worktree && <span className="column-path">{column.worktree.path}</span>}
-                            </div>
+                            {column.worktree && column.kind != "recovery"
+                                ? <WorktreeTitle worktree={column.worktree} busy={busy} onPrepare={prepare} />
+                                : (
+                                    <div className="column-title">
+                                        <h2 className="column-name">{column.name}</h2>
+                                    </div>
+                                )}
+                            {(column.kind == "branch" || column.kind == "virtual") && (
+                                <WorktreeMenu column={column} graph={graph} busy={busy} onPrepare={prepare} chooseDirectory={controller.chooseDirectory} />
+                            )}
                             <IconButton label={snapshot.maximizedId ? "Restore columns" : "Maximize column"} onPress={() => columns.toggleMaximized(column.id)}>
                                 {snapshot.maximizedId ? <RestoreIcon /> : <MaximizeIcon />}
                             </IconButton>
@@ -212,7 +222,9 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                 </IconButton>
                             )}
                         </header>
-                        {column.worktree?.missing && <MissingWorktree path={column.worktree.path} />}
+                        {column.worktree?.missing && column.kind != "recovery" && (
+                            <MissingWorktree worktree={column.worktree} busy={busy} onPrepare={prepare} chooseDirectory={controller.chooseDirectory} />
+                        )}
                         {column.kind == "recovery"
                             ? (
                                 <RecoveryPanel
@@ -364,16 +376,6 @@ function RecoveryPanel({ recovery, busy, error, onResolve }: {
     )
 }
 
-// Repair and Remove arrive with the worktree previews (migration step 5).
-function MissingWorktree({ path }: { path: string }) {
-    return (
-        <section className="missing-worktree" aria-label="Missing worktree">
-            <h3>Worktree directory missing</h3>
-            <p>{path}</p>
-        </section>
-    )
-}
-
 // A column an operation opened, such as a newly created branch's, comes into view with focus once it shows,
 // after any dialog that opened it has returned focus.
 function useReveal(revealed?: { id: string; serial: number }) {
@@ -389,20 +391,25 @@ function useReveal(revealed?: { id: string; serial: number }) {
     }, [revealed])
 }
 
-// A discard still showing its Undo notice takes Ctrl+Z; the Operation History's undo arrives in migration step 5.
-function useDiscardUndo(inspection: Inspection) {
+// Ctrl+Z undoes and Ctrl+Y or Ctrl+Shift+Z redoes the latest operation; a discard still showing its Undo notice
+// takes Ctrl+Z first. Fields keep the keys for their own text.
+function useUndo(controller: AppController, repositoryId?: string) {
     useEffect(() => {
         let undo = (event: globalThis.KeyboardEvent) => {
-            if (event.defaultPrevented || !event.ctrlKey || event.altKey || event.shiftKey || event.key.toLowerCase() != "z")
+            let key = event.key.toLowerCase()
+            if (!repositoryId || event.defaultPrevented || !event.ctrlKey || event.altKey || (key != "z" && key != "y"))
                 return
             if (event.composedPath().some(node => node instanceof HTMLElement && node.matches("input, textarea, select, [contenteditable=true]")))
                 return
-            if (inspection.undoDiscard())
-                event.preventDefault()
+            event.preventDefault()
+            let redo = event.shiftKey || key == "y"
+            if (!redo && controller.inspection.undoDiscard())
+                return
+            void controller.worktrees.transition(repositoryId, redo ? "redo" : "undo")
         }
         window.addEventListener("keydown", undo)
         return () => window.removeEventListener("keydown", undo)
-    }, [inspection])
+    }, [controller, repositoryId])
 }
 
 function useRefreshes(columns: BranchWorkspace) {

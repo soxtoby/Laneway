@@ -12,11 +12,13 @@ import { EntryDialogs } from "./repository-entry-dialogs"
 import { RepositoryIdentityDialog } from "./repository-identity-dialog"
 import { RepositoryPanel } from "./repository-panel"
 import { Starting, StartupFailed, WorkspaceRecovery } from "./startup"
+import { StashesDialog } from "./stashes-dialog"
 import { Button } from "./ui/Button"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 import { useSnapshot } from "./use-snapshot"
 import { Welcome } from "./welcome"
 import { ColumnTabs, WorkspaceColumns } from "./workspace-columns"
+import { WorktreeDialog } from "./worktree-dialog"
 import "./laneway.css"
 
 export function App({ api, controller }: { api: IconImageApi; controller: AppController }) {
@@ -34,8 +36,13 @@ export function App({ api, controller }: { api: IconImageApi; controller: AppCon
 
 function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: AppController; snapshot: Extract<AppSnapshot, { status: "ready" }> }) {
     let { workspace, appearance, notice } = snapshot
-    let { entry, gitSettings, identity, columns } = controller
+    let { entry, gitSettings, identity, columns, worktrees, branches, stashes } = controller
     let entering = useSnapshot(entry).operation != "idle"
+    // Repository operations wait for any other that is under way.
+    let columnsBusy = useSnapshot(columns).busy
+    let worktreesBusy = useSnapshot(worktrees).busy
+    let branchesBusy = useSnapshot(branches).busy
+    let operating = columnsBusy || worktreesBusy || branchesBusy
     let settings = useSnapshot(gitSettings).settings
     let busy = snapshot.opening || entering
     let active = workspace.repositories.find(repository => repository.id == workspace.activeRepositoryId)
@@ -43,7 +50,14 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
         <div className="shell">
             <Header
                 tabs={active?.status == "available" && <ColumnTabs columns={columns} />}
-                repositoryOpen={active?.status == "available"}
+                actions={active?.status == "available"
+                    ? {
+                        busy: operating,
+                        stashes: () => void stashes.open(active.id, active.info.mainWorktree),
+                        undo: () => void worktrees.transition(active.id, "undo"),
+                        redo: () => void worktrees.transition(active.id, "redo"),
+                    }
+                    : undefined}
                 appearance={appearance}
                 busy={busy}
                 onToggleAppearance={() => void controller.toggleAppearance()}
@@ -93,7 +107,9 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
             )}
             <EntryDialogs entry={entry} busy={snapshot.opening} />
             <GitSettingsDialog gitSettings={gitSettings} />
-            <LocalBranchDialog branches={controller.branches} />
+            <LocalBranchDialog branches={branches} />
+            <WorktreeDialog worktrees={worktrees} />
+            <StashesDialog stashes={stashes} />
             <RepositoryIdentityDialog editor={identity} repositories={workspace.repositories} api={api} />
             <Notices controller={controller} notice={notice} />
         </div>
@@ -102,15 +118,16 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
 
 interface HeaderProps {
     tabs: ReactNode
-    repositoryOpen: boolean
+    /** The open repository's operations; absent when none is open. */
+    actions?: { busy: boolean; stashes(): void; undo(): void; redo(): void }
     appearance: "light" | "dark"
     busy: boolean
     onToggleAppearance(): void
     onOpenSettings(): void
 }
 
-// Pull latest, Stashes, Undo, and Redo stand in until their screens move (migration steps 5 and 8).
-function Header({ tabs, repositoryOpen, appearance, busy, onToggleAppearance, onOpenSettings }: HeaderProps) {
+// Pull latest stands in until its screen moves (migration step 8).
+function Header({ tabs, actions, appearance, busy, onToggleAppearance, onOpenSettings }: HeaderProps) {
     let appearanceLabel = appearance == "dark" ? "Switch to light appearance" : "Switch to dark appearance"
     return (
         <header className="header drag-region">
@@ -120,21 +137,21 @@ function Header({ tabs, repositoryOpen, appearance, busy, onToggleAppearance, on
             <HeaderButton label="Command Lens">
                 <SearchIcon />
             </HeaderButton>
-            {repositoryOpen && (
+            {actions && (
                 <>
                     <Button variant="accent">
                         <PullIcon />
                         Pull latest
                     </Button>
-                    <Button variant="secondary">
+                    <Button variant="secondary" isDisabled={actions.busy} onPress={actions.stashes}>
                         <ArchiveIcon />
                         Stashes
                     </Button>
                     <span className="header-divider" />
-                    <HeaderButton label="Undo last operation">
+                    <HeaderButton label="Undo last operation" tooltip="Undo (Ctrl+Z)" isDisabled={actions.busy} onPress={actions.undo}>
                         <UndoIcon />
                     </HeaderButton>
-                    <HeaderButton label="Redo operation">
+                    <HeaderButton label="Redo operation" tooltip="Redo (Ctrl+Shift+Z)" isDisabled={actions.busy} onPress={actions.redo}>
                         <RedoIcon />
                     </HeaderButton>
                 </>
@@ -150,11 +167,17 @@ function Header({ tabs, repositoryOpen, appearance, busy, onToggleAppearance, on
     )
 }
 
-function HeaderButton({ label, children, isDisabled, onPress }: { label: string; children: ReactNode; isDisabled?: boolean; onPress?: () => void }) {
+function HeaderButton({ label, tooltip = label, children, isDisabled, onPress }: {
+    label: string
+    tooltip?: string
+    children: ReactNode
+    isDisabled?: boolean
+    onPress?: () => void
+}) {
     return (
         <TooltipTrigger>
             <Button variant="quiet" aria-label={label} isDisabled={isDisabled} onPress={onPress}>{children}</Button>
-            <Tooltip>{label}</Tooltip>
+            <Tooltip>{tooltip}</Tooltip>
         </TooltipTrigger>
     )
 }

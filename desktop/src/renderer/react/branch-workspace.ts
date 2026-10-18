@@ -47,6 +47,8 @@ export interface ColumnsSnapshot {
     recoveryErrors: Record<string, string>
     /** An interrupted worktree removal waits to be resolved, so local operations wait too. */
     blocked: boolean
+    /** A local operation is running, so others wait for it. */
+    busy: boolean
     /** The column last opened by an operation, which the view brings into view and focuses; `serial` tells repeats apart. */
     revealed?: { id: string; serial: number }
 }
@@ -69,6 +71,11 @@ export interface BranchWorkspace extends Store<ColumnsSnapshot> {
      * under the new name. The saved layout follows at once, so the next read reconciles against it.
      */
     renamed(oldRef: string, newRef: string): void
+    /**
+     * Follows a worktree switched to the branch of the column it was asked from: the worktree leaves the column
+     * that showed it and backs that one, in the saved layout the next read reconciles against.
+     */
+    switched(columnId: string, worktreePath: string): void
     /** Collapses or expands a column. */
     toggleCollapsed(id: string): void
     /** A worktree's column collapses instead, as it stays while the worktree does. */
@@ -124,7 +131,7 @@ interface BranchWorkspaceOptions {
 
 /** The active repository's Workspace Columns: which are open and how they are laid out, read from its Branch Graph. */
 export function createBranchWorkspace({ api, notify, inspection, workspace, saveColumns, checkMissing }: BranchWorkspaceOptions): BranchWorkspace {
-    let store = createStore<ColumnsSnapshot>({ loading: false, columns: [], recoveryErrors: {}, blocked: false })
+    let store = createStore<ColumnsSnapshot>({ loading: false, columns: [], recoveryErrors: {}, blocked: false, busy: false })
     let states = new Map<string, RepositoryColumns>()
     let activeId: string | undefined
     // A disk change that lands mid-read is replayed once that read settles.
@@ -179,7 +186,7 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
         }
         store.publish(
             !activeId || !state
-                ? { loading: false, columns: [], recoveryErrors: {}, blocked: false }
+                ? { loading: false, columns: [], recoveryErrors: {}, blocked: false, busy: mutations > 0 }
                 : {
                     repositoryId: activeId,
                     graph: state.graph,
@@ -191,6 +198,7 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
                     recoveryBusy: state.recoveryBusy,
                     recoveryErrors: state.recoveryErrors,
                     blocked: state.recoveries.length > 0,
+                    busy: mutations > 0,
                     revealed: state.revealed,
                 },
         )
@@ -449,6 +457,7 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
         },
         mutating(busy) {
             mutations += busy ? 1 : -1
+            publish()
         },
 
         focus(id) {
@@ -465,6 +474,25 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
                 state.maximizedId = undefined
                 state.revealed = { id, serial: (state.revealed?.serial ?? 0) + 1 }
             })
+        },
+        switched(columnId, worktreePath) {
+            let saved = activeId ? savedRepository(activeId) : undefined
+            let destination = saved?.columns.find(column => column.id == columnId)
+            if (!activeId || !saved || destination?.kind != "branch" || destination.worktreePath)
+                return
+            let source = saved.columns.find(column => column.kind != "comparison" && column.worktreePath == worktreePath)
+            let worktreeId = source && source.kind != "comparison" ? source.worktreeId : undefined
+            let columns = saved.columns.map((column): WorkspaceColumn => {
+                if (column.kind != "branch")
+                    return column
+                if (column.id == columnId)
+                    return { ...column, worktreePath, worktreeId }
+                // A detached worktree's column goes once its worktree has a branch, so only a branch column gives one up.
+                if (column == source)
+                    return { ...column, worktreePath: undefined, worktreeId: undefined }
+                return column
+            })
+            void saveColumns(activeId, { columns, focusedColumnId: saved.focusedColumnId, layoutInitialized: saved.layoutInitialized })
         },
         renamed(oldRef, newRef) {
             let repositoryId = activeId

@@ -8,7 +8,9 @@ import { errorMessage, type Notice } from "./notice"
 import { createRepositoryEntry, type RepositoryEntry } from "./repository-entry"
 import { createRepositoryIdentityEditor, type RepositoryIdentityEditor } from "./repository-identity"
 import { createReword, type Reword } from "./reword"
+import { createStashes, type Stashes } from "./stashes"
 import { createStore, type Store } from "./store"
+import { createWorktreeActions, type WorktreeActions } from "./worktree-actions"
 
 type Api = Window["laneway"]
 
@@ -38,6 +40,10 @@ export interface AppController extends Store<AppSnapshot> {
     readonly inspection: Inspection
     /** Creating, renaming, and deleting local branches. */
     readonly branches: LocalBranches
+    /** Worktree operations, and undoing and redoing the Operation History. */
+    readonly worktrees: WorktreeActions
+    /** Every stash in the repository, applied or dropped. */
+    readonly stashes: Stashes
     /** Loads the app state; also retries after a failed start. */
     start(): Promise<void>
     toggleAppearance(): Promise<void>
@@ -50,6 +56,8 @@ export interface AppController extends Store<AppSnapshot> {
     openRepository(): Promise<void>
     selectRepository(id: string): Promise<void>
     closeRepository(id: string): Promise<void>
+    /** Asks for a directory, starting from `path`. */
+    chooseDirectory(path?: string): Promise<string | undefined>
     /** Asks for a missing repository's new location. */
     locateRepository(id: string): Promise<void>
     /** Shows a repository's new name and icon at once, and saves them once changes pause. */
@@ -157,6 +165,27 @@ export function createAppController(api: Api): AppController {
         },
     })
 
+    let worktrees = createWorktreeActions({
+        api,
+        mutating: busy => columns.mutating(busy),
+        completed: async (_repositoryId, request, columnId) => {
+            if (request.action == "switch" && columnId)
+                columns.switched(columnId, request.path)
+            await columns.refresh(false)
+            inspection.refreshWorking()
+        },
+        transitioned: rewritten,
+    })
+
+    let stashes = createStashes({
+        api,
+        mutating: busy => columns.mutating(busy),
+        completed: async () => {
+            await columns.refresh(false)
+            inspection.refreshWorking()
+        },
+    })
+
     async function saveRepository(repositoryId: string, layout: { columns: WorkspaceColumn[]; focusedColumnId?: string; layoutInitialized: boolean }) {
         let current = ready()
         if (!current)
@@ -191,6 +220,8 @@ export function createAppController(api: Api): AppController {
         columns,
         inspection,
         branches,
+        worktrees,
+        stashes,
 
         async start() {
             store.publish({ status: "starting" })
@@ -255,6 +286,8 @@ export function createAppController(api: Api): AppController {
                 changed: rewritten,
                 close,
             }),
+
+        chooseDirectory: path => api.chooseDirectory(path),
 
         openRepository: () =>
             whileOpening(async () => {

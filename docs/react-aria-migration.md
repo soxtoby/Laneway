@@ -86,7 +86,11 @@ A step is done when its listed tests pass against the React renderer and the scr
     - The Commit Trail (`commit-trail.tsx`): the column's branch and the bases below it, paged, with ambiguous bases chosen after the last page; commits that unfold to their message and files, with merge parents to compare; commits and branches the remote already has in the remote tone.
     - Rewording (`reword.ts`), and creating, renaming, and deleting branches (`local-branches.ts`, `local-branch-dialog.tsx`): Create branch here from a commit's menu, F2 and Delete on a branch column, and the column's branch renamed in place.
     - Tests in `react-commit-trail.test.tsx`: remote commits and branches, unfolding commits, ambiguous bases, Create branch here, rewording, inline renames, and branch deletion.
-    - Branch deletion keeps the Remix renderer's confirmation dialog, which the Destructive actions convention would replace with Undo once undo and redo land.
+    - Worktrees (`worktree-actions.ts`, `worktree-controls.tsx`, `worktree-dialog.tsx`): a worktree column's name renames in place over its path; its menu switches branch through a branch search, unlocks, repairs, or removes it; a branch column without a worktree checks the branch out in an existing worktree or a new one; a missing worktree's panel offers Repair and Remove. Each operation is reviewed in a dialog before it runs.
+    - Undo and redo from the header and by Ctrl+Z, Ctrl+Y, and Ctrl+Shift+Z, after any waiting discard; an undo into a taken directory asks for another name. The header's Stashes dialog applies a stash to a chosen worktree or drops it (`stashes.ts`).
+    - Tests in `react-worktrees.test.tsx`: missing worktrees, a missing detached worktree returning, the creation preview, inline worktree renames with branch switching and removal, undo and redo, and the Stashes dialog.
+    - Branch deletion and worktree removal keep the Remix renderer's confirmation dialogs. Both are undoable, so the Destructive actions convention could replace them with an Undo notice; that is a behaviour change for master first.
+    - Still to come: composition.
 - [ ] **6. Inspection.**
   - **Scope:**
     - Diff columns: combined and split views, selection, hidden-line gaps, and virtualized large patches.
