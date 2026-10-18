@@ -37,6 +37,27 @@
     color: var(--text-color-placeholder);
 }
 
+.workspace-recovery {
+    position: fixed;
+    z-index: 20;
+    inset-inline: var(--spacing-4);
+    bottom: var(--spacing-3);
+    padding: var(--spacing-3);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-4);
+    border: 1px solid var(--warning-border);
+    border-radius: var(--radius);
+    background: var(--warning-background);
+}
+
+.workspace-recovery-detail {
+    margin: var(--spacing-1) 0 0;
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+}
+
 /* Header */
 
 .header {
@@ -653,6 +674,209 @@
     &[data-tone] {
         fill: currentColor;
     }
+}
+
+/* Welcome: the ways to add a repository when none is open. The Add dialog shows the same choices. */
+
+.welcome {
+    padding: var(--spacing-6);
+    display: grid;
+    align-content: safe center;
+    justify-items: center;
+    overflow: auto;
+}
+
+.entry-panel {
+    width: min(440px, 100%);
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background: var(--overlay-background);
+}
+
+.entry-heading {
+    margin: 0;
+    padding: var(--spacing-3) var(--spacing-4);
+    border-bottom: 1px solid var(--border-color);
+    font-size: var(--font-size);
+    font-weight: 600;
+}
+
+.entry-warning {
+    margin: 0;
+    padding: var(--spacing-2) var(--spacing-4);
+    border-bottom: 1px solid var(--border-color);
+    background: var(--invalid-background);
+    color: var(--invalid-color);
+    font-size: var(--font-size-sm);
+}
+
+.entry-options {
+    display: grid;
+
+    .entry-dialog & {
+        overflow: hidden;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius);
+    }
+}
+
+.entry-card {
+    display: grid;
+    gap: 2px;
+    padding: var(--spacing-3) var(--spacing-4);
+    border: none;
+    border-bottom: 1px solid var(--border-color);
+    background: transparent;
+    color: var(--text-color);
+    font: inherit;
+    text-align: start;
+    outline: none;
+
+    &:last-child {
+        border-bottom: none;
+    }
+
+    &[data-hovered] {
+        background: var(--highlight-hover);
+    }
+
+    &[data-pressed] {
+        background: var(--highlight-pressed);
+    }
+
+    &[data-focus-visible] {
+        outline: 2px solid var(--focus-ring-color);
+        outline-offset: -2px;
+    }
+
+    &[data-disabled] {
+        color: var(--text-color-disabled);
+    }
+}
+
+.entry-card-title {
+    font-weight: 600;
+}
+
+.entry-card-description {
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+}
+
+/* Dialogs: adding a repository and System Git. */
+
+.entry-dialog,
+.settings-dialog {
+    width: 440px;
+    max-width: 100%;
+    padding: var(--spacing-6);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-4);
+
+    .react-aria-Heading[slot="title"] {
+        margin: 0;
+        font-size: var(--font-size-lg);
+    }
+}
+
+.settings-dialog {
+    width: 500px;
+}
+
+.entry-form {
+    gap: var(--spacing-4);
+
+    .react-aria-TextField {
+        margin: 0;
+    }
+
+    .react-aria-ProgressBar {
+        width: auto;
+    }
+
+    .entry-error {
+        max-width: none;
+        white-space: pre-line;
+        overflow-wrap: anywhere;
+    }
+}
+
+.field-with-action {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: var(--spacing-2);
+}
+
+.field-note {
+    margin: 0;
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+}
+
+.dialog-actions {
+    display: flex;
+    justify-content: end;
+    gap: var(--spacing-2);
+}
+
+.settings-facts {
+    margin: 0;
+    display: grid;
+    gap: var(--spacing-2);
+}
+
+.settings-fact {
+    display: grid;
+    grid-template-columns: 110px minmax(0, 1fr);
+    gap: var(--spacing-3);
+
+    dt {
+        color: var(--text-color-placeholder);
+    }
+
+    dd {
+        margin: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+}
+
+.settings-error {
+    padding: var(--spacing-3);
+    border: 1px solid var(--invalid-color);
+    border-radius: var(--radius);
+    background: var(--invalid-background);
+
+    p {
+        margin: var(--spacing-1) 0 var(--spacing-3);
+        overflow-wrap: anywhere;
+    }
+}
+
+.settings-error-actions {
+    display: flex;
+    gap: var(--spacing-2);
+}
+
+.identity-settings {
+    display: grid;
+    gap: var(--spacing-3);
+    padding-top: var(--spacing-4);
+    border-top: 1px solid var(--border-color);
+
+    > .react-aria-Button {
+        justify-self: start;
+    }
+}
+
+.identity-heading {
+    margin: 0;
+    font-size: var(--font-size);
+    font-weight: 600;
 }
 
 /* Toasts carry file paths, so they are wider than the starter's and wrap long paths. */

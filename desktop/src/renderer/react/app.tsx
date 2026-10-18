@@ -8,10 +8,12 @@ import type { WorktreeColumn } from "./column-preview"
 import { ContextMenuHost } from "./context-menu"
 import { IconButton, MoreMenu } from "./controls"
 import { DenseRow } from "./dense-row"
+import { GitSettingsDialog } from "./git-settings-dialog"
 import { AddIcon, ArchiveIcon, BranchIcon, CloseIcon, DeletedIcon, FolderIcon, MaximizeIcon, ModifiedIcon, MoonIcon, MoreIcon, OpenColumnIcon, PullIcon, RedoIcon, SearchIcon, SettingsIcon, SunIcon, TreeIcon, UndoIcon } from "./icons"
 import { Notices } from "./notices"
+import { EntryDialogs } from "./repository-entry-dialogs"
 import { RepositoryPanel } from "./repository-panel"
-import { Starting, StartupFailed } from "./startup"
+import { Starting, StartupFailed, WorkspaceRecovery } from "./startup"
 import { Button } from "./ui/Button"
 import { Checkbox } from "./ui/Checkbox"
 import { Disclosure, DisclosureHeader, DisclosurePanel } from "./ui/Disclosure"
@@ -20,6 +22,7 @@ import { ProgressCircle } from "./ui/ProgressCircle"
 import { Tab, TabList, Tabs } from "./ui/Tabs"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 import { useSnapshot } from "./use-snapshot"
+import { Welcome } from "./welcome"
 import "./laneway.css"
 
 export function App({ api, controller }: { api: IconImageApi; controller: AppController }) {
@@ -37,40 +40,82 @@ export function App({ api, controller }: { api: IconImageApi; controller: AppCon
 
 function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: AppController; snapshot: Extract<AppSnapshot, { status: "ready" }> }) {
     let { workspace, preview, appearance, notice } = snapshot
+    let { entry, gitSettings } = controller
+    let entering = useSnapshot(entry).operation != "idle"
+    let settings = useSnapshot(gitSettings).settings
+    let busy = snapshot.opening || entering
     let active = workspace.repositories.find(repository => repository.id == workspace.activeRepositoryId)
     let columns = preview?.status == "ready" ? preview.columns : []
     return (
         <div className="shell">
-            <Header columns={columns} appearance={appearance} onToggleAppearance={() => void controller.toggleAppearance()} />
-            <div className="work-area">
-                <RepositoryPanel
-                    repositories={workspace.repositories}
-                    activeId={workspace.activeRepositoryId}
-                    api={api}
-                    onSelect={id => void controller.selectRepository(id)}
-                    onReorder={ids => void controller.reorderRepositories(ids)}
-                    onClose={id => void controller.closeRepository(id)}
-                    onAdd={() => void controller.openRepository()}
+            <Header
+                columns={columns}
+                repositoryOpen={active?.status == "available"}
+                appearance={appearance}
+                busy={busy}
+                onToggleAppearance={() => void controller.toggleAppearance()}
+                onOpenSettings={gitSettings.open}
+            />
+            {active
+                ? (
+                    <div className="work-area">
+                        <RepositoryPanel
+                            repositories={workspace.repositories}
+                            activeId={workspace.activeRepositoryId}
+                            api={api}
+                            onSelect={id => void controller.selectRepository(id)}
+                            onReorder={ids => void controller.reorderRepositories(ids)}
+                            onClose={id => void controller.closeRepository(id)}
+                            onAdd={entry.openAdd}
+                        />
+                        <main className="columns">
+                            {preview?.status == "loading" && <ProgressCircle isIndeterminate aria-label="Loading repository" />}
+                            {preview?.status == "failed" && <p>{preview.error}</p>}
+                            {active.status == "missing" && <p>{active.error.message}</p>}
+                            {columns.map(column => <Column key={column.id} column={column} controller={controller} />)}
+                        </main>
+                    </div>
+                )
+                : (
+                    <Welcome
+                        settings={settings}
+                        busy={busy}
+                        onOpen={() => void controller.openRepository()}
+                        onClone={() => void entry.openClone()}
+                        onInitialize={() => void entry.openInitialize()}
+                    />
+                )}
+            {workspace.persistenceError && workspace.persistenceError.code != "workspace.partial" && (
+                <WorkspaceRecovery
+                    error={workspace.persistenceError}
+                    onReset={() => void controller.resetWorkspace()}
                 />
-                <main className="columns">
-                    {preview?.status == "loading" && <ProgressCircle isIndeterminate aria-label="Loading repository" />}
-                    {preview?.status == "failed" && <p>{preview.error}</p>}
-                    {active?.status == "missing" && <p>{active.error.message}</p>}
-                    {columns.map(column => <Column key={column.id} column={column} controller={controller} />)}
-                </main>
-            </div>
+            )}
+            <EntryDialogs entry={entry} busy={snapshot.opening} />
+            <GitSettingsDialog gitSettings={gitSettings} />
             <Notices controller={controller} notice={notice} />
         </div>
     )
 }
 
-function Header({ columns, appearance, onToggleAppearance }: { columns: WorktreeColumn[]; appearance: "light" | "dark"; onToggleAppearance(): void }) {
+interface HeaderProps {
+    columns: WorktreeColumn[]
+    repositoryOpen: boolean
+    appearance: "light" | "dark"
+    busy: boolean
+    onToggleAppearance(): void
+    onOpenSettings(): void
+}
+
+// Pull latest, Stashes, Undo, and Redo stand in until their screens move (migration steps 5 and 8).
+function Header({ columns, repositoryOpen, appearance, busy, onToggleAppearance, onOpenSettings }: HeaderProps) {
     let [selected, setSelected] = useState<Key>()
     let selectedKey = columns.some(column => column.id == selected) ? selected : columns[0]?.id
     let showColumn = (id: Key) => {
         setSelected(id)
         document.querySelector(`[data-column-id="${CSS.escape(String(id))}"]`)?.scrollIntoView({ behavior: "smooth", inline: "nearest" })
     }
+    let appearanceLabel = appearance == "dark" ? "Switch to light appearance" : "Switch to dark appearance"
     return (
         <header className="header drag-region">
             <span className="brand">Laneway</span>
@@ -85,36 +130,40 @@ function Header({ columns, appearance, onToggleAppearance }: { columns: Worktree
             <HeaderButton label="Command Lens">
                 <SearchIcon />
             </HeaderButton>
-            <Button variant="accent">
-                <PullIcon />
-                Pull latest
-            </Button>
-            <Button variant="secondary">
-                <ArchiveIcon />
-                Stashes
-            </Button>
+            {repositoryOpen && (
+                <>
+                    <Button variant="accent">
+                        <PullIcon />
+                        Pull latest
+                    </Button>
+                    <Button variant="secondary">
+                        <ArchiveIcon />
+                        Stashes
+                    </Button>
+                    <span className="header-divider" />
+                    <HeaderButton label="Undo last operation">
+                        <UndoIcon />
+                    </HeaderButton>
+                    <HeaderButton label="Redo operation">
+                        <RedoIcon />
+                    </HeaderButton>
+                </>
+            )}
             <span className="header-divider" />
-            <HeaderButton label="Undo">
-                <UndoIcon />
-            </HeaderButton>
-            <HeaderButton label="Redo">
-                <RedoIcon />
-            </HeaderButton>
-            <span className="header-divider" />
-            <HeaderButton label={appearance == "dark" ? "Use light appearance" : "Use dark appearance"} onPress={onToggleAppearance}>
+            <HeaderButton label={appearanceLabel} onPress={onToggleAppearance}>
                 {appearance == "dark" ? <SunIcon /> : <MoonIcon />}
             </HeaderButton>
-            <HeaderButton label="Settings">
+            <HeaderButton label="Git settings" isDisabled={busy} onPress={onOpenSettings}>
                 <SettingsIcon />
             </HeaderButton>
         </header>
     )
 }
 
-function HeaderButton({ label, children, onPress }: { label: string; children: ReactNode; onPress?: () => void }) {
+function HeaderButton({ label, children, isDisabled, onPress }: { label: string; children: ReactNode; isDisabled?: boolean; onPress?: () => void }) {
     return (
         <TooltipTrigger>
-            <Button variant="quiet" aria-label={label} onPress={onPress}>{children}</Button>
+            <Button variant="quiet" aria-label={label} isDisabled={isDisabled} onPress={onPress}>{children}</Button>
             <Tooltip>{label}</Tooltip>
         </TooltipTrigger>
     )

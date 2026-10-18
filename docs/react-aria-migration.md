@@ -28,6 +28,7 @@ A step is done when its listed tests pass against the React renderer and the scr
 - **CSP:** plain stylesheets only. `meta#react-aria-pressable-style` with its rule in the page CSS stops React Aria's one inline style. Only the dev server gets a nonce, for Vite's style tags and Fast Refresh's preamble script. Keep `style-src 'self'` and `script-src 'self'` unchanged.
 - **Density:** commit rows are 32px, file rows 28px, repository rows 40px (36px collapsed) with 28px tiles. Dense collections are React Aria GridLists of `DenseRow`s sharing one row style; the kit's GridList is a card grid.
 - **Row menus:** a `DenseRow` takes its menu items once. Right-click opens them at the pointer, and Shift+F10 under the row, through the app's one `ContextMenuHost`; the same items appear in the row's hover menu button. The host sits outside every list, because a menu rendered inside a row passes its focus events to the list through React's portal bubbling.
+- **Dialogs** are the kit's `Modal` and `Dialog`, open while their controller says so. Escape and Cancel go through the controller, which can keep a dialog open while Git runs. Forms use the kit's `Form` and `TextField`, and a failure shows in the form as an alert that takes focus.
 - **Tests:** React DOM tests install Happy DOM with `installReactDom` from `test/react-dom.ts` before importing views. React Aria acts on pointer presses, so tests press with pointer events rather than `click()`.
 - **Destructive actions** apply immediately with an Undo toast (the kit's toast with an `action`), never a confirmation dialog.
 - **Icons** are Lucide nodes (ADR-0020), drawn by `lucideIcon()`, which also gives the kit the `lucide-<name>` classes its CSS expects.
@@ -46,10 +47,10 @@ A step is done when its listed tests pass against the React renderer and the scr
     - `react-renderer-styles.test.ts` drives the built React page under the production CSP in both appearances.
     - React Fast Refresh with a dev-only script nonce.
     - `eslint-plugin-react-hooks` and ESLint for the React renderer's `.tsx`, and stylelint's colour rule.
-- [ ] **1. Repository entry.**
-  - **Scope:** Welcome, open, clone, and initialize with progress and cancellation; Git settings; the fatal bootstrap state.
+- [x] **1. Repository entry.**
+  - **Scope:** Welcome, open, clone, and initialize with progress and cancellation; Git settings; the fatal bootstrap state and the Workspace State recovery banner.
   - **Remix modules:** `workspace.tsx`, `repository-entry/`, `settings.tsx`.
-  - **Tests to port:** the "repository entry renderer" block (initialize, Git settings, clone cancellation, clipboard source, appearance, fatal state).
+  - **Tests ported:** the "repository entry renderer" block, to `react-app.test.tsx`. The controllers, `repository-entry.ts` and `git-settings.ts`, have their own tests in `react-repository-entry.test.ts`.
 - [ ] **2. Repository panel.**
   - **Scope:** the side panel with drag-to-reorder (built in the spike), closing, adding, locating a missing repository, and the name and icon editor.
   - **Remix modules:** `repository-rail.tsx`, `repository-icon.tsx`, `repository-identity.tsx`.

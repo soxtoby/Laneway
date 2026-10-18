@@ -11,5 +11,7 @@ Local changes:
 - `Button.tsx` accepts an `accent` variant, and wraps text children in a `<span>` so an icon with a label is not styled as an icon-only button.
 - `Disclosure.css` pads only the panel's own wrapper (`> div`), not every `div` inside it.
 - The `"use client"` directives are gone; this is a client-only renderer.
+- `Modal.css` centres the modal in a fixed overlay. The upstream sticky offset left any modal taller than half the window against its top edge, and Laneway's page never scrolls.
+- `ProgressBar.tsx` types its fill's style as `CSSProperties` rather than `any`, for the lint rules.
 
 Laneway's colours and density are set in `../theme.css` by overriding the starter's variables, not by editing `theme.css` here.

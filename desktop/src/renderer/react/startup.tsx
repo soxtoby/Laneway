@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import type { EntryError } from "@laneway/shared"
 import { Button } from "./ui/Button"
 
 export function Starting() {
@@ -19,5 +20,22 @@ export function StartupFailed({ error, onRetry }: { error: string; onRetry(): vo
                 <Button variant="accent" onPress={onRetry}>Retry</Button>
             </div>
         </main>
+    )
+}
+
+/**
+ * Laneway started without its saved Workspace State. Repositories that couldn't be restored are a
+ * notice instead; a state it can't read at all offers a reset.
+ */
+export function WorkspaceRecovery({ error, onReset }: { error: EntryError; onReset(): void }) {
+    let resettable = error.code == "workspace.corrupt" || error.code == "workspace.unsupported-version"
+    return (
+        <aside className="workspace-recovery" aria-live="assertive">
+            <div>
+                <strong>Workspace State needs attention</strong>
+                <p className="workspace-recovery-detail">{error.message}</p>
+            </div>
+            {resettable && <Button variant="secondary" onPress={onReset}>Reset workspace</Button>}
+        </aside>
     )
 }

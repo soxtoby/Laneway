@@ -54,3 +54,41 @@ export async function renderReact(node: ReactNode) {
         },
     }
 }
+
+/** Finds a button by its visible text or its label; dialogs and menus render outside the view's container. */
+export function button(container: Element, label: string) {
+    let found = [...container.querySelectorAll<HTMLElement>("button")].find(element =>
+        element.getAttribute("aria-label") == label || element.textContent?.trim() == label
+    )
+    if (!found)
+        throw new Error(`No ${label} button in: ${container.textContent}`)
+    return found
+}
+
+/** Finds a text field's input by its label. */
+export function field(container: Element, label: string) {
+    let found = [...container.querySelectorAll("label")].find(element => element.textContent?.trim() == label)
+    let input = found && document.getElementById(found.htmlFor)
+    if (!(input instanceof HTMLInputElement))
+        throw new Error(`No ${label} field in: ${container.textContent}`)
+    return input
+}
+
+// React Aria acts on pointer presses, which a bare click event doesn't make.
+export function press(element: HTMLElement) {
+    let options = { bubbles: true, cancelable: true, pointerId: 1, pointerType: "mouse", button: 0, width: 1, height: 1 }
+    element.dispatchEvent(new PointerEvent("pointerdown", options))
+    element.dispatchEvent(new PointerEvent("pointerup", options))
+    element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, detail: 1 }))
+}
+
+// React tracks an input's value to tell user input from its own updates, so the value goes through
+// the element's own setter, as typing would.
+export function type(input: HTMLInputElement, value: string) {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value)
+    input.dispatchEvent(new InputEvent("input", { bubbles: true }))
+}
+
+export function submit(form: HTMLFormElement) {
+    form.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }))
+}

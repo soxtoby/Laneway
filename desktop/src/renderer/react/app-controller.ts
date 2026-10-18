@@ -1,20 +1,11 @@
 import type { Appearance, OpenRepository, Workspace } from "@laneway/shared"
 import { type ColumnPreview, readColumnPreview } from "./column-preview"
+import { createGitSettings, type GitSettings } from "./git-settings"
+import { errorMessage, type Notice } from "./notice"
+import { createRepositoryEntry, type RepositoryEntry } from "./repository-entry"
+import { createStore, type Store } from "./store"
 
 type Api = Window["laneway"]
-
-export interface Notice {
-    code: string
-    message: string
-    /** Confirmations close themselves; failures and guidance wait for the user. */
-    transient?: boolean
-    /** How long a transient notice stays when it needs longer than the default, such as an undo window. */
-    duration?: number
-    /** One follow-up the notice offers, such as undoing what it reports. */
-    action?: { label: string; run(): void }
-    /** Called once the notice leaves the screen, whether dismissed, timed out, or replaced. */
-    closed?(): void
-}
 
 export type AppSnapshot =
     | { status: "starting" }
@@ -23,6 +14,8 @@ export type AppSnapshot =
         status: "ready"
         appearance: Appearance
         workspace: Workspace
+        /** Opening or selecting a repository is under way. */
+        opening: boolean
         /** The active repository's columns; absent when it is missing or nothing is open. */
         preview?: ColumnPreview
         notice?: Notice
@@ -30,10 +23,9 @@ export type AppSnapshot =
 
 type Ready = Extract<AppSnapshot, { status: "ready" }>
 
-export interface AppController {
-    subscribe(listener: () => void): () => void
-    /** The same object until something changes, as `useSyncExternalStore` requires. */
-    snapshot(): AppSnapshot
+export interface AppController extends Store<AppSnapshot> {
+    readonly entry: RepositoryEntry
+    readonly gitSettings: GitSettings
     /** Loads the app state; also retries after a failed start. */
     start(): Promise<void>
     toggleAppearance(): Promise<void>
@@ -42,6 +34,8 @@ export interface AppController {
     closeRepository(id: string): Promise<void>
     /** Takes every open repository's id in the new order. */
     reorderRepositories(ids: string[]): Promise<void>
+    /** Replaces a Workspace State that can't be read with an empty one. */
+    resetWorkspace(): Promise<void>
     /** Shows a notice in place of the current one; the returned function withdraws it if it is still showing. */
     notify(notice: Notice): () => void
     dismissNotice(notice: Notice): void
@@ -49,31 +43,27 @@ export interface AppController {
 }
 
 export function createAppController(api: Api): AppController {
-    let snapshot: AppSnapshot = { status: "starting" }
-    let listeners = new Set<() => void>()
+    let store = createStore<AppSnapshot>({ status: "starting" })
     // A preview read overtaken by a later one is dropped.
     let previewRead = 0
     let previewRepositoryId: string | undefined
-    let unsubscribe = api.onRepositoryChanged(change => {
-        let ready = readySnapshot()
-        if (ready?.workspace.activeRepositoryId == change.repositoryId)
-            void loadPreview()
-    })
+    let unsubscribe = [
+        api.onRepositoryChanged(change => {
+            if (ready()?.workspace.activeRepositoryId == change.repositoryId)
+                void loadPreview()
+        }),
+        api.onEntryProgress(progress => entry.updateProgress(progress)),
+    ]
 
-    function publish(next: AppSnapshot) {
-        snapshot = next
-        for (let listener of listeners)
-            listener()
-    }
-
-    function readySnapshot() {
+    function ready() {
+        let snapshot = store.snapshot()
         return snapshot.status == "ready" ? snapshot : undefined
     }
 
     function update(change: Partial<Ready>) {
-        let ready = readySnapshot()
-        if (ready)
-            publish({ ...ready, ...change })
+        let current = ready()
+        if (current)
+            store.publish({ ...current, ...change })
     }
 
     function activeRepository(workspace: Workspace): OpenRepository | undefined {
@@ -88,8 +78,8 @@ export function createAppController(api: Api): AppController {
 
     // A refresh keeps the current columns on screen until the new ones arrive; another repository's don't.
     async function loadPreview() {
-        let ready = readySnapshot()
-        let active = ready && activeRepository(ready.workspace)
+        let current = ready()
+        let active = current && activeRepository(current.workspace)
         let read = ++previewRead
         if (active?.status != "available") {
             previewRepositoryId = undefined
@@ -110,67 +100,81 @@ export function createAppController(api: Api): AppController {
             update({ preview })
     }
 
+    async function whileOpening(action: () => Promise<void>) {
+        update({ opening: true })
+        try {
+            await action()
+        } finally {
+            update({ opening: false })
+        }
+    }
+
     function notify(notice: Notice) {
-        let replaced = readySnapshot()?.notice
+        let replaced = ready()?.notice
         update({ notice })
         replaced?.closed?.()
         return () => controller.dismissNotice(notice)
     }
 
+    let entry = createRepositoryEntry({ api, notify, workspaceOpened: showWorkspace, openRepository: () => controller.openRepository() })
+    let gitSettings = createGitSettings({ api, notify })
+
     let controller: AppController = {
-        subscribe(listener) {
-            listeners.add(listener)
-            return () => listeners.delete(listener)
-        },
-        snapshot: () => snapshot,
+        subscribe: store.subscribe,
+        snapshot: store.snapshot,
+        entry,
+        gitSettings,
 
         async start() {
-            publish({ status: "starting" })
+            store.publish({ status: "starting" })
             try {
                 let state = await api.getState()
-                publish({ status: "ready", appearance: state.appearance, workspace: state.workspace })
+                gitSettings.load(state.settings)
+                store.publish({ status: "ready", appearance: state.appearance, workspace: state.workspace, opening: false })
                 if (state.workspace.persistenceError?.code == "workspace.partial")
                     notify({ code: state.workspace.persistenceError.code, message: state.workspace.persistenceError.message })
                 void loadPreview()
             } catch (error) {
-                publish({ status: "failed", error: errorMessage(error) })
+                store.publish({ status: "failed", error: errorMessage(error) })
             }
         },
 
         // The main process applies the appearance to Electron's native theme, which the kit's
         // prefers-color-scheme rules follow, so the page changes once the setting is saved.
         async toggleAppearance() {
-            let ready = readySnapshot()
-            if (!ready)
+            let current = ready()
+            if (!current)
                 return
             try {
-                update({ appearance: await api.setAppearance(ready.appearance == "dark" ? "light" : "dark") })
+                update({ appearance: await api.setAppearance(current.appearance == "dark" ? "light" : "dark") })
             } catch (error) {
                 notify({ code: "settings.appearance.failed", message: errorMessage(error) })
             }
         },
 
-        async openRepository() {
-            try {
-                let result = await api.openRepository()
-                if (result.ok) {
-                    showWorkspace(result.workspace)
-                    notify({ code: "repository.opened", message: "Repository opened.", transient: true })
-                } else if (result.error.code != "git.cancelled") {
-                    notify({ code: result.error.code, message: result.error.message })
+        openRepository: () =>
+            whileOpening(async () => {
+                try {
+                    let result = await api.openRepository()
+                    if (result.ok) {
+                        showWorkspace(result.workspace)
+                        notify({ code: "repository.opened", message: "Repository opened.", transient: true })
+                    } else if (result.error.code != "git.cancelled") {
+                        notify({ code: result.error.code, message: result.error.message })
+                    }
+                } catch (error) {
+                    notify({ code: "repository.open.failed", message: errorMessage(error) })
                 }
-            } catch (error) {
-                notify({ code: "repository.open.failed", message: errorMessage(error) })
-            }
-        },
+            }),
 
-        async selectRepository(id) {
-            try {
-                showWorkspace(await api.selectRepository(id))
-            } catch (error) {
-                notify({ code: "repository.select.failed", message: errorMessage(error) })
-            }
-        },
+        selectRepository: id =>
+            whileOpening(async () => {
+                try {
+                    showWorkspace(await api.selectRepository(id))
+                } catch (error) {
+                    notify({ code: "repository.select.failed", message: errorMessage(error) })
+                }
+            }),
 
         async closeRepository(id) {
             try {
@@ -182,12 +186,12 @@ export function createAppController(api: Api): AppController {
 
         // The new order shows at once; a dropped repository already appears in its slot while the workspace saves.
         async reorderRepositories(ids) {
-            let ready = readySnapshot()
-            if (!ready)
+            let current = ready()
+            if (!current)
                 return
             let workspace = {
-                ...ready.workspace,
-                repositories: [...ready.workspace.repositories].sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id)),
+                ...current.workspace,
+                repositories: [...current.workspace.repositories].sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id)),
             }
             update({ workspace })
             try {
@@ -197,23 +201,28 @@ export function createAppController(api: Api): AppController {
             }
         },
 
+        async resetWorkspace() {
+            try {
+                showWorkspace(await api.resetWorkspace())
+            } catch (error) {
+                notify({ code: "workspace.reset.failed", message: errorMessage(error) })
+            }
+        },
+
         notify,
 
         dismissNotice(notice) {
-            if (readySnapshot()?.notice != notice)
+            if (ready()?.notice != notice)
                 return
             update({ notice: undefined })
             notice.closed?.()
         },
 
         dispose() {
-            unsubscribe()
-            listeners.clear()
+            for (let stop of unsubscribe)
+                stop()
+            store.clear()
         },
     }
     return controller
-}
-
-export function errorMessage(error: unknown) {
-    return error instanceof Error ? error.message : String(error)
 }

@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { useEffect } from "react"
-import type { AppController, Notice } from "./app-controller"
+import type { AppController } from "./app-controller"
+import type { Notice } from "./notice"
 import { MyToastRegion, queue } from "./ui/Toast"
 
 let transientDuration = 5_000

@@ -61,12 +61,24 @@ app.on("browser-window-created", (_event, window) => {
                 document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
                 await wait(() => !document.querySelector('[role=menu]'), 'the context menu to close');
 
-                document.querySelector('header button[aria-label="Use dark appearance"]').click();
-                await wait(() => matchMedia('(prefers-color-scheme: dark)').matches && document.querySelector('header button[aria-label="Use light appearance"]'), 'the dark appearance');
+                // A dialog taller than half the window stays centred.
+                document.querySelector('header button[aria-label="Git settings"]').click();
+                const dialog = await wait(() => document.querySelector('[role=dialog]'), 'Git settings');
+                await wait(() => document.getAnimations().length == 0, 'the dialog to settle');
+                const dialogRect = dialog.getBoundingClientRect();
+                const settingsDialog = {
+                    tall: dialogRect.height > innerHeight / 2,
+                    centred: Math.abs(dialogRect.top + dialogRect.height / 2 - innerHeight / 2) <= 1 && Math.abs(dialogRect.left + dialogRect.width / 2 - innerWidth / 2) <= 1,
+                };
+                document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+                await wait(() => !document.querySelector('[role=dialog]'), 'Git settings to close');
+
+                document.querySelector('header button[aria-label="Switch to dark appearance"]').click();
+                await wait(() => matchMedia('(prefers-color-scheme: dark)').matches && document.querySelector('header button[aria-label="Switch to light appearance"]'), 'the dark appearance');
                 await wait(() => document.getAnimations().length == 0, 'the appearance transitions');
                 const dark = colors();
 
-                return { light, dark, geometry, contextMenu, styleElements: document.querySelectorAll('style').length };
+                return { light, dark, geometry, contextMenu, settingsDialog, styleElements: document.querySelectorAll('style').length };
             })()`)
             writeFileSync(join(directory, "result.json"), JSON.stringify({ ...result, problems }))
             app.quit()

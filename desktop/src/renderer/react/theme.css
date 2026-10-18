@@ -22,6 +22,11 @@
     --graph-line: var(--tint-800);
     --graph-dot: var(--tint-1000);
 
+    /* Warnings and failures shown in place, such as Git being unavailable. */
+    --invalid-background: oklch(from var(--invalid-color) var(--lightness-100) calc(c * 0.3) h);
+    --warning-background: oklch(from var(--orange) var(--lightness-100) calc(c * 0.4) h);
+    --warning-border: oklch(from var(--orange) var(--lightness-600) c h);
+
     /* File status marks. */
     --status-modified: var(--tint-1100);
     --status-added: oklch(from var(--green) var(--lightness-1100) c h);

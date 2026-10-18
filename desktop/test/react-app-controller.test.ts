@@ -1,7 +1,8 @@
 import type { Workspace } from "@laneway/shared"
 import { describe, expect, test } from "bun:test"
-import { type AppSnapshot, createAppController, type Notice } from "../src/renderer/react/app-controller"
+import { type AppSnapshot, createAppController } from "../src/renderer/react/app-controller"
 import type { ColumnPreview } from "../src/renderer/react/column-preview"
+import type { Notice } from "../src/renderer/react/notice"
 import { appState, fakeLaneway, inspectionScenario, openedWorkspace, repositoryInfo } from "./renderer-fixtures"
 
 describe("app controller", () => {

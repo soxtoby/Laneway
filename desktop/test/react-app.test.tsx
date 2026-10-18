@@ -1,14 +1,16 @@
 /** @jsxImportSource react */
-import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import type { EntryProgress, EntryResult } from "@laneway/shared"
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
 import type { Window as HappyWindow } from "happy-dom"
 import type { App as AppComponent } from "../src/renderer/react/app"
-import type { createAppController as createController } from "../src/renderer/react/app-controller"
-import { installReactDom, renderReact } from "./react-dom"
-import { appState, fakeLaneway, inspectionScenario } from "./renderer-fixtures"
+import type { AppController, createAppController as createController } from "../src/renderer/react/app-controller"
+import { button, field, installReactDom, press, renderReact, submit, type } from "./react-dom"
+import { appState, fakeLaneway, inspectionScenario, openedWorkspace, repositoryInfo } from "./renderer-fixtures"
 
 let browserWindow: HappyWindow
 let App: typeof AppComponent
 let createAppController: typeof createController
+let running: { unmount(): Promise<void>; controller: AppController }[] = []
 
 beforeAll(async () => {
     browserWindow = installReactDom()
@@ -16,111 +18,232 @@ beforeAll(async () => {
     ;({ createAppController } = await import("../src/renderer/react/app-controller"))
 })
 
+afterEach(async () => {
+    for (let app of running.splice(0)) {
+        await app.unmount()
+        app.controller.dispose()
+    }
+})
+
 afterAll(() => browserWindow.close())
 
 describe("React app", () => {
     test("a failed start shows the error in an alert, and Retry opens the workspace", async () => {
         let attempts = 0
-        let api = fakeLaneway({
+        let app = await startApp(fakeLaneway({
             getState: async () => {
                 if (attempts++ == 0)
-                    throw new Error("Settings are unreadable.")
+                    throw new Error("Preload unavailable")
                 return appState()
             },
-        })
-        let controller = createAppController(api)
-        let view = await renderReact(<App api={api} controller={controller} />)
-        try {
-            await view.act(() => controller.start())
-            let alert = view.container.querySelector("[role=alert]")
-            expect(alert?.textContent).toContain("Laneway could not start.")
-            expect(alert?.textContent).toContain("Settings are unreadable.")
+        }))
+        let alert = document.querySelector("[role=alert]")
+        expect(alert?.textContent).toContain("Laneway could not start.")
+        expect(alert?.textContent).toContain("Preload unavailable")
 
-            await view.act(() => press(button(view.container, "Retry")))
+        await app.act(() => press(button(document.body, "Retry")))
 
-            expect(view.container.querySelector("[role=alert]")).toBeNull()
-            expect(view.container.querySelector("[aria-label='Open repositories']")).not.toBeNull()
-        } finally {
-            await view.unmount()
-            controller.dispose()
-        }
+        expect(document.querySelector("[role=alert]")).toBeNull()
+        expect(document.body.textContent).toContain("No repository open")
+        expect(attempts).toBe(2)
     })
 
     test("a notice shows as a toast whose action runs once and closes it", async () => {
-        let api = fakeLaneway()
-        let controller = createAppController(api)
-        let view = await renderReact(<App api={api} controller={controller} />)
-        try {
-            await view.act(() => controller.start())
-            let undone = 0
-            let closed = 0
+        let app = await startApp(fakeLaneway())
+        let undone = 0
+        let closed = 0
 
-            await view.act(() =>
-                controller.notify({
-                    code: "discard.applied",
-                    message: "Discarded changes.",
-                    action: { label: "Undo", run: () => undone++ },
-                    closed: () => closed++,
-                })
-            )
-            let toast = document.querySelector("[role=alertdialog]")
-            expect(toast?.textContent).toContain("Discarded changes.")
+        await app.act(() =>
+            app.controller.notify({
+                code: "discard.applied",
+                message: "Discarded changes.",
+                action: { label: "Undo", run: () => undone++ },
+                closed: () => closed++,
+            })
+        )
+        let toast = document.querySelector("[role=alertdialog]")
+        expect(toast?.textContent).toContain("Discarded changes.")
 
-            await view.act(() => press(button(toast!, "Undo")))
+        await app.act(() => press(button(toast!, "Undo")))
 
-            expect(undone).toBe(1)
-            expect(closed).toBe(1)
-            expect(controller.snapshot()).toMatchObject({ notice: undefined })
-        } finally {
-            await view.unmount()
-            controller.dispose()
-        }
+        expect(undone).toBe(1)
+        expect(closed).toBe(1)
+        expect(app.controller.snapshot()).toMatchObject({ notice: undefined })
     })
 
     test("a repository's context menu opens from its row and closes the repository", async () => {
         let scenario = inspectionScenario()
         let closedIds: string[] = []
-        let api = fakeLaneway({
+        let app = await startApp(fakeLaneway({
             ...scenario.api,
             closeRepository: async id => {
                 closedIds.push(id)
                 return { repositories: [] }
             },
-        })
-        let controller = createAppController(api)
-        let view = await renderReact(<App api={api} controller={controller} />)
-        try {
-            await view.act(() => controller.start())
-            let row = view.container.querySelector<HTMLElement>("[aria-label='Open repositories'] [role=row]")!
+        }))
+        let row = document.querySelector<HTMLElement>("[aria-label='Open repositories'] [role=row]")!
 
-            await view.act(() => row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: 40, clientY: 60 })))
-            let menu = document.querySelector("[role=menu]")
-            expect(menu?.getAttribute("aria-label")).toBe("Actions for inspection")
+        await app.act(() => row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: 40, clientY: 60 })))
+        let menu = document.querySelector("[role=menu]")
+        expect(menu?.getAttribute("aria-label")).toBe("Actions for inspection")
 
-            await view.act(() => press([...menu!.querySelectorAll<HTMLElement>("[role=menuitem]")].find(item => item.textContent == "Close repository")!))
+        await app.act(() => press([...menu!.querySelectorAll<HTMLElement>("[role=menuitem]")].find(item => item.textContent == "Close repository")!))
 
-            expect(closedIds).toEqual([scenario.saved().activeRepositoryId!])
-            expect(view.container.querySelector("[aria-label='Open repositories'] [role=row]")).toBeNull()
-        } finally {
-            await view.unmount()
-            controller.dispose()
-        }
+        expect(closedIds).toEqual([scenario.saved().activeRepositoryId!])
+        expect(document.querySelector("[aria-label='Open repositories'] [role=row]")).toBeNull()
+    })
+
+    test("the saved appearance shows in the header, and toggling it saves the other one", async () => {
+        let saved: string[] = []
+        let app = await startApp(fakeLaneway({
+            getState: async () => ({ ...appState(), appearance: "dark" as const }),
+            setAppearance: async appearance => {
+                saved.push(appearance)
+                return appearance
+            },
+        }))
+
+        await app.act(() => press(button(document.body, "Switch to light appearance")))
+
+        expect(saved).toEqual(["light"])
+        expect(button(document.body, "Switch to dark appearance")).toBeDefined()
+    })
+
+    test("an unreadable Workspace State offers a reset, which clears the warning", async () => {
+        let resets = 0
+        let app = await startApp(fakeLaneway({
+            getState: async () => ({
+                ...appState(),
+                workspace: { repositories: [], persistenceError: { code: "workspace.corrupt", message: "workspace.json is not valid JSON." } },
+            }),
+            resetWorkspace: async () => {
+                resets++
+                return { repositories: [] }
+            },
+        }))
+        let warning = document.querySelector(".workspace-recovery")
+        expect(warning?.textContent).toContain("workspace.json is not valid JSON.")
+
+        await app.act(() => press(button(warning!, "Reset workspace")))
+
+        expect(resets).toBe(1)
+        expect(document.body.textContent).not.toContain("Workspace State needs attention")
     })
 })
 
-function button(container: Element, label: string) {
-    let found = [...container.querySelectorAll<HTMLElement>("button")].find(element =>
-        element.textContent?.trim() == label || element.getAttribute("aria-label") == label
-    )
-    if (!found)
-        throw new Error(`No ${label} button.`)
-    return found
-}
+describe("React repository entry", () => {
+    test("initializing a repository opens the resulting workspace", async () => {
+        let requests: unknown[][] = []
+        let app = await startApp(fakeLaneway({
+            initializeRepository: async (...request) => {
+                requests.push(request)
+                return { ok: true, workspace: openedWorkspace(repositoryInfo("D:\\Source\\new-project")) }
+            },
+        }))
 
-// React Aria acts on pointer presses, which a bare click event doesn't make.
-function press(element: HTMLElement) {
-    let options = { bubbles: true, cancelable: true, pointerId: 1, pointerType: "mouse", button: 0, width: 1, height: 1 }
-    element.dispatchEvent(new PointerEvent("pointerdown", options))
-    element.dispatchEvent(new PointerEvent("pointerup", options))
-    element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, detail: 1 }))
+        await app.act(() => press(button(document.body, "Initialize")))
+        let dialog = document.querySelector("[role=dialog]")!
+        expect(field(dialog, "Parent directory").value).toBe("C:\\Users\\developer\\Documents")
+        await app.act(() => {
+            type(field(dialog, "Parent directory"), "D:\\Source")
+            type(field(dialog, "Directory name"), "new-project")
+            type(field(dialog, "Initial branch"), "trunk")
+        })
+        await app.act(() => submit(dialog.querySelector("form")!))
+
+        expect(requests).toEqual([["D:\\Source", "new-project", "trunk"]])
+        expect(document.querySelector("[role=dialog]")).toBeNull()
+        expect(document.querySelector("[aria-label='Open repositories']")?.textContent).toContain("new-project")
+        expect(document.querySelector("[role=alertdialog]")?.textContent).toContain("Repository initialized and opened.")
+    })
+
+    test("Git settings change the executable without starting a repository operation", async () => {
+        let chooseCalls = 0
+        let app = await startApp(fakeLaneway({
+            chooseGit: async () => {
+                chooseCalls++
+                return {
+                    path: "C:\\Users\\developer\\settings.json",
+                    override: "D:\\Tools\\Git\\git.exe",
+                    git: { path: "D:\\Tools\\Git\\git.exe", version: "2.52.0" },
+                    authorIdentities: { secondary: [] },
+                }
+            },
+        }))
+
+        await app.act(() => press(button(document.body, "Git settings")))
+        let dialog = document.querySelector("[role=dialog]")!
+        await app.act(() => press(button(dialog, "Choose executable")))
+
+        expect(chooseCalls).toBe(1)
+        expect(dialog.textContent).toContain("D:\\Tools\\Git\\git.exe")
+        expect(dialog.textContent).toContain("Application override")
+        expect(button(document.body, "Clone").hasAttribute("disabled")).toBe(false)
+    })
+
+    test("a cancelled clone keeps its dialog and values", async () => {
+        let progress: ((progress: EntryProgress) => void) | undefined
+        let finishClone: (result: EntryResult) => void = () => undefined
+        let cancelCalls = 0
+        let requests: string[][] = []
+        let app = await startApp(fakeLaneway({
+            cloneRepository: (...request) => {
+                requests.push(request)
+                return new Promise<EntryResult>(resolve => finishClone = resolve)
+            },
+            cancelEntry: async () => {
+                cancelCalls++
+                return true
+            },
+            onEntryProgress: listener => {
+                progress = listener
+                return () => progress = undefined
+            },
+        }))
+
+        await app.act(() => press(button(document.body, "Clone")))
+        let dialog = document.querySelector("[role=dialog]")!
+        expect(field(dialog, "Parent directory").value).toBe("C:\\Users\\developer\\Documents")
+        await app.act(() => type(field(dialog, "Git source"), "https://host/team/project.git"))
+        expect(field(dialog, "Directory name").value).toBe("project")
+        await app.act(() => type(field(dialog, "Parent directory"), "D:\\Source"))
+        await app.act(() => submit(dialog.querySelector("form")!))
+        expect(requests).toEqual([["https://host/team/project.git", "D:\\Source", "project"]])
+
+        await app.act(() => progress?.({ message: "Receiving objects: 61%" }))
+        expect(dialog.textContent).toContain("Receiving objects: 61%")
+
+        await app.act(() => press(button(dialog, "Cancel clone")))
+        expect(cancelCalls).toBe(1)
+        expect(button(dialog, "Stopping…")).toBeDefined()
+
+        await app.act(() => finishClone({ ok: false, error: { code: "git.cancelled", message: "Clone cancelled." } }))
+        expect(document.querySelector("[role=dialog]")).toBe(dialog)
+        expect(field(dialog, "Git source").value).toBe("https://host/team/project.git")
+        expect(field(dialog, "Parent directory").value).toBe("D:\\Source")
+        expect(field(dialog, "Directory name").value).toBe("project")
+        expect(dialog.textContent).not.toContain("Stopping Git")
+        expect(dialog.textContent).not.toContain("Clone cancelled.")
+    })
+
+    test("a repository address on the clipboard fills in the clone source and its directory name", async () => {
+        let app = await startApp(fakeLaneway({
+            entryDefaults: async form => ({ parent: "D:\\Source", ...form == "clone" ? { source: "https://host/team/project.git" } : {} }),
+        }))
+
+        await app.act(() => press(button(document.body, "Clone")))
+
+        let dialog = document.querySelector("[role=dialog]")!
+        expect(field(dialog, "Git source").value).toBe("https://host/team/project.git")
+        expect(field(dialog, "Parent directory").value).toBe("D:\\Source")
+        expect(field(dialog, "Directory name").value).toBe("project")
+    })
+})
+
+async function startApp(api: Window["laneway"]) {
+    let controller = createAppController(api)
+    let view = await renderReact(<App api={api} controller={controller} />)
+    running.push({ unmount: view.unmount, controller })
+    await view.act(() => controller.start())
+    return { ...view, controller }
 }
