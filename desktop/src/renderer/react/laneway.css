@@ -2778,3 +2778,205 @@
     box-shadow: inset 2px 0 var(--focus-ring-color);
     background: var(--highlight-hover);
 }
+
+/* File History and Commit Diff columns: their contents scroll beneath a header like their source column's. */
+.auxiliary-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: var(--spacing-1) 0 var(--spacing-2);
+    overflow: auto;
+
+    > .load-more,
+    .related-files > .react-aria-Button {
+        align-self: flex-start;
+        height: var(--spacing-7);
+        margin: var(--spacing-1) var(--spacing-2);
+    }
+}
+
+/* A history entry is a commit row that unfolds to the file's diff in that commit. */
+.history-entry {
+    &[data-expanded] {
+        background: var(--tray-background);
+    }
+}
+
+.history-row {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-1);
+    padding: 0 var(--spacing-2) 0 var(--spacing-1);
+    background: var(--gray-50);
+
+    &:hover {
+        background: var(--highlight-hover);
+
+        .row-actions {
+            opacity: 1;
+        }
+    }
+
+    .transfer-grip {
+        margin-inline-start: 0;
+    }
+}
+
+.history-toggle {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: 0 var(--spacing-1);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-color);
+    font: inherit;
+    text-align: start;
+    outline: none;
+
+    > .toggle-chevron {
+        flex: 0 0 auto;
+        width: var(--spacing-3);
+        height: var(--spacing-3);
+    }
+
+    &[aria-expanded="true"] > .toggle-chevron {
+        rotate: 90deg;
+    }
+
+    &[data-focus-visible] {
+        outline: 2px solid var(--focus-ring-color);
+        outline-offset: -2px;
+    }
+}
+
+.history-subject {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.history-diff {
+    padding-block-end: var(--spacing-1);
+
+    .diff-panel {
+        margin: 0;
+    }
+}
+
+.history-path {
+    margin: 0;
+    padding: var(--spacing-1) var(--spacing-2);
+    color: var(--text-color-placeholder);
+    font: 12px var(--font-family-mono);
+    overflow-wrap: anywhere;
+}
+
+/* Blame shows each line's last change; the change's commit opens that file's history there. */
+.blame-context {
+    margin-block-start: var(--spacing-2);
+    border-top: 1px solid var(--border-color);
+}
+
+.blame-header {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: var(--spacing-1) var(--spacing-2);
+    font-weight: 600;
+
+    > span {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+}
+
+.blame-lines {
+    overflow-x: auto;
+    font: 12px / 20px var(--font-family-mono);
+}
+
+.blame-line {
+    display: flex;
+    gap: var(--spacing-2);
+    padding-inline: var(--spacing-2);
+    white-space: pre;
+}
+
+.blame-origin {
+    flex: 0 0 auto;
+    padding: 0 var(--spacing-1);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--link-color);
+    font: inherit;
+    outline: none;
+
+    &[data-hovered] {
+        background: var(--highlight-hover);
+    }
+
+    &[data-focus-visible] {
+        outline: 2px solid var(--focus-ring-color);
+        outline-offset: -2px;
+    }
+}
+
+/* Files related to the history's, with the evidence that relates them. */
+.related-files {
+    display: flex;
+    flex-direction: column;
+    margin-block-start: var(--spacing-2);
+    border-top: 1px solid var(--border-color);
+}
+
+.related-file {
+    height: 28px;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: 0 var(--spacing-2);
+    border: 0;
+    background: none;
+    color: var(--text-color);
+    font: inherit;
+    text-align: start;
+    outline: none;
+
+    &[data-hovered] {
+        background: var(--highlight-hover);
+    }
+
+    &[data-focus-visible] {
+        outline: 2px solid var(--focus-ring-color);
+        outline-offset: -2px;
+    }
+
+    small {
+        margin-inline-start: auto;
+        flex: 0 0 auto;
+        color: var(--text-color-placeholder);
+    }
+}
+
+.related-path {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

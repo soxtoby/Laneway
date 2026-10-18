@@ -84,8 +84,8 @@ describe("React Working Changes", () => {
 
         let copyFrom = async (label: string) => {
             await app.act(() => openContextMenu(row))
-            expect(menuItems()).toEqual(["Discard all changes", "Copy full path", "Copy relative path", "Copy file name"])
-            expect(document.querySelectorAll("[role=menu] [role=separator]")).toHaveLength(1)
+            expect(menuItems()).toEqual(["File history", "Discard all changes", "Copy full path", "Copy relative path", "Copy file name"])
+            expect(document.querySelectorAll("[role=menu] [role=separator]")).toHaveLength(2)
             await app.act(() => press(menuItem(label)))
             return navigator.clipboard.readText()
         }

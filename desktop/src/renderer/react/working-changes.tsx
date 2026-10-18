@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import type { BranchGraphMarker, ChangedFile, FileListView } from "@laneway/shared"
+import type { BranchGraphMarker, ChangedFile, DiffSource, FileHistorySource, FileListView } from "@laneway/shared"
 import { type ReactNode, useEffect, useState } from "react"
 import { Button as AriaButton, Form } from "react-aria-components"
 import type { ColumnView } from "./branch-workspace"
@@ -86,7 +86,7 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
             root={path}
             selectable
             staging={staging(group)}
-            menuItems={file => <DiscardItem columnId={column.id} group={group} file={file} inspection={inspection} />}
+            menuItems={file => discardItem(column.id, group, file, inspection)}
         />
     )
 
@@ -346,17 +346,22 @@ interface FileListProps {
     inspection: Inspection
     view: FileListView
     root?: string
-    /** Whether files can be chosen together for a bulk action. */
+    /** Whether files and diff lines can be chosen, to move or for a bulk action. */
     selectable?: boolean
     menuItems?(file: ChangedFile): ReactNode
     /** What an empty list says, such as "No changes in this stash". */
     empty?: string
     /** Files from the other Working Changes list land here to be staged or unstaged. */
     staging?: Landing
+    /** Whether diffs break out into the column's diff column; auxiliary columns have none. */
+    diffColumn?: boolean
 }
 
 /** One list of a column's files, with its reading and failure states and, once files are chosen, how many. */
-export function FileList({ columnId, group, label, files, inspected, inspection, view, root, selectable, menuItems, empty, staging }: FileListProps) {
+export function FileList(
+    { columnId, group, label, files, inspected, inspection, view, root, selectable = false, menuItems, empty, staging, diffColumn: breaksOut = true }:
+        FileListProps,
+) {
     let scope = useTransferScope()
     let { target, props } = useTransferTarget<HTMLDivElement>(scope?.composition, staging)
     if (!files)
@@ -368,7 +373,7 @@ export function FileList({ columnId, group, label, files, inspected, inspection,
     let inventory = files.inventory
     let source = inventory && transferSource(inventory.source, scope?.branch)
     // A grip moves its own files, or every chosen file when it holds one of them.
-    let leading = scope && inventory && source
+    let leading = selectable && scope && inventory && source
         ? (rowFiles: ChangedFile[], rowLabel: string) => {
             let isChosen = (file: ChangedFile) => selected.includes(`${group}:${file.path}`)
             let taken = rowFiles.some(isChosen) ? listed.filter(isChosen) : rowFiles
@@ -408,15 +413,29 @@ export function FileList({ columnId, group, label, files, inspected, inspection,
                     id={id}
                     diff={diff}
                     inspection={inspection}
-                    breakout={() => inspection.openDiffColumn(columnId, group, file.path)}
+                    breakout={breaksOut
+                        ? () => inspection.openDiffColumn(columnId, group, file.path)
+                        : undefined}
                 />
             )
         },
         diff: file => {
             let id = diffKey(group, file.path)
             let diff = inspected.diffs[id]
-            return diff && <DiffPanel columnId={columnId} id={id} diff={diff} inspection={inspection} eligible={group != "comparison"} />
+            return diff && <DiffPanel columnId={columnId} id={id} diff={diff} inspection={inspection} eligible={selectable && group != "comparison"} />
         },
+    }
+    // Every list but a comparison's opens a file's history from where the list was read.
+    let history = historySource(files.source)
+    let items = (file: ChangedFile) => {
+        let own = menuItems?.(file)
+        return (
+            <>
+                {history && <MenuItem onAction={() => inspection.openHistory(columnId, history, file.path)}>File history</MenuItem>}
+                {history && own && <Separator />}
+                {own}
+            </>
+        )
     }
     return (
         <div ref={target} {...props} className="change-file-list" data-group={group}>
@@ -440,7 +459,7 @@ export function FileList({ columnId, group, label, files, inspected, inspection,
                         : undefined}
                     root={root}
                     hideStagedBadge={working}
-                    menuItems={menuItems}
+                    menuItems={items}
                     leading={leading}
                     inspect={inspect}
                 />
@@ -456,9 +475,18 @@ export function FileList({ columnId, group, label, files, inspected, inspection,
 }
 
 /** Discard sits in the context menu only, so nothing on a row discards with one click. */
-function DiscardItem({ columnId, group, file, inspection }: { columnId: string; group: string; file: ChangedFile; inspection: Inspection }) {
+function discardItem(columnId: string, group: string, file: ChangedFile, inspection: Inspection) {
     let target = inspection.discardTarget(columnId, group, file)
-    return target ? <MenuItem onAction={() => void inspection.discard(columnId, group, file)}>{target.label}</MenuItem> : null
+    return target && <MenuItem onAction={() => void inspection.discard(columnId, group, file)}>{target.label}</MenuItem>
+}
+
+/** Where a list's file history reads from: a worktree's Working Changes or a commit. */
+function historySource(source: DiffSource): FileHistorySource | undefined {
+    if (source.kind == "working")
+        return { kind: "worktree", worktreePath: source.worktreePath }
+    if (source.kind == "commit")
+        return { kind: "commit", objectId: source.objectId }
+    return undefined
 }
 
 /** The layout and grouping of every file list; the choice applies to them all and is saved. */

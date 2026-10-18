@@ -79,7 +79,7 @@ test("React renderer styles and menus work under production CSP in the built app
                 accent: "#f5a733",
             },
             geometry: { header: 48, fileRow: 28, commitRow: 32, collapsedRepositoryRow: 36, repositoryRow: 40 },
-            contextMenu: { items: ["Discard changes", "Copy full path", "Copy relative path", "Copy file name"], atPointer: true },
+            contextMenu: { items: ["File history", "Discard changes", "Copy full path", "Copy relative path", "Copy file name"], atPointer: true },
             disabledCommit: { disabled: true, grey: true },
             settingsDialog: { tall: true, centred: true },
             diffColumn: { joined: true, headersAligned: true, focused: true, width: 620, split: true },

@@ -1,9 +1,10 @@
-import type { BranchGraph, BranchGraphBranchNode, BranchHistoryPage, ChangedFile, ChangesInventory, DiffSource, DiffView, FileDiffPage, FileImagePage } from "@laneway/shared"
+import type { BranchGraph, BranchGraphBranchNode, BranchHistoryPage, ChangedFile, ChangesInventory, DiffLayout, DiffSource, DiffView, FileDiffPage, FileHistoryEntry, FileHistoryPage, FileHistorySource, FileImagePage } from "@laneway/shared"
 import type { FileDiffLoadedChangedFiles } from "@pierre/diffs"
 import { type AuxiliaryColumn, AuxiliaryColumns } from "../src/auxiliary-columns"
 import { readDiffContext } from "../src/inspection/diff-context"
 import { createDiscards } from "../src/inspection/discard"
 import { createDiffSession, type FileDiffState } from "../src/inspection/inspection-diff-session"
+import { type BlameState, type CommitDiffState, createFileHistories, type FileHistoryState } from "./file-histories"
 import { type ImageDiffMode, readDiffImage, rememberImageMode } from "./image-files"
 import { errorMessage, type Notice } from "./notice"
 import { createStore, type Store } from "./store"
@@ -75,8 +76,47 @@ export interface DiffColumnView {
     entireFiles: boolean
 }
 
+/** What a File History or Commit Diff column shows its files with: a column state of its own. */
+interface HostedView {
+    /** The auxiliary column's ID. */
+    id: string
+    /** The column it was opened from: a Workspace Column or another auxiliary column. */
+    sourceId: string
+    width: number
+    /** The column state its files and diffs live in, which inspection calls take as their column. */
+    hostId: string
+    host: ColumnInspection
+    /** Its diffs' layout, which isn't saved. */
+    layout: DiffLayout
+    /** Lists whose files and lines can be chosen to move: Working Changes, and commits its Workspace Column's branch can compose while that branch stays where it was read. */
+    eligible: string[]
+}
+
+/** One file's history beside the column it was opened from; each entry unfolds to the file's diff in that commit. */
+export interface FileHistoryView extends HostedView {
+    kind: "history"
+    source: FileHistorySource
+    path: string
+    page?: FileHistoryPage
+    error?: string
+    loading: boolean
+    /** Entries showing their diff, by object ID, and `working` for a worktree's Working Changes. */
+    expanded: string[]
+    blame?: BlameState
+}
+
+/** A history entry's whole commit, with the files related to the history's file found on request. */
+export interface CommitDiffView extends HostedView {
+    kind: "commit"
+    entry: FileHistoryEntry
+    parentId?: string
+    related?: FileHistoryPage
+    error?: string
+    loading: boolean
+}
+
 /** A column opened beside a Workspace Column; it closes with that column and isn't kept across restarts. */
-export type AuxiliaryView = DiffColumnView
+export type AuxiliaryView = DiffColumnView | FileHistoryView | CommitDiffView
 
 export interface InspectionSnapshot {
     repositoryId?: string
@@ -138,6 +178,30 @@ export interface Inspection extends Store<InspectionSnapshot> {
     foldDiffs(id: string, paths: string[], folded: boolean): void
     /** Shows a diff column's files whole, or only around their changes, reading its diffs again. */
     toggleEntireFiles(id: string): void
+    /**
+     * Opens a file's history beside `fromId`: a Workspace Column, the column state of a File History or Commit Diff
+     * column, or a diff column. A history already open there for the same file takes focus instead.
+     */
+    openHistory(fromId: string, source: FileHistorySource, path: string): void
+    /** Unfolds a history entry to its file's diff, or its worktree's Working Changes without `objectId`, or folds it. */
+    toggleHistoryEntry(id: string, objectId?: string): void
+    /** Reads a history again after it failed, or its next page. */
+    readFileHistory(id: string, more?: boolean): void
+    /** Follows a copy origin for an entry Git couldn't follow, or none, reading the history again. */
+    chooseOrigin(id: string, objectId: string, previousPath?: string): void
+    /** Shows who last changed each line of an entry's file, or the next page of lines. */
+    blame(id: string, objectId: string, more?: boolean): void
+    closeBlame(id: string): void
+    /** Opens an entry's whole commit beside its history. */
+    openCommitDiff(id: string, objectId: string): void
+    /** Compares a merge commit's diff with another of its parents. */
+    chooseCommitParent(id: string, parentId: string): void
+    /** Finds files related to the history's file in a commit diff, or the next page of them. */
+    findRelated(id: string, more?: boolean): void
+    /** Lays out an auxiliary column's diffs, for the session only. */
+    setLayout(columnId: string, layout: DiffLayout): void
+    /** Follows a renamed branch in the histories read from it. */
+    renamed(oldRef: string, newRef: string): void
     /** Reads a diff again after it failed, or its next page. */
     readDiff(columnId: string, key: string, more?: boolean): void
     /** Shows a Working Changes diff's staged or unstaged side, or a conflict's side. */
@@ -177,6 +241,14 @@ interface ColumnState extends ColumnInspection {
     history: Record<string, History>
     session: ReturnType<typeof createDiffSession>
     diffColumn?: DiffColumnState
+    /** A branch column's branch. */
+    branchId?: string
+    /** For an auxiliary column's state, the Workspace Column it descends from, and its own auxiliary column. */
+    root?: ColumnState
+    auxiliaryId?: string
+    layout?: DiffLayout
+    /** The composition tips its lists were read against; files and lines can only be chosen while they hold. */
+    compositionKey?: string
 }
 
 interface DiffColumnState {
@@ -193,7 +265,19 @@ interface DiffColumnState {
     entireFiles: boolean
 }
 
-type AuxiliaryValue = DiffColumnState
+interface HistoryColumnState {
+    kind: "history"
+    history: FileHistoryState
+    host: ColumnState
+}
+
+interface CommitColumnState {
+    kind: "commit"
+    commit: CommitDiffState
+    host: ColumnState
+}
+
+type AuxiliaryValue = DiffColumnState | HistoryColumnState | CommitColumnState
 
 interface InspectionOptions {
     api: Api
@@ -206,16 +290,41 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
     let repositories = new Map<string, Map<string, ColumnState>>()
     let graphs = new Map<string, BranchGraph>()
     let auxiliaries = new Map<string, AuxiliaryColumns<AuxiliaryValue>>()
+    // Auxiliary columns' own column states, by repository.
+    let hosts = new Map<string, Map<string, ColumnState>>()
+    let hostSerial = 0
+    let historyHosts = new Map<FileHistoryState, ColumnState>()
     let activeId: string | undefined
     let focused: InspectionSnapshot["focused"]
     let discards = createDiscards({
         api,
         notify,
         changed: (repositoryId, worktreePath) => {
-            for (let state of repositories.get(repositoryId)?.values() ?? []) {
+            for (let state of allStates(repositoryId)) {
                 if (state.worktreePath == worktreePath)
                     void read(repositoryId, state, "working", { kind: "working", worktreePath }, true)
             }
+        },
+    })
+    let histories = createFileHistories({
+        api,
+        update: () => publish(),
+        composition: history => compositionTips(historyHosts.get(history)?.root),
+        // A moved history drops the commits it no longer shows, and anything chosen in them.
+        changed(history) {
+            let host = historyHosts.get(history)
+            if (!host)
+                return
+            host.compositionKey = JSON.stringify(compositionTips(host.root))
+            for (let group of Object.keys(host.files)) {
+                if (!group.startsWith("working") && !history.page?.entries.some(entry => entry.objectId == group)) {
+                    closeGroup(host, group)
+                    delete host.files[group]
+                }
+            }
+            host.selected = []
+            for (let diff of Object.values(host.diffs))
+                diff.selection = undefined
         },
     })
 
@@ -224,36 +333,96 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
         let tree = activeId ? auxiliaryFor(activeId) : undefined
         store.publish({
             repositoryId: activeId,
-            columns: Object.fromEntries(
-                [...columns?.values() ?? []].map(state => [state.id, {
-                    worktreePath: state.worktreePath,
-                    files: { ...state.files },
-                    selected: state.selected,
-                    showIgnored: state.showIgnored,
-                    history: { ...state.history },
-                    bases: { ...state.bases },
-                    diffs: { ...state.diffs },
-                    diffColumn: state.diffColumn && { group: state.diffColumn.group, focus: state.diffColumn.focus },
-                }]),
-            ),
+            columns: Object.fromEntries([...columns?.values() ?? []].map(state => [state.id, inspected(state)])),
             auxiliary: Object.fromEntries([...columns?.keys() ?? []].map(id => [id, tree?.descendants(id).map(auxiliaryView) ?? []])),
             focused,
         })
     }
 
-    function auxiliaryView(node: AuxiliaryColumn<AuxiliaryValue>): AuxiliaryView {
-        let column = node.value
+    function inspected(state: ColumnState): ColumnInspection {
         return {
-            kind: "diff",
-            id: node.id,
-            sourceId: node.sourceId,
-            width: node.width,
-            group: column.group,
-            subject: column.subject,
-            collapsed: [...column.collapsed],
-            focus: column.focus ? { path: column.focus, serial: column.serial } : undefined,
-            entireFiles: column.entireFiles,
+            worktreePath: state.worktreePath,
+            files: { ...state.files },
+            selected: state.selected,
+            showIgnored: state.showIgnored,
+            history: { ...state.history },
+            bases: { ...state.bases },
+            diffs: { ...state.diffs },
+            diffColumn: state.diffColumn && { group: state.diffColumn.group, focus: state.diffColumn.focus },
         }
+    }
+
+    function auxiliaryView(node: AuxiliaryColumn<AuxiliaryValue>): AuxiliaryView {
+        let value = node.value
+        let placed = { id: node.id, sourceId: node.sourceId, width: node.width }
+        if (value.kind == "diff") {
+            return {
+                kind: "diff",
+                ...placed,
+                group: value.group,
+                subject: value.subject,
+                collapsed: [...value.collapsed],
+                focus: value.focus ? { path: value.focus, serial: value.serial } : undefined,
+                entireFiles: value.entireFiles,
+            }
+        }
+        let { host } = value
+        let composable = value.kind == "history"
+            ? value.history.error ? [] : value.history.page?.entries.filter(entry => entry.composable).map(entry => entry.objectId) ?? []
+            : value.commit.entry.composable
+            ? [value.commit.entry.objectId]
+            : []
+        let fresh = host.compositionKey == JSON.stringify(compositionTips(host.root))
+        let hosted = { ...placed, hostId: host.id, host: inspected(host), layout: host.layout ?? "unified", eligible: ["working", ...fresh ? composable : []] }
+        if (value.kind == "history") {
+            let { history } = value
+            return {
+                kind: "history",
+                ...hosted,
+                source: history.source,
+                path: history.path,
+                page: history.page,
+                error: history.error,
+                loading: history.loading,
+                expanded: [...history.expanded],
+                blame: history.blame && { ...history.blame },
+            }
+        }
+        let { commit } = value
+        return {
+            kind: "commit",
+            ...hosted,
+            entry: commit.entry,
+            parentId: commit.parentId,
+            related: commit.related,
+            error: commit.error,
+            loading: commit.loading,
+        }
+    }
+
+    function hostsFor(repositoryId: string) {
+        let states = hosts.get(repositoryId)
+        if (!states) {
+            states = new Map()
+            hosts.set(repositoryId, states)
+        }
+        return states
+    }
+
+    function allStates(repositoryId: string) {
+        return [...repositories.get(repositoryId)?.values() ?? [], ...hostsFor(repositoryId).values()]
+    }
+
+    function alive(state: ColumnState) {
+        return (state.root ? hostsFor(state.repositoryId) : repositories.get(state.repositoryId))?.get(state.id) == state
+    }
+
+    // A history's commits can move onto its Workspace Column's branch while that branch and the primary branch stay put.
+    function compositionTips(root?: ColumnState) {
+        let graph = root && graphs.get(root.repositoryId)
+        let primary = graph?.branches.find(branch => branch.primary)
+        let branch = graph?.branches.find(candidate => candidate.id == root?.branchId)
+        return branch && !branch.remoteOnly && primary ? { tip: branch.tip, primaryTip: primary.tip } : undefined
     }
 
     // Each repository keeps its own auxiliary columns, rooted at its Workspace Columns.
@@ -284,12 +453,12 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
 
     // A column closed while its read was under way no longer shows anything.
     function publishFor(repositoryId: string, state: ColumnState) {
-        if (repositoryId == activeId && repositories.get(repositoryId)?.get(state.id) == state)
+        if (repositoryId == activeId && alive(state))
             publish()
     }
 
     function columnState(columnId: string) {
-        return activeId ? repositories.get(activeId)?.get(columnId) : undefined
+        return activeId ? repositories.get(activeId)?.get(columnId) ?? hostsFor(activeId).get(columnId) : undefined
     }
 
     function requestId(state: ColumnState, group: string) {
@@ -300,11 +469,12 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
         return `inspection:${state.id}:diff:${diffKey(diff.group, diff.path)}`
     }
 
-    function createState(repositoryId: string, id: string, worktreePath?: string): ColumnState {
+    function createState(repositoryId: string, id: string, worktreePath?: string, root?: ColumnState): ColumnState {
         let state: ColumnState = {
             id,
             repositoryId,
             worktreePath,
+            root,
             files: {},
             selected: [],
             showIgnored: false,
@@ -315,14 +485,24 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             session: createDiffSession({
                 api,
                 repositoryId,
-                alive: () => repositories.get(repositoryId)?.get(id) == state,
+                alive: () => alive(state),
                 requestId: diff => diffRequestId(state, diff),
                 update: () => publishFor(repositoryId, state),
                 settled: () => {},
             }),
         }
-        auxiliaryFor(repositoryId).addRoot(id)
+        if (!root)
+            auxiliaryFor(repositoryId).addRoot(id)
         return state
+    }
+
+    // An auxiliary column's state shows its files with the Workspace Column's scopes, its diffs unified to start.
+    function createHost(root: ColumnState, worktreePath?: string) {
+        let host = createState(root.repositoryId, `auxiliary-host:${++hostSerial}`, worktreePath, root)
+        host.layout = "unified"
+        host.compositionKey = JSON.stringify(compositionTips(root))
+        hostsFor(root.repositoryId).set(host.id, host)
+        return host
     }
 
     // A closed column cancels its reads and closes the auxiliary columns opened from it.
@@ -330,7 +510,29 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
         states.delete(state.id)
         for (let group of Object.keys(state.files))
             void api.cancelInspection(state.repositoryId, requestId(state, group))
-        auxiliaryFor(state.repositoryId).close(state.id)
+        for (let diff of Object.values(state.diffs))
+            closeDiff(state, diff)
+        if (!state.root)
+            auxiliaryFor(state.repositoryId).close(state.id)
+    }
+
+    /** Where a column opened from `fromId` attaches, and the state whose files it came from. */
+    function attachment(fromId: string) {
+        let state = columnState(fromId)
+        if (state)
+            return { owner: state, sourceId: state.auxiliaryId ?? state.id }
+        let value = auxiliaryNode(fromId)?.node.value
+        return value?.kind == "diff" ? { owner: value.owner, sourceId: fromId } : undefined
+    }
+
+    function historyColumn(id: string) {
+        let value = auxiliaryNode(id)?.node.value
+        return value?.kind == "history" ? value : undefined
+    }
+
+    function commitColumn(id: string) {
+        let found = auxiliaryNode(id)
+        return found?.node.value.kind == "commit" ? { ...found, value: found.node.value } : undefined
     }
 
     // A diff reads its list's source at the version the list was read at, so it can't show newer lines than the list.
@@ -444,10 +646,24 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
                 closeDiff(state, diff)
         }
         // The diffs left open under their rows go back to showing only the lines around their changes.
-        if (column.entireFiles && !replaced && repositories.get(state.repositoryId)?.get(state.id) == state) {
+        if (column.entireFiles && !replaced && alive(state)) {
             for (let diff of Object.values(state.diffs))
                 rereadDiff(state, diff)
         }
+    }
+
+    function toggleDiffIn(state: ColumnState, group: string, path: string) {
+        let open = state.diffs[diffKey(group, path)]
+        if (open) {
+            closeDiff(state, open)
+            return publish()
+        }
+        let diff = state.session.create(group, path, diffInput(state, group))
+        state.diffs[diffKey(group, path)] = diff
+        if (diff.page)
+            publish()
+        else
+            void state.session.read(diff, diffInput(state, group))
     }
 
     function commitSubject(state: ColumnState, objectId: string) {
@@ -624,6 +840,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
                     if (state)
                         dispose(states, state)
                     state = createState(repositoryId, column.id, worktreePath)
+                    state.branchId = column.branch?.id
                     states.set(column.id, state)
                     changed = true
                     void readWorkingFor(repositoryId, state, false)
@@ -631,6 +848,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
                         void readHistory(repositoryId, state, column.branch)
                     continue
                 }
+                state.branchId = column.branch?.id
                 // A moved branch, base, or remote tip shows different commits.
                 for (let [branchId, current] of Object.entries(state.history)) {
                     let branch = graph.branches.find(candidate => candidate.id == branchId)
@@ -649,8 +867,9 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
         refreshWorking() {
             if (!activeId)
                 return
-            for (let state of repositories.get(activeId)?.values() ?? [])
+            for (let state of allStates(activeId))
                 void readWorkingFor(activeId, state, true)
+            histories.refresh(activeId)
         },
 
         async readWorking(columnId, quiet = false) {
@@ -743,7 +962,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
         },
 
         rewritten() {
-            for (let state of activeId ? repositories.get(activeId)?.values() ?? [] : []) {
+            for (let state of activeId ? allStates(activeId) : []) {
                 state.selected = []
                 for (let diff of Object.values(state.diffs))
                     diff.selection = undefined
@@ -757,17 +976,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
                 return
             if (state.diffColumn)
                 return void showDiffColumn(state, group, path, undefined, false)
-            let open = state.diffs[diffKey(group, path)]
-            if (open) {
-                closeDiff(state, open)
-                return publish()
-            }
-            let diff = state.session.create(group, path, diffInput(state, group))
-            state.diffs[diffKey(group, path)] = diff
-            if (diff.page)
-                publish()
-            else
-                void state.session.read(diff, diffInput(state, group))
+            toggleDiffIn(state, group, path)
         },
 
         closeDiffs(columnId, group, paths) {
@@ -822,7 +1031,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
 
         foldDiffs(id, paths, folded) {
             let column = auxiliaryNode(id)?.node.value
-            if (!column)
+            if (column?.kind != "diff")
                 return
             for (let path of paths) {
                 if (folded)
@@ -835,12 +1044,153 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
 
         toggleEntireFiles(id) {
             let column = auxiliaryNode(id)?.node.value
-            if (!column)
+            if (column?.kind != "diff")
                 return
             column.entireFiles = !column.entireFiles
             for (let diff of Object.values(column.owner.diffs))
                 rereadDiff(column.owner, diff)
             publish()
+        },
+
+        openHistory(fromId, source, path) {
+            let attached = attachment(fromId)
+            if (!attached)
+                return
+            let root = attached.owner.root ?? attached.owner
+            let node = auxiliaryFor(root.repositoryId).open(attached.sourceId, JSON.stringify(["history", source, path]), () => {
+                let history = histories.history(root.repositoryId, source, path)
+                let host = createHost(root, source.kind == "worktree" ? source.worktreePath : undefined)
+                historyHosts.set(history, host)
+                queueMicrotask(() => void histories.read(history))
+                return {
+                    value: { kind: "history", history, host },
+                    dispose() {
+                        histories.dispose(history)
+                        historyHosts.delete(history)
+                        dispose(hostsFor(root.repositoryId), host)
+                    },
+                }
+            })
+            if (node.value.kind == "history")
+                node.value.host.auxiliaryId = node.id
+            focusAuxiliary(node.id)
+            publish()
+        },
+
+        toggleHistoryEntry(id, objectId) {
+            let column = historyColumn(id)
+            if (!column)
+                return
+            let { history, host } = column
+            let group = objectId ?? "working"
+            if (history.expanded.delete(group)) {
+                closeGroup(host, group)
+                return publish()
+            }
+            let entry = history.page?.entries.find(candidate => candidate.objectId == objectId)
+            let source: DiffSource | undefined = entry
+                ? { kind: "commit", objectId: entry.objectId, parentId: entry.followedParent }
+                : !objectId && host.worktreePath
+                ? { kind: "working", worktreePath: host.worktreePath }
+                : undefined
+            if (!source)
+                return
+            history.expanded.add(group)
+            // An entry shows its file's diff in that commit straight away.
+            void read(host.repositoryId, host, group, source).then(() => {
+                let file = entry && host.files[group]?.inventory?.files.find(candidate => candidate.path == entry.path)
+                if (file && alive(host) && history.expanded.has(group) && !host.diffs[diffKey(group, file.path)])
+                    toggleDiffIn(host, group, file.path)
+            })
+        },
+
+        readFileHistory(id, more = false) {
+            let column = historyColumn(id)
+            if (column)
+                void histories.read(column.history, more)
+        },
+
+        chooseOrigin(id, objectId, previousPath) {
+            let column = historyColumn(id)
+            let entry = column?.history.page?.entries.find(candidate => candidate.objectId == objectId)
+            if (column && entry)
+                histories.chooseOrigin(column.history, entry, previousPath)
+        },
+
+        blame(id, objectId, more = false) {
+            let column = historyColumn(id)
+            let entry = more ? column?.history.blame?.entry : column?.history.page?.entries.find(candidate => candidate.objectId == objectId)
+            if (column && entry)
+                void histories.blame(column.history, entry, more)
+        },
+
+        closeBlame(id) {
+            let column = historyColumn(id)
+            if (column) {
+                column.history.blame = undefined
+                publish()
+            }
+        },
+
+        openCommitDiff(id, objectId) {
+            let found = auxiliaryNode(id)
+            let column = found?.node.value
+            let entry = column?.kind == "history" ? column.history.page?.entries.find(candidate => candidate.objectId == objectId) : undefined
+            if (!found || column?.kind != "history" || !entry)
+                return
+            let root = column.host.root!
+            let node = found.tree.open(id, JSON.stringify(["commit", entry.objectId, entry.followedParent]), () => {
+                let commit = histories.commit(root.repositoryId, entry)
+                let host = createHost(root)
+                void read(root.repositoryId, host, entry.objectId, { kind: "commit", objectId: entry.objectId, parentId: entry.followedParent })
+                return {
+                    value: { kind: "commit", commit, host },
+                    dispose() {
+                        histories.dispose(commit)
+                        dispose(hostsFor(root.repositoryId), host)
+                    },
+                }
+            })
+            if (node.value.kind == "commit")
+                node.value.host.auxiliaryId = node.id
+            focusAuxiliary(node.id)
+            publish()
+        },
+
+        chooseCommitParent(id, parentId) {
+            let found = commitColumn(id)
+            if (!found)
+                return
+            let { commit, host } = found.value
+            // Columns opened from its related files belong to the old comparison.
+            for (let child of found.tree.descendants(id).filter(candidate => candidate.sourceId == id))
+                found.tree.close(child.id)
+            histories.cancel(commit)
+            commit.parentId = parentId
+            commit.related = undefined
+            commit.error = undefined
+            closeGroup(host, commit.entry.objectId)
+            host.selected = []
+            void read(host.repositoryId, host, commit.entry.objectId, { kind: "commit", objectId: commit.entry.objectId, parentId })
+        },
+
+        findRelated(id, more = false) {
+            let found = commitColumn(id)
+            if (found)
+                void histories.related(found.value.commit, more)
+        },
+
+        setLayout(columnId, layout) {
+            let state = columnState(columnId)
+            if (state?.root) {
+                state.layout = layout
+                publish()
+            }
+        },
+
+        renamed(oldRef, newRef) {
+            if (activeId)
+                histories.renamed(activeId, oldRef, newRef)
         },
 
         readDiff(columnId, key, more = false) {

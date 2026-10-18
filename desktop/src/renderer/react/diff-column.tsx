@@ -9,6 +9,7 @@ import { CopyPathButton, FileLabel, FileMenuItems } from "./file-tree"
 import { ChevronDownIcon, CloseIcon, CollapseAllIcon, ExpandAllIcon, FileStatusIcon, MaximizeIcon, RestoreIcon } from "./icons"
 import { type ColumnInspection, type DiffColumnView, diffKey, type FileDiffState, type Inspection } from "./inspection"
 import { ChevronRight } from "./ui/icons"
+import { MenuItem } from "./ui/Menu"
 
 interface DiffColumnProps {
     view: DiffColumnView
@@ -120,7 +121,23 @@ function DiffColumnFile({ view, file, id, diff, inspection, root, onFold }: {
     onFold(folded: boolean): void
 }) {
     let collapsed = view.collapsed.includes(file.path)
-    let menu = { label: `Actions for ${file.path}`, items: () => <FileMenuItems file={file} root={root} /> }
+    // The file's history reads from where the list was read: its worktree or its commit.
+    let source = diff.page?.source
+    let history = source?.kind == "working"
+        ? { kind: "worktree" as const, worktreePath: source.worktreePath }
+        : source?.kind == "commit"
+        ? { kind: "commit" as const, objectId: source.objectId }
+        : undefined
+    let menu = {
+        label: `Actions for ${file.path}`,
+        items: () => (
+            <FileMenuItems
+                file={file}
+                root={root}
+                items={history && (() => <MenuItem onAction={() => inspection.openHistory(view.id, history, file.path)}>File history</MenuItem>)}
+            />
+        ),
+    }
     let { row, openMenu } = useRowMenu<HTMLElement>(menu)
     return (
         <div className="diff-column-file" data-diff-path={file.path}>

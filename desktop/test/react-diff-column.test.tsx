@@ -27,7 +27,8 @@ describe("React diff column", () => {
         for (let opening = 0; opening < 2; opening++) {
             await app.act(() => press(button(row, "Break out diff")))
             expect(order()).toEqual(["column", "column-divider", "auxiliary-column", "column-divider", "column", "column-divider"])
-            expect(columns()).toEqual([source!, next!])
+            // Elements compare as booleans; a failed comparison of two elements would serialize the whole document.
+            expect(columns()[0] == source && columns()[1] == next).toBe(true)
             expect(source!.classList.contains("attached")).toBe(true)
             await app.act(() => press(button(diffColumn()!, "Close diff column")))
             expect(order()).toEqual(["column", "column-divider", "column", "column-divider"])
@@ -96,12 +97,10 @@ describe("React diff column", () => {
         expect(files.scrollTop).toBe(300)
 
         // Closing it gives back the diffs that were open under their rows, and the source column takes focus.
-        await app.act(async () => {
-            press(button(column, "Close diff column"))
-            await new Promise(resolve => requestAnimationFrame(resolve))
-        })
+        await app.act(() => press(button(column, "Close diff column")))
+        await app.act(frame)
         expect(diffColumn()).toBeNull()
-        expect(document.activeElement).toBe(columns()[0]!)
+        expect(document.activeElement == columns()[0]).toBe(true)
         expect(first!.querySelector(".diff-panel")).not.toBeNull()
         await settle(app)
         expect(diffRoot(second!).querySelectorAll(".diff-line.selected")).toHaveLength(1)
@@ -127,8 +126,9 @@ describe("React diff column", () => {
         await app.act(() => press(button(staged!, "Side by side")))
 
         await app.act(() => press(button(workingChanges(), "Open diff column")))
+        await app.act(frame)
         let column = diffColumn()!
-        expect(document.activeElement).toBe(column)
+        expect(document.activeElement == column).toBe(true)
         expect(column.querySelector("header")!.textContent).toContain("Staged · ")
         expect(column.querySelector(".auxiliary-source")!.textContent).toBe("From inspection")
         expect(column.dataset.sourceColumnId).toBe(columns()[0]!.dataset.columnId)
@@ -136,8 +136,9 @@ describe("React diff column", () => {
         let auxiliaryId = column.dataset.auxiliaryId
         columns()[0]!.focus()
         await app.act(() => press(button(workingChanges(), "Open diff column")))
+        await app.act(frame)
         expect(document.querySelectorAll(".diff-column")).toHaveLength(1)
-        expect(document.activeElement).toBe(column)
+        expect(document.activeElement == column).toBe(true)
 
         await app.act(() => press(button(column, "Collapse all")))
         await app.act(() => openRow(staged!))
@@ -310,6 +311,11 @@ function commitFileRows() {
 // Pressing the file's name presses its row, which opens its diff, or shows it in the diff column.
 function openRow(row: HTMLElement) {
     press(row.querySelector<HTMLElement>(".file-path")!)
+}
+
+// Focus moves to a column that opens on the next frame, after any menu that opened it has returned focus.
+function frame() {
+    return new Promise(resolve => requestAnimationFrame(resolve))
 }
 
 // Pierre draws once its highlighter has loaded, which takes a moment the first time.

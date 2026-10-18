@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import type { BranchGraph, FileListView, WorktreeRecovery, WorktreeRequest } from "@laneway/shared"
 import clsx from "clsx"
-import { type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, useEffect, useLayoutEffect, useMemo, useRef } from "react"
+import { type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, useEffect, useMemo, useRef } from "react"
 import { defaultAuxiliaryColumnWidth } from "../src/auxiliary-columns"
 import { workspaceGraph } from "../src/worktrees/worktree-columns"
 import type { AppController } from "./app-controller"
@@ -9,6 +9,7 @@ import { type BranchWorkspace, type ColumnsSnapshot, type ColumnView, defaultCol
 import { ColumnBody, columnRoot, ColumnScopes } from "./column-body"
 import { IconButton } from "./controls"
 import { DiffColumn, minimumDiffColumnWidth } from "./diff-column"
+import { CommitDiffColumn, FileHistoryColumn } from "./file-history"
 import { BranchIcon, CloseIcon, CollapseColumnIcon, CompareIcon, ExpandColumnIcon, FolderIcon, MaximizeIcon, RestoreIcon, WarningIcon } from "./icons"
 import type { AuxiliaryView, InspectionSnapshot } from "./inspection"
 import { Button } from "./ui/Button"
@@ -132,6 +133,7 @@ export function WorkspaceColumns({ controller, fileListView }: { controller: App
                                 inspected={current}
                                 graph={graph!}
                                 controller={controller}
+                                fileListView={fileListView}
                                 maximized={snapshot.maximizedId == column.id}
                             />,
                             !(snapshot.maximizedId && last) && (
@@ -139,7 +141,7 @@ export function WorkspaceColumns({ controller, fileListView }: { controller: App
                                     key={`${view.id}:divider`}
                                     label="Resize auxiliary column"
                                     width={view.width}
-                                    minimum={minimumDiffColumnWidth}
+                                    minimum={view.kind == "diff" ? minimumDiffColumnWidth : minimumColumnWidth}
                                     defaultWidth={defaultAuxiliaryColumnWidth}
                                     attached={!last}
                                     onResize={width => controller.inspection.resizeAuxiliary(view.id, width)}
@@ -339,28 +341,53 @@ export function ColumnTabs({ columns }: { columns: BranchWorkspace }) {
     )
 }
 
-/** An auxiliary column beside its source column, sharing the source column's scopes. */
-function AuxiliaryFrame({ view, column, inspected, graph, controller, maximized }: {
+/** An auxiliary column beside the Workspace Column it descends from, sharing that column's scopes. */
+function AuxiliaryFrame({ view, column, inspected, graph, controller, fileListView, maximized }: {
     view: AuxiliaryView
     column: ColumnView
     inspected?: InspectionSnapshot
     graph: BranchGraph
     controller: AppController
+    fileListView: FileListView
     maximized: boolean
 }) {
+    let stacked = column.worktree != undefined && column.kind != "recovery"
+    let root = columnRoot(column)
+    let { inspection } = controller
+    // Closing it returns focus to the column it was opened from.
+    let returnFocus = () =>
+        requestAnimationFrame(() => {
+            let source = document.querySelector<HTMLElement>(`[data-auxiliary-id="${view.sourceId}"]`) ?? columnElement(view.sourceId)
+            source?.focus({ preventScroll: true })
+        })
     return (
         <ColumnScopes controller={controller} repositoryId={inspected?.repositoryId ?? ""} graph={graph} column={column}>
-            <DiffColumn
-                view={view}
-                sourceName={column.name}
-                stacked={column.worktree != undefined && column.kind != "recovery"}
-                inspected={inspected?.columns[column.id]}
-                inspection={controller.inspection}
-                root={columnRoot(column)}
-                maximized={maximized}
-                onMaximize={() => controller.columns.toggleMaximized(column.id)}
-                onClose={() => requestAnimationFrame(() => columnElement(column.id)?.focus({ preventScroll: true }))}
-            />
+            {view.kind == "diff"
+                ? (
+                    <DiffColumn
+                        view={view}
+                        sourceName={column.name}
+                        stacked={stacked}
+                        inspected={inspected?.columns[column.id]}
+                        inspection={inspection}
+                        root={root}
+                        maximized={maximized}
+                        onMaximize={() => controller.columns.toggleMaximized(column.id)}
+                        onClose={returnFocus}
+                    />
+                )
+                : view.kind == "history"
+                ? (
+                    <FileHistoryColumn
+                        history={view}
+                        inspection={inspection}
+                        view={fileListView}
+                        root={view.source.kind == "worktree" ? view.source.worktreePath : root}
+                        stacked={stacked}
+                        onClose={returnFocus}
+                    />
+                )
+                : <CommitDiffColumn commit={view} inspection={inspection} view={fileListView} root={root} stacked={stacked} onClose={returnFocus} />}
         </ColumnScopes>
     )
 }
@@ -470,14 +497,18 @@ function useReveal(revealed?: { id: string; serial: number }) {
     }, [revealed])
 }
 
-// An auxiliary column that opens, or is asked for again, takes focus once it shows.
+// An auxiliary column that opens, or is asked for again, takes focus once it shows, after any menu that opened it
+// has returned focus to its trigger.
 function useAuxiliaryFocus(focused?: { id: string; serial: number }) {
-    useLayoutEffect(() => {
+    useEffect(() => {
         if (!focused)
             return
-        let element = document.querySelector<HTMLElement>(`[data-auxiliary-id="${focused.id}"]`)
-        element?.focus({ preventScroll: true })
-        element?.scrollIntoView({ behavior: "instant", block: "nearest", inline: "nearest" })
+        let frame = requestAnimationFrame(() => {
+            let element = document.querySelector<HTMLElement>(`[data-auxiliary-id="${focused.id}"]`)
+            element?.focus({ preventScroll: true })
+            element?.scrollIntoView({ behavior: "instant", block: "nearest", inline: "nearest" })
+        })
+        return () => cancelAnimationFrame(frame)
     }, [focused])
 }
 

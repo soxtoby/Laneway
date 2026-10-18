@@ -160,8 +160,10 @@ export function createAppController(api: Api): AppController {
         api,
         mutating: busy => columns.mutating(busy),
         completed: async (_repositoryId, request) => {
-            if (request.action == "branch-rename")
+            if (request.action == "branch-rename") {
                 columns.renamed(`refs/heads/${request.name}`, `refs/heads/${request.newName}`)
+                inspection.renamed(`refs/heads/${request.name}`, `refs/heads/${request.newName}`)
+            }
             await columns.refresh(false)
             if (request.action == "branch-create")
                 columns.open(`branch:refs/heads/${request.name}`)
