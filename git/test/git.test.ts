@@ -169,6 +169,9 @@ describe("system Git", () => {
     test("infers ordinary clone directory names", () => {
         expect(inferCloneDirectoryName("https://example.test/org/repo.git")).toBe("repo")
         expect(inferCloneDirectoryName("git@example.test:org/repo.git")).toBe("repo")
+        expect(inferCloneDirectoryName("D:\\Source\\repo")).toBe("repo")
+        expect(inferCloneDirectoryName("C:\\Users\\developer\\repo.git\\")).toBe("repo")
+        expect(inferCloneDirectoryName("D:/Source/repo")).toBe("repo")
     })
 
     test("recognizes text that could be a clone source", () => {

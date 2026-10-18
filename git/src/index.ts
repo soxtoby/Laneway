@@ -304,7 +304,8 @@ export function isLikelyCloneSource(text: string) {
 
 export function inferCloneDirectoryName(source: string) {
     let withoutQuery = source.trim().replace(/[?#].*$/, "").replace(/[\\/]+$/, "")
-    let tail = withoutQuery.slice(Math.max(withoutQuery.lastIndexOf("/"), withoutQuery.lastIndexOf(":")) + 1)
+    // Local Windows paths separate with backslashes; URLs and scp-style sources with slashes and colons.
+    let tail = withoutQuery.slice(Math.max(withoutQuery.lastIndexOf("/"), withoutQuery.lastIndexOf("\\"), withoutQuery.lastIndexOf(":")) + 1)
     let name = tail.replace(/\.git$/i, "")
     return name || "repository"
 }

@@ -3,7 +3,7 @@ import { defaultSettingsPath, readSettings, SettingsError, WorkspaceStateError, 
 import type { Appearance, AuthorIdentitySettings, BranchGraph, BranchGraphReadOptions, BranchHistoryPage, BranchHistoryRequest, ChangesRequest, EntryError, FileDiffRequest, FileImageRequest, FileListView, GitSettingsState, RepositoryGraphSettings, RepositoryInfo } from "@laneway/shared"
 import type { FileHistoryRequest } from "@laneway/shared"
 import { defaultFileListView } from "@laneway/shared"
-import { resolve } from "node:path"
+import { basename, dirname, resolve } from "node:path"
 import { watchRepository } from "./repository-watcher"
 
 export class OpenRepositories {
@@ -221,16 +221,18 @@ export class OpenRepositories {
     }
 
     async initialize(parent: string, name: string, initialBranch?: string, id?: string) {
+        let path = entryDirectory(parent, name)
         let settings = await readSettings(this.settingsPath)
-        return this.add(await initializeRepository({ path: resolve(parent, name), initialBranch, git: await this.git(settings.gitPath) }), id)
+        return this.add(await initializeRepository({ path, initialBranch, git: await this.git(settings.gitPath) }), id)
     }
 
     async startClone(
         options: { source: string; parent: string; name: string; onProgress?: (message: string) => void; id?: string },
     ): Promise<GitTask<RepositoryInfo>> {
-        let settings = await readSettings(this.settingsPath)
         let { parent, name, ...clone } = options
-        let task = await startCloneRepository({ ...clone, destination: resolve(parent, name), git: await this.git(settings.gitPath) })
+        let destination = entryDirectory(parent, name)
+        let settings = await readSettings(this.settingsPath)
+        let task = await startCloneRepository({ ...clone, destination, git: await this.git(settings.gitPath) })
 
         return {
             cancel: task.cancel,
@@ -331,6 +333,14 @@ export class OpenRepositories {
 
         return result!
     }
+}
+
+/** A new repository's directory, which must be a single folder directly inside the chosen parent. */
+export function entryDirectory(parent: string, name: string) {
+    let directory = resolve(parent, name)
+    if (dirname(directory) != resolve(parent) || basename(directory) != name)
+        throw new GitError("git.command-failed", `Enter a directory name rather than a path: ${name}`)
+    return directory
 }
 
 export function entryError(error: unknown): EntryError {

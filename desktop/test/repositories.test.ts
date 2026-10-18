@@ -1,10 +1,11 @@
 import { selectGit } from "@laneway/git"
 import { readSettings } from "@laneway/settings"
 import { afterEach, describe, expect, test } from "bun:test"
+import { existsSync } from "node:fs"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { resolve } from "node:path"
-import { OpenRepositories } from "../src/main/repositories"
+import { entryDirectory, OpenRepositories } from "../src/main/repositories"
 
 let temporaryDirectories: string[] = []
 
@@ -116,6 +117,17 @@ describe("open repositories", () => {
             repositories: { [repositoryId]: { selectedRemote: "origin", remotePatterns: ["origin/release/**"] } },
         })
         expect(new OpenRepositories(settingsPath).list()).toEqual([])
+    })
+
+    test("creates a new repository only directly inside the chosen parent", async () => {
+        let parent = resolve(await temporaryDirectory("laneway-entry-parent-"), "parent")
+        let settingsPath = resolve(await temporaryDirectory("laneway-entry-settings-"), "settings.json")
+
+        expect(entryDirectory(parent, "project")).toBe(resolve(parent, "project"))
+        for (let name of ["..\\outside", "../outside", "\\outside", "nested\\project", "nested/project", ".", "..", "C:outside"])
+            expect(() => entryDirectory(parent, name), name).toThrow("Enter a directory name rather than a path")
+        await expect(new OpenRepositories(settingsPath).initialize(parent, "../outside")).rejects.toMatchObject({ code: "git.command-failed" })
+        expect(existsSync(resolve(parent, "../outside"))).toBe(false)
     })
 })
 
