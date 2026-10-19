@@ -41,7 +41,7 @@ Desired behavior for SOX-140, settled through the design interview. Implementati
 ## Implementation notes
 
 - The shared `compose` request uses the existing local preview/execution IPC and operation journal. Large selections travel through request files, avoiding Windows command-line limits.
-- Drag grips use Atlassian Pragmatic Drag and Drop. M/C selects move/copy, arrow keys choose a visible destination, Enter confirms, and Escape cancels. New-commit messages and conflict approval stay inline.
+- Drag grips use Atlassian Pragmatic Drag and Drop. M/C anywhere in a grip's row selects move/copy, since a list's arrow keys never reach the grip; the grip and its row stay marked while a destination is chosen. Arrow keys choose a visible destination, Enter confirms, and Escape cancels. New-commit messages and conflict approval stay inline.
 - Branch Graph rows stay native drag sources, which column headers accept for checkout, and are also native drop targets for rebasing. M or the context menu's **Rebase onto…** chooses the destination by arrows and Enter, or by clicking a row; Escape cancels. The engine bounds a branch rebase by the dragged branch's Base, rejecting candidates that would disagree, and accepts a remote-tracking destination.
 - Pointer drops on a commit row are positional: near its top or bottom edge inserts beside the commit, and the middle lands on it. Seams stay collapsed while dragging, so starting a drag never shifts the layout; they expand only under keyboard focus.
 - Commit hooks run against isolated proposed checkouts with repository configuration and filters. Hook/signing failures leave source refs and files untouched; hook-modified content is retained in the checkout named by the error for review and retry.

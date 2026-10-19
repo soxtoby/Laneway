@@ -1,4 +1,5 @@
 import { useId } from "react"
+import { Hint } from "./controls"
 import type { GitSettings } from "./git-settings"
 import { Button } from "./ui/Button"
 import { Dialog, Heading } from "./ui/Dialog"
@@ -68,7 +69,9 @@ function Fact({ label, value }: { label: string; value: string }) {
     return (
         <div className="settings-fact">
             <dt>{label}</dt>
-            <dd title={value}>{value}</dd>
+            <Hint text={value}>
+                <dd>{value}</dd>
+            </Hint>
         </div>
     )
 }

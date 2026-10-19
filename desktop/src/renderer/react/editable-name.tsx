@@ -1,6 +1,7 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from "react"
 import { Button as AriaButton } from "react-aria-components"
 import { errorMessage } from "./notice"
+import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 
 interface EditableNameProps {
     name: string
@@ -99,25 +100,27 @@ export function EditableName({ name, label, isDisabled, onCommit, saveOnBlur }: 
             </span>
         )
     }
-    // React Aria's Button leaves out `title`, so the hint sits on its wrapper.
     return (
-        <span className="editable-name" title={isDisabled ? undefined : "Click or press F2 to rename"}>
-            <AriaButton
-                className="editable-name-button"
-                aria-label={`Rename ${label}`}
-                isDisabled={isDisabled}
-                onPress={start}
-                onKeyDown={event => {
-                    if (event.key == "F2") {
-                        event.preventDefault()
-                        start()
-                    } else {
-                        event.continuePropagation()
-                    }
-                }}
-            >
-                {name}
-            </AriaButton>
+        <span className="editable-name">
+            <TooltipTrigger isDisabled={isDisabled}>
+                <AriaButton
+                    className="editable-name-button"
+                    aria-label={`Rename ${label}`}
+                    isDisabled={isDisabled}
+                    onPress={start}
+                    onKeyDown={event => {
+                        if (event.key == "F2") {
+                            event.preventDefault()
+                            start()
+                        } else {
+                            event.continuePropagation()
+                        }
+                    }}
+                >
+                    {name}
+                </AriaButton>
+                <Tooltip>Click or press F2 to rename</Tooltip>
+            </TooltipTrigger>
         </span>
     )
 }

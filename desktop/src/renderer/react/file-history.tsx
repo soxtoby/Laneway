@@ -2,7 +2,7 @@ import type { FileHistoryEntry, FileHistorySource, FileListView } from "@laneway
 import clsx from "clsx"
 import type { ReactNode } from "react"
 import { Button as AriaButton } from "react-aria-components"
-import { IconButton, MoreMenu } from "./controls"
+import { Hint, IconButton, MoreMenu } from "./controls"
 import { useRowMenu } from "./dense-row"
 import { DiffControls, DiffPanel, DiffScopeContext } from "./diff-panel"
 import { CloseIcon, FileStatusIcon } from "./icons"
@@ -123,7 +123,7 @@ function HistoryEntry({ history, entry, inspection }: { history: FileHistoryView
     let title = `${entry.subject}\n${entry.objectId} · ${entry.authorName}\n${entry.previousPath ? `${entry.previousPath} → ` : ""}${entry.path}`
     return (
         <section className="history-entry" data-expanded={expanded || undefined}>
-            <div ref={row} className="history-row" title={title} onContextMenu={openMenu}>
+            <div ref={row} className="history-row" onContextMenu={openMenu}>
                 {/* A commit the column's branch can compose moves its change to this file. */}
                 {eligible && scope && source && (
                     <TransferGrip
@@ -142,7 +142,9 @@ function HistoryEntry({ history, entry, inspection }: { history: FileHistoryView
                 <AriaButton className="history-toggle" aria-expanded={expanded} onPress={() => inspection.toggleHistoryEntry(history.id, entry.objectId)}>
                     <ChevronRight className="toggle-chevron" />
                     <FileStatusIcon status={statusName(entry.status)} />
-                    <span className="history-subject">{entry.subject}</span>
+                    <Hint text={title}>
+                        <span className="history-subject">{entry.subject}</span>
+                    </Hint>
                 </AriaButton>
                 {expanded && diff && <DiffControls columnId={history.hostId} id={id} diff={diff} inspection={inspection} />}
                 <span className="row-actions" data-visible={expanded || undefined}>
@@ -197,7 +199,9 @@ function Blame({ history, inspection }: { history: FileHistoryView; inspection: 
                             aria-label={`Open origin of line ${line.line}`}
                             onPress={() => inspection.openHistory(history.hostId, { kind: "commit", objectId: line.objectId }, line.path)}
                         >
-                            <span title={`Open origin · ${line.author} · ${line.path}:${line.originalLine}`}>{line.objectId.slice(0, 8)}:{line.line}</span>
+                            <Hint text={`Open origin · ${line.author} · ${line.path}:${line.originalLine}`}>
+                                <span>{line.objectId.slice(0, 8)}:{line.line}</span>
+                            </Hint>
                         </AriaButton>
                         <code>{line.text}</code>
                     </div>
@@ -269,7 +273,9 @@ export function CommitDiffColumn({ commit, inspection, view, root, stacked, onCl
                         className="related-file"
                         onPress={() => inspection.openHistory(commit.hostId, { kind: "commit", objectId: file.objectId }, file.path)}
                     >
-                        <span className="related-path" title={`${file.evidence} · ${file.path}`}>{file.path}</span>
+                        <Hint text={`${file.evidence} · ${file.path}`}>
+                            <span className="related-path">{file.path}</span>
+                        </Hint>
                         <small>{file.evidence}{file.evidence == "shared lines" ? ` · ${file.score}` : ""}</small>
                     </AriaButton>
                 ))}
@@ -314,13 +320,15 @@ function AuxiliaryFrame({ column, className, label, title, from, close, onClose,
                 aria-label={label}
             >
                 <header className="column-header auxiliary-header">
-                    <div className="column-title" title={title}>
-                        <div className="column-title-row">
-                            <h2 className="column-name">{title}</h2>
-                            {!stacked && <small className="auxiliary-source">{from}</small>}
+                    <Hint text={title}>
+                        <div className="column-title">
+                            <div className="column-title-row">
+                                <h2 className="column-name">{title}</h2>
+                                {!stacked && <small className="auxiliary-source">{from}</small>}
+                            </div>
+                            {stacked && <small className="column-path auxiliary-source">{from}</small>}
                         </div>
-                        {stacked && <small className="column-path auxiliary-source">{from}</small>}
-                    </div>
+                    </Hint>
                     <IconButton
                         label={close.label}
                         onPress={() => {

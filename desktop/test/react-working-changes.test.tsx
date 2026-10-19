@@ -71,6 +71,21 @@ describe("React Working Changes", () => {
         expect(selectionSummary()).toBeUndefined()
     })
 
+    test("a clean worktree's Working Changes card has nothing to unfold or act on", async () => {
+        let scenario = inspectionScenario()
+        await startReactApp({
+            ...scenario.api,
+            readChanges: async (_id, _requestId, request) => ({
+                ok: true,
+                inventory: { source: request.source, files: [], version: "inventory", parents: [] },
+            }),
+        })
+
+        let header = workingChanges().querySelector(".commit-header")!
+        expect(header.textContent).toBe("No Working Changes")
+        expect(header.querySelectorAll("button").length).toBe(0)
+    })
+
     test("file rows copy their path from a hover button and from the context menu", async () => {
         let scenario = inspectionScenario()
         let app = await startReactApp(scenario.api)
@@ -201,13 +216,13 @@ describe("React Working Changes", () => {
 
         await app.act(() => press(button(workingChanges(), "Stage all")))
         expect(mutations[0]).toEqual({ action: "stage", path: "D:\\Source\\inspection", files: ["src/file.txt", "other.txt"], unstage: false })
-        expect(tree("Staged files").textContent).toContain("src/file.txt")
-        expect(tree("Staged files").textContent).not.toContain("other.txt")
+        expect(rowNames(tree("Staged files"))).toContain("src/file.txt")
+        expect(rowNames(tree("Staged files"))).not.toContain("other.txt")
 
         await app.act(() => press(button(workingChanges(), "Cancel")))
         expect(document.querySelector("[aria-label='Commit title']") == null).toBe(true)
         expect(header().textContent).toContain("Commit…")
-        expect(tree("Staged files").textContent).toContain("src/file.txt")
+        expect(rowNames(tree("Staged files"))).toContain("src/file.txt")
         expect(document.querySelector(".staged-divider")).not.toBeNull()
         expect(draft.title).toBe("Keep snapshot")
 
@@ -426,6 +441,11 @@ function fileRows() {
 
 function folderNames() {
     return [...workingChanges().querySelectorAll(".folder-name")].map(name => name.textContent)
+}
+
+/** The paths of a list's file rows, which they are named by; a row's text leads with the file's name. */
+function rowNames(list: Element) {
+    return [...list.querySelectorAll(".file-row")].map(row => row.getAttribute("aria-label"))
 }
 
 function tree(label: string) {

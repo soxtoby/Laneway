@@ -5,7 +5,7 @@ import { Button as AriaButton } from "react-aria-components"
 import type { ColumnView } from "./branch-workspace"
 import { ConflictResolution } from "./conflict-resolution"
 import type { Conflicts } from "./conflicts"
-import { IconButton, MoreMenu } from "./controls"
+import { Hint, IconButton, MoreMenu } from "./controls"
 import { useRowMenu } from "./dense-row"
 import { EditableName } from "./editable-name"
 import { BranchIcon, DiffIcon, MoreIcon, WarningIcon } from "./icons"
@@ -237,7 +237,6 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
                 }}
                 {...targetProps}
                 className="commit-row"
-                title={commit.body ? `${commit.subject}\n\n${commit.body}` : commit.subject}
                 onContextMenu={openMenu}
             >
                 <span className="commit-node" aria-hidden="true" />
@@ -269,7 +268,9 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
                     </IconButton>
                 )}
                 <AriaButton className="commit-toggle" aria-expanded={open} onPress={() => inspection.toggleCommit(column.id, commit.objectId)}>
-                    <span className="commit-subject">{commit.subject}</span>
+                    <Hint text={commit.body ? `${commit.subject}\n\n${commit.body}` : commit.subject}>
+                        <span className="commit-subject">{commit.subject}</span>
+                    </Hint>
                     {commit.body && !open && <MoreIcon className="message-indicator" role="img" aria-label="Has message body" aria-hidden={false} />}
                 </AriaButton>
                 {open && (

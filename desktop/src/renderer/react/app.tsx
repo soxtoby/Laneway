@@ -3,8 +3,9 @@ import type { AppController, AppSnapshot } from "./app-controller"
 import { BranchGraphPanel } from "./branch-graph"
 import { CommandLensDialog } from "./command-lens-dialog"
 import { ContextMenuHost } from "./context-menu"
+import { Hint } from "./controls"
 import { GitSettingsDialog } from "./git-settings-dialog"
-import { ArchiveIcon, GraphIcon, MoonIcon, PullIcon, RedoIcon, SearchIcon, SettingsIcon, SunIcon, UndoIcon } from "./icons"
+import { ArchiveIcon, BrandMark, GraphIcon, MoonIcon, PullIcon, RedoIcon, SearchIcon, SettingsIcon, SunIcon, UndoIcon } from "./icons"
 import { LocalBranchDialog } from "./local-branch-dialog"
 import { MissingRepository } from "./missing-repository"
 import { Notices } from "./notices"
@@ -167,7 +168,10 @@ function Header({ onOpenLens, graph, tabs, actions, appearance, busy, onToggleAp
     let appearanceLabel = appearance == "dark" ? "Switch to light appearance" : "Switch to dark appearance"
     return (
         <header className="header drag-region">
-            <span className="brand">Laneway</span>
+            <span className="brand">
+                <BrandMark />
+                Laneway
+            </span>
             {graph && (
                 <TooltipTrigger>
                     <ToggleButton
@@ -196,13 +200,15 @@ function Header({ onOpenLens, graph, tabs, actions, appearance, busy, onToggleAp
                             </span>
                         )
                         : (
-                            // The hint explains a disabled button too, so it is a native title on a wrapper.
-                            <span className="pull-latest" title={actions.pull.hint}>
-                                <Button variant="accent" isDisabled={actions.busy || !actions.pull.available} onPress={actions.pull.start}>
-                                    <PullIcon />
-                                    Pull latest
-                                </Button>
-                            </span>
+                            // The hint explains a disabled button too, so it sits on a wrapper.
+                            <Hint text={actions.pull.hint} forControl>
+                                <span className="pull-latest">
+                                    <Button variant="accent" isDisabled={actions.busy || !actions.pull.available} onPress={actions.pull.start}>
+                                        <PullIcon />
+                                        Pull latest
+                                    </Button>
+                                </span>
+                            </Hint>
                         )}
                     <Button variant="secondary" isDisabled={actions.busy} onPress={actions.stashes}>
                         <ArchiveIcon />

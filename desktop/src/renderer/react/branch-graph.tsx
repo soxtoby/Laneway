@@ -5,7 +5,7 @@ import type { AppController } from "./app-controller"
 import { graphRowHeight, type GraphRowLayout, layoutBranchGraph } from "./branch-graph-layout"
 import { canRebaseOnto, rebaseable } from "./branch-rebase"
 import type { GraphView } from "./branch-workspace"
-import { IconButton } from "./controls"
+import { Hint, IconButton } from "./controls"
 import { useRowMenu } from "./dense-row"
 import { GraphSettings } from "./graph-settings"
 import { ArchiveIcon, CloseIcon, FolderIcon, TagIcon } from "./icons"
@@ -13,6 +13,7 @@ import { Button } from "./ui/Button"
 import { GripVertical } from "./ui/icons"
 import { MenuItem } from "./ui/Menu"
 import { ToggleButton } from "./ui/ToggleButton"
+import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 import { useSnapshot } from "./use-snapshot"
 import { branchNodeFor, localIdentities, workspaceGraph } from "./worktree-columns"
 
@@ -79,7 +80,9 @@ export function BranchGraphPanel({ controller, repositoryId, mainWorktree }: Gra
                                     className="unassigned-stash"
                                     onPress={() => columns.showMarker(marker)}
                                 >
-                                    <span title={marker.tooltip}>{marker.label}</span>
+                                    <Hint text={marker.tooltip}>
+                                        <span>{marker.label}</span>
+                                    </Hint>
                                 </AriaButton>
                             ))}
                         </details>
@@ -299,14 +302,18 @@ function BranchRow({ row, branch, rebase, onOpen, onMarker, menu }: {
                 <>
                     <GraphRail row={row} />
                     <span className="graph-copy">
-                        <strong className="graph-name" title={branch.name}>{branch.name}</strong>
+                        <Hint text={branch.name}>
+                            <strong className="graph-name">{branch.name}</strong>
+                        </Hint>
                         <span className="graph-details">
                             <small className="graph-kind">{branchKind(branch)}</small>
                             {branch.checkedOut.map(worktree => (
-                                <span key={worktree.path} className="graph-chip worktree" title={worktree.path}>
-                                    <FolderIcon />
-                                    {worktree.name}
-                                </span>
+                                <Hint key={worktree.path} text={worktree.path}>
+                                    <span className="graph-chip worktree">
+                                        <FolderIcon />
+                                        {worktree.name}
+                                    </span>
+                                </Hint>
                             ))}
                             {branch.tags.map(tag => (
                                 <span key={tag} className="graph-chip tag">
@@ -315,19 +322,17 @@ function BranchRow({ row, branch, rebase, onOpen, onMarker, menu }: {
                                 </span>
                             ))}
                             {branch.unresolved && (
-                                <span className="graph-chip unresolved" title={branch.unresolved.recovery ?? "This stack contains deferred conflicts"}>
-                                    Unresolved
-                                </span>
+                                <Hint text={branch.unresolved.recovery ?? "This stack contains deferred conflicts"}>
+                                    <span className="graph-chip unresolved">Unresolved</span>
+                                </Hint>
                             )}
                             {branch.markers.map(marker => (
-                                <AriaButton
-                                    key={marker.id}
-                                    className="graph-marker"
-                                    aria-label={`Stash ${marker.label}`}
-                                    onPress={() => onMarker(marker)}
-                                >
-                                    <ArchiveIcon />
-                                </AriaButton>
+                                <TooltipTrigger key={marker.id}>
+                                    <AriaButton className="graph-marker" aria-label={`Stash ${marker.label}`} onPress={() => onMarker(marker)}>
+                                        <ArchiveIcon />
+                                    </AriaButton>
+                                    <Tooltip>{`Stash ${marker.label}`}</Tooltip>
+                                </TooltipTrigger>
                             ))}
                             {(branch.ahead > 0 || branch.behind > 0) && <span className="graph-chip divergence">↑{branch.ahead} ↓{branch.behind}</span>}
                         </span>
@@ -351,10 +356,12 @@ function SimpleRow({ row }: { row: GraphRowLayout }) {
             {({ isFocusVisibleWithin }) => (
                 <>
                     <GraphRail row={row} />
-                    <span className="graph-copy" title={node.title}>
-                        <strong className="graph-name">{node.name}</strong>
-                        <small className="graph-kind">{node.kind == "tag" ? "Tag" : "Detached worktree"}</small>
-                    </span>
+                    <Hint text={node.title}>
+                        <span className="graph-copy">
+                            <strong className="graph-name">{node.name}</strong>
+                            <small className="graph-kind">{node.kind == "tag" ? "Tag" : "Detached worktree"}</small>
+                        </span>
+                    </Hint>
                     {/* Every row drags in a draggable list, but only a branch's drag lands anywhere. */}
                     <AriaButton slot="drag" className="drag-handle" aria-label={`Drag ${node.name}`} data-visible={isFocusVisibleWithin || undefined}>
                         <GripVertical />

@@ -3,6 +3,7 @@ import { monogramText, repositoryIconColors, repositoryInitials } from "@laneway
 import type { ReactNode } from "react"
 import { useReducer } from "react"
 import { Autocomplete, type Key, ListBox, ListBoxItem, type Selection } from "react-aria-components"
+import { Hint } from "./controls"
 import { EmojiTypeIcon, IconTypeIcon, ImageTypeIcon, LucideGlyph, MonogramTypeIcon } from "./icons"
 import { iconLabel, lucideCatalog, searchLucide } from "./lucide-catalog"
 import { automaticIcon, baseName, repositoryFolderName } from "./repositories"
@@ -49,7 +50,9 @@ function IdentityFields(
                 <RepositoryTile className="tile identity-preview" icon={repository.icon ?? automaticIcon(repository)} name={name} api={api} />
                 <div className="identity-title">
                     <Heading slot="title">{name}</Heading>
-                    <span className="identity-path" title={repository.path}>{repository.path}</span>
+                    <Hint text={repository.path}>
+                        <span className="identity-path">{repository.path}</span>
+                    </Hint>
                 </div>
             </header>
             <TextField

@@ -1,7 +1,7 @@
 import type { Workspace } from "@laneway/shared"
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
 import type { Window as HappyWindow } from "happy-dom"
-import { button, installReactDom, press, startReactApp, stopReactApps } from "./react-dom"
+import { button, hover, installReactDom, press, startReactApp, stopReactApps } from "./react-dom"
 import { appState, branchGraph, fakeLaneway, inspectionScenario, repositoryInfo } from "./renderer-fixtures"
 
 let browserWindow: HappyWindow
@@ -65,6 +65,48 @@ describe("React Workspace Columns", () => {
 
         await app.act(() => dblclick(header()))
         expect(columnIds()).toEqual(opened)
+    })
+
+    test("a column header's buttons show their tooltips, and the header's hint stays away from them", async () => {
+        let app = await startReactApp(inspectionScenario().api)
+        let header = column(columnIds()[0]!).querySelector("header")!
+        let actions = header.querySelector(".column-actions")!
+        let maximize = button(header, "Maximize column")
+
+        // The pointer rests on the header on its way to a button, then moves over the button's tooltip and the gap beside it.
+        await app.act(() => hover(header))
+        await app.act(() => wait(300))
+        await app.act(() => hover(maximize, header))
+        await app.act(() => wait(1600))
+        let overButton = tooltips()
+        let tooltip = document.querySelector("[role=tooltip]")!
+        await app.act(() => hover(tooltip, maximize))
+        await app.act(() => wait(300))
+        let overItsTooltip = tooltips()
+        await app.act(() => hover(actions, tooltip))
+        await app.act(() => wait(300))
+        let betweenButtons = tooltips()
+
+        expect(overButton).toEqual(["Maximize column"])
+        expect(overItsTooltip).not.toContain(dragHint)
+        expect(betweenButtons).not.toContain(dragHint)
+    })
+
+    test("a column header's hint shows over the header, and its name's own over the name", async () => {
+        let app = await startReactApp(inspectionScenario().api)
+        let header = column(columnIds()[0]!).querySelector("header")!
+        let name = header.querySelector(".column-name")!
+
+        await app.act(() => hover(header))
+        await app.act(() => wait(1800))
+        let overHeader = tooltips()
+        await app.act(() => hover(name, header))
+        await app.act(() => wait(300))
+        let overName = tooltips()
+
+        expect(overHeader).toEqual([dragHint])
+        // The Main Worktree's name can't be renamed, and says why.
+        expect(overName).toEqual(["Main worktree"])
     })
 
     test("worktree columns stay open, collapse in place across restart, and close when their worktree goes", async () => {
@@ -204,6 +246,16 @@ function divider(id: string) {
 
 function columnHeaders() {
     return [...document.querySelectorAll("[data-column-id] > header")].map(header => header.textContent).join(" ")
+}
+
+let dragHint = "Drag to reorder · Ctrl+Shift+< / >"
+
+function wait(milliseconds: number) {
+    return new Promise(resolve => setTimeout(resolve, milliseconds))
+}
+
+function tooltips() {
+    return [...document.querySelectorAll("[role=tooltip]")].map(tooltip => tooltip.textContent)
 }
 
 function tabs() {

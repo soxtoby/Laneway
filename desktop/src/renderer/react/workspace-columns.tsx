@@ -7,9 +7,10 @@ import { defaultAuxiliaryColumnWidth } from "./auxiliary-columns"
 import { branchDragType } from "./branch-graph"
 import { type BranchWorkspace, type ColumnsSnapshot, type ColumnView, defaultColumnWidth, minimumColumnWidth, workingSummary } from "./branch-workspace"
 import { ColumnBody, columnRoot, ColumnScopes } from "./column-body"
+import { columnDropTarget, columnSpans } from "./column-drag"
 import { ColumnFilter } from "./column-filter"
 import { navigationKeyDown } from "./column-navigation"
-import { IconButton } from "./controls"
+import { Hint, IconButton } from "./controls"
 import { DiffColumn, minimumDiffColumnWidth } from "./diff-column"
 import { CommitDiffColumn, FileHistoryColumn } from "./file-history"
 import { BranchIcon, CloseIcon, CollapseColumnIcon, CompareIcon, ExpandColumnIcon, FolderIcon, MaximizeIcon, OpenColumnIcon, RestoreIcon, SearchIcon, WarningIcon } from "./icons"
@@ -75,29 +76,39 @@ export function WorkspaceColumns({ controller, fileListView }: { controller: App
             event.dataTransfer.effectAllowed = "move"
             event.dataTransfer.setData("text/plain", column.id)
         },
-        over(column: ColumnView, event: DragEvent) {
-            if (!dragging.current)
-                return
-            event.preventDefault()
-            // A header's branch drop target may have refused the drag first; a column's own drag is still welcome.
-            event.dataTransfer.dropEffect = "move"
-            columns.dragOver(dragging.current.id, column.id)
-        },
-        drop(event: DragEvent) {
-            if (!dragging.current)
-                return
-            event.preventDefault()
-            dragging.current.dropped = true
-            columns.drop(dragging.current.id)
-        },
         end() {
             if (dragging.current && !dragging.current.dropped)
                 columns.cancelDrag()
             dragging.current = undefined
         },
     }
+    // A dragged column moves as the pointer crosses the row, and drops anywhere on it. The row takes the drag
+    // before anything inside it, so drop targets within the columns, such as a header's branch drop, never see it.
+    let rowDrag = (event: DragEvent<HTMLElement>) => {
+        if (!dragging.current)
+            return
+        event.preventDefault()
+        event.stopPropagation()
+        event.dataTransfer.dropEffect = "move"
+        let target = event.type == "dragover" && columnDropTarget(columnSpans(event.currentTarget), dragging.current.id, event.clientX)
+        if (target)
+            columns.dragOver(dragging.current.id, target)
+    }
+    let rowDrop = (event: DragEvent) => {
+        if (!dragging.current)
+            return
+        event.preventDefault()
+        event.stopPropagation()
+        dragging.current.dropped = true
+        columns.drop(dragging.current.id)
+    }
     return (
-        <section className={clsx("column-row", snapshot.maximizedId && "maximized")}>
+        <section
+            className={clsx("column-row", snapshot.maximizedId && "maximized")}
+            onDragEnterCapture={rowDrag}
+            onDragOverCapture={rowDrag}
+            onDropCapture={rowDrop}
+        >
             {visible.flatMap(column => {
                 // A collapsed column hides its auxiliary columns, and a column without its files has none to show.
                 let auxiliary = column.collapsed || column.kind == "recovery" || column.worktree?.missing ? [] : current?.auxiliary[column.id] ?? []
@@ -163,8 +174,6 @@ export function WorkspaceColumns({ controller, fileListView }: { controller: App
 
 interface HeaderDrag {
     start(column: ColumnView, event: DragEvent): void
-    over(column: ColumnView, event: DragEvent): void
-    drop(event: DragEvent): void
     end(): void
 }
 
@@ -267,104 +276,104 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
         >
             {column.collapsed
                 ? (
-                    <button
-                        type="button"
-                        className="expand-column"
-                        title={column.worktree?.path ?? column.name}
-                        aria-label={`Expand ${column.name}`}
-                        onClick={() => columns.toggleCollapsed(column.id)}
-                    >
-                        <ExpandColumnIcon className="expand-column-icon" />
-                        <span className="expand-column-name">{column.name}</span>
-                        <span className="expand-column-summary">{workingSummary(column, files)}</span>
-                    </button>
+                    <Hint text={column.worktree?.path ?? column.name} placement="end">
+                        <button type="button" className="expand-column" aria-label={`Expand ${column.name}`} onClick={() => columns.toggleCollapsed(column.id)}>
+                            <ExpandColumnIcon className="expand-column-icon" />
+                            <span className="expand-column-name">{column.name}</span>
+                            <span className="expand-column-summary">{workingSummary(column, files)}</span>
+                        </button>
+                    </Hint>
                 )
                 : (
                     <>
-                        <header
-                            {...dropProps}
-                            ref={headerRef}
-                            className="column-header"
-                            data-drop-target={isDropTarget || undefined}
-                            draggable={!snapshot.maximizedId}
-                            title="Drag to reorder · Ctrl+Shift+< / >"
-                            onDoubleClick={toggleMaximized}
-                            onDragStart={event => header.start(column, event)}
-                            onDragOver={event => {
-                                dropProps.onDragOver?.(event)
-                                header.over(column, event)
-                            }}
-                            onDrop={event => {
-                                dropProps.onDrop?.(event)
-                                header.drop(event)
-                            }}
-                            onDragEnd={header.end}
-                        >
-                            <IconButton label={`Collapse ${column.name}`} onPress={() => columns.toggleCollapsed(column.id)}>
-                                <CollapseColumnIcon />
-                            </IconButton>
-                            <ColumnKind column={column} />
-                            {column.worktree && column.kind != "recovery"
-                                ? <WorktreeTitle worktree={column.worktree} busy={busy} onPrepare={prepare} />
-                                : (
-                                    <div className="column-title">
-                                        <h2 className="column-name">{column.name}</h2>
-                                    </div>
-                                )}
-                            {column.kind == "branch" && (column.branch.unresolved || files?.conflictsOnly) && (
-                                <TooltipTrigger>
-                                    <ToggleButton
-                                        className="icon-button conflicts-only"
-                                        aria-label="Show only conflicted commits"
-                                        isSelected={files?.conflictsOnly == true}
-                                        onChange={selected => controller.inspection.setConflictsOnly(column.id, selected)}
-                                    >
-                                        <WarningIcon />
-                                    </ToggleButton>
-                                    <Tooltip>Show only conflicted commits</Tooltip>
-                                </TooltipTrigger>
-                            )}
-                            {filterable && (
-                                <TooltipTrigger>
-                                    <AriaButton
-                                        ref={filterButton}
-                                        className="icon-button"
-                                        aria-label="Filter files"
-                                        aria-expanded={files?.filter != undefined}
-                                        onPress={openFilter}
-                                    >
-                                        <SearchIcon />
-                                    </AriaButton>
-                                    <Tooltip>Filter files (Ctrl+F)</Tooltip>
-                                </TooltipTrigger>
-                            )}
-                            {(column.kind == "branch" || column.kind == "virtual") && (
-                                <WorktreeMenu column={column} graph={graph} busy={busy} onPrepare={prepare} chooseDirectory={controller.chooseDirectory} />
-                            )}
-                            {column.kind == "comparison" && (
-                                // Mirrors Working Changes' control: it opens the comparison's whole diff, or focuses it.
-                                <TooltipTrigger>
-                                    <ToggleButton
-                                        className="icon-button"
-                                        aria-label="Open diff column"
-                                        isSelected={files?.diffColumn != undefined}
-                                        isDisabled={!files?.files.comparison?.inventory?.files.some(file => !file.ignored)}
-                                        onChange={() => controller.inspection.openDiffColumn(column.id, "comparison")}
-                                    >
-                                        <OpenColumnIcon />
-                                    </ToggleButton>
-                                    <Tooltip>Open diff column</Tooltip>
-                                </TooltipTrigger>
-                            )}
-                            <IconButton label={snapshot.maximizedId ? "Restore columns" : "Maximize column"} onPress={() => columns.toggleMaximized(column.id)}>
-                                {snapshot.maximizedId ? <RestoreIcon /> : <MaximizeIcon />}
-                            </IconButton>
-                            {!column.worktree && column.kind != "recovery" && (
-                                <IconButton label="Close column" onPress={() => columns.close(column.id)}>
-                                    <CloseIcon />
+                        <Hint text="Drag to reorder · Ctrl+Shift+< / >">
+                            <header
+                                {...dropProps}
+                                ref={headerRef}
+                                className="column-header"
+                                data-drop-target={isDropTarget || undefined}
+                                draggable={!snapshot.maximizedId}
+                                onDoubleClick={toggleMaximized}
+                                onDragStart={event => header.start(column, event)}
+                                onDragEnd={header.end}
+                            >
+                                <IconButton className="column-collapse" label={`Collapse ${column.name}`} onPress={() => columns.toggleCollapsed(column.id)}>
+                                    <CollapseColumnIcon />
                                 </IconButton>
-                            )}
-                        </header>
+                                <ColumnKind column={column} />
+                                {column.worktree && column.kind != "recovery"
+                                    ? <WorktreeTitle worktree={column.worktree} busy={busy} onPrepare={prepare} />
+                                    : (
+                                        <div className="column-title">
+                                            <h2 className="column-name">{column.name}</h2>
+                                        </div>
+                                    )}
+                                <div className="column-actions" data-controls>
+                                    {column.kind == "branch" && (column.branch.unresolved || files?.conflictsOnly) && (
+                                        <TooltipTrigger>
+                                            <ToggleButton
+                                                className="icon-button conflicts-only"
+                                                aria-label="Show only conflicted commits"
+                                                isSelected={files?.conflictsOnly == true}
+                                                onChange={selected => controller.inspection.setConflictsOnly(column.id, selected)}
+                                            >
+                                                <WarningIcon />
+                                            </ToggleButton>
+                                            <Tooltip>Show only conflicted commits</Tooltip>
+                                        </TooltipTrigger>
+                                    )}
+                                    {filterable && (
+                                        <TooltipTrigger>
+                                            <AriaButton
+                                                ref={filterButton}
+                                                className="icon-button"
+                                                aria-label="Filter files"
+                                                aria-expanded={files?.filter != undefined}
+                                                onPress={openFilter}
+                                            >
+                                                <SearchIcon />
+                                            </AriaButton>
+                                            <Tooltip>Filter files (Ctrl+F)</Tooltip>
+                                        </TooltipTrigger>
+                                    )}
+                                    {(column.kind == "branch" || column.kind == "virtual") && (
+                                        <WorktreeMenu
+                                            column={column}
+                                            graph={graph}
+                                            busy={busy}
+                                            onPrepare={prepare}
+                                            chooseDirectory={controller.chooseDirectory}
+                                        />
+                                    )}
+                                    {column.kind == "comparison" && (
+                                        // Mirrors Working Changes' control: it opens the comparison's whole diff, or focuses it.
+                                        <TooltipTrigger>
+                                            <ToggleButton
+                                                className="icon-button"
+                                                aria-label="Open diff column"
+                                                isSelected={files?.diffColumn != undefined}
+                                                isDisabled={!files?.files.comparison?.inventory?.files.some(file => !file.ignored)}
+                                                onChange={() => controller.inspection.openDiffColumn(column.id, "comparison")}
+                                            >
+                                                <OpenColumnIcon />
+                                            </ToggleButton>
+                                            <Tooltip>Open diff column</Tooltip>
+                                        </TooltipTrigger>
+                                    )}
+                                    <IconButton
+                                        label={snapshot.maximizedId ? "Restore columns" : "Maximize column"}
+                                        onPress={() => columns.toggleMaximized(column.id)}
+                                    >
+                                        {snapshot.maximizedId ? <RestoreIcon /> : <MaximizeIcon />}
+                                    </IconButton>
+                                    {!column.worktree && column.kind != "recovery" && (
+                                        <IconButton label="Close column" onPress={() => columns.close(column.id)}>
+                                            <CloseIcon />
+                                        </IconButton>
+                                    )}
+                                </div>
+                            </header>
+                        </Hint>
                         {filterable && files?.filter && (
                             <ColumnFilter
                                 filter={files.filter}
@@ -413,9 +422,11 @@ export function ColumnKind({ column }: { column: ColumnView }) {
         ? CompareIcon
         : FolderIcon
     return (
-        <span className="column-kind" data-identity={column.identity} title={column.description}>
-            <Icon />
-        </span>
+        <Hint text={column.description}>
+            <span className="column-kind" data-identity={column.identity}>
+                <Icon />
+            </span>
+        </Hint>
     )
 }
 

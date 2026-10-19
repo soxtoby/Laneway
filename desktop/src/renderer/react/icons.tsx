@@ -42,6 +42,15 @@ export let CollapseAllIcon = lucideIcon(ChevronsDownUp, "chevrons-down-up")
 export let GraphIcon = lucideIcon(GitGraph, "git-graph")
 export let TagIcon = lucideIcon(Tag, "tag")
 
+/** Laneway's Hidden L mark, from assets/brand/laneway-icon.svg, fitted to its 48-unit canvas. */
+export function BrandMark() {
+    return (
+        <svg className="brand-mark" viewBox="8 8 48 48" aria-hidden>
+            <path d="M20 8H24V48H44A4 4 0 0 0 44 40H34A2 2 0 0 1 32 38V12A4 4 0 0 1 36 8H44A12 12 0 0 1 56 20V44A12 12 0 0 1 44 56H20A12 12 0 0 1 8 44V20A12 12 0 0 1 20 8Z" />
+        </svg>
+    )
+}
+
 /** Any Lucide icon by its node data, such as one chosen from the catalog for a Repository Icon. */
 export function LucideGlyph({ node }: { node: IconNode }) {
     return (

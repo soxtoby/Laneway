@@ -221,7 +221,7 @@ function entry(index: number, subject: string, request: FileHistoryRequest): Fil
 }
 
 async function openFileHistory(app: { act(action: () => unknown): Promise<void> }, row: HTMLElement) {
-    await app.act(() => press(button(row, `Actions for ${row.querySelector(".file-path")!.textContent}`)))
+    await app.act(() => press(button(row, `Actions for ${row.getAttribute("aria-label")}`)))
     await app.act(() => press(menuItem("File history")))
 }
 

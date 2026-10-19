@@ -92,9 +92,20 @@
 }
 
 .brand {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
     font-weight: 600;
     font-size: var(--font-size-lg);
+    white-space: nowrap;
     margin-inline-end: var(--spacing-4);
+}
+
+.brand-mark {
+    flex: none;
+    width: var(--spacing-6);
+    height: var(--spacing-6);
+    fill: var(--highlight-background);
 }
 
 .spacer {
@@ -153,11 +164,19 @@
     }
 }
 
+/* Hints can run to a path or a commit message, so they wrap wider and keep their line breaks. */
+.react-aria-Tooltip.hint {
+    max-width: min(480px, 90vw);
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+}
+
 /* Workspace */
 
 .work-area {
     min-height: 0;
     display: flex;
+    background: var(--workspace-background);
 }
 
 .columns {
@@ -175,6 +194,8 @@
     display: flex;
     padding: var(--spacing-2);
     overflow: auto;
+    /* Only diffs and commit messages select, so a drag can't carry a selection spanning the column. */
+    user-select: none;
 }
 
 .column {
@@ -184,7 +205,7 @@
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
-    background: var(--gray-50);
+    background: var(--column-background);
     border: 0.5px solid var(--border-color);
     border-radius: var(--radius-lg);
     overflow: hidden;
@@ -258,7 +279,7 @@
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
-    background: var(--gray-50);
+    background: var(--column-background);
     border: 0.5px solid var(--border-color);
     border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
     overflow: hidden;
@@ -427,7 +448,8 @@
 
     p {
         margin: 0;
-        color: var(--text-color-placeholder);
+        /* A step past the placeholder grey, which is too faint on the workspace. */
+        color: var(--gray-1100);
     }
 }
 
@@ -479,6 +501,24 @@
     align-items: center;
     gap: var(--spacing-1);
     padding: var(--spacing-2) var(--spacing-2) var(--spacing-2) var(--spacing-1);
+}
+
+/* The header's buttons, one group the header's drag hint gives way to, gaps included. */
+.column-actions {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-1);
+}
+
+/* Collapsing runs the header's full height from the column's edge, an easy target. */
+.column-collapse.icon-button {
+    align-self: stretch;
+    height: auto;
+    width: var(--spacing-8);
+    margin-block: calc(-1 * var(--spacing-2));
+    margin-inline-start: calc(-1 * var(--spacing-1));
+    border-radius: 0;
 }
 
 .column-title {
@@ -558,6 +598,8 @@
 
 .working-changes {
     display: grid;
+    /* Cards take the column's width, so long names ellipsize instead of widening the column. */
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--spacing-2);
 
     .react-aria-Button {
@@ -619,6 +661,7 @@
 }
 
 .working-changes-toggle,
+.working-changes-label,
 .branch-stash-toggle {
     width: 100%;
     min-width: 0;
@@ -640,21 +683,29 @@
     }
 }
 
+.working-changes-toggle > span,
+.working-changes-label > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .working-changes-toggle {
     min-height: inherit;
 
     > svg:nth-child(2) {
         color: var(--tint-1000);
     }
+}
 
-    .clean & {
-        color: var(--text-color-placeholder);
-        font-weight: 500;
-
-        > svg {
-            color: inherit;
-        }
-    }
+/* A clean worktree's quiet title, its icon in line with the toggles' icons beside it. */
+.working-changes-label {
+    box-sizing: border-box;
+    min-height: inherit;
+    padding-inline-start: calc(var(--spacing-2) * 2 + var(--spacing-3));
+    color: var(--text-color-placeholder);
+    font-weight: 500;
 }
 
 /* Disclosure chevrons point right when folded and down when open. */
@@ -959,6 +1010,13 @@
         flex: 1 1 auto;
         min-width: 0;
     }
+
+    /* Its copy and menu buttons take room only while they show, leaving the path the row's width otherwise;
+       an open menu keeps its button where the menu is anchored. */
+    .dense-row:not([data-hovered], [data-focus-visible-within]) & .copy-path:not([data-copied], [data-focus-visible]),
+    .row-actions:not([data-visible], :has([aria-expanded="true"])) {
+        display: none;
+    }
 }
 
 .file-badge,
@@ -1106,14 +1164,34 @@
     white-space: nowrap;
 }
 
+/* A file's name leads, and its folder follows small and quiet, giving way first. */
+.file-path {
+    display: flex;
+    align-items: baseline;
+    gap: var(--spacing-2);
+}
+
+.file-name {
+    flex: 0 0 auto;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .file-directory {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
 }
 
 /* Commit Trail: the column's branch, then each base below it, as cards of commits on one line. */
 
 .commit-trail {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--spacing-2);
 }
 
@@ -1851,7 +1929,7 @@
     flex: 0 0 auto;
     display: flex;
 
-    .react-aria-Button {
+    .grip {
         width: var(--spacing-4);
         height: var(--spacing-6);
         display: grid;
@@ -1879,9 +1957,21 @@
         }
     }
 
-    :is(.dense-row, .commit-row, .stack-heading):hover & .react-aria-Button {
+    :where(.dense-row, .commit-row, .stack-heading):hover & .grip {
         color: var(--text-color-placeholder);
     }
+
+    /* Chosen by a press, or M or C, until it lands or Escape cancels. */
+    .grip[data-chosen] {
+        color: var(--focus-ring-color);
+        background: var(--selection-background);
+    }
+}
+
+/* The row whose selection is chosen stays marked while a destination is found. */
+:is(.dense-row, .commit-row, .stack-heading):has(.grip[data-chosen]) {
+    outline: 2px dashed var(--focus-ring-color);
+    outline-offset: -2px;
 }
 
 /* A branch heading's grip sits before its title. */
@@ -2000,6 +2090,10 @@
     font-size: var(--font-size-sm);
     font-weight: 600;
     white-space: nowrap;
+
+    .collapsed > & {
+        visibility: hidden;
+    }
 }
 
 .repository-list-area {
@@ -2144,10 +2238,46 @@
     display: flex;
     flex-direction: column;
     gap: var(--spacing-1);
-    align-items: start;
+}
 
-    .collapsed > & {
-        align-items: center;
+/* A footer action runs the panel's width with its icon where a collapsed panel centres it, in line with
+   the tiles above, and its label in line with their names. */
+.panel-action {
+    height: var(--spacing-8);
+    display: flex;
+    align-items: center;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius);
+    background: none;
+    color: var(--text-color);
+    font: inherit;
+    font-weight: 500;
+    white-space: nowrap;
+    outline: none;
+
+    > svg {
+        flex: none;
+        width: var(--spacing-4);
+        height: var(--spacing-4);
+        margin-inline: 14px;
+    }
+
+    &[data-hovered] {
+        background: var(--highlight-hover);
+    }
+
+    &[data-pressed] {
+        background: var(--highlight-pressed);
+    }
+
+    &[data-disabled] {
+        color: var(--text-color-placeholder);
+    }
+
+    &[data-focus-visible] {
+        outline: 2px solid var(--focus-ring-color);
+        outline-offset: -2px;
     }
 }
 
@@ -2484,7 +2614,7 @@
     margin: 0;
     max-width: 70ch;
     overflow-wrap: anywhere;
-    color: var(--text-color-placeholder);
+    color: var(--gray-1100);
     font-size: var(--font-size-sm);
 }
 

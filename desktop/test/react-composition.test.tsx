@@ -47,7 +47,7 @@ describe("React composition", () => {
         await app.act(() => list("working-staged")!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })))
 
         expect(stages).toEqual([{ action: "stage", path: "D:\\Source\\inspection", files: ["src/file.txt"], unstage: false }])
-        expect(list("working-staged")!.textContent).toContain("src/file.txt")
+        expect([...list("working-staged")!.querySelectorAll(".file-row")].map(row => row.getAttribute("aria-label"))).toContain("src/file.txt")
         expect(toast()?.textContent ?? "").not.toContain("Choose a destination")
     })
 
@@ -108,6 +108,20 @@ describe("React composition", () => {
         await app.act(() => press(button(reviewPanel, "Transfer")))
         expect(calls.map(call => call.token)).toEqual([undefined, "reviewed-1"])
         expect(working().querySelector("[aria-label='Review transfer']") == null).toBe(true)
+    })
+
+    test("M on a file row chooses its file, which stays marked until Escape cancels the choice", async () => {
+        let scenario = inspectionScenario()
+        let app = await startReactApp(composing(scenario).api)
+        let row = working().querySelector<HTMLElement>("[data-group='working-unstaged'] .file-row")!
+        let grip = () => button(row, "Move or copy src/file.txt")
+
+        await app.act(() => key(row, "m"))
+        expect(toast()?.textContent).toContain("Move src/file.txt · Choose a destination, then Enter.")
+        expect(grip().hasAttribute("data-chosen")).toBe(true)
+
+        await app.act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })))
+        expect(grip().hasAttribute("data-chosen")).toBe(false)
     })
 
     test("files landing on a seam ask for the new commit's message before the review, and Escape cancels a choice", async () => {

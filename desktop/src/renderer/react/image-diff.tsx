@@ -1,10 +1,12 @@
 import type { FileDiffPage, FileImagePage, ImageContent } from "@laneway/shared"
 import { type CSSProperties, type KeyboardEvent, type PointerEvent, useEffect, useEffectEvent, useState } from "react"
 import { Button as AriaButton, ToggleButton } from "react-aria-components"
+import { Hint } from "./controls"
 import { CloseIcon, MaximizeIcon } from "./icons"
 import { type ImageDiffMode, imageMimeType } from "./image-files"
 import { Dialog } from "./ui/Dialog"
 import { Modal } from "./ui/Modal"
+import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 
 interface Side {
     content?: ImageContent
@@ -95,9 +97,12 @@ export function ImageDiff({ page, mode, read }: ImageDiffProps) {
         if (side.failed)
             return <div className="image-unavailable">Could not display this image.</div>
         return (
-            <AriaButton className="image-enlarge" aria-label={`Enlarge ${alt.toLowerCase()}`} onPress={enlarge}>
-                <img className="image-picture" src={side.url} alt={alt} />
-            </AriaButton>
+            <TooltipTrigger>
+                <AriaButton className="image-enlarge" aria-label={`Enlarge ${alt.toLowerCase()}`} onPress={enlarge}>
+                    <img className="image-picture" src={side.url} alt={alt} />
+                </AriaButton>
+                <Tooltip>Enlarge</Tooltip>
+            </TooltipTrigger>
         )
     }
 
@@ -129,42 +134,43 @@ export function ImageDiff({ page, mode, read }: ImageDiffProps) {
                 setPosition(Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width)))
         }
         return (
-            <div
-                className={`image-stage ${stacked}`}
-                tabIndex={stacked == "swipe" || clickable ? 0 : undefined}
-                role={clickable ? "button" : undefined}
-                aria-label={stacked == "swipe" ? "Swipe between old and new image" : clickable ? "Enlarge comparison" : undefined}
-                title={clickable ? "Enlarge" : undefined}
-                style={size}
-                onPointerDown={event => {
-                    if (stacked == "swipe") {
-                        event.currentTarget.setPointerCapture(event.pointerId)
-                        swipeTo(event)
-                    }
-                }}
-                onPointerMove={event => {
-                    if (stacked == "swipe" && event.buttons & 1)
-                        swipeTo(event)
-                }}
-                onClick={() => {
-                    if (clickable)
-                        setViewer({ kind: "stacked" })
-                }}
-                onKeyDown={(event: KeyboardEvent) => {
-                    let step = ({ ArrowLeft: -0.05, ArrowRight: 0.05, Home: -1, End: 1 } as Record<string, number>)[event.key]
-                    if (stacked == "swipe" && step != undefined) {
-                        event.preventDefault()
-                        setPosition(current => Math.min(1, Math.max(0, current + step)))
-                    } else if (clickable && (event.key == "Enter" || event.key == " ")) {
-                        event.preventDefault()
-                        setViewer({ kind: "stacked" })
-                    }
-                }}
-            >
-                <img className="image-layer" src={sides.old.url} alt="Old image" style={known ? { width: span(sides.old) } : { position: "static" }} />
-                <img className="image-layer" src={sides.new.url} alt="New image" style={{ width: span(sides.new), ...overlay }} />
-                {stacked == "swipe" && <div className="image-divider" style={{ left: `${position * 100}%` }} />}
-            </div>
+            <Hint text={clickable ? "Enlarge" : undefined}>
+                <div
+                    className={`image-stage ${stacked}`}
+                    tabIndex={stacked == "swipe" || clickable ? 0 : undefined}
+                    role={clickable ? "button" : undefined}
+                    aria-label={stacked == "swipe" ? "Swipe between old and new image" : clickable ? "Enlarge comparison" : undefined}
+                    style={size}
+                    onPointerDown={event => {
+                        if (stacked == "swipe") {
+                            event.currentTarget.setPointerCapture(event.pointerId)
+                            swipeTo(event)
+                        }
+                    }}
+                    onPointerMove={event => {
+                        if (stacked == "swipe" && event.buttons & 1)
+                            swipeTo(event)
+                    }}
+                    onClick={() => {
+                        if (clickable)
+                            setViewer({ kind: "stacked" })
+                    }}
+                    onKeyDown={(event: KeyboardEvent) => {
+                        let step = ({ ArrowLeft: -0.05, ArrowRight: 0.05, Home: -1, End: 1 } as Record<string, number>)[event.key]
+                        if (stacked == "swipe" && step != undefined) {
+                            event.preventDefault()
+                            setPosition(current => Math.min(1, Math.max(0, current + step)))
+                        } else if (clickable && (event.key == "Enter" || event.key == " ")) {
+                            event.preventDefault()
+                            setViewer({ kind: "stacked" })
+                        }
+                    }}
+                >
+                    <img className="image-layer" src={sides.old.url} alt="Old image" style={known ? { width: span(sides.old) } : { position: "static" }} />
+                    <img className="image-layer" src={sides.new.url} alt="New image" style={{ width: span(sides.new), ...overlay }} />
+                    {stacked == "swipe" && <div className="image-divider" style={{ left: `${position * 100}%` }} />}
+                </div>
+            </Hint>
         )
     }
 
@@ -204,9 +210,12 @@ export function ImageDiff({ page, mode, read }: ImageDiffProps) {
                             />
                         </label>
                     )}
-                    <AriaButton className="icon-button small" aria-label="Enlarge comparison" onPress={() => setViewer({ kind: "stacked" })}>
-                        <MaximizeIcon />
-                    </AriaButton>
+                    <TooltipTrigger>
+                        <AriaButton className="icon-button small" aria-label="Enlarge comparison" onPress={() => setViewer({ kind: "stacked" })}>
+                            <MaximizeIcon />
+                        </AriaButton>
+                        <Tooltip>Enlarge comparison</Tooltip>
+                    </TooltipTrigger>
                 </div>
             )}
             {image && (shown == "side-by-side"
@@ -231,7 +240,9 @@ export function ImageDiff({ page, mode, read }: ImageDiffProps) {
             >
                 <Dialog className="react-aria-Dialog image-viewer" aria-label={`${page.file.path} enlarged`}>
                     <header className="image-viewer-bar">
-                        <span className="image-viewer-title" title={page.file.path}>{page.file.path}</span>
+                        <Hint text={page.file.path}>
+                            <span className="image-viewer-title">{page.file.path}</span>
+                        </Hint>
                         <span className="image-viewer-caption">{viewerTitle}</span>
                         {single && both && (
                             <div className="image-viewer-group" role="group" aria-label="Version">
@@ -249,20 +260,20 @@ export function ImageDiff({ page, mode, read }: ImageDiffProps) {
                         )}
                         <div className="image-viewer-group" role="group" aria-label="Zoom">
                             {([["fit", "Fit to window"], ["actual", "Actual size"]] as const).map(([choice, label]) => (
-                                <ToggleButton
-                                    key={choice}
-                                    className="icon-button small"
-                                    aria-label={label}
-                                    isSelected={zoom == choice}
-                                    onChange={() => setZoom(choice)}
-                                >
-                                    <ZoomIcon zoom={choice} />
-                                </ToggleButton>
+                                <TooltipTrigger key={choice}>
+                                    <ToggleButton className="icon-button small" aria-label={label} isSelected={zoom == choice} onChange={() => setZoom(choice)}>
+                                        <ZoomIcon zoom={choice} />
+                                    </ToggleButton>
+                                    <Tooltip>{label}</Tooltip>
+                                </TooltipTrigger>
                             ))}
                         </div>
-                        <AriaButton className="icon-button small" aria-label="Close" slot="close">
-                            <CloseIcon />
-                        </AriaButton>
+                        <TooltipTrigger>
+                            <AriaButton className="icon-button small" aria-label="Close" slot="close">
+                                <CloseIcon />
+                            </AriaButton>
+                            <Tooltip>Close</Tooltip>
+                        </TooltipTrigger>
                     </header>
                     <div className="image-viewer-body">
                         {single

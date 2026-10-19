@@ -110,6 +110,15 @@ export function press(element: HTMLElement) {
     element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, detail: 1 }))
 }
 
+// The pointer moves, which tells React Aria a mouse is in use, and leaves where it was as it arrives: React
+// reads entering and leaving from pointerout and pointerover.
+export function hover(element: Element, from?: Element) {
+    let options = { bubbles: true, cancelable: true, pointerId: 1, pointerType: "mouse", width: 1, height: 1 }
+    ;(from ?? document.body).dispatchEvent(new PointerEvent("pointermove", options))
+    from?.dispatchEvent(new PointerEvent("pointerout", { ...options, relatedTarget: element }))
+    element.dispatchEvent(new PointerEvent("pointerover", { ...options, relatedTarget: from ?? null }))
+}
+
 // React tracks an input's value to tell user input from its own updates, so the value goes through
 // the element's own setter, as typing would.
 export function type(input: HTMLInputElement, value: string) {

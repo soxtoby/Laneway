@@ -24,9 +24,10 @@ describe("React column navigation", () => {
         let input = () => column().querySelector<HTMLInputElement>("[aria-label='Filter changed files']")!
         expect(focused(input())).toBe(true)
         await app.act(() => type(input(), "SRC/FI"))
-        expect(marks(".working-changes")).toBe("src/fisrc/fi")
+        // A name leads its folder, so a match across them marks the name's part first.
+        expect(marks(".working-changes")).toBe("fisrcfisrc")
         await app.act(() => press(button(trail(), "Inspect changes")))
-        expect(marks(".commit-files")).toBe("src/fi")
+        expect(marks(".commit-files")).toBe("fisrc")
 
         await app.act(() => type(input(), "no-matching-file"))
         expect(column().querySelector(".working-changes .file-row") == null).toBe(true)

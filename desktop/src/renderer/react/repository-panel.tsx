@@ -1,16 +1,16 @@
 import type { OpenRepository } from "@laneway/shared"
 import clsx from "clsx"
-import { type KeyboardEvent, useRef, useState } from "react"
-import { Button as AriaButton, DropIndicator, GridList, useDragAndDrop } from "react-aria-components"
-import { IconButton } from "./controls"
+import { type KeyboardEvent, type ReactNode, useRef, useState } from "react"
+import { Button as AriaButton, type ButtonProps, DropIndicator, GridList, useDragAndDrop } from "react-aria-components"
+import { Hint } from "./controls"
 import { DenseRow } from "./dense-row"
 import { AddIcon, CollapsePanelIcon, ExpandPanelIcon } from "./icons"
 import { automaticIcon, repositoryName } from "./repositories"
 import type { IconImageApi } from "./repository-icon-images"
 import { RepositoryTile } from "./repository-tile"
-import { Button } from "./ui/Button"
 import { GripVertical } from "./ui/icons"
 import { MenuItem } from "./ui/Menu"
+import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 
 interface RepositoryPanelProps {
     repositories: OpenRepository[]
@@ -32,32 +32,47 @@ interface RepositoryPanelProps {
  */
 export function RepositoryPanel(props: RepositoryPanelProps) {
     let [collapsed, setCollapsed] = useState(true)
+    // The heading and labels stay in place while collapsed, hidden, so nothing moves as the panel's width animates.
     return (
         <aside className={collapsed ? "repository-panel collapsed" : "repository-panel"} aria-label="Open repositories">
-            {!collapsed && <div className="panel-heading">Repositories</div>}
+            <div className="panel-heading">Repositories</div>
             <RepositoryList {...props} collapsed={collapsed} />
             <div className="panel-footer">
-                {collapsed
-                    ? (
-                        <IconButton label="Add repository" isDisabled={props.busy} onPress={props.onAdd}>
-                            <AddIcon />
-                        </IconButton>
-                    )
-                    : (
-                        <Button variant="quiet" isDisabled={props.busy} onPress={props.onAdd}>
-                            <AddIcon />
-                            Add repository
-                        </Button>
-                    )}
-                <IconButton
+                <PanelAction label="Add repository" isDisabled={props.busy} onPress={props.onAdd} labelled={!collapsed}>
+                    <AddIcon />
+                </PanelAction>
+                <PanelAction
                     label={collapsed ? "Expand repository sidebar" : "Collapse repository sidebar"}
                     aria-expanded={!collapsed}
                     onPress={() => setCollapsed(!collapsed)}
                 >
                     {collapsed ? <ExpandPanelIcon /> : <CollapsePanelIcon />}
-                </IconButton>
+                </PanelAction>
             </div>
         </aside>
+    )
+}
+
+/**
+ * A footer action whose icon sits where a collapsed panel centres it, with its label beside it once the panel
+ * opens; an unlabelled one has a tooltip instead.
+ */
+function PanelAction({ label, labelled, children, ...props }: Pick<ButtonProps, "onPress" | "isDisabled" | "aria-expanded"> & {
+    label: string
+    labelled?: boolean
+    children: ReactNode
+}) {
+    let button = (
+        <AriaButton {...props} className="panel-action" aria-label={labelled ? undefined : label}>
+            {children}
+            {labelled && <span className="panel-action-label">{label}</span>}
+        </AriaButton>
+    )
+    return labelled ? button : (
+        <TooltipTrigger>
+            {button}
+            <Tooltip placement="end">{label}</Tooltip>
+        </TooltipTrigger>
     )
 }
 
@@ -121,27 +136,29 @@ function RepositoryList(
                             }}
                         >
                             {({ isFocusVisibleWithin, actions }) => (
-                                <div className="repository-content" title={collapsed ? `${name}\n${path}` : path}>
-                                    <AriaButton slot="drag" className="drag-handle" data-visible={isFocusVisibleWithin || undefined}>
-                                        <GripVertical />
-                                    </AriaButton>
-                                    <RepositoryTile
-                                        icon={repository.icon ?? automaticIcon(repository)}
-                                        name={name}
-                                        api={api}
-                                        isActive={isActive}
-                                        isMissing={repository.status != "available"}
-                                    />
-                                    {!collapsed && (
-                                        <>
-                                            <span className="repository-copy">
-                                                <span className="repository-name">{name}</span>
-                                                <span className="repository-path">{path}</span>
-                                            </span>
-                                            {actions}
-                                        </>
-                                    )}
-                                </div>
+                                <Hint text={collapsed ? `${name}\n${path}` : path} placement="end">
+                                    <div className="repository-content">
+                                        <AriaButton slot="drag" className="drag-handle" data-visible={isFocusVisibleWithin || undefined}>
+                                            <GripVertical />
+                                        </AriaButton>
+                                        <RepositoryTile
+                                            icon={repository.icon ?? automaticIcon(repository)}
+                                            name={name}
+                                            api={api}
+                                            isActive={isActive}
+                                            isMissing={repository.status != "available"}
+                                        />
+                                        {!collapsed && (
+                                            <>
+                                                <span className="repository-copy">
+                                                    <span className="repository-name">{name}</span>
+                                                    <span className="repository-path">{path}</span>
+                                                </span>
+                                                {actions}
+                                            </>
+                                        )}
+                                    </div>
+                                </Hint>
                             )}
                         </DenseRow>
                     )

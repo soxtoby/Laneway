@@ -7,6 +7,7 @@ import { Dialog, DialogTrigger, Heading } from "./ui/Dialog"
 import { Description, Label } from "./ui/Form"
 import { Popover } from "./ui/Popover"
 import { TextField } from "./ui/TextField"
+import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 
 /**
  * The Branch Graph's settings: the remote its Primary Branch and remote branches come from, when there is a choice,
@@ -16,9 +17,12 @@ export function GraphSettings({ graph, onApply }: { graph: BranchGraph; onApply(
     let [open, setOpen] = useState(false)
     return (
         <DialogTrigger isOpen={open} onOpenChange={setOpen}>
-            <AriaButton className="icon-button" aria-label="Branch Graph settings">
-                <SettingsIcon />
-            </AriaButton>
+            <TooltipTrigger>
+                <AriaButton className="icon-button" aria-label="Branch Graph settings">
+                    <SettingsIcon />
+                </AriaButton>
+                <Tooltip>Branch Graph settings</Tooltip>
+            </TooltipTrigger>
             <Popover placement="bottom end" className="graph-settings-popover">
                 <Dialog className="react-aria-Dialog graph-settings">
                     {/* Mounted afresh on each opening, so a typed draft survives quiet refreshes while it shows. */}

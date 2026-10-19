@@ -5,7 +5,7 @@ import type { ColumnView } from "./branch-workspace"
 import { type CommitComposer, defaultBranchName } from "./commit-composer"
 import { type ComparisonColumnNode, comparisonHistorySource } from "./comparison-columns"
 import type { Landing } from "./composition"
-import { IconButton } from "./controls"
+import { Hint, IconButton } from "./controls"
 import { DiffControls, DiffPanel } from "./diff-panel"
 import { EditableName } from "./editable-name"
 import { fileListViewOptions } from "./file-list-view"
@@ -17,6 +17,7 @@ import { Button } from "./ui/Button"
 import { ChevronRight } from "./ui/icons"
 import { Menu, MenuItem, MenuSection, MenuTrigger, Separator } from "./ui/Menu"
 import { TextArea, TextField } from "./ui/TextField"
+import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 import { useSnapshot } from "./use-snapshot"
 
 interface WorkingChangesProps {
@@ -109,21 +110,35 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
             <div className={clean ? "commit-card clean" : "commit-card"} data-expanded={expanded || undefined}>
                 <header className="commit-header">
                     <h3 className="commit-title">
-                        <AriaButton
-                            className="working-changes-toggle"
-                            aria-label={expanded ? "Collapse Working Changes" : "Expand Working Changes"}
-                            aria-expanded={expanded}
-                            onPress={() => setExpanded(!expanded)}
-                        >
-                            <ChevronRight className="toggle-chevron" />
-                            <FolderIcon />
-                            <span>{clean ? "No Working Changes" : "Working Changes"}</span>
-                        </AriaButton>
+                        {/* A clean worktree has nothing to unfold or act on. */}
+                        {clean
+                            ? (
+                                <span className="working-changes-label">
+                                    <FolderIcon />
+                                    <span>No Working Changes</span>
+                                </span>
+                            )
+                            : (
+                                <AriaButton
+                                    className="working-changes-toggle"
+                                    aria-label={expanded ? "Collapse Working Changes" : "Expand Working Changes"}
+                                    aria-expanded={expanded}
+                                    onPress={() => setExpanded(!expanded)}
+                                >
+                                    <ChevronRight className="toggle-chevron" />
+                                    <FolderIcon />
+                                    <span>Working Changes</span>
+                                </AriaButton>
+                            )}
                     </h3>
-                    <FileListViewMenu label="File list view for Working Changes" view={view} onChange={onViewChange} />
-                    <IconButton label="Open diff column" small isDisabled={!files.length} onPress={() => inspection.openWorkingDiffColumn(column.id)}>
-                        <OpenColumnIcon />
-                    </IconButton>
+                    {!clean && (
+                        <>
+                            <FileListViewMenu label="File list view for Working Changes" view={view} onChange={onViewChange} />
+                            <IconButton label="Open diff column" small isDisabled={!files.length} onPress={() => inspection.openWorkingDiffColumn(column.id)}>
+                                <OpenColumnIcon />
+                            </IconButton>
+                        </>
+                    )}
                     {/* The form's own Commit button takes over while composing. */}
                     {!clean && !state.composing && (
                         <div className="commit-split">
@@ -131,9 +146,12 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
                                 Commit…
                             </Button>
                             <MenuTrigger>
-                                <Button variant="accent" aria-label="More commit actions" isDisabled={disabled || !files.length}>
-                                    <ChevronDownIcon />
-                                </Button>
+                                <TooltipTrigger>
+                                    <Button variant="accent" aria-label="More commit actions" isDisabled={disabled || !files.length}>
+                                        <ChevronDownIcon />
+                                    </Button>
+                                    <Tooltip>More commit actions</Tooltip>
+                                </TooltipTrigger>
                                 <Menu>
                                     <MenuItem onAction={reveal(composer.openStash)}>Stash Working Changes…</MenuItem>
                                 </Menu>
@@ -141,7 +159,7 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
                         </div>
                     )}
                 </header>
-                {expanded && (
+                {(expanded || clean) && (
                     <div className="commit-content">
                         {state.composing && (
                             <div className="commit-form">
@@ -233,20 +251,19 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
             </div>
             {/* A detached worktree has no branch below its Working Changes, so the branch its next commit creates stands in for one. */}
             {detached && (
-                <div
-                    className="virtual-branch"
-                    title={unborn ? "No commits yet; the first commit creates this branch" : "Committing creates this branch at the detached head"}
-                >
-                    <DetachedIcon className="virtual-branch-icon" />
-                    <EditableName
-                        name={draft.branch || preview?.suggestedBranch || defaultBranchName(path)}
-                        label="new branch"
-                        saveOnBlur
-                        isDisabled={disabled}
-                        onCommit={composer.nameBranch}
-                    />
-                    <small>{unborn ? "Unborn" : "Created on commit"}</small>
-                </div>
+                <Hint text={unborn ? "No commits yet; the first commit creates this branch" : "Committing creates this branch at the detached head"}>
+                    <div className="virtual-branch">
+                        <DetachedIcon className="virtual-branch-icon" />
+                        <EditableName
+                            name={draft.branch || preview?.suggestedBranch || defaultBranchName(path)}
+                            label="new branch"
+                            saveOnBlur
+                            isDisabled={disabled}
+                            onCommit={composer.nameBranch}
+                        />
+                        <small>{unborn ? "Unborn" : "Created on commit"}</small>
+                    </div>
+                </Hint>
             )}
         </section>
     )
@@ -303,7 +320,7 @@ function StashCard({ columnId, stash, inspected, inspection, view, root, actions
     )
     return (
         <div className="branch-stash" data-expanded={open || undefined}>
-            <div className="branch-stash-row" title={stash.tooltip}>
+            <div className="branch-stash-row">
                 <AriaButton
                     className="branch-stash-toggle"
                     aria-expanded={open}
@@ -312,7 +329,9 @@ function StashCard({ columnId, stash, inspected, inspection, view, root, actions
                 >
                     <ChevronRight className="toggle-chevron" />
                     <ArchiveIcon />
-                    <span className="branch-stash-message">{message}</span>
+                    <Hint text={stash.tooltip}>
+                        <span className="branch-stash-message">{message}</span>
+                    </Hint>
                     <small>{stash.label}</small>
                 </AriaButton>
                 {actions && (
@@ -524,9 +543,12 @@ function historySource(source: DiffSource): FileHistorySource | undefined {
 export function FileListViewMenu({ label, view, onChange }: { label: string; view: FileListView; onChange(view: FileListView): void }) {
     return (
         <MenuTrigger>
-            <AriaButton className="icon-button small" aria-label={label}>
-                <TreeIcon />
-            </AriaButton>
+            <TooltipTrigger>
+                <AriaButton className="icon-button small" aria-label={label}>
+                    <TreeIcon />
+                </AriaButton>
+                <Tooltip>File list view</Tooltip>
+            </TooltipTrigger>
             <Menu aria-label="File list view">
                 <MenuSection
                     selectionMode="single"

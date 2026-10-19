@@ -2,6 +2,7 @@ import type { ChangedFile, FileListView } from "@laneway/shared"
 import clsx from "clsx"
 import { type ReactNode, useEffect, useState } from "react"
 import { Button as AriaButton, type Key, type Selection, Tree } from "react-aria-components"
+import { Hint } from "./controls"
 import { DenseTreeItem } from "./dense-row"
 import { DiffRegion } from "./diff-panel"
 import { type FileTreeNode, fileTreeNodes } from "./file-list-view"
@@ -10,6 +11,7 @@ import { CheckIcon, CopyIcon, FileStatusIcon, FolderIcon } from "./icons"
 import { Checkbox } from "./ui/Checkbox"
 import { ChevronRight } from "./ui/icons"
 import { MenuItem, Separator } from "./ui/Menu"
+import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 
 interface FileTreeProps {
     /** Names the list, such as "Staged files". */
@@ -132,7 +134,6 @@ function FileTreeRow(
 ) {
     if (node.kind == "file") {
         let file = node.file
-        let path = file.oldPath ? `${file.oldPath} → ${file.path}` : file.path
         let open = props.inspect?.isOpen(file) == true
         return (
             <DenseTreeItem
@@ -142,7 +143,7 @@ function FileTreeRow(
                 menu={{ label: `Actions for ${file.path}`, items: () => <FileMenuItems file={file} root={props.root} items={props.menuItems} /> }}
                 content={({ actions }) => (
                     <>
-                        <div className="row-content file-content" title={path}>
+                        <div className="row-content file-content">
                             {props.leading?.([file], file.path)}
                             {props.onSelect && <Checkbox slot="selection" aria-label={`Select file ${file.path}`} />}
                             <FileStatusIcon status={file.conflicted ? "conflicted" : file.status} />
@@ -199,18 +200,29 @@ export function FileMenuItems({ file, root, items }: { file: ChangedFile; root?:
     )
 }
 
-/** The file's name, after its folder when the list doesn't show folders, and after its old path when renamed. */
+/**
+ * The file's name, then quietly its folder when the list doesn't show folders, and where a renamed file
+ * came from.
+ */
 export function FileLabel({ file, showFolder, highlight }: { file: ChangedFile; showFolder: boolean; highlight?: string }) {
     let separator = file.path.lastIndexOf("/") + 1
-    let folder = `${file.oldPath ? `${file.oldPath} → ` : ""}${showFolder ? file.path.slice(0, separator) : ""}`
+    let folder = showFolder ? file.path.slice(0, separator) : ""
     let name = file.path.slice(separator)
-    // A match can run from the folder into the name, so it is found across the whole label.
+    // A match can run from the folder into the name, so it is found across the whole path.
     let found = highlight ? occurrences(folder + name, highlight) : []
+    let moved = file.oldPath && highlight ? occurrences(file.oldPath, highlight) : []
     return (
-        <span className="file-path">
-            {folder && <span className="file-directory">{marked(folder, 0, found)}</span>}
-            <span className="file-name">{marked(name, folder.length, found)}</span>
-        </span>
+        <Hint text={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}>
+            <span className="file-path">
+                <span className="file-name">{marked(name, folder.length, found)}</span>
+                {(folder || file.oldPath) && (
+                    <span className="file-directory">
+                        {marked(folder.replace(/\/$/, ""), 0, found)}
+                        {file.oldPath && <>{folder && " "}← {marked(file.oldPath, 0, moved)}</>}
+                    </span>
+                )}
+            </span>
+        </Hint>
     )
 }
 
@@ -252,14 +264,17 @@ export function CopyPathButton({ path }: { path: string }) {
         return () => clearTimeout(timer)
     }, [copied])
     return (
-        <AriaButton
-            className="copy-path icon-button small"
-            aria-label={`Copy relative path of ${path}`}
-            data-copied={copied || undefined}
-            onPress={() => void copyText(path).then(() => setCopied(true))}
-        >
-            {copied ? <CheckIcon /> : <CopyIcon />}
-        </AriaButton>
+        <TooltipTrigger>
+            <AriaButton
+                className="copy-path icon-button small"
+                aria-label={`Copy relative path of ${path}`}
+                data-copied={copied || undefined}
+                onPress={() => void copyText(path).then(() => setCopied(true))}
+            >
+                {copied ? <CheckIcon /> : <CopyIcon />}
+            </AriaButton>
+            <Tooltip>{copied ? "Copied" : "Copy relative path"}</Tooltip>
+        </TooltipTrigger>
     )
 }
 

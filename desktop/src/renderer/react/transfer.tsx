@@ -6,6 +6,7 @@ import { Button } from "./ui/Button"
 import { Checkbox } from "./ui/Checkbox"
 import { GripVertical } from "./ui/icons"
 import { TextField } from "./ui/TextField"
+import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 import { useSnapshot } from "./use-snapshot"
 
 /** What a column's grips and destinations move within: the repository, its remote, and the column's branch. */
@@ -40,7 +41,8 @@ let rowSelector = ".dense-row, .commit-row, .stack-heading"
 
 /**
  * The grip that moves or copies a selection. Its whole row drags, Ctrl-dragging copies; pressing the grip,
- * or M or C on it, chooses the selection so the arrow keys and Enter can place it.
+ * or M or C anywhere in its row, chooses the selection so the arrow keys and Enter can place it. The grip
+ * and its row stay marked while the selection is chosen.
  */
 export function TransferGrip({ composition, selection, alone }: {
     composition: Composition
@@ -49,33 +51,54 @@ export function TransferGrip({ composition, selection, alone }: {
     alone?: boolean
 }) {
     let grip = useRef<HTMLButtonElement>(null)
-    let { busy } = useSnapshot(composition)
+    let { busy, active } = useSnapshot(composition)
     let current = useEffectEvent(() => selection)
     useEffect(() => {
         let row = alone ? grip.current : grip.current?.closest<HTMLElement>(rowSelector) ?? grip.current
-        return row ? composition.bindSource(row, () => current()) : undefined
+        if (!row)
+            return
+        // The keys work from the row because a list's arrow keys move between rows, never onto the grip. The
+        // row hears them before its list, whose type-to-find would take them.
+        let keyDown = (event: KeyboardEvent) => {
+            let key = event.key.toLowerCase()
+            if ((key != "m" && key != "c") || event.ctrlKey || event.metaKey || event.altKey || event.defaultPrevented)
+                return
+            if (event.target instanceof HTMLElement && event.target.closest("input, textarea, select, [contenteditable=true]"))
+                return
+            event.preventDefault()
+            event.stopPropagation()
+            composition.choose(current(), key == "c" ? "copy" : "move")
+        }
+        row.addEventListener("keydown", keyDown)
+        let unbind = composition.bindSource(row, () => current())
+        return () => {
+            row.removeEventListener("keydown", keyDown)
+            unbind()
+        }
     }, [composition, alone])
     return (
-        <span className="transfer-grip" title="Drag to move · Ctrl-drag to copy · M or C, then a destination and Enter">
-            <AriaButton
-                ref={grip}
-                aria-label={`Move or copy ${selection.label}`}
-                isDisabled={busy}
-                onPress={() => composition.choose(selection, "move")}
-                onKeyDown={event => {
-                    let key = event.key.toLowerCase()
-                    if ((key == "m" || key == "c") && !event.ctrlKey && !event.metaKey) {
-                        event.preventDefault()
-                        composition.choose(selection, key == "c" ? "copy" : "move")
-                    } else {
-                        event.continuePropagation()
-                    }
-                }}
-            >
-                <GripVertical />
-            </AriaButton>
+        <span className="transfer-grip">
+            <TooltipTrigger>
+                <AriaButton
+                    ref={grip}
+                    className="grip"
+                    aria-label={`Move or copy ${selection.label}`}
+                    data-chosen={active != undefined && sameSelection(active, selection) || undefined}
+                    isDisabled={busy}
+                    onPress={() => composition.choose(selection, "move")}
+                >
+                    <GripVertical />
+                </AriaButton>
+                <Tooltip className="react-aria-Tooltip hint">Drag to move · Ctrl-drag to copy · M or C, then a destination and Enter</Tooltip>
+            </TooltipTrigger>
         </span>
     )
+}
+
+/** Whether two selections take the same changes, as a grip's selection is drawn afresh on each render. */
+function sameSelection(a: TransferSelection, b: TransferSelection) {
+    let changes = (selection: TransferSelection) => JSON.stringify([selection.repositoryId, selection.source, selection.files, selection.view])
+    return changes(a) == changes(b)
 }
 
 /**

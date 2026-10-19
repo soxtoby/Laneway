@@ -18,15 +18,21 @@
     /* Repository Icon tiles. */
     --tile-background: var(--gray-100);
 
+    /* The workspace sits below the Branch Graph and the Workspace Columns, and a column sits just below
+       the cards in it. */
+    --workspace-background: var(--gray-300);
+    --column-background: var(--gray-100);
+
     /* The Commit Trail: branches and their commit nodes in blue, and what their remote already has in
-       teal, on a grey line; an unfolded commit's files sit in a recessed tray. */
-    --branch-background: oklch(from var(--blue) var(--lightness-100) calc(c * 0.25) h);
-    --branch-background-hover: oklch(from var(--blue) var(--lightness-200) calc(c * 0.35) h);
-    --branch-border: oklch(from var(--blue) var(--lightness-400) calc(c * 0.5) h);
+       teal, on a grey line; an unfolded commit's files sit in a recessed tray. Headings and unfolded
+       commits take pale washes of those tones. */
+    --branch-background: oklch(from var(--blue) var(--lightness-200) calc(c * 0.07) h);
+    --branch-background-hover: oklch(from var(--blue) var(--lightness-300) calc(c * 0.1) h);
+    --branch-border: oklch(from var(--blue) var(--lightness-400) calc(c * 0.2) h);
     --branch-color: var(--identity-branch);
-    --remote-background: oklch(from var(--turquoise) var(--lightness-100) calc(c * 0.4) h);
-    --remote-background-hover: oklch(from var(--turquoise) var(--lightness-200) calc(c * 0.5) h);
-    --remote-border: oklch(from var(--turquoise) var(--lightness-400) calc(c * 0.7) h);
+    --remote-background: oklch(from var(--turquoise) var(--lightness-200) calc(c * 0.19) h);
+    --remote-background-hover: oklch(from var(--turquoise) var(--lightness-300) calc(c * 0.27) h);
+    --remote-border: oklch(from var(--turquoise) var(--lightness-400) calc(c * 0.54) h);
     --remote-color: oklch(from var(--turquoise) var(--lightness-1000) c h);
     --tray-background: var(--gray-100);
     --graph-line: var(--gray-400);
@@ -43,15 +49,16 @@
     --graph-lane-6: hsl(50 65% var(--graph-lane-lightness));
     --graph-lane-7: hsl(315 65% var(--graph-lane-lightness));
 
-    /* Working Changes cards: amber for a worktree's own changes, purple for stashes, and pink for the
+    /* Working Changes cards: amber for a worktree's own changes, violet for stashes, and pink for the
        branch a detached worktree's commit creates. */
     --changes-background: oklch(from var(--tint) l c h / 14%);
     --changes-background-hover: oklch(from var(--tint) l c h / 24%);
     --changes-border: oklch(from var(--tint) l c h / 55%);
-    --stash-background: oklch(from var(--purple) var(--lightness-100) calc(c * 0.4) h);
-    --stash-background-hover: oklch(from var(--purple) var(--lightness-200) calc(c * 0.5) h);
-    --stash-border: oklch(from var(--purple) var(--lightness-400) calc(c * 0.6) h);
-    --stash-color: oklch(from var(--purple) var(--lightness-1000) c h);
+    --stash: oklch(54.1% 0.247 293);
+    --stash-background: color-mix(in oklab, var(--stash) 8%, var(--gray-50));
+    --stash-background-hover: color-mix(in oklab, var(--stash) 14%, var(--gray-50));
+    --stash-border: color-mix(in oklab, var(--stash) 45%, var(--gray-50));
+    --stash-color: oklch(43.6% 0.131 298);
     --virtual-background: oklch(from var(--pink) var(--lightness-100) calc(c * 0.4) h);
     --virtual-border: oklch(from var(--pink) var(--lightness-400) calc(c * 0.6) h);
     --virtual-color: oklch(from var(--pink) var(--lightness-1000) c h);
@@ -155,8 +162,18 @@
         --focus-ring-color: oklch(from var(--tint) 78.6% c h);
         --selection-background: oklch(from var(--tint) l c h / 18%);
         --selection-background-hover: oklch(from var(--tint) l c h / 26%);
-        --stash-background: oklch(from var(--purple) var(--lightness-100) calc(c * 0.35) h);
-        --stash-border: oklch(from var(--purple) var(--lightness-300) calc(c * 0.5) h);
+        --workspace-background: oklch(16% 0 0);
+        --column-background: oklch(20% 0 0);
+        --branch-background: oklch(from var(--blue) var(--lightness-100) calc(c * 0.12) h);
+        --branch-background-hover: oklch(from var(--blue) var(--lightness-200) calc(c * 0.15) h);
+        --branch-border: oklch(from var(--blue) var(--lightness-400) calc(c * 0.3) h);
+        --remote-background: oklch(from var(--turquoise) var(--lightness-100) calc(c * 0.3) h);
+        --remote-background-hover: oklch(from var(--turquoise) var(--lightness-200) calc(c * 0.4) h);
+        --remote-border: oklch(from var(--turquoise) var(--lightness-400) calc(c * 0.5) h);
+        --stash: oklch(70.9% 0.159 294);
+        --stash-background: color-mix(in oklab, var(--stash) 10%, var(--gray-50));
+        --stash-background-hover: color-mix(in oklab, var(--stash) 16%, var(--gray-50));
+        --stash-color: oklch(81.1% 0.101 294);
         --virtual-background: oklch(from var(--pink) var(--lightness-100) calc(c * 0.35) h);
         --virtual-border: oklch(from var(--pink) var(--lightness-300) calc(c * 0.5) h);
         --tone-lightness: 76%;

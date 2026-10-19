@@ -2,6 +2,7 @@ import type { BranchGraph, BranchGraphWorktree, WorktreeRequest } from "@laneway
 import { useState } from "react"
 import { Autocomplete, Button as AriaButton, useFilter } from "react-aria-components"
 import type { ColumnView } from "./branch-workspace"
+import { Hint } from "./controls"
 import { EditableName } from "./editable-name"
 import { MoreIcon } from "./icons"
 import { Button } from "./ui/Button"
@@ -10,6 +11,7 @@ import { Dialog, Heading } from "./ui/Dialog"
 import { Menu, MenuItem, MenuTrigger } from "./ui/Menu"
 import { Modal } from "./ui/Modal"
 import { SearchField } from "./ui/SearchField"
+import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 
 /** A worktree column's title: the worktree's name, renamed in place, over its path, marked when missing or locked. */
 export function WorktreeTitle({ worktree, busy, onPrepare }: { worktree: BranchGraphWorktree; busy: boolean; onPrepare(request: WorktreeRequest): void }) {
@@ -17,19 +19,28 @@ export function WorktreeTitle({ worktree, busy, onPrepare }: { worktree: BranchG
     return (
         <div className="column-title">
             <div className="column-title-row">
-                <h2 className="column-name" title={fixed}>
-                    <EditableName
-                        name={worktree.name}
-                        label="worktree"
-                        isDisabled={busy || fixed != undefined}
-                        saveOnBlur
-                        onCommit={basename => onPrepare({ action: "rename", path: worktree.path, basename })}
-                    />
-                </h2>
+                {/* A worktree that can't be renamed says why over its name. */}
+                <Hint text={fixed} forControl>
+                    <h2 className="column-name">
+                        <EditableName
+                            name={worktree.name}
+                            label="worktree"
+                            isDisabled={busy || fixed != undefined}
+                            saveOnBlur
+                            onCommit={basename => onPrepare({ action: "rename", path: worktree.path, basename })}
+                        />
+                    </h2>
+                </Hint>
                 {worktree.missing && <span className="state-chip">Missing</span>}
-                {worktree.locked && <span className="state-chip" title={worktree.lockReason ?? "Locked"}>Locked</span>}
+                {worktree.locked && (
+                    <Hint text={worktree.lockReason ?? "Locked"}>
+                        <span className="state-chip">Locked</span>
+                    </Hint>
+                )}
             </div>
-            <span className="column-path" title={worktree.path}>{worktree.path}</span>
+            <Hint text={worktree.path}>
+                <span className="column-path">{worktree.path}</span>
+            </Hint>
         </div>
     )
 }
@@ -59,9 +70,12 @@ export function WorktreeMenu({ column, graph, busy, onPrepare, chooseDirectory }
     return (
         <>
             <MenuTrigger>
-                <AriaButton className="icon-button" aria-label={worktree ? "Worktree actions" : "Check out branch"} isDisabled={busy}>
-                    <MoreIcon />
-                </AriaButton>
+                <TooltipTrigger>
+                    <AriaButton className="icon-button" aria-label={worktree ? "Worktree actions" : "Check out branch"} isDisabled={busy}>
+                        <MoreIcon />
+                    </AriaButton>
+                    <Tooltip>{worktree ? "Worktree actions" : "Check out branch"}</Tooltip>
+                </TooltipTrigger>
                 <Menu aria-label={worktree ? "Worktree actions" : "Check out branch"}>
                     {worktree && !worktree.missing && (
                         <MenuItem aria-label="Switch worktree branch" onAction={() => setChoosing(true)}>

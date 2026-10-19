@@ -1,7 +1,7 @@
 import type { ChangedFile } from "@laneway/shared"
 import { type MouseEvent, type RefObject, useLayoutEffect, useRef } from "react"
 import { Button as AriaButton } from "react-aria-components"
-import { IconButton } from "./controls"
+import { Hint, IconButton } from "./controls"
 import { useRowMenu } from "./dense-row"
 import { DiffControls, DiffPanel } from "./diff-panel"
 import { CopyPathButton, FileLabel, FileMenuItems } from "./file-tree"
@@ -62,13 +62,15 @@ export function DiffColumn({ view, sourceName, stacked, inspected, inspection, r
             aria-label={`${sourceName} diff`}
         >
             <header className="column-header auxiliary-header" onDoubleClick={toggleMaximized}>
-                <div className="column-title" title={title}>
-                    <div className="column-title-row">
-                        <h2 className="column-name">{title}</h2>
-                        {!stacked && <small className="auxiliary-source">From {sourceName}</small>}
+                <Hint text={title}>
+                    <div className="column-title">
+                        <div className="column-title-row">
+                            <h2 className="column-name">{title}</h2>
+                            {!stacked && <small className="auxiliary-source">From {sourceName}</small>}
+                        </div>
+                        {stacked && <small className="column-path auxiliary-source">From {sourceName}</small>}
                     </div>
-                    {stacked && <small className="column-path auxiliary-source">From {sourceName}</small>}
-                </div>
+                </Hint>
                 <IconButton label="Expand all" onPress={() => fold(listed.map(file => file.path), false)}>
                     <ExpandAllIcon />
                 </IconButton>
@@ -142,7 +144,7 @@ function DiffColumnFile({ view, file, id, diff, inspection, root, onFold }: {
     let { row, openMenu } = useRowMenu<HTMLElement>(menu)
     return (
         <div className="diff-column-file" data-diff-path={file.path}>
-            <header ref={row} className="diff-toolbar" title={file.path} onContextMenu={openMenu}>
+            <header ref={row} className="diff-toolbar" onContextMenu={openMenu}>
                 <AriaButton
                     className="diff-file-toggle"
                     aria-label={`${collapsed ? "Expand" : "Collapse"} ${file.path}`}

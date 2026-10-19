@@ -10,6 +10,7 @@ import type { FileDiffState, Inspection } from "./inspection"
 import { TransferGrip, transferSource, useTransferScope } from "./transfer"
 import { Button } from "./ui/Button"
 import { SegmentedControl, SegmentedControlItem } from "./ui/SegmentedControl"
+import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 
 /** How a column lays out its diffs, saved with the column. */
 export interface DiffScope {
@@ -56,26 +57,38 @@ export function DiffControls({ columnId, id, diff, inspection, breakout, entireF
     return (
         <div className="diff-controls">
             <div className="diff-layout-toggle" role="group" aria-label="Diff layout">
-                <ToggleButton className="icon-button small" aria-label="Unified" isSelected={layout == "unified"} onChange={() => setLayout("unified")}>
-                    <UnifiedDiffIcon />
-                </ToggleButton>
-                <ToggleButton className="icon-button small" aria-label="Side by side" isSelected={layout == "split"} onChange={() => setLayout("split")}>
-                    <SplitDiffIcon />
-                </ToggleButton>
+                <TooltipTrigger>
+                    <ToggleButton className="icon-button small" aria-label="Unified" isSelected={layout == "unified"} onChange={() => setLayout("unified")}>
+                        <UnifiedDiffIcon />
+                    </ToggleButton>
+                    <Tooltip>Unified</Tooltip>
+                </TooltipTrigger>
+                <TooltipTrigger>
+                    <ToggleButton className="icon-button small" aria-label="Side by side" isSelected={layout == "split"} onChange={() => setLayout("split")}>
+                        <SplitDiffIcon />
+                    </ToggleButton>
+                    <Tooltip>Side by side</Tooltip>
+                </TooltipTrigger>
             </div>
             {entireFiles && (
-                <ToggleButton className="icon-button small" aria-label="Show entire files" isSelected={entireFiles.shown} onChange={entireFiles.toggle}>
-                    <EntireFileIcon />
-                </ToggleButton>
+                <TooltipTrigger>
+                    <ToggleButton className="icon-button small" aria-label="Show entire files" isSelected={entireFiles.shown} onChange={entireFiles.toggle}>
+                        <EntireFileIcon />
+                    </ToggleButton>
+                    <Tooltip>Show entire files</Tooltip>
+                </TooltipTrigger>
             )}
-            <ToggleButton
-                className="icon-button small"
-                aria-label="Show whitespace"
-                isSelected={diff.showWhitespace}
-                onChange={() => inspection.toggleWhitespace(columnId, id)}
-            >
-                <WhitespaceIcon />
-            </ToggleButton>
+            <TooltipTrigger>
+                <ToggleButton
+                    className="icon-button small"
+                    aria-label="Show whitespace"
+                    isSelected={diff.showWhitespace}
+                    onChange={() => inspection.toggleWhitespace(columnId, id)}
+                >
+                    <WhitespaceIcon />
+                </ToggleButton>
+                <Tooltip>Show whitespace</Tooltip>
+            </TooltipTrigger>
             {breakoutButton}
         </div>
     )
@@ -86,15 +99,17 @@ export function ImageModeToggle({ mode, onChange }: { mode: ImageDiffMode; onCha
     return (
         <div className="diff-layout-toggle" role="group" aria-label="Image comparison mode">
             {imageModes.map(choice => (
-                <ToggleButton
-                    key={choice.mode}
-                    className="icon-button small"
-                    aria-label={choice.label}
-                    isSelected={mode == choice.mode}
-                    onChange={() => onChange(choice.mode)}
-                >
-                    <ImageModeIcon mode={choice.mode} />
-                </ToggleButton>
+                <TooltipTrigger key={choice.mode}>
+                    <ToggleButton
+                        className="icon-button small"
+                        aria-label={choice.label}
+                        isSelected={mode == choice.mode}
+                        onChange={() => onChange(choice.mode)}
+                    >
+                        <ImageModeIcon mode={choice.mode} />
+                    </ToggleButton>
+                    <Tooltip>{choice.label}</Tooltip>
+                </TooltipTrigger>
             ))}
         </div>
     )

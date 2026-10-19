@@ -65,7 +65,7 @@ describe("React Pull latest", () => {
         let readsBefore = graphReads
         let header = () => document.querySelector<HTMLElement>(".header")!
 
-        expect(header().querySelector(".pull-latest")?.getAttribute("title")).toBe("Fetch and synchronize open stacks")
+        expect(header().querySelector(".pull-latest")?.getAttribute("aria-description")).toBe("Fetch and synchronize open stacks")
         await app.act(() => press(button(header(), "Pull latest")))
         expect(requested).toEqual({ branches: [main!.preferredRef, feature!.preferredRef], remote: "origin" })
         expect(header().querySelector(".pull-latest") == null).toBe(true)
@@ -155,7 +155,7 @@ describe("React Pull latest", () => {
         let header = document.querySelector<HTMLElement>(".header")!
 
         expect(button(header, "Pull latest").hasAttribute("disabled")).toBe(true)
-        expect(header.querySelector(".pull-latest")?.getAttribute("title")).toBe("Add a remote to pull.")
+        expect(header.querySelector(".pull-latest")?.getAttribute("aria-description")).toBe("Add a remote to pull.")
     })
 
     test("a failed pull shows why in its dialog", async () => {

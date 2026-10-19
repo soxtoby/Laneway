@@ -53,9 +53,21 @@ app.on("browser-window-created", (_event, window) => {
                 await wait(() => document.getAnimations().length == 0, 'the enabled button to settle');
                 const light = colors();
                 const geometry = { header: height('header'), fileRow: height(fileRow), commitRow: height(commitRow), collapsedRepositoryRow: height(repositoryRow) };
+                // Long commit subjects and stash messages ellipsize instead of widening the column's content.
+                const columnBody = document.querySelector('.column-body');
+                await wait(() => document.querySelector('.branch-stash'), 'the stash');
+                const fits = { column: columnBody.scrollWidth <= columnBody.clientWidth };
+                // A long folder gives way, leaving the file's name whole.
+                const deep = [...document.querySelectorAll(fileRow)].find(row => row.textContent.includes('named-file.txt'));
+                const name = deep.querySelector('.file-name'), folder = deep.querySelector('.file-directory');
+                fits.fileName = name.scrollWidth <= name.clientWidth && folder.scrollWidth > folder.clientWidth;
+                // Opening the panel leaves its rows where they were.
+                const rowTop = document.querySelector(repositoryRow).getBoundingClientRect().top;
                 document.querySelector('button[aria-label="Expand repository sidebar"]').click();
                 await wait(() => document.querySelector('button[aria-label="Collapse repository sidebar"]'), 'the expanded panel');
+                await wait(() => document.getAnimations().length == 0, 'the panel to open');
                 geometry.repositoryRow = height(repositoryRow);
+                fits.panelRowsSteady = document.querySelector(repositoryRow).getBoundingClientRect().top == rowTop;
 
                 const row = document.querySelector(fileRow);
                 const rect = row.getBoundingClientRect();
@@ -91,7 +103,10 @@ app.on("browser-window-created", (_event, window) => {
 
                 // The diff column joins its source column's card across a seam, with the header band running on.
                 document.querySelector(fileRow + ' .file-path').click();
-                (await wait(() => document.querySelector('[aria-label="Break out diff"]'), 'the inline diff')).click();
+                const breakOut = await wait(() => document.querySelector('.column .pierre-diff') && document.querySelector('[aria-label="Break out diff"]'), 'the inline diff');
+                // An inline diff's long lines scroll within it.
+                fits.inlineDiff = columnBody.scrollWidth <= columnBody.clientWidth;
+                breakOut.click();
                 const aside = await wait(() => document.querySelector('.diff-column .pierre-diff') && document.querySelector('.diff-column'), 'the diff column');
                 await wait(() => document.getAnimations().length == 0, 'the diff column to settle');
                 const seam = aside.previousElementSibling;
@@ -118,7 +133,7 @@ app.on("browser-window-created", (_event, window) => {
                 await wait(() => document.getAnimations().length == 0, 'the appearance transitions');
                 const dark = colors();
 
-                return { light, dark, geometry, contextMenu, disabledCommit, settingsDialog, diffColumn, styleElements: document.querySelectorAll('style').length };
+                return { light, dark, geometry, fits, contextMenu, disabledCommit, settingsDialog, diffColumn, styleElements: document.querySelectorAll('style').length };
             })()`)
             writeFileSync(join(directory, "result.json"), JSON.stringify({ ...result, problems }))
             app.quit()

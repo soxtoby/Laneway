@@ -15,10 +15,18 @@ test("React renderer styles and menus work under production CSP in the built app
         git("config", "user.name", "Desktop Test")
         git("config", "user.email", "test@example.invalid")
         git("config", "commit.gpgsign", "false")
+        // Long names and lines, which must ellipsize or scroll within the column rather than widen it.
+        let long = "with a description long enough to run well past the edge of a column at its default width"
+        let deep = join(directory, "repository", "zz", "folders", "nested", "deeply", "enough", "to", "fill", "the", "row")
+        await mkdir(deep, { recursive: true })
+        await writeFile(join(deep, "named-file.txt"), "first\n")
         await writeFile(join(directory, "repository", "file.txt"), "first\n")
-        git("add", "file.txt")
-        git("commit", "-q", "-m", "Add the file")
-        await writeFile(join(directory, "repository", "file.txt"), "changed\n")
+        git("add", ".")
+        git("commit", "-q", "-m", `Add the file, ${long}`)
+        await writeFile(join(directory, "repository", "file.txt"), "stashed\n")
+        git("stash", "push", "-q", "-m", `Stash the file, ${long}`)
+        await writeFile(join(directory, "repository", "file.txt"), `changed ${long} ${long}\n`)
+        await writeFile(join(deep, "named-file.txt"), "changed\n")
         await writeFile(join(directory, "settings.json"), JSON.stringify({ version: 1, appearance: "light" }))
         await writeFile(
             join(directory, "workspace.json"),
@@ -78,6 +86,7 @@ test("React renderer styles and menus work under production CSP in the built app
                 accent: "#f5a733",
             },
             geometry: { header: 48, fileRow: 28, commitRow: 32, collapsedRepositoryRow: 36, repositoryRow: 40 },
+            fits: { column: true, fileName: true, panelRowsSteady: true, inlineDiff: true },
             contextMenu: { items: ["File history", "Discard changes", "Copy full path", "Copy relative path", "Copy file name"], atPointer: true },
             disabledCommit: { disabled: true, grey: true },
             settingsDialog: { tall: true, centred: true },
