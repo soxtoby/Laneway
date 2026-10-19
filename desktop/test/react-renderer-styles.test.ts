@@ -25,7 +25,8 @@ test("React renderer styles and menus work under production CSP in the built app
         git("commit", "-q", "-m", `Add the file, ${long}`)
         await writeFile(join(directory, "repository", "file.txt"), "stashed\n")
         git("stash", "push", "-q", "-m", `Stash the file, ${long}`)
-        await writeFile(join(directory, "repository", "file.txt"), `changed ${long} ${long}\n`)
+        // Enough lines that its diff runs past the bottom of the column.
+        await writeFile(join(directory, "repository", "file.txt"), Array.from({ length: 60 }, (_, line) => `changed ${line} ${long} ${long}\n`).join(""))
         await writeFile(join(deep, "named-file.txt"), "changed\n")
         await writeFile(join(directory, "settings.json"), JSON.stringify({ version: 1, appearance: "light" }))
         await writeFile(
@@ -87,6 +88,7 @@ test("React renderer styles and menus work under production CSP in the built app
             },
             geometry: { header: 48, fileRow: 28, commitRow: 32, collapsedRepositoryRow: 36, repositoryRow: 40 },
             fits: { column: true, fileName: true, panelRowsSteady: true, inlineDiff: true },
+            diffScrollbar: { takesRoom: true, onColumnEdge: true },
             contextMenu: { items: ["File history", "Discard changes", "Copy full path", "Copy relative path", "Copy file name"], atPointer: true },
             disabledCommit: { disabled: true, grey: true },
             settingsDialog: { tall: true, centred: true },
