@@ -1,14 +1,13 @@
 import type { ChangedFile, FileListView } from "@laneway/shared"
 import clsx from "clsx"
-import { type ReactNode, useEffect, useState } from "react"
-import { Button as AriaButton, type Key, type Selection, Tree } from "react-aria-components"
+import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from "react"
+import { Button as AriaButton, type Key, Tree } from "react-aria-components"
 import { Hint } from "./controls"
 import { DenseTreeItem } from "./dense-row"
 import { DiffRegion } from "./diff-panel"
 import { type FileTreeNode, fileTreeNodes } from "./file-list-view"
 import { copyText, fileName, fullPath } from "./file-paths"
 import { CheckIcon, CopyIcon, FileStatusIcon, FolderIcon } from "./icons"
-import { Checkbox } from "./ui/Checkbox"
 import { ChevronRight } from "./ui/icons"
 import { MenuItem, Separator } from "./ui/Menu"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
@@ -21,8 +20,8 @@ interface FileTreeProps {
     /** The list's group, which prefixes its files in `selected`. */
     group: string
     selected: string[]
-    /** Chooses or clears files together; without it the list has no checkboxes. */
-    onSelect?(files: ChangedFile[]): void
+    /** Chooses or clears files together, or with `add` only chooses them; without it rows can't be chosen. */
+    onSelect?(files: ChangedFile[], add?: boolean): void
     /** The worktree the files live in, enabling "Copy full path". */
     root?: string
     /** A file's own menu items, shown above the copy actions. */
@@ -51,8 +50,9 @@ export interface FileInspection {
 }
 
 /**
- * A list of changed files, flat or in folders and optionally grouped, as React Aria's Tree. A file's
- * checkbox chooses it for bulk actions; a folder's or group's chooses every file it holds.
+ * A list of changed files, flat or in folders and optionally grouped, as React Aria's Tree. Ctrl+click or Space
+ * chooses a file for bulk actions, or every file a folder or group holds, and Shift adds the rows from the last
+ * one pressed; a plain press still opens the row.
  */
 export function FileTree({ label, files, view, group, selected, onSelect, root, menuItems, hideStagedBadge, leading, inspect, highlight }: FileTreeProps) {
     let nodes = fileTreeNodes(files, view)
@@ -61,23 +61,53 @@ export function FileTree({ label, files, view, group, selected, onSelect, root, 
     let [folded, setFolded] = useState<Set<string>>(new Set())
     let expandedKeys = new Set([...folders.keys()].filter(key => !folded.has(key)))
     let isChosen = (file: ChangedFile) => selected.includes(`${group}:${file.path}`)
-    let selectedKeys = new Set<Key>([
-        ...files.filter(isChosen).map(file => file.path),
-        ...[...folders].filter(([, node]) => node.files.every(isChosen)).map(([key]) => key),
-    ])
+    let tree = useRef<HTMLDivElement>(null)
+    // Where a Shift range starts: the row last pressed or chosen on its own.
+    let anchor = useRef<string>(undefined)
+    // Ctrl or Shift held as a row is pressed, so React Aria's action for the press chooses the row instead.
+    let held = useRef<{ toggle: boolean; range: boolean }>(undefined)
 
-    // React Aria reports the whole selection; the row whose checkbox changed is the one that differs.
-    let changeSelection = (keys: Selection) => {
-        if (!onSelect || keys == "all")
+    let rowFiles = (key: string) => folders.get(key)?.files ?? files.filter(file => file.path == key)
+    let choose = (key: string, range: boolean) => {
+        let rows = [...tree.current?.querySelectorAll<HTMLElement>("[data-row-key]") ?? []].map(row => row.dataset.rowKey!)
+        let from = range && anchor.current != undefined ? rows.indexOf(anchor.current) : -1
+        let to = rows.indexOf(key)
+        if (from < 0 || to < 0) {
+            anchor.current = key
+            onSelect?.(rowFiles(key))
             return
-        let changed = [...keys].find(key => !selectedKeys.has(key)) ?? [...selectedKeys].find(key => !keys.has(key))
-        let folder = changed != undefined ? folders.get(String(changed)) : undefined
-        let file = files.find(candidate => candidate.path == changed)
-        if (folder)
-            onSelect(folder.files)
-        else if (file)
-            onSelect([file])
+        }
+        // An open folder's files are rows of their own; a folded one brings the files it hides.
+        let between = rows.slice(Math.min(from, to), Math.max(from, to) + 1)
+        onSelect?.(between.flatMap(row => folders.has(row) && !folded.has(row) ? [] : rowFiles(row)), true)
     }
+
+    // Native capturing listeners see a press's modifiers and a Space before React Aria's own handlers.
+    let pointerDown = useEffectEvent((event: PointerEvent) => {
+        held.current = { toggle: event.ctrlKey || event.metaKey, range: event.shiftKey }
+    })
+    let keyDown = useEffectEvent((event: KeyboardEvent) => {
+        held.current = undefined
+        let row = event.target as HTMLElement
+        if (event.key != " " || !onSelect || !row.dataset.rowKey)
+            return
+        event.preventDefault()
+        event.stopPropagation()
+        choose(row.dataset.rowKey, event.shiftKey)
+    })
+    useEffect(() => {
+        let element = tree.current
+        if (!element)
+            return
+        let onPointerDown = (event: PointerEvent) => pointerDown(event)
+        let onKeyDown = (event: KeyboardEvent) => keyDown(event)
+        element.addEventListener("pointerdown", onPointerDown, true)
+        element.addEventListener("keydown", onKeyDown, true)
+        return () => {
+            element.removeEventListener("pointerdown", onPointerDown, true)
+            element.removeEventListener("keydown", onKeyDown, true)
+        }
+    }, [])
 
     // Folding a folder or group closes the diffs of the files it hides.
     let fold = (keys: Set<string>) => {
@@ -87,8 +117,15 @@ export function FileTree({ label, files, view, group, selected, onSelect, root, 
         setFolded(keys)
     }
 
-    // A folder's row folds it; a file's row shows or hides its diff.
+    // A folder's row folds it; a file's row shows or hides its diff. With Ctrl or Shift held, the row is chosen.
     let act = (key: Key) => {
+        let modifiers = held.current
+        held.current = undefined
+        if (onSelect && (modifiers?.toggle || modifiers?.range)) {
+            choose(String(key), modifiers.range)
+            return
+        }
+        anchor.current = String(key)
         if (folders.has(String(key))) {
             let next = new Set(folded)
             if (!next.delete(String(key)))
@@ -103,12 +140,9 @@ export function FileTree({ label, files, view, group, selected, onSelect, root, 
 
     return (
         <Tree
+            ref={tree}
             aria-label={label}
             className="file-tree"
-            selectionMode={onSelect ? "multiple" : "none"}
-            selectionBehavior="toggle"
-            selectedKeys={selectedKeys}
-            onSelectionChange={changeSelection}
             expandedKeys={expandedKeys}
             onExpandedChange={keys => fold(new Set([...folders.keys()].filter(key => !keys.has(key))))}
             onAction={act}
@@ -118,7 +152,8 @@ export function FileTree({ label, files, view, group, selected, onSelect, root, 
                     key={node.key}
                     node={node}
                     flat={view.layout == "flat"}
-                    props={{ onSelect, root, menuItems, hideStagedBadge, leading, inspect, highlight }}
+                    nested={folders.size > 0}
+                    props={{ isChosen, root, menuItems, hideStagedBadge, leading, inspect, highlight }}
                 />
             ))}
         </Tree>
@@ -126,10 +161,14 @@ export function FileTree({ label, files, view, group, selected, onSelect, root, 
 }
 
 function FileTreeRow(
-    { node, flat, props }: {
+    { node, flat, nested, props }: {
         node: FileTreeNode
         flat: boolean
-        props: Pick<FileTreeProps, "onSelect" | "root" | "menuItems" | "hideStagedBadge" | "leading" | "inspect" | "highlight">
+        /** Whether the list has folders or groups, whose chevrons lead their rows; a file keeps a space for one. */
+        nested: boolean
+        props: Pick<FileTreeProps, "root" | "menuItems" | "hideStagedBadge" | "leading" | "inspect" | "highlight"> & {
+            isChosen(file: ChangedFile): boolean
+        }
     },
 ) {
     if (node.kind == "file") {
@@ -140,12 +179,14 @@ function FileTreeRow(
                 id={node.key}
                 textValue={file.path}
                 className={clsx("compact file-row", open && "inspected", props.inspect?.isActive(file) && "active")}
+                data-row-key={node.key}
+                data-chosen={props.isChosen(file) || undefined}
                 menu={{ label: `Actions for ${file.path}`, items: () => <FileMenuItems file={file} root={props.root} items={props.menuItems} /> }}
                 content={({ actions }) => (
                     <>
                         <div className="row-content file-content">
                             {props.leading?.([file], file.path)}
-                            {props.onSelect && <Checkbox slot="selection" aria-label={`Select file ${file.path}`} />}
+                            {nested && <span className="chevron-space" />}
                             <FileStatusIcon status={file.conflicted ? "conflicted" : file.status} />
                             <FileLabel file={file} showFolder={flat || !!file.oldPath} highlight={props.highlight} />
                             <CopyPathButton path={file.path} />
@@ -165,11 +206,12 @@ function FileTreeRow(
             id={node.key}
             textValue={node.label}
             className="compact folder-row"
+            data-row-key={node.key}
+            data-chosen={node.files.every(props.isChosen) || undefined}
             content={({ isExpanded }) => (
-                // Shaped like a file row, with the chevron where a file's status icon sits, so checkboxes line up.
+                // Shaped like a file row, its chevron where a file keeps a space, so icons line up.
                 <div className="row-content folder-content">
                     {props.leading?.(node.files, node.label)}
-                    {props.onSelect && <Checkbox slot="selection" aria-label={`Select ${node.files.length} files in ${node.label}`} />}
                     <AriaButton slot="chevron" className="folder-chevron" aria-label={isExpanded ? `Fold ${node.label}` : `Unfold ${node.label}`}>
                         <ChevronRight />
                     </AriaButton>
@@ -181,7 +223,7 @@ function FileTreeRow(
                 </div>
             )}
         >
-            {node.children.map(child => <FileTreeRow key={child.key} node={child} flat={flat} props={props} />)}
+            {node.children.map(child => <FileTreeRow key={child.key} node={child} flat={flat} nested={nested} props={props} />)}
         </DenseTreeItem>
     )
 }

@@ -504,7 +504,7 @@ export function FileList(
                     group={group}
                     selected={inspected?.selected ?? []}
                     onSelect={selectable
-                        ? chosenFiles => inspection.select(columnId, group, chosenFiles)
+                        ? (chosenFiles, add) => inspection.select(columnId, group, chosenFiles, add)
                         : undefined}
                     root={root}
                     hideStagedBadge={working}

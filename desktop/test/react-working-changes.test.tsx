@@ -58,17 +58,41 @@ describe("React Working Changes", () => {
         expect(saved.at(-1)).toEqual({ layout: "flat", grouping: "kind" })
         expect(folderNames()).toEqual(["Implementation", "Tests"])
 
-        // A group's checkbox chooses every file it holds; choosing them all again clears them.
-        await app.act(() => press(checkbox("Select 2 files in Implementation")))
+        // Ctrl+click on a group chooses every file it holds; choosing them all again clears them.
+        await app.act(() => press(row("Implementation"), { ctrlKey: true }))
         expect(selectionSummary()).toContain("2 of 3 selected")
-        expect(checkbox("Select file src/file.txt").checked).toBe(true)
-        expect(checkbox("Select 2 files in Implementation").checked).toBe(true)
-        await app.act(() => press(checkbox("Select file other.txt")))
-        expect(checkbox("Select 2 files in Implementation").checked).toBe(false)
-        await app.act(() => press(checkbox("Select 2 files in Implementation")))
+        expect(chosen(row("src/file.txt"))).toBe(true)
+        expect(chosen(row("Implementation"))).toBe(true)
+        await app.act(() => press(row("other.txt"), { ctrlKey: true }))
+        expect(chosen(row("Implementation"))).toBe(false)
+        await app.act(() => press(row("Implementation"), { ctrlKey: true }))
         expect(selectionSummary()).toContain("2 of 3 selected")
-        await app.act(() => press(checkbox("Select 2 files in Implementation")))
+        await app.act(() => press(row("Implementation"), { ctrlKey: true }))
         expect(selectionSummary()).toBeUndefined()
+    })
+
+    test("Ctrl+click and Space choose files, Shift+click adds the rows between, and a plain click still opens a diff", async () => {
+        let scenario = inspectionScenario()
+        let files = [changedFile("src/file.txt"), changedFile("other.txt"), changedFile("test/unit/file.test.ts")]
+        let app = await startReactApp({
+            ...scenario.api,
+            readChanges: async (_id, _requestId, request) => ({ ok: true, inventory: { source: request.source, files, version: "inventory", parents: [] } }),
+        })
+        let [first, second, third] = rowNames(workingChanges())
+
+        await app.act(() => press(row(first!), { ctrlKey: true }))
+        await app.act(() => press(row(third!), { shiftKey: true }))
+        let ranged = chosenNames()
+        await app.act(() => press(row(second!)))
+        let opened = row(second!).classList.contains("inspected")
+        let afterOpening = chosenNames()
+        await app.act(() => row(second!).dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true })))
+        let spaced = chosenNames()
+
+        expect(ranged).toEqual([first, second, third])
+        expect(opened).toBe(true)
+        expect(afterOpening).toEqual([first, second, third])
+        expect(spaced).toEqual([first, third])
     })
 
     test("a clean worktree's Working Changes card has nothing to unfold or act on", async () => {
@@ -165,8 +189,8 @@ describe("React Working Changes", () => {
         expect(undone).toHaveLength(3)
 
         // A right-click on one of the chosen files discards them all.
-        await app.act(() => press(checkbox("Select file src/file.txt", 1)))
-        await app.act(() => press(checkbox("Select file other.txt", 1)))
+        await app.act(() => press(row("src/file.txt", 1), { ctrlKey: true }))
+        await app.act(() => press(row("other.txt", 1), { ctrlKey: true }))
         await discard(3, "Discard 2 selected files")
         expect(requests.at(-1)).toMatchObject({ kind: "files", view: "unstaged", files: [{ path: "src/file.txt" }, { path: "other.txt" }] })
     })
@@ -229,7 +253,7 @@ describe("React Working Changes", () => {
         await app.act(() => press(button(header(), "Commit…")))
         expect(input("Commit title").value).toBe("Keep snapshot")
         // A chosen file is counted beside its own list, and the commit that removes it clears the choice.
-        await app.act(() => press(checkbox("Select file src/file.txt")))
+        await app.act(() => press(row("src/file.txt"), { ctrlKey: true }))
         expect(selectionSummary()).toContain("1 of 1 selected")
         await app.act(() => press(button(workingChanges(), "Commit staged (1)")))
 
@@ -452,8 +476,17 @@ function tree(label: string) {
     return document.querySelector<HTMLElement>(`[role=treegrid][aria-label='${label}']`)!
 }
 
-function checkbox(label: string, index = 0) {
-    return [...workingChanges().querySelectorAll<HTMLInputElement>(`input[aria-label='${label}']`)][index]!
+/** A file's row by its path, or a folder's or group's by its label; `index` picks among lists showing it. */
+function row(label: string, index = 0) {
+    return [...workingChanges().querySelectorAll<HTMLElement>(`[data-row-key][aria-label='${label}']`)][index]!
+}
+
+function chosen(element: Element) {
+    return element.hasAttribute("data-chosen")
+}
+
+function chosenNames() {
+    return [...workingChanges().querySelectorAll(".file-row[data-chosen]")].map(element => element.getAttribute("aria-label"))
 }
 
 function input(label: string) {

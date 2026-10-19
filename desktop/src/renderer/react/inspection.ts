@@ -248,8 +248,8 @@ export interface Inspection extends Store<InspectionSnapshot> {
     readImage(page: FileDiffPage, signal: AbortSignal, fetchLfs?: boolean): Promise<FileImagePage>
     /** Compares a picture another way; every picture opens in the last mode chosen until Laneway restarts. */
     setImageMode(columnId: string, key: string, mode: ImageDiffMode): void
-    /** Toggles whole files together: all already chosen clears them, otherwise all become chosen. */
-    select(columnId: string, group: string, files: ChangedFile[]): void
+    /** Toggles whole files together: all already chosen clears them, otherwise all become chosen; `add` only chooses them. */
+    select(columnId: string, group: string, files: ChangedFile[], add?: boolean): void
     clearSelection(columnId: string): void
     setShowIgnored(columnId: string, showIgnored: boolean): void
     /** What discarding `file` from `group` would discard, and the menu label for it; nothing for lists that don't discard. */
@@ -1396,12 +1396,12 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             publish()
         },
 
-        select(columnId, group, files) {
+        select(columnId, group, files, add) {
             let state = columnState(columnId)
             if (!state)
                 return
             let ids = files.map(file => `${group}:${file.path}`)
-            state.selected = ids.every(id => state.selected.includes(id))
+            state.selected = !add && ids.every(id => state.selected.includes(id))
                 ? state.selected.filter(id => !ids.includes(id))
                 : [...state.selected.filter(id => id.startsWith(`${group}:`)), ...ids.filter(id => !state.selected.includes(id))]
             publish()

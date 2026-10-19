@@ -102,12 +102,12 @@ export function field(container: Element, label: string) {
     return input
 }
 
-// React Aria acts on pointer presses, which a bare click event doesn't make.
-export function press(element: HTMLElement) {
-    let options = { bubbles: true, cancelable: true, pointerId: 1, pointerType: "mouse", button: 0, width: 1, height: 1 }
+// React Aria acts on pointer presses, which a bare click event doesn't make. `keys` holds modifiers, such as Ctrl.
+export function press(element: HTMLElement, keys: { ctrlKey?: boolean; shiftKey?: boolean } = {}) {
+    let options = { bubbles: true, cancelable: true, pointerId: 1, pointerType: "mouse", button: 0, width: 1, height: 1, ...keys }
     element.dispatchEvent(new PointerEvent("pointerdown", options))
     element.dispatchEvent(new PointerEvent("pointerup", options))
-    element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, detail: 1 }))
+    element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, detail: 1, ...keys }))
 }
 
 // The pointer moves, which tells React Aria a mouse is in use, and leaves where it was as it arrives: React

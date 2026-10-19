@@ -992,20 +992,37 @@
     outline: none;
 }
 
-/* Each level steps in by a checkbox and its gap, so a folder's files start under its chevron. */
+/* A row leads with its chevron, or a file's space for one, then its icon, each level a chevron's width further in.
+   Its grip floats in the indent before them, so it takes no room. */
 .file-row,
 .folder-row {
     .row-content {
+        --row-indent: calc((var(--tree-item-level, 1) - 1) * var(--spacing-4) + var(--spacing-3));
+        position: relative;
         display: flex;
-        padding-inline-start: calc((var(--tree-item-level, 1) - 1) * var(--spacing) * 6.5 + var(--spacing-1));
+        column-gap: calc(var(--spacing) * 1.5);
+        padding-inline-start: var(--row-indent);
+    }
+
+    .row-content > .transfer-grip {
+        position: absolute;
+        inset-block: 0;
+        inset-inline-start: calc(var(--row-indent) - var(--spacing-3));
+        align-items: center;
+    }
+
+    /* A file beside folders floats its grip in the space it keeps for a chevron. */
+    .row-content:has(> .chevron-space) > .transfer-grip {
+        inset-inline-start: calc(var(--row-indent) + var(--spacing) * 0.75);
     }
 }
 
-.file-content {
-    .react-aria-Checkbox {
-        flex: 0 0 auto;
-    }
+.chevron-space {
+    flex: 0 0 auto;
+    width: var(--spacing-4);
+}
 
+.file-content {
     .file-path {
         flex: 1 1 auto;
         min-width: 0;
@@ -1103,11 +1120,27 @@
         background: var(--highlight-hover);
     }
 
-    &[data-selected] {
+    /* Selected, or chosen with Ctrl+click in a file list. */
+    &:is([data-selected], [data-chosen]) {
         background: var(--selection-background);
 
         &[data-hovered] {
             background: var(--selection-background-hover);
+        }
+    }
+
+    /* Chosen rows next to each other join into one block, squaring the corners they share. An open row's
+       diff sits between it and the row below, so those corners stay round. */
+    &[data-chosen]:not(.inspected):has(+ .dense-row[data-chosen]) {
+        border-end-start-radius: 0;
+        border-end-end-radius: 0;
+    }
+
+    &[data-chosen]:not(.inspected) + &[data-chosen] {
+        &,
+        & .file-content {
+            border-start-start-radius: 0;
+            border-start-end-radius: 0;
         }
     }
 
@@ -1396,7 +1429,7 @@
 
 /* An unfolded commit's message and files sit in a tray beside the line. */
 .commit-files {
-    padding: var(--spacing-1) var(--spacing-1) var(--spacing-1) 26px;
+    padding: var(--spacing-1) var(--spacing-1) var(--spacing-1) 20px;
     border-bottom: 1px solid var(--border-color);
     background: var(--tray-background);
 }
@@ -1525,7 +1558,7 @@
 
     /* Only the row's own line takes the hover and choice tints, not its diff. */
     &[data-hovered],
-    &[data-selected] {
+    &[data-chosen] {
         background: none;
     }
 
@@ -1533,7 +1566,7 @@
         background: var(--highlight-hover);
     }
 
-    &[data-selected] .file-content {
+    &[data-chosen] .file-content {
         background: var(--selection-background);
     }
 }
@@ -1930,7 +1963,7 @@
     display: flex;
 
     .grip {
-        width: var(--spacing-4);
+        width: calc(var(--spacing) * 2.5);
         height: var(--spacing-6);
         display: grid;
         place-items: center;
@@ -1968,10 +2001,41 @@
     }
 }
 
+/* A row's grip shows while the pointer or keyboard focus is on the row, or while it is chosen. Hidden, it keeps
+   its room, so the row doesn't shift. */
+:is(.dense-row:not([data-hovered], [data-focus-visible], [data-focus-visible-within]), :is(.commit-row, .stack-heading, .history-row):not(:hover, :has([data-focus-visible])))
+    .grip:not([data-chosen], [data-focus-visible]) {
+    visibility: hidden;
+}
+
 /* The row whose selection is chosen stays marked while a destination is found. */
-:is(.dense-row, .commit-row, .stack-heading):has(.grip[data-chosen]) {
+:is(.commit-row, .stack-heading):has(.grip[data-chosen]) {
     outline: 2px dashed var(--focus-ring-color);
     outline-offset: -2px;
+}
+
+/* Chosen files moving together are marked by one outline around each run of them, drawn over each row with the
+   edges it shares with its neighbours left out. */
+.dense-row:has(.grip[data-chosen]) {
+    position: relative;
+
+    &::after {
+        content: "";
+        position: absolute;
+        z-index: 4;
+        inset: 0;
+        border: 2px dashed var(--focus-ring-color);
+        border-radius: inherit;
+        pointer-events: none;
+    }
+
+    &:has(+ .dense-row .grip[data-chosen])::after {
+        border-bottom: 0;
+    }
+
+    & + &::after {
+        border-top: 0;
+    }
 }
 
 /* A branch heading's grip sits before its title. */

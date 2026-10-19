@@ -88,8 +88,8 @@ describe("React composition", () => {
         let app = await startReactApp(api)
         await app.act(() => press(button(trail(), "Inspect changes")))
         let files = trail().querySelector<HTMLElement>(".commit-files")!
-        await app.act(() => press(files.querySelector<HTMLElement>("input[aria-label='Select file src/file.txt']")!))
-        await app.act(() => press(files.querySelector<HTMLElement>("input[aria-label='Select file other.txt']")!))
+        await app.act(() => press(files.querySelector<HTMLElement>("[data-row-key][aria-label='src/file.txt']")!, { ctrlKey: true }))
+        await app.act(() => press(files.querySelector<HTMLElement>("[data-row-key][aria-label='other.txt']")!, { ctrlKey: true }))
 
         await app.act(() => key(button(files, "Move or copy 2 files"), "c"))
         expect(toast()?.textContent).toContain("Copy 2 files")
