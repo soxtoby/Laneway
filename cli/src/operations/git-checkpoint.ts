@@ -182,7 +182,10 @@ export async function restoreGitCheckpoint(repo: RepositoryGit, source: GitCheck
     let configKeys = new Set([...source.branchConfig, ...target.branchConfig].map(([key]) => key))
     for (let key of configKeys) {
         let old = source.branchConfig.filter(([k]) => k == key), next = target.branchConfig.filter(([k]) => k == key)
-        if (JSON.stringify(old) != JSON.stringify(next)) {
+        // Keep an upstream that Publish recorded after the target was captured, while its branch survives.
+        let branch = upstreamBranch(key)
+        let published = branch != undefined && !next.length && Boolean(target.refs[`refs/heads/${branch}`])
+        if (JSON.stringify(old) != JSON.stringify(next) && !published) {
             await repo.run(main, ["config", "--unset-all", key])
             for (let [, value] of next)
                 await repo.command(main, ["config", "--add", key, value])
@@ -335,7 +338,8 @@ export function checkpointIdentity(checkpoint: GitCheckpoint) {
     return JSON.stringify({
         ...checkpoint,
         refs: Object.entries(checkpoint.refs).sort(),
-        branchConfig: checkpoint.branchConfig.toSorted(([a], [b]) => a.localeCompare(b)),
+        // Publish records upstreams outside Operation History, so they never make an operation look externally changed.
+        branchConfig: checkpoint.branchConfig.filter(([key]) => upstreamBranch(key) == undefined).toSorted(([a], [b]) => a.localeCompare(b)),
         worktrees: checkpoint.worktrees.map(w => ({
             ...w,
             stash: undefined,
@@ -344,6 +348,10 @@ export function checkpointIdentity(checkpoint: GitCheckpoint) {
             submodules: w.submodules.map(s => ({ ...s, stash: undefined })),
         })),
     })
+}
+
+function upstreamBranch(key: string) {
+    return /^branch\.(.+)\.(?:remote|merge)$/.exec(key)?.[1]
 }
 
 export async function workingFingerprint(repo: RepositoryGit, w: Pick<Worktree, "path" | "scope">, unmerged: Buffer = Buffer.alloc(0)) {
