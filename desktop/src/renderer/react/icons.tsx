@@ -1,4 +1,4 @@
-import { Archive, ArrowDownToLine, ArrowRight, Check, ChevronDown, ChevronsDownUp, ChevronsLeft, ChevronsRight, ChevronsUpDown, Copy, Diff, Ellipsis, ExternalLink, FaceSlightlySmiling, Folder, GitBranch, GitCompareArrows, GitGraph, type IconNode, Image, ImagePlus, ListTree, Maximize2, Minimize2, Minus, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Redo2, Search, SlidersHorizontal, Sun, Tag, TextWrap, TriangleAlert, Type, Undo2, UserRound, X } from "lucide"
+import { Archive, ArrowDownToLine, ArrowRight, Check, ChevronDown, ChevronsDownUp, ChevronsLeft, ChevronsRight, ChevronsUpDown, Copy, Diff, Ellipsis, ExternalLink, FaceSlightlySmiling, Folder, GitBranch, GitCompareArrows, GitGraph, type IconNode, Image, ImagePlus, ListTree, Maximize2, Minimize2, Minus, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Redo2, Search, SlidersHorizontal, Sun, Tag, TextWrap, TriangleAlert, Type, Undo2, X } from "lucide"
 import { createElement, type ReactNode } from "react"
 import { customIconPaths } from "./icon-nodes"
 import { lucideIcon } from "./ui/icons"
@@ -23,7 +23,6 @@ export let SearchIcon = lucideIcon(Search, "search")
 export let SettingsIcon = lucideIcon(SlidersHorizontal, "sliders-horizontal")
 export let SunIcon = lucideIcon(Sun, "sun")
 export let UndoIcon = lucideIcon(Undo2, "undo-2")
-export let AuthorIcon = lucideIcon(UserRound, "user-round")
 export let CloseIcon = lucideIcon(X, "x")
 export let CollapseColumnIcon = lucideIcon(ChevronsLeft, "chevrons-left")
 export let ExpandColumnIcon = lucideIcon(ChevronsRight, "chevrons-right")

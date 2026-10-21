@@ -47,7 +47,7 @@ describe("React Commit Trail", () => {
         expect([...trail().querySelectorAll(".stack-branch")].map(card => card.classList.contains("remote"))).toEqual([false, true])
     })
 
-    test("marks commits by other authors with their name and email, but not the developer's own", async () => {
+    test("marks commits by other authors with their initials, name, and email, but not the developer's own", async () => {
         let scenario = inspectionScenario()
         scenario.graph.authorIdentities = { primary: "developer@example.test", secondary: ["dev@home.test"] }
         await startReactApp({
@@ -63,13 +63,11 @@ describe("React Commit Trail", () => {
         })
 
         expect(
-            commitRows().map(
-                row => [
-                    row.querySelector(".commit-subject")?.textContent,
-                    row.querySelector("[role=img][aria-label^='Authored by']")?.getAttribute("aria-description"),
-                ],
-            ),
-        ).toEqual([["Mine", undefined], ["Theirs", "Alex Rivera <alex@example.test>"]])
+            commitRows().map(row => {
+                let author = row.querySelector("[role=img][aria-label^='Authored by']")
+                return [row.querySelector(".commit-subject")?.textContent, author?.textContent, author?.getAttribute("aria-description")]
+            }),
+        ).toEqual([["Mine", undefined, undefined], ["Theirs", "AR", "Alex Rivera <alex@example.test>"]])
     })
 
     test("a commit unfolds to its message and files, and a merge compares the parent chosen", async () => {
@@ -355,7 +353,7 @@ describe("React Commit Trail", () => {
 })
 
 function commit(objectId: string, subject: string, parentIds = ["1".repeat(40)]): BranchHistoryCommit {
-    return { objectId, parentIds, subject, authorName: "Test", authorEmail: "test@example.test", authoredAt: 1788566400 }
+    return { objectId, parentIds, subject, authorName: "Developer", authorEmail: "developer@example.test", authoredAt: 1788566400 }
 }
 
 function performed(): LocalActionResult {

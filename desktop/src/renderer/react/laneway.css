@@ -1423,12 +1423,29 @@
     min-width: 0;
 }
 
-.message-indicator,
-.commit-author {
+.message-indicator {
     flex: 0 0 auto;
     width: var(--spacing-3);
     height: var(--spacing-3);
     color: var(--text-color-placeholder);
+}
+
+/* A slot an avatar image could fill instead of the initials. */
+.commit-author {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    box-sizing: border-box;
+    width: var(--spacing-4);
+    height: var(--spacing-4);
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    background: var(--tile-background);
+    color: var(--text-color-placeholder);
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+    overflow: hidden;
 }
 
 /* An unfolded commit's message and files sit in a tray beside the line. */

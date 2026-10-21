@@ -1,14 +1,15 @@
-import type { AuthorIdentitySettings, BranchGraph, BranchGraphBranchNode, BranchHistoryCommit, ComparisonRef, FileListView } from "@laneway/shared"
+import type { BranchGraph, BranchGraphBranchNode, BranchHistoryCommit, ComparisonRef, FileListView } from "@laneway/shared"
 import clsx from "clsx"
 import { useState } from "react"
 import { Button as AriaButton } from "react-aria-components"
 import type { ColumnView } from "./branch-workspace"
+import { authoredBy, authorInitials } from "./commit-authors"
 import { ConflictResolution } from "./conflict-resolution"
 import type { Conflicts } from "./conflicts"
 import { Hint, IconButton, MoreMenu } from "./controls"
 import { useRowMenu } from "./dense-row"
 import { EditableName } from "./editable-name"
-import { AuthorIcon, BranchIcon, DiffIcon, MoreIcon, WarningIcon } from "./icons"
+import { BranchIcon, DiffIcon, MoreIcon, WarningIcon } from "./icons"
 import { branchStack, type ColumnInspection, type Inspection } from "./inspection"
 import type { Reword } from "./reword"
 import { TransferGrip, TransferReview, TransferSeam, useTransferScope, useTransferTarget } from "./transfer"
@@ -275,7 +276,9 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
                     {/* The developer's own commits stay plain, so other people's stand out. */}
                     {!authoredBy(props.graph.authorIdentities, commit.authorEmail) && (
                         <Hint text={`${commit.authorName} <${commit.authorEmail}>`}>
-                            <AuthorIcon className="commit-author" role="img" aria-label={`Authored by ${commit.authorName}`} aria-hidden={false} />
+                            <span className="commit-author" role="img" aria-label={`Authored by ${commit.authorName}`}>
+                                {authorInitials(commit.authorName, commit.authorEmail)}
+                            </span>
                         </Hint>
                     )}
                 </AriaButton>
@@ -364,16 +367,6 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
             )}
         </div>
     )
-}
-
-/**
- * Whether an email is one of the developer's Author Identities. The history's emails are already mailmapped, and
- * the graph's identities include Git's configured email when no primary is set, so this matches the Engine's
- * involvement check: a case-insensitive comparison of whole addresses.
- */
-function authoredBy({ primary, secondary }: AuthorIdentitySettings, email: string) {
-    let address = email.toLowerCase()
-    return [primary, ...secondary].some(identity => identity?.toLowerCase() == address)
 }
 
 /** A commit's description, which folds to one line. */
