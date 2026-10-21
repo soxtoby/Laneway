@@ -66,6 +66,29 @@ describe("file list view", () => {
         }
     })
 
+    test("recognizes docs by extension and by well-known name", () => {
+        for (
+            let path of [
+                "README.md",
+                "docs/guide/install.mdx",
+                "notes.markdown",
+                "docs/index.rst",
+                "manual.adoc",
+                "LICENSE",
+                "LICENSE-MIT",
+                "packages/cli/CHANGES.txt",
+                "docs/test-plan.md",
+            ]
+        ) {
+            expect(fileKind(path), path).toBe("docs")
+        }
+    })
+
+    test("keeps docs in test and generated directories with those directories", () => {
+        expect(fileKind("test/README.md")).toBe("test")
+        expect(fileKind("node_modules/left-pad/README.md")).toBe("generated")
+    })
+
     test("treats everything else as implementation", () => {
         for (
             let path of [
@@ -75,7 +98,11 @@ describe("file list view", () => {
                 "src/Manifest.ts",
                 "src/testing-library.ts",
                 "src/integration/slack.ts",
-                "README.md",
+                "shared/src/changes.ts",
+                "requirements.txt",
+                "CMakeLists.txt",
+                "docs/conf.py",
+                "docs/.vitepress/config.ts",
                 "bin/lane",
                 "playwright.config.ts",
                 "src/builder/index.ts",
@@ -90,8 +117,8 @@ describe("file list view", () => {
         let files = [file("a.ts", "deleted"), file("b.ts", "added"), file("c.ts"), file("d.ts", "added")]
         let byChange = groupFiles(files, "change").map(group => `${group.label}: ${group.files.map(file => file.path).join(" ")}`)
         expect(byChange).toEqual(["Added: b.ts d.ts", "Changed: c.ts", "Removed: a.ts"])
-        let kinds = [file("test/a.test.ts"), file("src/a.ts"), file("bun.lock")]
-        expect(groupFiles(kinds, "kind").map(group => group.label)).toEqual(["Implementation", "Tests", "Generated"])
+        let kinds = [file("test/a.test.ts"), file("src/a.ts"), file("bun.lock"), file("README.md")]
+        expect(groupFiles(kinds, "kind").map(group => group.label)).toEqual(["Docs", "Implementation", "Tests", "Generated"])
         expect(groupFiles([file("src/a.ts")], "kind").map(group => group.label)).toEqual(["Implementation"])
     })
 })
