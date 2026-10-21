@@ -274,6 +274,7 @@ export class RepositoryGit {
 import type { FileHistoryRequest } from "@laneway/shared"
 import { startFileHistoryRead } from "./file-history"
 export * from "./conflicts"
+export * from "./historical-edit"
 export * from "./worktrees"
 
 export async function initializeRepository(options: { path: string; gitPath?: string; git?: GitInstallation; initialBranch?: string }) {
