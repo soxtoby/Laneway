@@ -269,6 +269,14 @@ function GraphRows(
                                             )}
                                             <Separator />
                                             <MenuItem onAction={() => void copyText(branch.name)}>Copy branch name</MenuItem>
+                                            {branch.tags.map(tag => (
+                                                <MenuItem
+                                                    key={tag}
+                                                    onAction={() => void copyText(tag)}
+                                                >
+                                                    {`Copy tag ${tag}`}
+                                                </MenuItem>
+                                            ))}
                                         </>
                                     )}
                                 />
@@ -351,11 +359,22 @@ function BranchRow({ row, branch, rebase, onOpen, onMarker, menu }: {
     )
 }
 
-/** A tag or a detached worktree: it only selects. */
+/** A tag or a detached worktree: it only selects, and a tag's menu copies its name. */
 function SimpleRow({ row }: { row: GraphRowLayout }) {
     let node = row.node as Extract<GraphRowLayout["node"], { kind: "tag" | "worktree" }>
+    let { row: rowRef, openMenu } = useRowMenu({
+        label: `Actions for ${node.name}`,
+        items: () => <MenuItem onAction={() => void copyText(node.name)}>Copy tag name</MenuItem>,
+    })
     return (
-        <GridListItem id={node.id} textValue={node.name} className="graph-row simple" data-node-id={node.id}>
+        <GridListItem
+            ref={rowRef}
+            id={node.id}
+            textValue={node.name}
+            className="graph-row simple"
+            data-node-id={node.id}
+            onContextMenu={node.kind == "tag" ? openMenu : undefined}
+        >
             {({ isFocusVisibleWithin }) => (
                 <>
                     <GraphRail row={row} />

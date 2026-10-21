@@ -109,6 +109,38 @@ describe("React Branch Graph", () => {
         expect(document.querySelector("[role=dialog]")?.textContent).toContain("Rename")
     })
 
+    test("a tag's name copies from its Tag Node's menu, or from the menu of the Branch Node it sits on", async () => {
+        let repository = repositoryInfo("D:\\Source\\graph-tags")
+        let graph = branchGraph(repository.id)
+        let [main, feature, team] = graph.branches
+        let tagged = "5".repeat(40)
+        let tag = { kind: "tag" as const, id: "tag:refs/tags/v1.0", name: "v1.0", objectId: tagged, parentBranchId: main!.id, tooltip: "Tag v1.0" }
+        let tags: BranchGraph = {
+            ...graph,
+            branches: [main!, { ...feature!, tags: ["v2.0"] }, team!],
+            history: [...graph.history.map(point => point.objectId == main!.tip ? { ...point, parentIds: [tagged] } : point), {
+                objectId: tagged,
+                lineId: main!.id,
+                parentIds: [],
+            }],
+            tags: [tag],
+        }
+        let app = await startReactApp(fakeLaneway({
+            getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
+            readBranchGraph: async () => ({ ok: true, graph: tags }),
+        }))
+        await app.act(() => press(button(document.body, "Show Branch Graph")))
+
+        await app.act(() => rightClick(row(tag.id)))
+        expect(menuItems().map(item => item.textContent)).toEqual(["Copy tag name"])
+        await app.act(() => press(menuItems()[0]!))
+        expect(await navigator.clipboard.readText()).toBe("v1.0")
+
+        await app.act(() => rightClick(row(feature!.id)))
+        await app.act(() => press(menuItems().find(item => item.textContent == "Copy tag v2.0")!))
+        expect(await navigator.clipboard.readText()).toBe("v2.0")
+    })
+
     test("settings apply patterns on Enter, close on Escape, and offer no remote choice for a single remote", async () => {
         let repository = repositoryInfo("D:\\Source\\graph-settings")
         let graph = branchGraph(repository.id)
@@ -290,6 +322,14 @@ function row(id: string) {
 
 function names() {
     return [...panel()!.querySelectorAll(".graph-row .graph-name")].map(name => name.textContent)
+}
+
+function rightClick(element: HTMLElement) {
+    element.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: 20, clientY: 20 }))
+}
+
+function menuItems() {
+    return [...document.querySelectorAll<HTMLElement>("[role=menu] [role=menuitem]")]
 }
 
 function columnNames() {
