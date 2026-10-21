@@ -68,7 +68,7 @@ describe("React File History", () => {
         expect(cursors.at(-1)).toBe("5".repeat(40))
     })
 
-    test("unfolds entries to their diffs, opens blame origins and commit diffs, and closes what was opened from it", async () => {
+    test("unfolds entries to their diffs, copies their hashes, opens blame origins and commit diffs, and closes what was opened from it", async () => {
         let scenario = inspectionScenario()
         let oid = "2".repeat(40)
         let reads = 0
@@ -108,6 +108,10 @@ describe("React File History", () => {
         expect(scenario.saved().repositories[0]!.columns[0]!.diffLayout ?? "unified").toBe("unified")
         await app.act(() => press(button(history, "History commit")))
         expect(history.querySelector(".diff-panel") == null).toBe(true)
+
+        await app.act(() => press(button(history, "Actions for History commit")))
+        await app.act(() => press(menuItem("Copy commit hash")))
+        expect(await navigator.clipboard.readText()).toBe("2".padStart(40, "0"))
 
         await app.act(() => press(button(history, "Actions for History commit")))
         await app.act(() => press(menuItem("Complete commit diff")))

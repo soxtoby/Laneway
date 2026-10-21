@@ -2,6 +2,7 @@ import type { FileHistoryEntry, FileHistorySource, FileListView } from "@laneway
 import clsx from "clsx"
 import type { ReactNode } from "react"
 import { Button as AriaButton } from "react-aria-components"
+import { CommitCopyItems } from "./commit-trail"
 import { Hint, IconButton, MoreMenu } from "./controls"
 import { useRowMenu } from "./dense-row"
 import { DiffControls, DiffPanel, DiffScopeContext } from "./diff-panel"
@@ -10,7 +11,7 @@ import { type CommitDiffView, diffKey, type FileHistoryView, type Inspection } f
 import { TransferGrip, transferSource, useTransferScope } from "./transfer"
 import { Button } from "./ui/Button"
 import { ChevronRight } from "./ui/icons"
-import { MenuItem } from "./ui/Menu"
+import { MenuItem, Separator } from "./ui/Menu"
 import { Select, SelectItem } from "./ui/Select"
 import { FileList } from "./working-changes"
 
@@ -116,6 +117,8 @@ function HistoryEntry({ history, entry, inspection }: { history: FileHistoryView
             <>
                 <MenuItem onAction={() => inspection.blame(history.id, entry.objectId)}>Blame context</MenuItem>
                 <MenuItem onAction={() => inspection.openCommitDiff(history.id, entry.objectId)}>Complete commit diff</MenuItem>
+                <Separator />
+                <CommitCopyItems commit={entry} />
             </>
         ),
     }

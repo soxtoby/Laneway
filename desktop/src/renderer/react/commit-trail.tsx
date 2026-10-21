@@ -8,13 +8,14 @@ import type { Conflicts } from "./conflicts"
 import { Hint, IconButton, MoreMenu } from "./controls"
 import { useRowMenu } from "./dense-row"
 import { EditableName } from "./editable-name"
+import { copyText } from "./file-paths"
 import { BranchIcon, DiffIcon, MoreIcon, WarningIcon } from "./icons"
 import { branchStack, type ColumnInspection, type Inspection } from "./inspection"
 import type { Reword } from "./reword"
 import { TransferGrip, TransferReview, TransferSeam, useTransferScope, useTransferTarget } from "./transfer"
 import { Button } from "./ui/Button"
 import { ChevronRight } from "./ui/icons"
-import { MenuItem } from "./ui/Menu"
+import { MenuItem, Separator } from "./ui/Menu"
 import { Select, SelectItem } from "./ui/Select"
 import { TextArea, TextField } from "./ui/TextField"
 import { useSnapshot } from "./use-snapshot"
@@ -208,6 +209,8 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
             <>
                 {rewordable && <MenuItem onAction={() => onReword(commit.objectId)}>Reword commit…</MenuItem>}
                 <MenuItem onAction={() => props.createBranchAt(commit)}>Create branch here…</MenuItem>
+                <Separator />
+                <CommitCopyItems commit={commit} />
             </>
         ),
     }
@@ -268,7 +271,7 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
                     </IconButton>
                 )}
                 <AriaButton className="commit-toggle" aria-expanded={open} onPress={() => inspection.toggleCommit(column.id, commit.objectId)}>
-                    <Hint text={commit.body ? `${commit.subject}\n\n${commit.body}` : commit.subject}>
+                    <Hint text={commitMessage(commit)}>
                         <span className="commit-subject">{commit.subject}</span>
                     </Hint>
                     {commit.body && !open && <MoreIcon className="message-indicator" role="img" aria-label="Has message body" aria-hidden={false} />}
@@ -358,6 +361,21 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
             )}
         </div>
     )
+}
+
+/** Copies of the commit's identity and message, at the end of its menu, as a File History entry's are too. */
+export function CommitCopyItems({ commit }: { commit: Pick<BranchHistoryCommit, "objectId" | "subject" | "body"> }) {
+    return (
+        <>
+            <MenuItem onAction={() => void copyText(commit.objectId)}>Copy commit hash</MenuItem>
+            <MenuItem onAction={() => void copyText(commitMessage(commit))}>Copy commit message</MenuItem>
+        </>
+    )
+}
+
+/** The commit's whole message: its subject, then its body after a blank line. */
+function commitMessage(commit: Pick<BranchHistoryCommit, "subject" | "body">) {
+    return commit.body ? `${commit.subject}\n\n${commit.body}` : commit.subject
 }
 
 /** A commit's description, which folds to one line. */
