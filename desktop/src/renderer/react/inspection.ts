@@ -1090,9 +1090,10 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             }
             let shown = Object.values(state.diffs).findLast(diff => diff.group.startsWith("working"))
             let group = shown?.group ?? (state.files["working-staged"]?.inventory?.files.some(file => !file.ignored) ? "working-staged" : "working-unstaged")
-            let path = shown?.path ?? state.files[group]?.inventory?.files.find(file => !file.ignored)?.path
-            if (path)
-                void showDiffColumn(state, group, path, undefined, true)
+            // Without a diff open it starts at the top, which the file list's view may give to any of its files.
+            let listed = shown != undefined || state.files[group]?.inventory?.files.some(file => !file.ignored)
+            if (listed)
+                void showDiffColumn(state, group, shown?.path, undefined, true)
         },
 
         closeAuxiliary(id) {
