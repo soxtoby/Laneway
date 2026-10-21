@@ -597,6 +597,8 @@ function ColumnDivider({ label, width, minimum, defaultWidth, attached, onResize
             onResize(size(next))
         }
     }
+    // A drag keeps the width, limits, and resize it started with. A diff column whose file navigator closes
+    // mid-drag (by Escape) shows the navigator's extra width until release, but saves its own width correctly.
     let pointerDown = (event: PointerEvent) => {
         event.preventDefault()
         let startX = event.clientX

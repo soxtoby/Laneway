@@ -309,6 +309,24 @@ describe("React diff column", () => {
         expect(stashLabel()?.value).toBe("Parked")
     })
 
+    test("expanding a collapsed file navigator leaves focus on a filter that took it as it showed", async () => {
+        let scenario = inspectionScenario()
+        let app = await startReactApp(scenario.api)
+        let source = columns()[0]!
+        let row = fileRows(source, "working-staged")[0]!
+        await app.act(() => openRow(row))
+        await app.act(() => press(button(row, "Break out diff")))
+        await app.act(() => press(button(diffColumn()!, "Focus diff")))
+        await app.act(() => press(button(source, "Collapse inspection file navigator")))
+        let expand = button(source, "Expand inspection file navigator")
+        await app.act(() => key(expand, "f", { ctrlKey: true }))
+
+        await app.act(() => pressFocused(expand))
+        await app.act(frame)
+
+        expect(document.activeElement == source.querySelector("[aria-label='Filter changed files']")).toBe(true)
+    })
+
     test("closes with its source column, cancelling the reads it started", async () => {
         let scenario = inspectionScenario()
         let main = scenario.graph.branches[0]!
@@ -397,8 +415,8 @@ function menuItem(label: string) {
     return [...document.querySelectorAll<HTMLElement>("[role=menu] [role=menuitem]")].find(item => item.textContent == label)!
 }
 
-function key(element: HTMLElement, name: string) {
-    element.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }))
+function key(element: HTMLElement, name: string, modifiers: KeyboardEventInit = {}) {
+    element.dispatchEvent(new KeyboardEvent("keydown", { ...modifiers, key: name, bubbles: true, cancelable: true }))
 }
 
 // The control has keyboard focus as it is pressed, as it would after Tab.
