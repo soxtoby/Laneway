@@ -1,6 +1,7 @@
 import type { BranchGraph, ChangedFile, FileDiffPage, Workspace } from "@laneway/shared"
 
-export function inspectionScenario() {
+/** A worktree column on a branch with one commit, whose Working Changes and commit both change the files at `paths`. */
+export function inspectionScenario(paths = ["src/file.txt", "other.txt"]) {
     let repository = repositoryInfo("D:\\Source\\inspection")
     let graph: BranchGraph = branchGraph(repository.id)
     let branch = graph.branches[1]
@@ -14,7 +15,7 @@ export function inspectionScenario() {
         }],
     }
 
-    let files: ChangedFile[] = ["src/file.txt", "other.txt"].map(path => ({
+    let files: ChangedFile[] = paths.map(path => ({
         path,
         status: "modified",
         staged: true,
@@ -68,8 +69,8 @@ export function inspectionScenario() {
                     parentIds: [graph.branches[0].tip],
                     subject: "Inspect changes",
                     body: "Inspect every change.",
-                    authorName: "Test",
-                    authorEmail: "test@example.test",
+                    authorName: "Developer",
+                    authorEmail: "developer@example.test",
                     authoredAt: 1788566400,
                 }],
             },

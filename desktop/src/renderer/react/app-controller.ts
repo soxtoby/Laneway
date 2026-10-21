@@ -1,4 +1,5 @@
 import type { Appearance, BranchHistoryCommit, FileListView, OpenRepository, RepositoryIdentity, Workspace, WorkspaceColumn } from "@laneway/shared"
+import { defaultFileListView } from "@laneway/shared"
 import { type BranchRebase, createBranchRebase } from "./branch-rebase"
 import { type BranchWorkspace, createBranchWorkspace } from "./branch-workspace"
 import { type CommandLens, createCommandLens, type LensResult } from "./command-lens"
@@ -6,6 +7,7 @@ import { type CommitComposer, createCommitComposer } from "./commit-composer"
 import { type Composition, createComposition } from "./composition"
 import { type Conflicts, createConflicts } from "./conflicts"
 import { undoWindowMs } from "./discard"
+import { orderedFiles } from "./file-list-view"
 import { createGitSettings, type GitSettings } from "./git-settings"
 import { createInspection, type Inspection } from "./inspection"
 import { createLocalBranches, type LocalBranches } from "./local-branches"
@@ -153,7 +155,11 @@ export function createAppController(api: Api): AppController {
         commit: (id, chosen) => controller.customizeRepository(id, chosen),
     })
 
-    let inspection = createInspection({ api, notify })
+    let inspection = createInspection({
+        api,
+        notify,
+        displayOrder: files => orderedFiles(files, ready()?.fileListView ?? defaultFileListView).map(entry => entry.file),
+    })
     let columns = createBranchWorkspace({
         api,
         notify,

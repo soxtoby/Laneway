@@ -68,7 +68,7 @@ describe("React File History", () => {
         expect(cursors.at(-1)).toBe("5".repeat(40))
     })
 
-    test("unfolds entries to their diffs, opens blame origins and commit diffs, and closes what was opened from it", async () => {
+    test("unfolds entries to their diffs, copies their hashes and messages, opens blame origins and commit diffs, and closes what was opened from it", async () => {
         let scenario = inspectionScenario()
         let oid = "2".repeat(40)
         let reads = 0
@@ -82,7 +82,12 @@ describe("React File History", () => {
                     let line = { objectId: "1".repeat(40), path: "other.txt", originalLine: 1, line: 1, author: "Test", text: "origin" }
                     return { ok: true, page: { entries: [], blame: [line] } }
                 }
-                let merge = { ...entry(2, "History commit", request), parentIds: ["1".repeat(40), "3".repeat(40)], followedParent: "1".repeat(40) }
+                let merge = {
+                    ...entry(2, "History commit", request),
+                    body: "Why it changed.",
+                    parentIds: ["1".repeat(40), "3".repeat(40)],
+                    followedParent: "1".repeat(40),
+                }
                 return { ok: true, page: { tip: oid, entries: [{ ...merge, composable: request.source.kind != "commit" }] } }
             },
         })
@@ -108,6 +113,13 @@ describe("React File History", () => {
         expect(scenario.saved().repositories[0]!.columns[0]!.diffLayout ?? "unified").toBe("unified")
         await app.act(() => press(button(history, "History commit")))
         expect(history.querySelector(".diff-panel") == null).toBe(true)
+
+        await app.act(() => press(button(history, "Actions for History commit")))
+        await app.act(() => press(menuItem("Copy commit hash")))
+        expect(await navigator.clipboard.readText()).toBe("2".padStart(40, "0"))
+        await app.act(() => press(button(history, "Actions for History commit")))
+        await app.act(() => press(menuItem("Copy commit message")))
+        expect(await navigator.clipboard.readText()).toBe("History commit\n\nWhy it changed.")
 
         await app.act(() => press(button(history, "Actions for History commit")))
         await app.act(() => press(menuItem("Complete commit diff")))

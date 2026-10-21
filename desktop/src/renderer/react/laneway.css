@@ -1439,6 +1439,24 @@
     white-space: nowrap;
 }
 
+/* A slot an avatar image could fill instead of the initials. */
+.commit-author {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    box-sizing: border-box;
+    width: var(--spacing-4);
+    height: var(--spacing-4);
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    background: var(--tile-background);
+    color: var(--text-color-placeholder);
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+    overflow: hidden;
+}
+
 /* An unfolded commit's message and files sit in a tray beside the line. */
 .commit-files {
     padding: var(--spacing-1) var(--spacing-1) var(--spacing-1) 20px;
@@ -2926,6 +2944,34 @@
     flex: 1 1 auto;
     min-height: 0;
     overflow: auto;
+
+    /* Grouped like its source list, each group's heading pins above the toolbar of the file in view. */
+    &[data-grouped] .diff-toolbar {
+        top: 24px;
+    }
+}
+
+.diff-column-group {
+    position: sticky;
+    top: 0;
+    z-index: 6;
+    height: 24px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-1);
+    margin: 0;
+    padding: 0 var(--spacing-2);
+    border-bottom: 1px solid var(--border-color);
+    background: var(--tray-background);
+    color: var(--text-color);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+
+    .file-group-count {
+        background: var(--gray-50);
+        font-weight: normal;
+    }
 }
 
 .diff-toolbar {
@@ -3011,10 +3057,14 @@
     border-top: 0;
 }
 
-/* The file a diff column shows is marked in its source column's list. */
+/* The file at the top of a diff column is marked in its source column's list by a bar at its edge, which sets it
+   apart from a hovered row; a chosen row keeps its choice's wash under the bar. */
 .file-row.active {
-    box-shadow: inset 2px 0 var(--focus-ring-color);
-    background: var(--highlight-hover);
+    box-shadow: inset 3px 0 var(--focus-ring-color);
+
+    &:not([data-chosen]) {
+        background: var(--highlight-hover);
+    }
 }
 
 /* File History and Commit Diff columns: their contents scroll beneath a header like their source column's. */

@@ -130,7 +130,7 @@ for (let format of ["sha1", "sha256"]) {
 
         await rename(resolve(root, "before.txt"), resolve(root, "after.txt"))
         git(root, "add", ".")
-        git(root, "commit", "-qm", "renamed")
+        git(root, "commit", "-qm", "renamed", "-m", "Moved for clarity.\nNothing else changed.", "-m", "Second paragraph.")
         for (let index = 0; index < 41; index++) {
             await writeFile(resolve(root, "after.txt"), `version ${index}\nunchanged\n`)
             git(root, "commit", "-qam", `edit ${index}`)
@@ -147,6 +147,7 @@ for (let format of ["sha1", "sha256"]) {
 
         let next = await api.startReadFileHistory({ source, path: "after.txt", cursor: page.cursor }).result
         expect(next.entries.map(entry => entry.subject)).toEqual(["edit 0", "renamed", "created"])
+        expect(next.entries.map(entry => entry.body)).toEqual(["", "Moved for clarity.\nNothing else changed.\n\nSecond paragraph.", ""])
         expect(next.entries[1].previousPath).toBe("before.txt")
         expect(next.entries[2].path).toBe("before.txt")
 

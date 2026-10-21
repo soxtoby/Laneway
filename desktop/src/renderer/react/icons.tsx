@@ -1,4 +1,4 @@
-import { Archive, ArrowDownToLine, ArrowRight, Check, ChevronDown, ChevronsDownUp, ChevronsLeft, ChevronsRight, ChevronsUpDown, Copy, Diff, Ellipsis, ExternalLink, FaceSlightlySmiling, Folder, GitBranch, GitCompareArrows, GitGraph, type IconNode, Image, ImagePlus, ListTree, Maximize2, Minimize2, Minus, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Redo2, Search, SlidersHorizontal, Sun, Tag, TriangleAlert, Type, Undo2, X } from "lucide"
+import { Archive, ArrowDownToLine, ArrowRight, Check, ChevronDown, ChevronsDownUp, ChevronsLeft, ChevronsRight, ChevronsUpDown, Copy, Diff, Ellipsis, ExternalLink, FaceSlightlySmiling, Folder, GitBranch, GitCompareArrows, GitGraph, type IconNode, Image, ImagePlus, ListTree, Maximize2, Minimize2, Minus, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Redo2, Search, SlidersHorizontal, Sun, Tag, TextWrap, TriangleAlert, Type, Undo2, X } from "lucide"
 import { createElement, type ReactNode } from "react"
 import { customIconPaths } from "./icon-nodes"
 import { lucideIcon } from "./ui/icons"
@@ -41,6 +41,7 @@ export let ExpandAllIcon = lucideIcon(ChevronsUpDown, "chevrons-up-down")
 export let CollapseAllIcon = lucideIcon(ChevronsDownUp, "chevrons-down-up")
 export let GraphIcon = lucideIcon(GitGraph, "git-graph")
 export let TagIcon = lucideIcon(Tag, "tag")
+export let WrapLinesIcon = lucideIcon(TextWrap, "text-wrap")
 
 /** Laneway's Hidden L mark, from assets/brand/laneway-icon.svg, fitted to its 48-unit canvas. */
 export function BrandMark() {

@@ -69,6 +69,29 @@ describe("React Commit Trail", () => {
         expect(saved).toEqual([false, true])
     })
 
+    test("marks commits by other authors with their initials, name, and email, but not the developer's own", async () => {
+        let scenario = inspectionScenario()
+        scenario.graph.authorIdentities = { primary: "developer@example.test", secondary: ["dev@home.test"] }
+        await startReactApp({
+            ...scenario.api,
+            readBranchHistory: async (_repositoryId, request) => {
+                let commits = [{ ...commit("4".repeat(40), "Mine"), authorName: "Developer", authorEmail: "Dev@Home.test" }, {
+                    ...commit("5".repeat(40), "Theirs"),
+                    authorName: "Alex Rivera",
+                    authorEmail: "alex@example.test",
+                }]
+                return { ok: true, page: { branchRef: request.branchRef, tip: request.tip, baseTips: request.baseTips, commits } }
+            },
+        })
+
+        expect(
+            commitRows().map(row => {
+                let author = row.querySelector("[role=img][aria-label^='Authored by']")
+                return [row.querySelector(".commit-subject")?.textContent, author?.textContent, author?.getAttribute("aria-description")]
+            }),
+        ).toEqual([["Mine", undefined, undefined], ["Theirs", "AR", "Alex Rivera <alex@example.test>"]])
+    })
+
     test("a commit unfolds to its message and files, and a merge compares the parent chosen", async () => {
         let scenario = inspectionScenario()
         let second = "6".repeat(40)
@@ -179,6 +202,33 @@ describe("React Commit Trail", () => {
         expect(requests).toEqual([{ action: "branch-create", name: "alias", commit: scenario.graph.branches[1]!.tip }])
         expect(document.querySelector("[role=dialog]") == null).toBe(true)
         expect(document.querySelector("[data-column-id='branch:refs/heads/alias']")).not.toBeNull()
+    })
+
+    test("a commit's menu copies its full hash and its whole message", async () => {
+        let scenario = inspectionScenario()
+        let tip = scenario.graph.branches[1]!.tip
+        let older = "6".repeat(40)
+        let app = await startReactApp({
+            ...scenario.api,
+            readBranchHistory: async (_repositoryId, request) => ({
+                ok: true,
+                page: {
+                    branchRef: request.branchRef,
+                    tip: request.tip,
+                    baseTips: request.baseTips,
+                    commits: [{ ...commit(tip, "Inspect changes", [older]), body: "Inspect every change.\n\nThoroughly." }, commit(older, "Start")],
+                },
+            }),
+        })
+        let copyFrom = async (subject: string, label: string) => {
+            await app.act(() => press(button(trail(), `Actions for commit ${subject}`)))
+            await app.act(() => press(menuItem(label)))
+            return navigator.clipboard.readText()
+        }
+
+        expect(await copyFrom("Inspect changes", "Copy commit hash")).toBe(tip)
+        expect(await copyFrom("Inspect changes", "Copy commit message")).toBe("Inspect changes\n\nInspect every change.\n\nThoroughly.")
+        expect(await copyFrom("Start", "Copy commit message")).toBe("Start")
     })
 
     test("rewords a commit from its menu, and confirms published rewrites first", async () => {
@@ -352,7 +402,7 @@ describe("React Commit Trail", () => {
 })
 
 function commit(objectId: string, subject: string, parentIds = ["1".repeat(40)]): BranchHistoryCommit {
-    return { objectId, parentIds, subject, authorName: "Test", authorEmail: "test@example.test", authoredAt: 1788566400 }
+    return { objectId, parentIds, subject, authorName: "Developer", authorEmail: "developer@example.test", authoredAt: 1788566400 }
 }
 
 function performed(): LocalActionResult {

@@ -485,6 +485,7 @@ function AuxiliaryFrame({ view, column, inspected, graph, controller, fileListVi
                         sourceName={column.name}
                         stacked={stacked}
                         inspected={inspected?.columns[column.id]}
+                        listView={fileListView}
                         inspection={inspection}
                         root={root}
                         maximized={maximized}

@@ -115,6 +115,38 @@ describe("React diffs", () => {
         expect(diffRoot(staged!).querySelectorAll(".diff-line.selected").length).toBeGreaterThan(0)
     })
 
+    test("wrapping lines from one diff wraps every diff in every column, including those opened later, until it is turned off", async () => {
+        let scenario = inspectionScenario()
+        let app = await startReactApp({
+            ...scenario.api,
+            readFileHistory: async (_repositoryId, _id, request) => {
+                let entry = { objectId: "1".repeat(40), parentIds: [], authorName: "Test", authorEmail: "test@example.test", authoredAt: 1 }
+                return { ok: true, page: { entries: [{ ...entry, subject: "History commit", status: "M", path: request.path }] } }
+            },
+        })
+        let [staged] = fileRows("working-staged")
+        let [unstaged] = fileRows("working-unstaged")
+        let wraps = (scope: HTMLElement) => diffRoot(scope).querySelector("pre[data-overflow='wrap']") != null
+        let history = () => document.querySelector<HTMLElement>(".file-history")!
+        // A diff in the File History column, which lays out its diffs apart from the Workspace Column.
+        await app.act(() => press(button(staged!, `Actions for ${staged!.getAttribute("aria-label")}`)))
+        await app.act(() => press(menuItem("File history")))
+        await app.act(() => press(button(history(), "History commit")))
+
+        await app.act(() => openRow(staged!))
+        await app.act(() => press(button(staged!, "Wrap lines")))
+        await app.act(() => openRow(unstaged!))
+        expect(wraps(staged!)).toBe(true)
+        expect(wraps(history())).toBe(true)
+        expect(wraps(unstaged!)).toBe(true)
+        expect(button(unstaged!, "Wrap lines").getAttribute("aria-pressed")).toBe("true")
+
+        await app.act(() => press(button(history(), "Wrap lines")))
+        expect(wraps(staged!)).toBe(false)
+        expect(wraps(history())).toBe(false)
+        expect(wraps(unstaged!)).toBe(false)
+    })
+
     test("hidden-line counts reveal each gap from the whole file, keeping the chosen lines across layouts", async () => {
         let scenario = inspectionScenario()
         scenario.page.lines = [
@@ -346,6 +378,13 @@ function commitFileRows() {
 // Pressing the file's name presses its row, which opens or closes its diff.
 function openRow(row: HTMLElement) {
     press(row.querySelector<HTMLElement>(".file-path")!)
+}
+
+function menuItem(label: string) {
+    let item = [...document.querySelectorAll<HTMLElement>("[role=menu] [role=menuitem]")].find(candidate => candidate.textContent == label)
+    if (!item)
+        throw new Error(`No ${label} menu item`)
+    return item
 }
 
 function diffPanel(row: HTMLElement) {

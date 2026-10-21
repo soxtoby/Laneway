@@ -5,6 +5,7 @@ import type { ColumnView } from "./branch-workspace"
 import { CommitAgesShown } from "./commit-age"
 import { Hint } from "./controls"
 import { EditableName } from "./editable-name"
+import { copyText } from "./file-paths"
 import { MoreIcon } from "./icons"
 import { Button } from "./ui/Button"
 import { Text } from "./ui/Content"
@@ -58,7 +59,7 @@ interface WorktreeMenuProps {
 /**
  * A worktree column's actions: switching its branch, unlocking, repairing, or removing it. A branch column
  * without a worktree offers checking the branch out instead, in an existing worktree or a new one. Either
- * ends with showing or hiding every commit row's age.
+ * ends with copying the branch name and worktree path, then showing or hiding every commit row's age.
  */
 export function WorktreeMenu({ column, graph, busy, onPrepare, chooseDirectory, onShowCommitAges }: WorktreeMenuProps) {
     let [choosing, setChoosing] = useState(false)
@@ -114,6 +115,9 @@ export function WorktreeMenu({ column, graph, busy, onPrepare, chooseDirectory, 
                             {worktree.missing ? "Remove missing worktree" : "Remove worktree"}
                         </MenuItem>
                     )}
+                    <Separator />
+                    {column.kind == "branch" && <MenuItem onAction={() => void copyText(column.branch.name)}>Copy branch name</MenuItem>}
+                    {worktree && <MenuItem onAction={() => void copyText(worktree.path)}>Copy worktree path</MenuItem>}
                     <Separator />
                     <MenuSection
                         selectionMode="multiple"

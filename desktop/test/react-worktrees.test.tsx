@@ -143,7 +143,7 @@ describe("React worktree actions", () => {
         })
         let checkOut = async () => {
             await app.act(() => press(button(columnElement(main.id), "Check out branch")))
-            expect(menuLabels()).toEqual(["inspection · feature/laneway", "New worktree"])
+            expect(menuLabels()).toEqual(["inspection · feature/laneway", "New worktree", "Copy branch name"])
             await app.act(() => press(menuItem("New worktree")))
         }
 
@@ -158,6 +158,20 @@ describe("React worktree actions", () => {
         // Each review is one preview; confirming hands its token straight to the engine.
         expect(previews).toBe(2)
         expect(document.querySelector("[role=dialog]") == null).toBe(true)
+    })
+
+    test("a worktree column's actions copy its branch name and its worktree's path", async () => {
+        let scenario = inspectionScenario()
+        let app = await startReactApp(scenario.api)
+        let header = columnElement("branch:refs/heads/feature/laneway").querySelector<HTMLElement>("header")!
+        let copyFrom = async (label: string) => {
+            await app.act(() => press(button(header, "Worktree actions")))
+            await app.act(() => press(menuItem(label)))
+            return navigator.clipboard.readText()
+        }
+
+        expect(await copyFrom("Copy branch name")).toBe("feature/laneway")
+        expect(await copyFrom("Copy worktree path")).toBe("D:\\Source\\inspection")
     })
 
     test("a worktree without Working Changes is removed at once, keeping commits only it holds, with Undo in the notice", async () => {
