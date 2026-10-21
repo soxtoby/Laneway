@@ -79,7 +79,7 @@ describe("React Branch Graph", () => {
         expect(panel() == null).toBe(true)
     })
 
-    test("Enter opens the selected branch, and its menu and F2 act on it", async () => {
+    test("Enter opens the selected branch, its menu acts on it and copies its name, and F2 renames it", async () => {
         let repository = repositoryInfo("D:\\Source\\graph-project")
         let graph = branchGraph(repository.id)
         let feature = graph.branches[1]!
@@ -100,8 +100,11 @@ describe("React Branch Graph", () => {
             "Create branch here…",
             "Rename branch…",
             "Delete branch",
+            "Copy branch name",
         ])
-        await app.act(() => key(document.querySelector<HTMLElement>("[role=menu]")!, "Escape"))
+        await app.act(() => press([...document.querySelectorAll<HTMLElement>("[role=menu] [role=menuitem]")].at(-1)!))
+        expect(await navigator.clipboard.readText()).toBe("feature/laneway")
+
         await app.act(() => key(row(feature.id), "F2"))
         expect(document.querySelector("[role=dialog]")?.textContent).toContain("Rename")
     })

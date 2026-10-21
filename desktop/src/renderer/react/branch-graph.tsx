@@ -7,11 +7,12 @@ import { canRebaseOnto, rebaseable } from "./branch-rebase"
 import type { GraphView } from "./branch-workspace"
 import { Hint, IconButton } from "./controls"
 import { useRowMenu } from "./dense-row"
+import { copyText } from "./file-paths"
 import { GraphSettings } from "./graph-settings"
 import { ArchiveIcon, CloseIcon, FolderIcon, TagIcon } from "./icons"
 import { Button } from "./ui/Button"
 import { GripVertical } from "./ui/icons"
-import { MenuItem } from "./ui/Menu"
+import { MenuItem, Separator } from "./ui/Menu"
 import { ToggleButton } from "./ui/ToggleButton"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 import { useSnapshot } from "./use-snapshot"
@@ -266,6 +267,8 @@ function GraphRows(
                                             {branch.localRefs.length > 0 && (
                                                 <MenuItem onAction={() => void branches.delete(repositoryId, branch)}>Delete branch</MenuItem>
                                             )}
+                                            <Separator />
+                                            <MenuItem onAction={() => void copyText(branch.name)}>Copy branch name</MenuItem>
                                         </>
                                     )}
                                 />
