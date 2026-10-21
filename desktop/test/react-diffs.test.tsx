@@ -115,6 +115,25 @@ describe("React diffs", () => {
         expect(diffRoot(staged!).querySelectorAll(".diff-line.selected").length).toBeGreaterThan(0)
     })
 
+    test("wrapping lines from one diff wraps every diff, including those opened later, until it is turned off", async () => {
+        let scenario = inspectionScenario()
+        let app = await startReactApp(scenario.api)
+        let [staged] = fileRows("working-staged")
+        let [unstaged] = fileRows("working-unstaged")
+        let wraps = (row: HTMLElement) => diffRoot(row).querySelector("pre[data-overflow='wrap']") != null
+
+        await app.act(() => openRow(staged!))
+        await app.act(() => press(button(staged!, "Wrap lines")))
+        await app.act(() => openRow(unstaged!))
+        expect(wraps(staged!)).toBe(true)
+        expect(wraps(unstaged!)).toBe(true)
+        expect(button(unstaged!, "Wrap lines").getAttribute("aria-pressed")).toBe("true")
+
+        await app.act(() => press(button(unstaged!, "Wrap lines")))
+        expect(wraps(staged!)).toBe(false)
+        expect(wraps(unstaged!)).toBe(false)
+    })
+
     test("hidden-line counts reveal each gap from the whole file, keeping the chosen lines across layouts", async () => {
         let scenario = inspectionScenario()
         scenario.page.lines = [

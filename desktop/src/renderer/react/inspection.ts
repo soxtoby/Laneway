@@ -142,6 +142,8 @@ export interface InspectionSnapshot {
     auxiliary: Record<string, AuxiliaryView[]>
     /** The auxiliary column that takes focus once it shows; `serial` rises each time one is to. */
     focused?: { id: string; serial: number }
+    /** Whether every diff wraps its long lines rather than scrolling them sideways. */
+    wrapLines: boolean
 }
 
 /** A column the inspection keeps lists for, as the Workspace Columns describe it. */
@@ -236,6 +238,8 @@ export interface Inspection extends Store<InspectionSnapshot> {
     /** Shows a Working Changes diff's staged or unstaged side, or a conflict's side. */
     changeView(columnId: string, key: string, view: DiffView): void
     toggleWhitespace(columnId: string, key: string): void
+    /** Wraps every diff's long lines, or scrolls them sideways again, until Laneway restarts. */
+    toggleWrapLines(): void
     /** Toggles lines together: all already chosen clears them, otherwise all become chosen. */
     selectLines(columnId: string, key: string, lineIds: number[]): void
     clearLines(columnId: string, key: string): void
@@ -319,7 +323,7 @@ interface InspectionOptions {
 
 /** The files and commits each Workspace Column shows, read from Git as the column needs them. */
 export function createInspection({ api, notify }: InspectionOptions): Inspection {
-    let store = createStore<InspectionSnapshot>({ columns: {}, auxiliary: {} })
+    let store = createStore<InspectionSnapshot>({ columns: {}, auxiliary: {}, wrapLines: false })
     let repositories = new Map<string, Map<string, ColumnState>>()
     let graphs = new Map<string, BranchGraph>()
     let auxiliaries = new Map<string, AuxiliaryColumns<AuxiliaryValue>>()
@@ -329,6 +333,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
     let historyHosts = new Map<FileHistoryState, ColumnState>()
     let activeId: string | undefined
     let focused: InspectionSnapshot["focused"]
+    let wrapLines = false
     let discards = createDiscards({
         api,
         notify,
@@ -369,6 +374,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             columns: Object.fromEntries([...columns?.values() ?? []].map(state => [state.id, inspected(state)])),
             auxiliary: Object.fromEntries([...columns?.keys() ?? []].map(id => [id, tree?.descendants(id).map(auxiliaryView) ?? []])),
             focused,
+            wrapLines,
         })
     }
 
@@ -1349,6 +1355,11 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
                 found.diff.showWhitespace = !found.diff.showWhitespace
                 publish()
             }
+        },
+
+        toggleWrapLines() {
+            wrapLines = !wrapLines
+            publish()
         },
 
         selectLines(columnId, key, lineIds) {

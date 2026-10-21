@@ -7,6 +7,8 @@ import { iconNodes } from "./icon-nodes"
 export interface DiffLinesProps {
     page: FileDiffPage
     layout: DiffLayout
+    /** Wraps long lines instead of scrolling them sideways. */
+    wrap: boolean
     showWhitespace: boolean
     /** The page's selected line IDs. */
     selected: number[]
@@ -21,7 +23,7 @@ interface LineIndex {
     lines: Map<string, DiffLine>
 }
 
-// Rendered lines are 24px tall; only those near the scrolling column's viewport are drawn.
+// Rendered lines are 24px tall, unless they wrap; only those near the scrolling column's viewport are drawn.
 let lineHeight = 24
 let renderedLines = 80
 
@@ -29,6 +31,7 @@ let renderedLines = 80
 let diffCSS = `:host { --diffs-font-family: var(--font-family-mono); --diffs-font-size: 12px; --diffs-line-height: 24px;
         --diffs-scrollbar-gutter-override: 0px; }
     [data-code] { padding-top: 0; scrollbar-width: none; }
+    [data-overflow=wrap] { padding-top: 0; }
     [data-separator=line-info-basic] { height: 24px; }
     [data-content] [data-separator] [data-separator-wrapper] { display: flex; align-items: center; }
     [data-whitespace] { position: relative; }
@@ -69,6 +72,10 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
     let contextFiles: FileDiffLoadedChangedFiles | undefined
     let contextRead: AbortController | undefined
     let rendered = ""
+    // Wrapped rows' measured heights, which place the drawn lines; rows never drawn count as one line.
+    let heights: number[] = []
+    // The layout the heights were measured in.
+    let measuredFor = ""
     // What the rendered lines were last decorated for; decoration is skipped while this holds.
     let decorated = ""
     let horizontalOffset = 0
@@ -113,11 +120,15 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
                 scrollContainer?.addEventListener("scroll", scroll, { signal: lifetime.signal, passive: true })
             }
         }
+        let { page, layout, wrap } = props
+        if (measuredFor != `${layout}:${wrap}`) {
+            heights = []
+            measuredFor = `${layout}:${wrap}`
+        }
         if (scrollContainer) {
             let offset = scrollContainer.getBoundingClientRect().top + scrollContainer.clientTop - host.getBoundingClientRect().top
-            start = Math.max(0, Math.floor(offset / lineHeight) - 10)
+            start = Math.max(0, rowAt(offset) - 10)
         }
-        let { page, layout } = props
         if (previous != page) {
             if (previous?.version != page.version || previous?.lines != page.lines) {
                 contextRead?.abort()
@@ -125,6 +136,7 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
                 contextFiles = undefined
                 onContextError(undefined)
                 viewer.setExpandedHunksMap(new Map())
+                heights = []
             }
             diff = contextDiff(page, contextFiles)
             index = indexLines(page)
@@ -133,7 +145,7 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
         }
 
         let appearance = dark.matches ? "dark" as const : "light" as const
-        let key = `${layout}:${appearance}:${start}:${props.showWhitespace}`
+        let key = `${layout}:${wrap}:${appearance}:${start}:${props.showWhitespace}`
         if (!force && rendered == key) {
             // Nothing drawn changed: at most the selection needs redrawing, which writes nothing when it is the same.
             decorate()
@@ -149,6 +161,7 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
             collapsedContextThreshold: 0,
             lineDiffType: "char",
             maxLineDiffLength: 10000,
+            overflow: wrap ? "wrap" : "scroll",
         })
         if (!diff) {
             shadow.replaceChildren()
@@ -161,9 +174,9 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
             return
         sheet.replaceSync(wrapCoreCSS("") + wrapThemeCSS(result.themeStyles, appearance) + diffCSS)
         let before = document.createElement("div")
-        before.style.height = `${first * lineHeight}px`
+        before.style.height = `${rowsHeight(0, first)}px`
         let after = document.createElement("div")
-        after.style.height = `${Math.max(0, total - first - renderedLines) * lineHeight}px`
+        after.style.height = `${rowsHeight(first + renderedLines, total)}px`
         shadow.replaceChildren(before, astNode(viewer.renderFullAST(result)), after)
 
         for (let code of shadow.querySelectorAll<HTMLElement>("[data-code]")) {
@@ -182,8 +195,45 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
         rendered = key
         decorated = ""
         decorate()
+        if (wrap)
+            measureRows(first)
         measureScrollbar()
         syncHorizontal()
+    }
+
+    function rowAt(offset: number) {
+        let row = 0
+        let top = 0
+        while (top + (heights[row] ?? lineHeight) <= offset)
+            top += heights[row++] ?? lineHeight
+        return row
+    }
+
+    function rowsHeight(from: number, to: number) {
+        let height = 0
+        for (let row = from; row < to; row++)
+            height += heights[row] ?? lineHeight
+        return height
+    }
+
+    // A wrapped row keeps its height once it scrolls out of the drawn lines, so the lines in view don't shift. Rows not
+    // drawn yet count as one line, and rows last drawn at another width keep that height, so scrolling up into either
+    // moves the lines below them.
+    function measureRows(first: number) {
+        for (let content of shadow.querySelectorAll("[data-content]")) {
+            let row = first
+            for (let element of content.children) {
+                if (element.hasAttribute("data-content-buffer"))
+                    row += Number(element.getAttribute("data-buffer-size"))
+                else if (element.hasAttribute("data-line")) {
+                    // Both sides of a split row share one grid row, so either side's line measures it.
+                    let height = element.getBoundingClientRect().height
+                    if (height > 0)
+                        heights[row] = height
+                    row++
+                }
+            }
+        }
     }
 
     async function expandContext(position: number, count: number) {
@@ -206,6 +256,7 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
             }
             // The last gap expands forward from the final hunk; earlier gaps expand from their start.
             viewer.expandHunk(position, "up", count)
+            heights = []
         } catch (error) {
             if (!controller.signal.aborted)
                 onContextError(error instanceof Error ? error.message : String(error))

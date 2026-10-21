@@ -227,7 +227,7 @@ function ConflictFileRow({ conflicts, repositoryId, subject, view, file, busy, p
                         <div className="resolution-review" aria-label="Resolution review">
                             <div className="review-heading">Compared with: {sides.left.label}</div>
                             {review.lines.length
-                                ? <DiffLines page={review} layout="unified" showWhitespace={false} selected={[]} select={() => {}} />
+                                ? <DiffLines page={review} layout="unified" wrap={false} showWhitespace={false} selected={[]} select={() => {}} />
                                 : (
                                     <p className="column-placeholder">
                                         {current.candidate.files[shown.path] === null
