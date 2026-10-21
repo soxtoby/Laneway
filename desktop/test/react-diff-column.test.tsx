@@ -114,6 +114,21 @@ describe("React diff column", () => {
         expect(document.querySelectorAll(".diff-panel")).toHaveLength(0)
     })
 
+    test("lists its files in the order and groups of its source list, following the list's view as it changes", async () => {
+        let scenario = inspectionScenario(["file.test.ts", "src/file.txt", "other.txt"])
+        let app = await startReactApp(scenario.api)
+        await app.act(() => press(button(trail(), "Inspect changes")))
+        await app.act(() => press(button(trail(), "Show full diff for commit Inspect changes")))
+        let column = diffColumn()!
+        expect(listing(column)).toEqual(["file.test.ts", "src/file.txt", "other.txt"])
+
+        await app.act(() => app.controller.setFileListView({ layout: "flat", grouping: "kind" }))
+        expect(listing(column)).toEqual(["# Implementation", "src/file.txt", "other.txt", "# Tests", "file.test.ts"])
+        // Folders list before the files beside them.
+        await app.act(() => app.controller.setFileListView({ layout: "tree", grouping: "none" }))
+        expect(listing(column)).toEqual(["src/file.txt", "file.test.ts", "other.txt"])
+    })
+
     test("Working Changes open it on the diff opened last, focused, in the column's saved layout and not restored", async () => {
         let scenario = inspectionScenario()
         let app = await startReactApp(scenario.api)
@@ -281,6 +296,12 @@ function diffColumn() {
 
 function diffPaths(column: HTMLElement) {
     return [...column.querySelectorAll<HTMLElement>("[data-diff-path]")].map(element => element.dataset.diffPath)
+}
+
+// Its group headings, marked with "#", among the paths of its files' diffs.
+function listing(column: HTMLElement) {
+    return [...column.querySelectorAll<HTMLElement>(".diff-column-files > h3, [data-diff-path]")]
+        .map(element => element.dataset.diffPath ?? `# ${element.firstChild!.textContent}`)
 }
 
 function file(column: HTMLElement, path: string) {

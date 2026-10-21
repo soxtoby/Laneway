@@ -30,6 +30,15 @@ export function fileTreeNodes(files: ChangedFile[], view: FileListView): FileTre
     }))
 }
 
+/** A file list's files in the order its rows show them, each with the label of the group it falls in, if the view groups. */
+export function orderedFiles(files: ChangedFile[], view: FileListView): { file: ChangedFile; group?: string }[] {
+    return nodeFiles(fileTreeNodes(files, view), undefined)
+}
+
+function nodeFiles(nodes: FileTreeNode[], group: string | undefined): { file: ChangedFile; group?: string }[] {
+    return nodes.flatMap(node => node.kind == "file" ? [{ file: node.file, group }] : nodeFiles(node.children, node.kind == "group" ? node.label : group))
+}
+
 export function changeGroup(file: ChangedFile): ChangeGroup {
     if (file.status == "deleted")
         return "removed"
