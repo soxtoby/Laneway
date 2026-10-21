@@ -26,6 +26,7 @@ interface AppState {
     engine: EngineStatusReady | EngineStatusError
     appearance: Appearance
     fileListView: FileListView
+    showCommitAges: boolean
 }
 
 declare global {
@@ -82,6 +83,7 @@ declare global {
             openSettingsFile(): Promise<string>
             setAppearance(appearance: Appearance): Promise<Appearance>
             setFileListView(view: FileListView): Promise<FileListView>
+            setShowCommitAges(shown: boolean): Promise<boolean>
             readBranchGraph(repositoryId: string, refreshRemote?: boolean, allBranches?: boolean): Promise<BranchGraphResult>
             cancelBranchGraph(repositoryId: string): Promise<boolean>
             readBranchHistory(repositoryId: string, history: BranchHistoryRequest): Promise<BranchHistoryResult>

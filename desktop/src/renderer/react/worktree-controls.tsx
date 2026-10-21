@@ -1,7 +1,8 @@
 import type { BranchGraph, BranchGraphWorktree, WorktreeRequest } from "@laneway/shared"
-import { useState } from "react"
+import { useContext, useState } from "react"
 import { Autocomplete, Button as AriaButton, useFilter } from "react-aria-components"
 import type { ColumnView } from "./branch-workspace"
+import { CommitAgesShown } from "./commit-age"
 import { Hint } from "./controls"
 import { EditableName } from "./editable-name"
 import { copyText } from "./file-paths"
@@ -9,7 +10,7 @@ import { MoreIcon } from "./icons"
 import { Button } from "./ui/Button"
 import { Text } from "./ui/Content"
 import { Dialog, Heading } from "./ui/Dialog"
-import { Menu, MenuItem, MenuTrigger, Separator } from "./ui/Menu"
+import { Menu, MenuItem, MenuSection, MenuTrigger, Separator } from "./ui/Menu"
 import { Modal } from "./ui/Modal"
 import { SearchField } from "./ui/SearchField"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
@@ -52,15 +53,17 @@ interface WorktreeMenuProps {
     busy: boolean
     onPrepare(request: WorktreeRequest): void
     chooseDirectory(path?: string): Promise<string | undefined>
+    onShowCommitAges(shown: boolean): void
 }
 
 /**
  * A worktree column's actions: switching its branch, unlocking, repairing, or removing it. A branch column
- * without a worktree offers checking the branch out instead, in an existing worktree or a new one. Copying the
- * branch name and worktree path ends the menu.
+ * without a worktree offers checking the branch out instead, in an existing worktree or a new one. Either
+ * ends with copying the branch name and worktree path, then showing or hiding every commit row's age.
  */
-export function WorktreeMenu({ column, graph, busy, onPrepare, chooseDirectory }: WorktreeMenuProps) {
+export function WorktreeMenu({ column, graph, busy, onPrepare, chooseDirectory, onShowCommitAges }: WorktreeMenuProps) {
     let [choosing, setChoosing] = useState(false)
+    let showCommitAges = useContext(CommitAgesShown)
     let worktree = column.worktree
     let worktrees = allWorktrees(graph)
     let branchRef = column.kind == "branch" ? column.branch.preferredRef : undefined
@@ -115,6 +118,14 @@ export function WorktreeMenu({ column, graph, busy, onPrepare, chooseDirectory }
                     <Separator />
                     {column.kind == "branch" && <MenuItem onAction={() => void copyText(column.branch.name)}>Copy branch name</MenuItem>}
                     {worktree && <MenuItem onAction={() => void copyText(worktree.path)}>Copy worktree path</MenuItem>}
+                    <Separator />
+                    <MenuSection
+                        selectionMode="multiple"
+                        selectedKeys={showCommitAges ? ["commit-ages"] : []}
+                        onSelectionChange={keys => onShowCommitAges(keys == "all" || keys.has("commit-ages"))}
+                    >
+                        <MenuItem id="commit-ages">Show commit ages</MenuItem>
+                    </MenuSection>
                 </Menu>
             </MenuTrigger>
             {worktree && (

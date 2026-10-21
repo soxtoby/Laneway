@@ -59,6 +59,7 @@ contextBridge.exposeInMainWorld("laneway", {
     openSettingsFile: () => ipcRenderer.invoke("settings:open-file"),
     setAppearance: (appearance: Appearance) => ipcRenderer.invoke("settings:appearance", { appearance }),
     setFileListView: (view: FileListView) => ipcRenderer.invoke("settings:file-list-view", { view }),
+    setShowCommitAges: (shown: boolean) => ipcRenderer.invoke("settings:show-commit-ages", { shown }),
     readBranchGraph: (repositoryId: string, refreshRemote = false, allBranches = false) =>
         ipcRenderer.invoke("graph:read", { repositoryId, refreshRemote, allBranches }),
     cancelBranchGraph: (repositoryId: string) => ipcRenderer.invoke("graph:cancel", { repositoryId }),

@@ -343,6 +343,7 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                             busy={busy}
                                             onPrepare={prepare}
                                             chooseDirectory={controller.chooseDirectory}
+                                            onShowCommitAges={shown => void controller.setShowCommitAges(shown)}
                                         />
                                     )}
                                     {column.kind == "comparison" && (

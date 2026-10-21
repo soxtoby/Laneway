@@ -95,6 +95,19 @@ export class OpenRepositories {
         return fileListView
     }
 
+    async showCommitAges() {
+        try {
+            return (await readSettings(this.settingsPath)).showCommitAges ?? true
+        } catch {
+            return true
+        }
+    }
+
+    async setShowCommitAges(showCommitAges: boolean) {
+        await this.updateSettings(current => ({ ...current, showCommitAges }))
+        return showCommitAges
+    }
+
     async setRepositoryGraphSettings(repositoryId: string, graphSettings: RepositoryGraphSettings) {
         await this.requireRepository(repositoryId)
 

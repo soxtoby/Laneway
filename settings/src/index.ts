@@ -11,6 +11,7 @@ export interface LanewaySettings {
     virtualBranchPrefix?: string
     appearance?: Appearance
     fileListView?: FileListView
+    showCommitAges?: boolean
     authorIdentities?: AuthorIdentitySettings
     repositories?: Record<string, RepositoryGraphSettings>
 }
@@ -59,6 +60,8 @@ export async function readSettings(path = defaultSettingsPath()): Promise<Lanewa
             throw new Error("gitPath must be a non-empty string.")
         if (record.virtualBranchPrefix != undefined && !nonEmptyString(record.virtualBranchPrefix))
             throw new Error("virtualBranchPrefix must be a non-empty string.")
+        if (record.showCommitAges != undefined && typeof record.showCommitAges != "boolean")
+            throw new Error("showCommitAges must be true or false.")
 
         let authorIdentities = parseAuthorIdentities(record.authorIdentities)
         let appearance = parseAppearance(record.appearance)
@@ -71,6 +74,7 @@ export async function readSettings(path = defaultSettingsPath()): Promise<Lanewa
             ...(record.virtualBranchPrefix ? { virtualBranchPrefix: record.virtualBranchPrefix as string } : {}),
             ...(appearance ? { appearance } : {}),
             ...(fileListView ? { fileListView } : {}),
+            ...(record.showCommitAges != undefined ? { showCommitAges: record.showCommitAges as boolean } : {}),
             ...(authorIdentities ? { authorIdentities } : {}),
             ...(repositories ? { repositories } : {}),
         }

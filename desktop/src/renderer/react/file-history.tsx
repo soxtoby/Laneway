@@ -2,6 +2,7 @@ import type { FileHistoryEntry, FileHistorySource, FileListView } from "@laneway
 import clsx from "clsx"
 import type { ReactNode } from "react"
 import { Button as AriaButton } from "react-aria-components"
+import { CommitAge } from "./commit-age"
 import { CommitCopyItems } from "./commit-trail"
 import { Hint, IconButton, MoreMenu } from "./controls"
 import { useRowMenu } from "./dense-row"
@@ -149,6 +150,7 @@ function HistoryEntry({ history, entry, inspection }: { history: FileHistoryView
                         <span className="history-subject">{entry.subject}</span>
                     </Hint>
                 </AriaButton>
+                <CommitAge authoredAt={entry.authoredAt} />
                 {expanded && diff && <DiffControls columnId={history.hostId} id={id} diff={diff} inspection={inspection} />}
                 <span className="row-actions" data-visible={expanded || undefined}>
                     <MoreMenu label={menu.label}>{menu.items()}</MoreMenu>

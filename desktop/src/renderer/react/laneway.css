@@ -1430,6 +1430,15 @@
     color: var(--text-color-placeholder);
 }
 
+/* A commit's age trails its subject, quiet and never squeezed; the subject gives way instead. */
+.commit-age {
+    flex: 0 0 auto;
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
 /* A slot an avatar image could fill instead of the initials. */
 .commit-author {
     flex: 0 0 auto;

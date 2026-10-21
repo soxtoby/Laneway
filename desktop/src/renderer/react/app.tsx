@@ -2,6 +2,7 @@ import { type ReactNode, useEffect } from "react"
 import type { AppController, AppSnapshot } from "./app-controller"
 import { BranchGraphPanel } from "./branch-graph"
 import { CommandLensDialog } from "./command-lens-dialog"
+import { CommitAgesShown } from "./commit-age"
 import { ContextMenuHost } from "./context-menu"
 import { Hint } from "./controls"
 import { GitSettingsDialog } from "./git-settings-dialog"
@@ -109,7 +110,11 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
                                         onClose={() => void controller.closeRepository(active.id)}
                                     />
                                 )
-                                : <WorkspaceColumns controller={controller} fileListView={snapshot.fileListView} />}
+                                : (
+                                    <CommitAgesShown value={snapshot.showCommitAges}>
+                                        <WorkspaceColumns controller={controller} fileListView={snapshot.fileListView} />
+                                    </CommitAgesShown>
+                                )}
                         </main>
                     </div>
                 )

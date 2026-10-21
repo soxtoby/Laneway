@@ -3,6 +3,7 @@ import clsx from "clsx"
 import { useState } from "react"
 import { Button as AriaButton } from "react-aria-components"
 import type { ColumnView } from "./branch-workspace"
+import { CommitAge } from "./commit-age"
 import { authoredBy, authorInitials } from "./commit-authors"
 import { ConflictResolution } from "./conflict-resolution"
 import type { Conflicts } from "./conflicts"
@@ -285,6 +286,7 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
                         </Hint>
                     )}
                 </AriaButton>
+                <CommitAge authoredAt={commit.authoredAt} />
                 {open && (
                     <IconButton
                         label={`Show full diff for commit ${commit.subject}`}
