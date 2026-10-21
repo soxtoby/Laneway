@@ -129,18 +129,28 @@ export function startFileHistoryRead(descriptor: RepositoryDescriptor, start: St
                 "--no-patch",
                 "--first-parent",
                 `--max-count=${scanLimit}`,
+                // Bodies span lines, so records end in NUL as well and the fields are read in groups of seven.
                 "-z",
-                "--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%s",
+                "--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%s%x00%b",
                 objectId,
                 "--",
             ]))
                 .split("\0")
             : []
         let commits: Array<Omit<FileHistoryEntry, "path" | "status">> = []
-        for (let index = 0; index + 5 < metadata.length; index += 6) {
-            let [oid, parents, authorName, authorEmail, authoredAt, subject] = metadata.slice(index, index + 6)
+        for (let index = 0; index + 6 < metadata.length; index += 7) {
+            let [oid, parents, authorName, authorEmail, authoredAt, subject, body] = metadata.slice(index, index + 7)
             let parentIds = parents ? parents.split(" ") : []
-            commits.push({ objectId: oid, parentIds, authorName, authorEmail, authoredAt: Number(authoredAt), subject, followedParent: parentIds[0] })
+            commits.push({
+                objectId: oid,
+                parentIds,
+                authorName,
+                authorEmail,
+                authoredAt: Number(authoredAt),
+                subject,
+                body: body.trimEnd(),
+                followedParent: parentIds[0],
+            })
         }
 
         let boundary = commits.at(-1)?.followedParent
