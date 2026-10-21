@@ -438,7 +438,7 @@ export function FileList(
     let diffColumn = inspected?.diffColumn
     let inspect: FileInspection | undefined = inspected && {
         isOpen: file => !diffColumn && inspected.diffs[diffKey(group, file.path)] != undefined,
-        isActive: file => diffColumn?.group == group && diffColumn.focus == file.path,
+        isActive: file => diffColumn?.group == group && diffColumn.shown == file.path,
         toggle: file => inspection.toggleDiff(columnId, group, file.path),
         close: hidden => inspection.closeDiffs(columnId, group, hidden.map(file => file.path)),
         controls: file => {

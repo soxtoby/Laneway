@@ -114,6 +114,65 @@ describe("React diff column", () => {
         expect(document.querySelectorAll(".diff-panel")).toHaveLength(0)
     })
 
+    test("marks the file at the top of its files in the source list as the user scrolls, and the chosen file while it scrolls there", async () => {
+        let scenario = inspectionScenario()
+        let app = await startReactApp(scenario.api)
+        await app.act(() => press(button(trail(), "Inspect changes")))
+        await app.act(() => press(button(trail(), "Show full diff for commit Inspect changes")))
+        let column = diffColumn()!
+        let files = column.querySelector<HTMLElement>(".diff-column-files")!
+        files.getBoundingClientRect = () => ({ top: 0 }) as DOMRect
+        for (let [index, section] of column.querySelectorAll<HTMLElement>("[data-diff-path]").entries())
+            section.getBoundingClientRect = () => ({ top: index * 300 - files.scrollTop }) as DOMRect
+        let scroll = (top: number, user = true) =>
+            app.act(() => {
+                if (user)
+                    files.dispatchEvent(new Event("wheel", { bubbles: true }))
+                files.scrollTop = top
+                files.dispatchEvent(new Event("scroll"))
+            })
+        // The source list scrolls to show the marked row.
+        let revealed: (string | null)[] = []
+        for (let row of commitFileRows())
+            row.scrollIntoView = () => revealed.push(row.getAttribute("aria-label"))
+
+        await scroll(0)
+        expect(marked()).toEqual([true, false])
+        await scroll(290)
+        expect(marked()).toEqual([true, false])
+        await scroll(300)
+        expect(marked()).toEqual([false, true])
+        await app.act(frame)
+        expect(revealed.at(-1)).toBe("other.txt")
+
+        // Scrolling to a chosen file passes the files between without marking them, until the user scrolls.
+        await app.act(() => openRow(first()))
+        expect(marked()).toEqual([true, false])
+        await app.act(() => openRow(second()))
+        await scroll(100, false)
+        expect(marked()).toEqual([false, true])
+        await scroll(100)
+        expect(marked()).toEqual([true, false])
+
+        await app.act(() => press(button(column, "Close diff column")))
+        expect(marked()).toEqual([false, false])
+
+        function first() {
+            return commitFileRows()[0]!
+        }
+
+        function second() {
+            return commitFileRows()[1]!
+        }
+    })
+
+    test("shownFile takes the last section at the top, allowing a pixel, or the first before any reaches it", async () => {
+        let { shownFile } = await import("../src/renderer/react/diff-column")
+
+        expect(shownFile([{ path: "a", top: -500 }, { path: "b", top: 0.5 }, { path: "c", top: 300 }])).toBe("b")
+        expect(shownFile([{ path: "a", top: 20 }, { path: "b", top: 300 }])).toBe("a")
+    })
+
     test("Working Changes open it on the diff opened last, focused, in the column's saved layout and not restored", async () => {
         let scenario = inspectionScenario()
         let app = await startReactApp(scenario.api)

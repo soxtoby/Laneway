@@ -29,6 +29,11 @@ interface AppState {
 }
 
 declare global {
+    // Chromium scrolls only the nearest scroll container with `container: "nearest"`; TypeScript's DOM types lack it.
+    interface ScrollIntoViewOptions {
+        container?: "all" | "nearest"
+    }
+
     interface Window {
         laneway: {
             recoverWorktree(repositoryId: string, request: RecoveryRequest): Promise<RecoveryActionResult>
