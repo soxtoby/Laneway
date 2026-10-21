@@ -3,6 +3,7 @@ import clsx from "clsx"
 import { useState } from "react"
 import { Button as AriaButton } from "react-aria-components"
 import type { ColumnView } from "./branch-workspace"
+import { CommitAge } from "./commit-age"
 import { ConflictResolution } from "./conflict-resolution"
 import type { Conflicts } from "./conflicts"
 import { Hint, IconButton, MoreMenu } from "./controls"
@@ -273,6 +274,7 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
                     </Hint>
                     {commit.body && !open && <MoreIcon className="message-indicator" role="img" aria-label="Has message body" aria-hidden={false} />}
                 </AriaButton>
+                <CommitAge authoredAt={commit.authoredAt} />
                 {open && (
                     <IconButton
                         label={`Show full diff for commit ${commit.subject}`}
