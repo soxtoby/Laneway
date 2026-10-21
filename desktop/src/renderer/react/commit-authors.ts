@@ -10,7 +10,11 @@ export function authoredBy({ primary, secondary }: AuthorIdentitySettings, email
     return [primary, ...secondary].some(identity => identity?.toLowerCase() == address)
 }
 
-/** Up to two initials: the first and last words of the author's name, or the start of their email without a name. */
+/**
+ * Up to two initials: the first and last words of the author's name, or the start of their email without a name.
+ * A word's first code point is its initial, so a name that starts with punctuation, a decomposed accent, or a letter
+ * that upcases to several (ß) gives an odd badge; the hint always shows the whole name, so that isn't handled.
+ */
 export function authorInitials(name: string, email: string) {
     let words = name.split(/\s+/).filter(Boolean)
     let picked = words.length > 1 ? [words[0]!, words.at(-1)!] : words.length == 1 ? words : [email]
