@@ -129,6 +129,24 @@ describe("React diff column", () => {
         expect(listing(column)).toEqual(["src/file.txt", "file.test.ts", "other.txt"])
     })
 
+    test("reads its files' diffs in the order its source list shows them", async () => {
+        let scenario = inspectionScenario(["file.test.ts", "src/file.txt", "other.txt"])
+        let read: string[] = []
+        let app = await startReactApp({
+            ...scenario.api,
+            readFileDiff: async (...args) => {
+                read.push(args[2].path)
+                return scenario.api.readFileDiff(...args)
+            },
+        })
+        await app.act(() => app.controller.setFileListView({ layout: "flat", grouping: "kind" }))
+        await app.act(() => press(button(trail(), "Inspect changes")))
+
+        await app.act(() => press(button(trail(), "Show full diff for commit Inspect changes")))
+
+        expect(read).toEqual(["src/file.txt", "other.txt", "file.test.ts"])
+    })
+
     test("marks the file at the top of its files in the source list as the user scrolls, and the chosen file while it scrolls there", async () => {
         let scenario = inspectionScenario()
         // The first file's diff is still loading, so the column keeps aiming at a file chosen below it.
