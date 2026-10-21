@@ -258,25 +258,49 @@ test("a descendant conflict pauses the session at the rewritten commit until the
     expect(git(path, "show", "HEAD:greet.txt")).toBe("hello\nthere\nbuddy")
     await expect(edit(path, { action: "return", path, mode: "clean" })).rejects.toThrow("Resolve the conflicts on feature")
 
-    let [subject] = (await conflict(path, { action: "list" })).conflicts
-    let view = (await conflict(path, { action: "inspect", subject: subject!.id })).view!
-    let chosen = await conflict(path, {
-        action: "choose",
-        subject: subject!.id,
-        input: view.subject.input,
-        revision: view.candidate.revision,
-        file: "greet.txt",
-        side: "right",
-    })
-    await conflict(path, { action: "accept", subject: subject!.id, input: view.subject.input, revision: chosen.view!.candidate.revision })
+    let pinned = git(path, "rev-parse", "feature")
+    git(path, "update-ref", "refs/heads/feature", externalCommit(path, pinned))
+
+    expect((await session(path))?.state).toBe("stale")
+
+    git(path, "update-ref", "refs/heads/feature", pinned)
+    await acceptRightSide(path)
+    let accepted = git(path, "rev-parse", "feature")
 
     expect((await session(path))?.state).toBe("active")
     expect(git(path, "rev-parse", "HEAD")).toBe(paused!.commit)
 
+    git(path, "update-ref", "refs/heads/feature", externalCommit(path, accepted))
+
+    expect((await session(path))?.state).toBe("stale")
+
+    git(path, "update-ref", "refs/heads/feature", accepted)
     await edit(path, { action: "return", path, mode: "clean" })
 
     expect(git(path, "branch", "--show-current")).toBe("feature")
     expect(git(path, "rev-parse", "feature~2")).toBe(paused!.commit)
+}, 120_000)
+
+test("accepting a conflict before another session's commit on the same branch moves that session to its rewrite with its changes", async () => {
+    let { path, greeting } = await stack()
+    let later = await commit(path, "extra.txt", "extra\n", "Add extra")
+    await edit(path, { action: "enter", path, commit: greeting })
+    let other = join(await temporaryDirectory(), "other")
+    git(path, "worktree", "add", "-q", other, "feature")
+    await edit(other, { action: "enter", path: other, commit: later })
+    await writeFile(join(other, "draft.txt"), "draft\n")
+    await writeFile(join(path, "greet.txt"), "hello\nthere\nbuddy\n")
+    await apply(path, undefined, true)
+
+    await acceptRightSide(path)
+
+    let tip = git(path, "rev-parse", "feature")
+    let sessions = (await edit(path, { action: "status" })).sessions
+
+    expect(sessions.map(s => s.state)).toEqual(["active", "active"])
+    expect(sessions.find(s => s.worktreeId != "main")?.commit).toBe(tip)
+    expect(git(other, "rev-parse", "HEAD")).toBe(tip)
+    expect(await readFile(join(other, "draft.txt"), "utf8")).toBe("draft\n")
 }, 120_000)
 
 test("an interrupted entry or return is rolled back by the next Engine run", async () => {
@@ -344,6 +368,26 @@ async function apply(path: string, files?: string[], allowConflicts = false) {
 
 async function conflict(path: string, conflictRequest: ConflictRequest) {
     return await executeOperationCommand({ command: "conflict", request: conflictRequest, noWait: false }, path) as ConflictResult
+}
+
+/** Resolves the only commit conflict with the replayed commit's side and accepts it. */
+async function acceptRightSide(path: string) {
+    let [subject] = (await conflict(path, { action: "list" })).conflicts
+    let view = (await conflict(path, { action: "inspect", subject: subject!.id })).view!
+    let chosen = await conflict(path, {
+        action: "choose",
+        subject: subject!.id,
+        input: view.subject.input,
+        revision: view.candidate.revision,
+        file: "greet.txt",
+        side: "right",
+    })
+    await conflict(path, { action: "accept", subject: subject!.id, input: view.subject.input, revision: chosen.view!.candidate.revision })
+}
+
+/** A commit on top of `parent`, as an external tool would make without checking anything out. */
+function externalCommit(path: string, parent: string) {
+    return git(path, "commit-tree", `${parent}^{tree}`, "-p", parent, "-m", "External")
 }
 
 async function keepStashed(path: string, subject: string) {

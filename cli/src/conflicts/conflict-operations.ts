@@ -1,8 +1,9 @@
-import { blob, candidateReady, conflictHunks, conflictStateRef, gitText, hasConflictMarkers, isText, normalize, readConflictState, readRegisteredWorktrees, replaceTreeFiles, replayTree, type RepositoryGit, rewriteCommit, storeConflictState, temporaryBranchPrefix, treeEntries, withConflictScratch } from "@laneway/git"
+import { blob, candidateReady, conflictHunks, conflictStateRef, gitText, hasConflictMarkers, isText, normalize, readConflictState, readRegisteredWorktrees, readStoredHistoricalEdits, replaceTreeFiles, replayTree, type RepositoryGit, rewriteCommit, storeConflictState, temporaryBranchPrefix, treeEntries, withConflictScratch } from "@laneway/git"
 import { type ConflictRequest, type ConflictState, type ConflictSubject, type UnresolvedStack } from "@laneway/shared"
 import { lstat, readFile, realpath } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { verifyIgnoredFiles } from "../composition/composition"
+import { followAcceptedRewrites } from "../historical-edit/accepted-rewrites"
 import { candidateRef, checkedCandidate, readCandidate, saveCandidate } from "./conflict-candidates"
 import { conflictResult, findSubject } from "./conflict-inspection"
 import { cleanupResolutionFiles, runMergeTool } from "./conflict-resolution-files"
@@ -140,6 +141,8 @@ export async function executeConflict(repo: RepositoryGit, request: ConflictRequ
             if (request.action == "keep-stashed")
                 throw new Error("Only Working Changes Conflicts can be kept stashed.")
             let stack = found.stack!
+            let sessions = await readStoredHistoricalEdits(repo)
+            let previous = new Map(state.stacks.flatMap(s => s.steps.map(step => [step.id, step.current] as const)))
             await followTemporaryBranch(repo, stack)
             if (!stack.steps.includes(found.step!))
                 throw new Error("The temporary branch no longer contains this commit. Update the stack to follow its current history.")
@@ -152,6 +155,7 @@ export async function executeConflict(repo: RepositoryGit, request: ConflictRequ
             let affectedStacks = [...state.stacks].filter(s => s.id == stack.id || dependsOn(state, s, stack.id))
             for (let affected of affectedStacks)
                 await publishProvisional(repo, state, affected, updateRefs, changes)
+            await followAcceptedRewrites(repo, sessions, affectedStacks, previous, state, changes)
         }
         await persist()
         await cleanupResolutionFiles(repo, subject)
