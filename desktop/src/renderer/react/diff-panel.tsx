@@ -3,7 +3,7 @@ import { createContext, type ReactNode, useContext } from "react"
 import { ToggleButton } from "react-aria-components"
 import { IconButton } from "./controls"
 import { DiffLines } from "./diff-lines"
-import { BreakoutDiffIcon, EntireFileIcon, ImageModeIcon, SplitDiffIcon, UnifiedDiffIcon, WhitespaceIcon } from "./icons"
+import { BreakoutDiffIcon, EntireFileIcon, ImageModeIcon, SplitDiffIcon, UnifiedDiffIcon, WhitespaceIcon, WrapLinesIcon } from "./icons"
 import { ImageDiff, imageKey } from "./image-diff"
 import { type ImageDiffMode, imageModes, isComparableImage, isImagePath, preferredImageMode, visibleSummary } from "./image-files"
 import type { FileDiffState, Inspection } from "./inspection"
@@ -11,6 +11,7 @@ import { TransferGrip, transferSource, useTransferScope } from "./transfer"
 import { Button } from "./ui/Button"
 import { SegmentedControl, SegmentedControlItem } from "./ui/SegmentedControl"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
+import { useSnapshot } from "./use-snapshot"
 
 /** How a column lays out its diffs, saved with the column. */
 export interface DiffScope {
@@ -35,9 +36,10 @@ interface DiffControlsProps extends DiffProps {
     entireFiles?: { shown: boolean; toggle(): void }
 }
 
-/** A diff's controls in its file's row: unified or side by side, and showing whitespace. */
+/** A diff's controls in its file's row: unified or side by side, wrapping every diff's lines, and showing whitespace. */
 export function DiffControls({ columnId, id, diff, inspection, breakout, entireFiles }: DiffControlsProps) {
     let { layout, setLayout } = useContext(DiffScopeContext)
+    let { wrapLines } = useSnapshot(inspection)
     let breakoutButton = breakout && (
         <IconButton label="Break out diff" small onPress={breakout}>
             <BreakoutDiffIcon />
@@ -78,6 +80,12 @@ export function DiffControls({ columnId, id, diff, inspection, breakout, entireF
                     <Tooltip>Show entire files</Tooltip>
                 </TooltipTrigger>
             )}
+            <TooltipTrigger>
+                <ToggleButton className="icon-button small" aria-label="Wrap lines" isSelected={wrapLines} onChange={inspection.toggleWrapLines}>
+                    <WrapLinesIcon />
+                </ToggleButton>
+                <Tooltip>Wrap lines</Tooltip>
+            </TooltipTrigger>
             <TooltipTrigger>
                 <ToggleButton
                     className="icon-button small"
@@ -121,6 +129,7 @@ export function ImageModeToggle({ mode, onChange }: { mode: ImageDiffMode; onCha
  */
 export function DiffPanel({ columnId, id, diff, inspection, eligible }: DiffProps & { eligible: boolean }) {
     let { layout } = useContext(DiffScopeContext)
+    let { wrapLines } = useSnapshot(inspection)
     let scope = useTransferScope()
     let page = diff.page && !eligible ? { ...diff.page, selectable: false } : diff.page
     let image = page != undefined && isImagePath(page.file.path)
@@ -167,6 +176,7 @@ export function DiffPanel({ columnId, id, diff, inspection, eligible }: DiffProp
                             <DiffLines
                                 page={page}
                                 layout={layout}
+                                wrap={wrapLines}
                                 showWhitespace={diff.showWhitespace}
                                 selected={selection?.lineIds ?? []}
                                 readContext={inspection.readContext}

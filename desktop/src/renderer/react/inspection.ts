@@ -53,8 +53,8 @@ export interface ColumnInspection {
     bases: Record<string, string>
     /** Open diffs by `diffKey`; each shows under its file's row, or in the diff column while there is one. */
     diffs: Record<string, FileDiffState>
-    /** The list and file the column's diff column shows, while it has one. */
-    diffColumn?: { group: string; focus?: string }
+    /** The list the column's diff column shows, while it has one, and the file at its top, whose row is marked. */
+    diffColumn?: { group: string; shown?: string }
     /** The column's file filter, while it is open. */
     filter?: FileFilter
     /** The Commit Trail shows only commits with conflicts to resolve. */
@@ -142,6 +142,8 @@ export interface InspectionSnapshot {
     auxiliary: Record<string, AuxiliaryView[]>
     /** The auxiliary column that takes focus once it shows; `serial` rises each time one is to. */
     focused?: { id: string; serial: number }
+    /** Whether every diff wraps its long lines rather than scrolling them sideways. */
+    wrapLines: boolean
 }
 
 /** A column the inspection keeps lists for, as the Workspace Columns describe it. */
@@ -195,6 +197,8 @@ export interface Inspection extends Store<InspectionSnapshot> {
     resizeAuxiliary(id: string, width: number): void
     /** Folds a diff column's files down to their toolbars, or unfolds them. */
     foldDiffs(id: string, paths: string[], folded: boolean): void
+    /** Marks the file a diff column has scrolled to the top of its files in its source column's list. */
+    scrolledTo(id: string, path: string): void
     /** Shows a diff column's files whole, or only around their changes, reading its diffs again. */
     toggleEntireFiles(id: string): void
     /**
@@ -236,6 +240,8 @@ export interface Inspection extends Store<InspectionSnapshot> {
     /** Shows a Working Changes diff's staged or unstaged side, or a conflict's side. */
     changeView(columnId: string, key: string, view: DiffView): void
     toggleWhitespace(columnId: string, key: string): void
+    /** Wraps every diff's long lines, or scrolls them sideways again, until Laneway restarts. */
+    toggleWrapLines(): void
     /** Toggles lines together: all already chosen clears them, otherwise all become chosen. */
     selectLines(columnId: string, key: string, lineIds: number[]): void
     clearLines(columnId: string, key: string): void
@@ -295,6 +301,8 @@ interface DiffColumnState {
     collapsed: Set<string>
     focus?: string
     serial: number
+    /** The file at the top of its files: the one chosen, until the user scrolls it to another. */
+    shown?: string
     entireFiles: boolean
 }
 
@@ -319,7 +327,7 @@ interface InspectionOptions {
 
 /** The files and commits each Workspace Column shows, read from Git as the column needs them. */
 export function createInspection({ api, notify }: InspectionOptions): Inspection {
-    let store = createStore<InspectionSnapshot>({ columns: {}, auxiliary: {} })
+    let store = createStore<InspectionSnapshot>({ columns: {}, auxiliary: {}, wrapLines: false })
     let repositories = new Map<string, Map<string, ColumnState>>()
     let graphs = new Map<string, BranchGraph>()
     let auxiliaries = new Map<string, AuxiliaryColumns<AuxiliaryValue>>()
@@ -329,6 +337,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
     let historyHosts = new Map<FileHistoryState, ColumnState>()
     let activeId: string | undefined
     let focused: InspectionSnapshot["focused"]
+    let wrapLines = false
     let discards = createDiscards({
         api,
         notify,
@@ -369,6 +378,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             columns: Object.fromEntries([...columns?.values() ?? []].map(state => [state.id, inspected(state)])),
             auxiliary: Object.fromEntries([...columns?.keys() ?? []].map(id => [id, tree?.descendants(id).map(auxiliaryView) ?? []])),
             focused,
+            wrapLines,
         })
     }
 
@@ -381,7 +391,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             history: { ...state.history },
             bases: { ...state.bases },
             diffs: { ...state.diffs },
-            diffColumn: state.diffColumn && { group: state.diffColumn.group, focus: state.diffColumn.focus },
+            diffColumn: state.diffColumn && { group: state.diffColumn.group, shown: state.diffColumn.shown },
             filter: state.filter,
             conflictsOnly: state.conflictsOnly,
         }
@@ -614,6 +624,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
         if (current?.group == group) {
             if (path) {
                 current.focus = path
+                current.shown = path
                 current.serial++
                 current.collapsed.delete(path)
             }
@@ -633,6 +644,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             collapsed: new Set(),
             focus: path,
             serial: (current?.serial ?? 0) + 1,
+            shown: path,
             entireFiles: current?.entireFiles ?? false,
         }
         state.diffColumn = column
@@ -1124,6 +1136,14 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             publish()
         },
 
+        scrolledTo(id, path) {
+            let column = auxiliaryNode(id)?.node.value
+            if (column?.kind != "diff" || column.shown == path)
+                return
+            column.shown = path
+            publish()
+        },
+
         toggleEntireFiles(id) {
             let column = auxiliaryNode(id)?.node.value
             if (column?.kind != "diff")
@@ -1349,6 +1369,11 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
                 found.diff.showWhitespace = !found.diff.showWhitespace
                 publish()
             }
+        },
+
+        toggleWrapLines() {
+            wrapLines = !wrapLines
+            publish()
         },
 
         selectLines(columnId, key, lineIds) {
