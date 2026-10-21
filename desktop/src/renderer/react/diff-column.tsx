@@ -1,5 +1,5 @@
 import type { ChangedFile } from "@laneway/shared"
-import { type MouseEvent, type RefObject, useLayoutEffect, useRef } from "react"
+import { type KeyboardEvent, type MouseEvent, type RefObject, useLayoutEffect, useRef } from "react"
 import { Button as AriaButton } from "react-aria-components"
 import { Hint, IconButton } from "./controls"
 import { useRowMenu } from "./dense-row"
@@ -48,6 +48,11 @@ export function DiffColumn({ view, sourceName, stacked, inspected, inspection, r
         stopAiming()
         spy.release()
     }
+    // Only keys that scroll it count: Escape, Tab, and keys a diff's own controls handle leave it aiming.
+    let keyed = (event: KeyboardEvent) => {
+        if (!event.defaultPrevented && scrollingKeys.includes(event.key))
+            scrolledByUser()
+    }
     let title = diffColumnTitle(view, sourceName)
     let fold = (paths: string[], folded: boolean) => {
         // Folding moves the files, so the column stops chasing the one it scrolled to.
@@ -69,7 +74,7 @@ export function DiffColumn({ view, sourceName, stacked, inspected, inspection, r
             aria-label={`${sourceName} diff`}
             onWheel={scrolledByUser}
             onPointerDown={scrolledByUser}
-            onKeyDown={scrolledByUser}
+            onKeyDown={keyed}
         >
             <header className="column-header auxiliary-header" onDoubleClick={toggleMaximized}>
                 <Hint text={title}>
@@ -123,6 +128,8 @@ export function DiffColumn({ view, sourceName, stacked, inspected, inspection, r
         </aside>
     )
 }
+
+let scrollingKeys = ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "]
 
 function DiffColumnFile({ view, file, id, diff, inspection, root, onFold }: {
     view: DiffColumnView

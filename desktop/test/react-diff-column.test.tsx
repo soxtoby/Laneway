@@ -180,6 +180,36 @@ describe("React diff column", () => {
         }
     })
 
+    test("keeps a file chosen below a loading diff at the top once that diff grows, through keys that don't scroll the column", async () => {
+        let scenario = inspectionScenario()
+        let reading: (() => void)[] = []
+        let app = await startReactApp({
+            ...scenario.api,
+            readFileDiff: async (...args) => {
+                let result = await scenario.api.readFileDiff(...args)
+                if (args[2].path == "src/file.txt")
+                    await new Promise<void>(resolve => reading.push(resolve))
+                return result
+            },
+        })
+        await app.act(() => press(button(trail(), "Inspect changes")))
+        await app.act(() => press(button(trail(), "Show full diff for commit Inspect changes")))
+        let column = diffColumn()!
+        let files = column.querySelector<HTMLElement>(".diff-column-files")!
+        files.getBoundingClientRect = () => ({ top: 0 }) as DOMRect
+        let firstHeight = 300
+        for (let [index, section] of column.querySelectorAll<HTMLElement>("[data-diff-path]").entries())
+            section.getBoundingClientRect = () => ({ top: index * firstHeight - files.scrollTop }) as DOMRect
+        await app.act(() => openRow(commitFileRows()[1]!))
+
+        for (let key of ["Escape", "Tab"])
+            await app.act(() => files.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })))
+        firstHeight = 500
+        await app.act(() => reading.splice(0).forEach(finish => finish()))
+
+        expect(files.scrollTop).toBe(500)
+    })
+
     test("shownFile takes the last section at the top, allowing a pixel, or the first before any reaches it", async () => {
         let { shownFile } = await import("../src/renderer/react/diff-column")
 
