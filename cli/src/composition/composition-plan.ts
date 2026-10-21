@@ -1,6 +1,6 @@
 import { gitText, type RepositoryGit } from "@laneway/git"
-import type { CompositionPreview, ConflictState, ConflictSubject, LocalPreview, ResolutionCandidate } from "@laneway/shared"
-import { CompositionPreviewSchema, ConflictStateSchema, ConflictSubjectSchema, LocalPreviewSchema, ResolutionCandidateSchema } from "@laneway/shared"
+import type { CompositionPreview, ConflictState, ConflictSubject, HistoricalEditSession, LocalPreview, ResolutionCandidate } from "@laneway/shared"
+import { CompositionPreviewSchema, ConflictStateSchema, ConflictSubjectSchema, HistoricalEditSessionSchema, LocalPreviewSchema, ResolutionCandidateSchema } from "@laneway/shared"
 import { createHash } from "node:crypto"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { join } from "node:path"
@@ -41,6 +41,8 @@ export interface Plan {
     working: WorkingPlan[]
     state: ConflictState
     candidates: Array<{ ref: string; before: string; candidate: ResolutionCandidate }>
+    /** Historical Edits whose worktree takes part, with their materialized commit as drafted. */
+    sessions: Array<{ ref: string; before: string; session: HistoricalEditSession }>
     preview: CompositionPreview
 }
 
@@ -75,6 +77,7 @@ let PlanSchema = z.object({
     })),
     state: ConflictStateSchema,
     candidates: z.array(z.object({ ref: z.string(), before: z.string(), candidate: ResolutionCandidateSchema })),
+    sessions: z.array(z.object({ ref: z.string(), before: z.string(), session: HistoricalEditSessionSchema })).default([]),
     preview: CompositionPreviewSchema,
 })
 

@@ -56,6 +56,15 @@ export function writeCommandResult(result: EngineMessage, json: boolean) {
             console.log(result.status == "clean" ? "No recovery is required." : `Recovered ${result.recovered.length} operation(s).`)
             if (result.backupPath)
                 console.log(`Remaining files preserved at ${result.backupPath}`)
+        } else if (result.command == "edit") {
+            if (result.message)
+                console.log(result.message)
+            else if (!result.sessions.length)
+                console.log("No Historical Edits.")
+            for (let edit of result.message ? [] : result.sessions) {
+                let reason = edit.reason ? `: ${edit.reason}` : ""
+                console.log(`${edit.state} ${edit.path} editing ${edit.commit.slice(0, 12)} from ${edit.branch.slice(11)}${reason}`)
+            }
         } else if (result.command == "pull") {
             console.log(result.message)
             for (let fetch of result.fetches)

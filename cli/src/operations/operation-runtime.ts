@@ -1,5 +1,5 @@
 import { connectRepository, GitError, type RepositoryGit } from "@laneway/git"
-import { pathExists, previewWorktree, worktreeBasename } from "@laneway/git"
+import { pathExists, previewWorktree, readHistoricalEdits, readHistoricalEditSessions, worktreeBasename } from "@laneway/git"
 import { normalize, readRegisteredWorktrees } from "@laneway/git"
 import { type OperationAvailability, type OperationAvailabilityReason, type OperationHistoryEntry, type OperationHistoryResult, type OperationSummary, type OperationTransitionResult, type RecoveredExecution, type RecoveryResult, type TestMutationResult } from "@laneway/shared"
 import type { WorktreeRequest, WorktreeResult } from "@laneway/shared"
@@ -7,11 +7,13 @@ import type { LocalRequest, LocalResult } from "@laneway/shared"
 import type { ConflictRequest, ConflictResult } from "@laneway/shared"
 import type { BranchGraphReadOptions, PullRequest, PullResult } from "@laneway/shared"
 import type { RecoveryRequest, RecoveryStatusResult, WorktreeRecovery } from "@laneway/shared"
+import type { HistoricalEditRequest, HistoricalEditResult } from "@laneway/shared"
 import type { GitResult } from "@laneway/shared"
 import { lstat, readdir, readFile, readlink, rename, rm } from "node:fs/promises"
 import { dirname, join, resolve, sep } from "node:path"
 import { isFileExtraction } from "../composition/file-extraction"
 import { conflictMutation, conflictPaths, executeConflict, suspendWorkingConflicts } from "../conflicts/conflict-operations"
+import { mutateHistoricalEdit, prepareHistoricalEdit } from "../historical-edit/historical-edit"
 import { LocalPreconditionError, mutateLocal, prepareLocal } from "../local-mutations"
 import { executePull, preparePull, type PullPreparation, type PullProgressReporter } from "../pull-latest"
 import { recoveryBackupPath } from "../worktrees/worktree-directory"
@@ -49,6 +51,7 @@ export type OperationCommand =
         branchPrefix?: string
     }
     | { command: "worktree"; request: WorktreeRequest; token?: string; noWait: boolean; crashAfter?: JournalPhase; branchPrefix?: string }
+    | { command: "edit"; request: HistoricalEditRequest; noWait: boolean; crashAfter?: JournalPhase }
     | { command: "test-mutation"; value: string; noWait: boolean; crashAfter?: JournalPhase; holdAfterIntentMs?: number }
     | { command: "undo"; noWait: boolean; crashAfter?: JournalPhase; worktreeBasename?: string }
     | { command: "redo"; noWait: boolean; crashAfter?: JournalPhase }
@@ -67,6 +70,7 @@ export type OperationCommandResult =
     | LocalResult
     | ConflictResult
     | PullResult
+    | HistoricalEditResult
 
 class OperationRuntime {
     constructor(
@@ -192,10 +196,46 @@ class OperationRuntime {
         return result
     }
 
+    async historicalEdit(request: HistoricalEditRequest, crashAfter?: JournalPhase): Promise<HistoricalEditResult> {
+        if (request.action == "status")
+            return { type: "result", command: "edit", message: "", sessions: await readHistoricalEdits(this.repository) }
+
+        let plan = await prepareHistoricalEdit(this.repository, request)
+        let message = ""
+        let operation = await this.applyCheckpoint(
+            [plan.worktree.path],
+            `edit.${request.action == "return" ? request.mode : request.action}`,
+            plan.summary,
+            async () => {
+                let changes = new Map<string, string | null>()
+                message = await mutateHistoricalEdit(this.repository, plan, changes)
+                return changes
+            },
+            crashAfter,
+            undefined,
+            plan.recorded,
+        )
+
+        return {
+            type: "result",
+            command: "edit",
+            message,
+            sessions: await readHistoricalEdits(this.repository),
+            ...(plan.recorded ? { operation } : {}),
+        }
+    }
+
     async applyWorktree(request: WorktreeRequest, token?: string, crashAfter?: JournalPhase, branchPrefix = "worktree/"): Promise<WorktreeResult> {
         await this.repository.command(this.repository.descriptor.mainWorktree, ["check-ref-format", "--branch", `${branchPrefix}worktree`])
         let preview = await previewWorktree(this.repository, request)
         request = preview.request
+        if (request.action == "switch" || request.action == "remove") {
+            let path = request.path
+            let editing = preview.worktrees.find(w => !w.missing && normalize(w.path) == normalize(path))
+            // A missing worktree's session cannot continue, so its removal leaves only an inert session ref behind.
+            if (editing && (await readHistoricalEditSessions(this.repository)).some(stored => stored.session.worktreeId == editing.id))
+                throw new OperationRuntimeError("operation.precondition-failed", "Return from the Historical Edit in this worktree first.")
+        }
         if (token && token != preview.token)
             throw new OperationRuntimeError("operation.precondition-failed", "Worktree state changed after preview. Review it again.")
         if (
@@ -234,6 +274,8 @@ class OperationRuntime {
         mutate: (before: GitCheckpoint, operationId: string) => Promise<Set<string> | Map<string, string | null>>,
         crashAfter?: JournalPhase,
         prepared?: GitCheckpoint,
+        // An unrecorded mutation is still journaled, so an interruption rolls it back, but never enters Operation History.
+        recorded = true,
     ): Promise<OperationSummary> {
         let locks = await findGitLockfiles(this.repository.descriptor.commonDirectory)
         if (locks.length)
@@ -285,6 +327,12 @@ class OperationRuntime {
             if (outcome == "restored")
                 throw new Error(`${error instanceof Error ? error.message : String(error)} Laneway restored the Git state from before the operation.`)
             throw error
+        }
+        if (!recorded) {
+            crashIfRequested("worktrees-committed", crashAfter)
+            await this.store.appendJournalPhase(executionId, operation.id, "apply", "finalized")
+            await releaseOperation(this.repository, operation.id)
+            return summarize(operation)
         }
         let expected = await captureGitCheckpoint(this.repository, affected, before, undefined, undefined, false)
         if ((kind.startsWith("local.") || kind.startsWith("pull.") || kind.startsWith("git.")) && checkpointIdentity(before) == checkpointIdentity(expected)) {
@@ -956,6 +1004,8 @@ export async function executeOperationCommand(
                 return runtime.transfer(command.request, command.crashAfter, command.branchPrefix ?? "worktree/")
             case "worktree":
                 return runtime.applyWorktree(command.request, command.token, command.crashAfter, command.branchPrefix)
+            case "edit":
+                return runtime.historicalEdit(command.request, command.crashAfter)
             case "test-mutation":
                 return runtime.applyTestMutation(command.value, command.crashAfter, command.holdAfterIntentMs)
             case "undo":
