@@ -45,6 +45,25 @@ test("entry preserves staged, unstaged, and untracked changes and detaches the s
     expect((await history(path)).entries).toEqual([])
 }, 60_000)
 
+test("the Branch Graph keeps a session's worktree in its original branch's column, with the session and its stash marker", async () => {
+    let { path, greeting } = await stack()
+    await writeFile(join(path, "notes.txt"), "notes\n")
+    await edit(path, { action: "enter", path, commit: greeting })
+
+    let graph = await (await connectRepository(path)).startReadBranchGraph({ authorIdentities: { secondary: [] }, remotePatterns: [] }).result
+
+    let feature = graph.branches.find(branch => branch.name == "feature")!
+    let worktree = feature.checkedOut[0]!
+    expect(graph.virtualBranches).toEqual([])
+    expect(feature.checkedOut.map(w => [w.branchRef, w.head, w.historicalEdit?.subject, w.historicalEdit?.state])).toEqual([[
+        "refs/heads/feature",
+        greeting,
+        "Add a greeting",
+        "active",
+    ]])
+    expect(feature.markers.map(marker => marker.objectId)).toEqual([worktree.historicalEdit!.stash!])
+}, 60_000)
+
 test("entry refuses a detached worktree, Primary Branch history, populated submodules, and a second session; the worktree cannot switch away", async () => {
     let { path, base, greeting } = await stack()
     git(path, "update-ref", "refs/remotes/origin/main", greeting)

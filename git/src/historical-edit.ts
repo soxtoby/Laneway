@@ -1,4 +1,4 @@
-import { type ConflictState, type HistoricalEdit, type HistoricalEditSession, HistoricalEditSessionSchema, type RegisteredWorktree } from "@laneway/shared"
+import { type BranchGraph, type ConflictState, type HistoricalEdit, type HistoricalEditSession, HistoricalEditSessionSchema, type RegisteredWorktree } from "@laneway/shared"
 import { gitText, readConflictState, retainedDocument } from "./conflicts"
 import type { RepositoryGit } from "./index"
 import { readRegisteredWorktrees } from "./worktrees"
@@ -12,6 +12,29 @@ export function historicalEditRef(worktreeId: string) {
 
 export async function readHistoricalEdits(repo: RepositoryGit): Promise<HistoricalEdit[]> {
     return (await readStoredHistoricalEdits(repo)).map(stored => stored.edit)
+}
+
+/**
+ * Keeps a session's worktree in its original branch's column, where it would otherwise be a Virtual Branch, and
+ * marks the worktree with its session wherever it shows. Damaged session metadata shows no sessions here; the
+ * Engine explains it when the worktree is next used.
+ */
+export async function projectHistoricalEdits(repo: RepositoryGit, graph: BranchGraph) {
+    let edits = await readHistoricalEdits(repo).catch(() => [])
+    for (let edit of edits) {
+        let subject = await gitText(repo, ["log", "-1", "--format=%s", edit.commit])
+        let detached = graph.virtualBranches.find(virtual => virtual.worktree.id == edit.worktreeId)
+        let branch = graph.branches.find(candidate => candidate.localRefs.includes(edit.branch))
+        if (detached && branch) {
+            graph.virtualBranches = graph.virtualBranches.filter(virtual => virtual != detached)
+            graph.history = graph.history.filter(point => point.lineId != detached.id)
+            branch.checkedOut = [...branch.checkedOut, { ...detached.worktree, branchRef: edit.branch }]
+        }
+        let worktrees = [...graph.branches.flatMap(candidate => candidate.checkedOut), ...graph.virtualBranches.map(virtual => virtual.worktree)]
+        for (let worktree of worktrees.filter(candidate => candidate.id == edit.worktreeId))
+            worktree.historicalEdit = { ...edit, subject }
+    }
+    return graph
 }
 
 /** Sessions with their computed state, and the ref values that guard updating them. */

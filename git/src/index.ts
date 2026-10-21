@@ -7,6 +7,7 @@ import { conflictComparisonSource, conflictHistoryRequest, projectConflictGraph 
 import { GitError } from "./git-error"
 import { selectGit } from "./git-installation"
 import { commandFailure, type GitRunResult, redactGitText, runGitProcess, startGitProcess } from "./git-process"
+import { projectHistoricalEdits } from "./historical-edit"
 import { readRegisteredWorktrees } from "./worktrees"
 
 export { GitError, type GitErrorCode } from "./git-error"
@@ -212,7 +213,7 @@ export class RepositoryGit {
                 for (let branch of graph.virtualBranches)
                     branch.worktree = { ...branch.worktree, ...enrich(branch.worktree) }
 
-                return projectConflictGraph(this, graph)
+                return projectHistoricalEdits(this, await projectConflictGraph(this, graph))
             }),
         }
     }
