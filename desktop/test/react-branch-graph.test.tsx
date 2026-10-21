@@ -79,7 +79,7 @@ describe("React Branch Graph", () => {
         expect(panel() == null).toBe(true)
     })
 
-    test("Enter opens the selected branch, and its menu and F2 act on it", async () => {
+    test("Enter opens the selected branch, its menu acts on it and copies its name, and F2 renames it", async () => {
         let repository = repositoryInfo("D:\\Source\\graph-project")
         let graph = branchGraph(repository.id)
         let feature = graph.branches[1]!
@@ -100,10 +100,45 @@ describe("React Branch Graph", () => {
             "Create branch here…",
             "Rename branch…",
             "Delete branch",
+            "Copy branch name",
         ])
-        await app.act(() => key(document.querySelector<HTMLElement>("[role=menu]")!, "Escape"))
+        await app.act(() => press([...document.querySelectorAll<HTMLElement>("[role=menu] [role=menuitem]")].at(-1)!))
+        expect(await navigator.clipboard.readText()).toBe("feature/laneway")
+
         await app.act(() => key(row(feature.id), "F2"))
         expect(document.querySelector("[role=dialog]")?.textContent).toContain("Rename")
+    })
+
+    test("a tag's name copies from its Tag Node's menu, or from the menu of the Branch Node it sits on", async () => {
+        let repository = repositoryInfo("D:\\Source\\graph-tags")
+        let graph = branchGraph(repository.id)
+        let [main, feature, team] = graph.branches
+        let tagged = "5".repeat(40)
+        let tag = { kind: "tag" as const, id: "tag:refs/tags/v1.0", name: "v1.0", objectId: tagged, parentBranchId: main!.id, tooltip: "Tag v1.0" }
+        let tags: BranchGraph = {
+            ...graph,
+            branches: [main!, { ...feature!, tags: ["v2.0"] }, team!],
+            history: [...graph.history.map(point => point.objectId == main!.tip ? { ...point, parentIds: [tagged] } : point), {
+                objectId: tagged,
+                lineId: main!.id,
+                parentIds: [],
+            }],
+            tags: [tag],
+        }
+        let app = await startReactApp(fakeLaneway({
+            getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
+            readBranchGraph: async () => ({ ok: true, graph: tags }),
+        }))
+        await app.act(() => press(button(document.body, "Show Branch Graph")))
+
+        await app.act(() => rightClick(row(tag.id)))
+        expect(menuItems().map(item => item.textContent)).toEqual(["Copy tag name"])
+        await app.act(() => press(menuItems()[0]!))
+        expect(await navigator.clipboard.readText()).toBe("v1.0")
+
+        await app.act(() => rightClick(row(feature!.id)))
+        await app.act(() => press(menuItems().find(item => item.textContent == "Copy tag v2.0")!))
+        expect(await navigator.clipboard.readText()).toBe("v2.0")
     })
 
     test("settings apply patterns on Enter, close on Escape, and offer no remote choice for a single remote", async () => {
@@ -287,6 +322,14 @@ function row(id: string) {
 
 function names() {
     return [...panel()!.querySelectorAll(".graph-row .graph-name")].map(name => name.textContent)
+}
+
+function rightClick(element: HTMLElement) {
+    element.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: 20, clientY: 20 }))
+}
+
+function menuItems() {
+    return [...document.querySelectorAll<HTMLElement>("[role=menu] [role=menuitem]")]
 }
 
 function columnNames() {

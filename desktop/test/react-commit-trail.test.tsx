@@ -182,6 +182,33 @@ describe("React Commit Trail", () => {
         expect(document.querySelector("[data-column-id='branch:refs/heads/alias']")).not.toBeNull()
     })
 
+    test("a commit's menu copies its full hash and its whole message", async () => {
+        let scenario = inspectionScenario()
+        let tip = scenario.graph.branches[1]!.tip
+        let older = "6".repeat(40)
+        let app = await startReactApp({
+            ...scenario.api,
+            readBranchHistory: async (_repositoryId, request) => ({
+                ok: true,
+                page: {
+                    branchRef: request.branchRef,
+                    tip: request.tip,
+                    baseTips: request.baseTips,
+                    commits: [{ ...commit(tip, "Inspect changes", [older]), body: "Inspect every change.\n\nThoroughly." }, commit(older, "Start")],
+                },
+            }),
+        })
+        let copyFrom = async (subject: string, label: string) => {
+            await app.act(() => press(button(trail(), `Actions for commit ${subject}`)))
+            await app.act(() => press(menuItem(label)))
+            return navigator.clipboard.readText()
+        }
+
+        expect(await copyFrom("Inspect changes", "Copy commit hash")).toBe(tip)
+        expect(await copyFrom("Inspect changes", "Copy commit message")).toBe("Inspect changes\n\nInspect every change.\n\nThoroughly.")
+        expect(await copyFrom("Start", "Copy commit message")).toBe("Start")
+    })
+
     test("rewords a commit from its menu, and confirms published rewrites first", async () => {
         let scenario = inspectionScenario()
         let branch = scenario.graph.branches[1]!

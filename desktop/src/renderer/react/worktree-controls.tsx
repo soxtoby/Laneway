@@ -4,11 +4,12 @@ import { Autocomplete, Button as AriaButton, useFilter } from "react-aria-compon
 import type { ColumnView } from "./branch-workspace"
 import { Hint } from "./controls"
 import { EditableName } from "./editable-name"
+import { copyText } from "./file-paths"
 import { MoreIcon } from "./icons"
 import { Button } from "./ui/Button"
 import { Text } from "./ui/Content"
 import { Dialog, Heading } from "./ui/Dialog"
-import { Menu, MenuItem, MenuTrigger } from "./ui/Menu"
+import { Menu, MenuItem, MenuTrigger, Separator } from "./ui/Menu"
 import { Modal } from "./ui/Modal"
 import { SearchField } from "./ui/SearchField"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
@@ -55,7 +56,8 @@ interface WorktreeMenuProps {
 
 /**
  * A worktree column's actions: switching its branch, unlocking, repairing, or removing it. A branch column
- * without a worktree offers checking the branch out instead, in an existing worktree or a new one.
+ * without a worktree offers checking the branch out instead, in an existing worktree or a new one. Copying the
+ * branch name and worktree path ends the menu.
  */
 export function WorktreeMenu({ column, graph, busy, onPrepare, chooseDirectory }: WorktreeMenuProps) {
     let [choosing, setChoosing] = useState(false)
@@ -110,6 +112,9 @@ export function WorktreeMenu({ column, graph, busy, onPrepare, chooseDirectory }
                             {worktree.missing ? "Remove missing worktree" : "Remove worktree"}
                         </MenuItem>
                     )}
+                    <Separator />
+                    {column.kind == "branch" && <MenuItem onAction={() => void copyText(column.branch.name)}>Copy branch name</MenuItem>}
+                    {worktree && <MenuItem onAction={() => void copyText(worktree.path)}>Copy worktree path</MenuItem>}
                 </Menu>
             </MenuTrigger>
             {worktree && (
