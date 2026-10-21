@@ -594,6 +594,10 @@
     gap: var(--spacing-2);
     padding: 0 var(--spacing-2) var(--scroller-padding-bottom);
     overflow: auto;
+
+    &[hidden] {
+        display: none;
+    }
 }
 
 /* Working Changes: a card for the worktree's changes, its stashes above it, and for a detached

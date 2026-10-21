@@ -150,8 +150,10 @@ export function WorkspaceColumns({ controller, fileListView }: { controller: App
                     ...auxiliary.flatMap((view, index) => {
                         // The last one beside a maximized column takes the space the others leave.
                         let last = index == auxiliary.length - 1
-                        // Resizing it keeps what the navigator gave out of its own width.
-                        let width = view.kind == "diff" ? view.width + gained : view.width
+                        // A diff column shows what the navigator gave on top of its own width. Its divider's limits
+                        // shift with it, and resizing keeps only its own width.
+                        let extra = view.kind == "diff" ? gained : 0
+                        let width = view.width + extra
                         return [
                             <AuxiliaryFrame
                                 key={view.id}
@@ -168,10 +170,10 @@ export function WorkspaceColumns({ controller, fileListView }: { controller: App
                                     key={`${view.id}:divider`}
                                     label="Resize auxiliary column"
                                     width={width}
-                                    minimum={view.kind == "diff" ? minimumDiffColumnWidth : minimumColumnWidth}
-                                    defaultWidth={defaultAuxiliaryColumnWidth}
+                                    minimum={(view.kind == "diff" ? minimumDiffColumnWidth : minimumColumnWidth) + extra}
+                                    defaultWidth={defaultAuxiliaryColumnWidth + extra}
                                     attached={!last}
-                                    onResize={next => controller.inspection.resizeAuxiliary(view.id, next - width + view.width)}
+                                    onResize={next => controller.inspection.resizeAuxiliary(view.id, next - extra)}
                                 />
                             ),
                         ]
@@ -228,11 +230,16 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
     let filterable = column.kind != "recovery"
     // A collapsed navigator shows as a collapsed column does, and expands back to the navigator.
     let collapsed = column.collapsed || navigator == "collapsed"
+    // Each change of the navigator replaces the control or row that had focus, so focus moves to what takes its place.
+    let setNavigator = (next: Navigator | undefined, focus: string) => {
+        inspection.setNavigator(column.id, next)
+        keepFocus(column.id, focus)
+    }
     let expand = column.collapsed
         ? { label: `Expand ${column.name}`, press: () => columns.toggleCollapsed(column.id) }
-        : { label: `Expand ${column.name} file navigator`, press: () => inspection.setNavigator(column.id, "compact") }
+        : { label: `Expand ${column.name} file navigator`, press: () => setNavigator("compact", ".column-collapse") }
     let collapse = navigator
-        ? { label: `Collapse ${column.name} file navigator`, press: () => inspection.setNavigator(column.id, "collapsed") }
+        ? { label: `Collapse ${column.name} file navigator`, press: () => setNavigator("collapsed", ".expand-column") }
         : { label: `Collapse ${column.name}`, press: () => columns.toggleCollapsed(column.id) }
     // A filter that is already open takes focus again; a new one focuses its field as it shows.
     let openFilter = () => {
@@ -263,7 +270,7 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
         if (event.key == "Escape" && navigator && !event.defaultPrevented) {
             event.preventDefault()
             event.stopPropagation()
-            inspection.setNavigator(column.id, undefined)
+            setNavigator(undefined, ".file-row.active")
             return
         }
         if (column.kind == "branch" && (event.key == "F2" || event.key == "Delete") && !editing && !event.defaultPrevented) {
@@ -432,8 +439,7 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                     onResolve={action => void columns.recover(column.recovery, action)}
                                 />
                             )
-                            : navigator && files
-                            ? (
+                            : navigator && files && (
                                 <FileNavigator
                                     controller={controller}
                                     repositoryId={snapshot.repositoryId!}
@@ -442,21 +448,23 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                     inspected={files}
                                     view={fileListView}
                                 />
-                            )
-                            : (
-                                <ColumnBody
-                                    controller={controller}
-                                    repositoryId={snapshot.repositoryId!}
-                                    graph={graph}
-                                    column={column}
-                                    inspected={files}
-                                    blocked={snapshot.blocked}
-                                    view={fileListView}
-                                    onViewChange={view => void controller.setFileListView(view)}
-                                />
                             )}
                     </>
                 )}
+            {/* It stays mounted behind a file navigator, collapsed or not, so its open forms and folding come back. */}
+            {!column.collapsed && column.kind != "recovery" && (
+                <ColumnBody
+                    controller={controller}
+                    repositoryId={snapshot.repositoryId!}
+                    graph={graph}
+                    column={column}
+                    inspected={files}
+                    blocked={snapshot.blocked}
+                    view={fileListView}
+                    onViewChange={view => void controller.setFileListView(view)}
+                    hidden={navigator != undefined}
+                />
+            )}
         </article>
     )
 }
@@ -710,6 +718,18 @@ function useRefreshes(columns: BranchWorkspace) {
             window.removeEventListener("focus", refresh)
         }
     }, [columns])
+}
+
+// Once the column shows its new layout, focus that went with the old one moves to the element matching `selector`,
+// or else to the column. Focus that survived, such as on the filter button, stays.
+function keepFocus(columnId: string, selector: string) {
+    requestAnimationFrame(() => {
+        let active = document.activeElement
+        let lost = !active || active == document.body || !active.isConnected
+        let element = columnElement(columnId)
+        if (lost)
+            (element?.querySelector<HTMLElement>(selector) ?? element)?.focus({ preventScroll: true })
+    })
 }
 
 function columnElement(id: string) {

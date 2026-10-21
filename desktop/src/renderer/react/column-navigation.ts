@@ -53,7 +53,8 @@ function isFile(item: HTMLElement) {
 }
 
 function step(column: HTMLElement, from: HTMLElement, delta: 1 | -1) {
-    let items = [...column.querySelectorAll<HTMLElement>(itemSelector)]
+    // A column body hidden behind a file navigator keeps its rows, out of reach.
+    let items = [...column.querySelectorAll<HTMLElement>(itemSelector)].filter(item => !item.closest("[hidden]"))
     let index = items.indexOf(from)
     if (index != -1)
         return items[index + delta]

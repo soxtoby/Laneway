@@ -20,10 +20,12 @@ interface ColumnBodyProps {
     blocked: boolean
     view: FileListView
     onViewChange(view: FileListView): void
+    /** It stays mounted while a file navigator shows in its place, keeping its forms and folding. */
+    hidden?: boolean
 }
 
 /** A column's Working Changes and stashes, then its branch's Commit Trail. A missing worktree has no Working Changes. */
-export function ColumnBody({ controller, repositoryId, graph, column, inspected, blocked, view, onViewChange }: ColumnBodyProps) {
+export function ColumnBody({ controller, repositoryId, graph, column, inspected, blocked, view, onViewChange, hidden }: ColumnBodyProps) {
     if (column.kind == "recovery")
         return null
     let { inspection, branches, conflicts } = controller
@@ -31,7 +33,7 @@ export function ColumnBody({ controller, repositoryId, graph, column, inspected,
     if (column.kind == "comparison") {
         return (
             <ColumnScopes controller={controller} repositoryId={repositoryId} graph={graph} column={column}>
-                <div className="column-body">
+                <div className="column-body" hidden={hidden}>
                     <section className="branch-comparison" aria-label={column.description}>
                         <FileList
                             columnId={column.id}
@@ -52,7 +54,7 @@ export function ColumnBody({ controller, repositoryId, graph, column, inspected,
     let path = columnRoot(column)
     return (
         <ColumnScopes controller={controller} repositoryId={repositoryId} graph={graph} column={column}>
-            <div className="column-body">
+            <div className="column-body" hidden={hidden}>
                 {column.kind == "branch" && column.branch.unresolved && !column.worktree?.missing && (
                     <ConflictControls conflicts={conflicts} repositoryId={repositoryId} branch={column.branch} path={path} />
                 )}
@@ -100,7 +102,7 @@ export function ColumnBody({ controller, repositoryId, graph, column, inspected,
  * A column narrowed to a file navigator beside its diff column: the files of the list the diff column shows, which
  * scroll it to their diffs. Working Changes list their staged files above the rest, as the column does.
  */
-export function FileNavigator({ controller, repositoryId, graph, column, inspected, view }: Omit<ColumnBodyProps, "blocked" | "onViewChange"> & {
+export function FileNavigator({ controller, repositoryId, graph, column, inspected, view }: Omit<ColumnBodyProps, "blocked" | "onViewChange" | "hidden"> & {
     inspected: ColumnInspection
 }) {
     let group = inspected.diffColumn?.group ?? ""

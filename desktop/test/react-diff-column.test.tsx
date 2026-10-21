@@ -1,7 +1,7 @@
 import type { FileDiffResult } from "@laneway/shared"
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
 import type { Window as HappyWindow } from "happy-dom"
-import { button, installReactDom, press, startReactApp, stopReactApps } from "./react-dom"
+import { button, installReactDom, press, startReactApp, stopReactApps, type } from "./react-dom"
 import { inspectionScenario } from "./renderer-fixtures"
 
 let browserWindow: HappyWindow
@@ -242,34 +242,71 @@ describe("React diff column", () => {
         let column = diffColumn()!
 
         await app.act(() => press(button(column, "Focus diff")))
-        expect(source.querySelector("[aria-label='File navigator']") != null).toBe(true)
-        expect(source.querySelector(".commit-trail") == null).toBe(true)
-        expect(fileRows(source, "working-unstaged").map(file => file.textContent!.includes("other.txt"))).toEqual([false, true])
+        expect(behindNavigator(source.querySelector(".commit-trail")!)).toBe(true)
+        expect(fileRows(navigator(source), "working-unstaged").map(file => file.textContent!.includes("other.txt"))).toEqual([false, true])
         expect(source.style.width).toBe("260px")
         expect(column.style.width).toBe("740px")
         expect(order()).toEqual(["column", "auxiliary-column", "column-divider"])
 
         // Choosing a file in the navigator still shows it in the diff column, which moves to the file's list.
-        await app.act(() => openRow(fileRows(source, "working-unstaged")[1]!))
-        expect(fileRows(source, "working-unstaged")[1]!.classList.contains("active")).toBe(true)
+        await app.act(() => openRow(fileRows(navigator(source), "working-unstaged")[1]!))
+        expect(fileRows(navigator(source), "working-unstaged")[1]!.classList.contains("active")).toBe(true)
 
         await app.act(() => press(button(source, "Collapse inspection file navigator")))
         expect(source.classList.contains("collapsed")).toBe(true)
         expect(diffColumn()!.style.width).toBe("948px")
+        // The diff column's own minimum holds beneath what the navigator gives it.
+        await app.act(() => key(document.querySelector<HTMLElement>("[aria-label='Resize auxiliary column']")!, "Home"))
+        expect(diffColumn()!.style.width).toBe(`${380 + 328}px`)
         await app.act(() => press(button(source, "Expand inspection file navigator")))
         expect(source.style.width).toBe("260px")
+        expect(diffColumn()!.style.width).toBe(`${380 + 120}px`)
 
-        await app.act(() => diffColumn()!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })))
-        expect(source.querySelector(".commit-trail") != null).toBe(true)
+        await app.act(() => key(diffColumn()!, "Escape"))
+        expect(behindNavigator(source.querySelector(".commit-trail")!)).toBe(false)
         expect(source.style.width).toBe("380px")
-        expect(diffColumn()!.style.width).toBe("620px")
+        expect(diffColumn()!.style.width).toBe("380px")
         expect(scenario.saved().repositories[0]!.columns.map(saved => saved.width)).toEqual([380])
 
         // Closing the focused diff gives its source column back whole.
         await app.act(() => press(button(diffColumn()!, "Focus diff")))
         await app.act(() => press(button(diffColumn()!, "Close diff column")))
-        expect(source.querySelector(".commit-trail") != null).toBe(true)
+        expect(behindNavigator(source.querySelector(".commit-trail")!)).toBe(false)
         expect(source.style.width).toBe("380px")
+    })
+
+    test("focusing keeps its source column's open forms, and keyboard focus stays in the source as it narrows and widens", async () => {
+        let scenario = inspectionScenario()
+        let app = await startReactApp(scenario.api)
+        let source = columns()[0]!
+        let row = fileRows(source, "working-staged")[0]!
+        await app.act(() => openRow(row))
+        await app.act(() => press(button(row, "Break out diff")))
+        await app.act(() => press(button(source, "More commit actions")))
+        await app.act(() => press(menuItem("Stash Working Changes…")))
+        await app.act(() => type(stashLabel()!, "Parked"))
+        await app.act(() => press(button(diffColumn()!, "Focus diff")))
+
+        await app.act(() => pressFocused(button(source, "Collapse inspection file navigator")))
+        await app.act(frame)
+        expect(document.activeElement == source.querySelector(".expand-column")).toBe(true)
+        await app.act(() => pressFocused(button(source, "Expand inspection file navigator")))
+        await app.act(frame)
+        expect(document.activeElement == source.querySelector(".column-collapse")).toBe(true)
+
+        // The rows hidden behind the navigator are out of reach of the arrow keys.
+        let last = fileRows(navigator(source), "working-unstaged").at(-1)!
+        last.focus()
+        await app.act(() => key(last, "ArrowDown"))
+        expect(document.activeElement == last).toBe(true)
+
+        let chosen = fileRows(navigator(source), "working-staged")[0]!
+        chosen.focus()
+        await app.act(() => key(chosen, "Escape"))
+        await app.act(frame)
+        expect(source.querySelector("[aria-label='File navigator']") == null).toBe(true)
+        expect(document.activeElement == fileRows(source, "working-staged")[0]).toBe(true)
+        expect(stashLabel()?.value).toBe("Parked")
     })
 
     test("closes with its source column, cancelling the reads it started", async () => {
@@ -341,6 +378,33 @@ function workingChanges() {
 
 function fileRows(column: HTMLElement, group: string) {
     return [...column.querySelectorAll<HTMLElement>(`[data-group='${group}'] .file-row`)]
+}
+
+function navigator(column: HTMLElement) {
+    return column.querySelector<HTMLElement>("[aria-label='File navigator']")!
+}
+
+// The column's own body stays mounted, hidden, behind its file navigator.
+function behindNavigator(element: Element) {
+    return element.closest("[hidden]") != null
+}
+
+function stashLabel() {
+    return document.querySelector<HTMLInputElement>("[aria-label='Stash label']")
+}
+
+function menuItem(label: string) {
+    return [...document.querySelectorAll<HTMLElement>("[role=menu] [role=menuitem]")].find(item => item.textContent == label)!
+}
+
+function key(element: HTMLElement, name: string) {
+    element.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }))
+}
+
+// The control has keyboard focus as it is pressed, as it would after Tab.
+function pressFocused(control: HTMLElement) {
+    control.focus()
+    press(control)
 }
 
 function commitFileRows() {
