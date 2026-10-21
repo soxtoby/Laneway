@@ -68,6 +68,10 @@ lane move --from working --to after:HEAD -m "Extract navigation fix"
 lane rebase feature --onto main --preview
 lane reword HEAD~2 -m "Clarify the earlier change"
 lane pull feature another-feature
+lane publish feature --preview
+lane publish feature
+lane publish --resume <receipt-id>
+lane publish --restore <receipt-id>
 lane worktree create feature
 lane worktree switch feature --path ../other-worktree --move
 lane worktree rename ../old-name new-name
@@ -103,6 +107,13 @@ reject concurrent changes. `-m` may be repeated for message paragraphs; `-F`
 reads a message file.
 
 `pull` defaults to the current branch's Active Stack and never publishes.
+`publish` defaults to the current branch's Active Stack and publishes its changed
+branches above the Base, each with an exact force-with-lease; `--preview` lists the
+destinations, and `--remote` chooses where branches without an upstream are created.
+A stale lease publishes nothing. `--resume` finishes a partial publish from its
+receipt; `--restore` force-publishes the remote tips that receipt replaced. Publish
+is outside undo/redo; anything left unpublished exits with status 1. See
+[Publish](publish.md).
 Worktree removal preserves Working Changes and Worktree-only Commits by default;
 `--discard` opts out. `--allow-ignored-loss` explicitly permits deleting ignored
 files. `recover restore|remove <operation-id>` resolves one pending worktree recovery.

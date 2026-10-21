@@ -5,7 +5,7 @@ import { type OperationAvailability, type OperationAvailabilityReason, type Oper
 import type { WorktreeRequest, WorktreeResult } from "@laneway/shared"
 import type { LocalRequest, LocalResult } from "@laneway/shared"
 import type { ConflictRequest, ConflictResult } from "@laneway/shared"
-import type { BranchGraphReadOptions, PullRequest, PullResult } from "@laneway/shared"
+import type { BranchGraphReadOptions, PublishRequest, PublishResult, PullRequest, PullResult } from "@laneway/shared"
 import type { RecoveryRequest, RecoveryStatusResult, WorktreeRecovery } from "@laneway/shared"
 import type { GitResult } from "@laneway/shared"
 import { lstat, readdir, readFile, readlink, rename, rm } from "node:fs/promises"
@@ -13,6 +13,7 @@ import { dirname, join, resolve, sep } from "node:path"
 import { isFileExtraction } from "../composition/file-extraction"
 import { conflictMutation, conflictPaths, executeConflict, suspendWorkingConflicts } from "../conflicts/conflict-operations"
 import { LocalPreconditionError, mutateLocal, prepareLocal } from "../local-mutations"
+import { executePublish, type PublishProgressReporter } from "../publish"
 import { executePull, preparePull, type PullPreparation, type PullProgressReporter } from "../pull-latest"
 import { recoveryBackupPath } from "../worktrees/worktree-directory"
 import { mutateWorktree } from "../worktrees/worktree-mutations"
@@ -41,6 +42,13 @@ export type OperationCommand =
         progress?: PullProgressReporter
     }
     | {
+        command: "publish"
+        request: PublishRequest
+        noWait: boolean
+        graphOptions: (repositoryId: string) => BranchGraphReadOptions
+        progress?: PublishProgressReporter
+    }
+    | {
         command: "local" | "local-preview" | "local-transfer"
         request: LocalRequest
         token?: string
@@ -67,6 +75,7 @@ export type OperationCommandResult =
     | LocalResult
     | ConflictResult
     | PullResult
+    | PublishResult
 
 class OperationRuntime {
     constructor(
@@ -889,6 +898,12 @@ export async function executeOperationCommand(
 
     if (command.command == "git")
         return executeNativeGit(repository, store, command.args, command.cwd, command.json, command.noWait, cancellation)
+
+    // Publish changes no local branch, so it runs outside the mutation lock and Operation History.
+    if (command.command == "publish") {
+        let graphOptions = command.graphOptions(repository.descriptor.id)
+        return executePublish(repository, command.request, graphOptions, () => cancellation.isCancelled(), command.progress ?? (() => {}))
+    }
 
     // Fetching is network-bound and mutates only remote-tracking refs, so it runs before the mutation lock.
     let prepared: PullPreparation | undefined

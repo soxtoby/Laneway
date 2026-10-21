@@ -1,0 +1,33 @@
+# Publish
+
+Desired user-facing behavior for [SOX-138](https://linear.app/soxtoby/issue/SOX-138/implement-focused-active-stack-publication-and-publish-receipts), from the stack sync, publication, and conflict policy settled in SOX-116 (2026-08-18).
+
+## Accepted decisions
+
+- Publish is a separate explicit action for the focused Active Stack. It updates changed intermediate and tip branches, never its Base Branch, unrelated branches, or other open stacks.
+- A changed branch without an upstream creates a same-named branch on the selected remote and records that upstream. The control shows every destination before activation.
+- A lease-valid non-fast-forward update runs automatically, without a second force confirmation. The control visibly changes to indicate Force publish and identifies every affected ref.
+- Any stale lease aborts publication and offers Pull latest. Laneway never silently refetches, rewrites, or retries.
+- Prefer an atomic multi-ref push. If the remote lacks atomic push, preflight every remote tip, then publish sequentially from the lowest changed stack branch toward the tip. Stop at the first failure, keep successful updates, and persist a Publish Receipt that exposes Resume.
+- Rollback is never automatic. Restoring earlier remote tips is a new explicit, lease-guarded Force publish.
+- Publish is not part of ordinary undo/redo. Local operations remain independently undoable.
+- An Unresolved Stack, or a stack depending on one, cannot publish until every deferred conflict is resolved.
+- V1 depends only on ordinary Git remote behavior. Provider protections and PR-branch ownership arrive with the Provider Overlay; until then the remote server's answer is the only authority.
+
+## Implementation
+
+`lane publish --request <JSON> --json` is the Engine entry point. A `plan` request names the focused column's branch and returns its Active Stack, every update, a token, any reason publication is blocked, and the newest receipt touching the stack. A `publish` request carries the reviewed token; if planning now gives a different result the Engine refuses, so what was shown is what is pushed. `resume` and `restore` name a receipt. Progress events name the remote check and each push.
+
+The Active Stack is derived exactly as Pull latest derives it (`cli/src/active-stack.ts`). Its first member is the Base Branch and is never published, so a stack consisting only of its Base has nothing to publish. Every other local branch whose tip differs from its destination's remote-tracking tip is an update: `create` when the remote branch is absent, `update` for a fast-forward, `force` otherwise. A branch strictly behind its remote is left alone, since publishing it would rewind the remote. Destinations are always same-named branches: on the upstream's remote when the branch has one, otherwise on the selected remote (the request's, then the repository setting, then the only remote). A branch without a same-named upstream records `<remote>/<branch>` as its upstream once published, as `git push -u` does. The existing conflict `publish-check` guard blocks Unresolved Stacks.
+
+Every update carries an exact lease, `--force-with-lease=<ref>:<oid>`, from the remote-tracking ref read at planning; a create leases on absence. Laneway does not use `--force-if-includes`: Pull latest replays incoming commits onto a moved Base, so the fetched tip never appears in the branch's reflog and Git would refuse every rewritten publish. Because Laneway itself only fetches during Pull latest, which integrates what it fetches, the visible Force publish label is the protection against overwriting commits another tool fetched but nobody integrated.
+
+Publish, Resume, and restoration share one path. The receipt is written first, then `git ls-remote` reads every remaining destination. An update whose remote already holds its target is marked published without pushing; this is how a receipt verifies its postconditions after a crash or restart. Any other mismatch with the lease is a stale lease and aborts the attempt before anything is pushed. Otherwise the Engine runs `git push --atomic --porcelain` with every lease. When Git reports that the remote does not support atomic push, which it does before sending anything, the Engine pushes one branch at a time from the bottom of the stack, saving the receipt after each, and stops at the first refusal. Cancellation stops between sequential pushes. Pushes spanning more than one remote are always sequential. Git hooks and credential helpers run as usual; a failing `pre-push` hook or credential prompt fails the attempt without pushing.
+
+Each receipt update is `pending`, `published`, `stale`, or `failed`, with Git's diagnostic for refusals, including a remote hook's own output. The receipt's status follows: published when everything is, stale when any lease was stale (the next action is Pull latest), partial when anything published, failed otherwise. Successes are never rolled back. Resume pushes what remains with the receipt's own leases. Restoration creates a new `restore` receipt that pushes each published update's earlier tip back, leasing on the tip it published, and deletes branches the original publish created; their upstream configuration stays, so the next Publish recreates them.
+
+Receipts live at `<git-common-dir>/laneway/publish/<id>.json`, one per publish, rewritten by temporary file and rename after every outcome. Identifiers sort by creation time and the newest 100 are kept. A damaged receipt is ignored: it loses Resume and restoration, never branches.
+
+Publish runs outside the repository mutation lock, the recovery journal, and Operation History; it changes only remote refs, remote-tracking refs, and upstream configuration. So that recording an upstream never makes the latest Laneway Operation look externally changed, checkpoint identity ignores `branch.<name>.remote` and `branch.<name>.merge`, and checkpoint restoration keeps an upstream recorded after its checkpoint while the branch survives.
+
+Known limits: restoration needs the earlier commits locally, which the remote-tracking reflog normally retains; a remote with nonstandard fetch refspecs has no remote-tracking ref for a same-named destination, so its branches always plan as creates and the lease refuses them.

@@ -1,14 +1,15 @@
 import { connectRepository, GitError, readRegisteredWorktrees } from "@laneway/git"
 import { readSettings, SettingsError } from "@laneway/settings"
 import { ConflictRequestSchema, type ErrorEvent, ExitCode, LocalRequestSchema, RecoveryRequestSchema, WorktreeRequestSchema } from "@laneway/shared"
+import type { BranchGraphReadOptions } from "@laneway/shared"
 import { resolve } from "node:path"
 import { ZodError } from "zod"
 import { commonOptions, flag, operands, option, parseArguments, UsageError } from "./command-arguments"
 import { monitorCancellation } from "./command-cancellation"
 import { commandHelp } from "./command-help"
 import { writeCommandResult } from "./command-output"
-import { compositionRequest, conflictRequest, currentBranch, worktreeRequest } from "./command-requests"
-import { executeOperationCommand, OperationCancelledError, type OperationCommand, OperationRuntimeError } from "./operations/operation-runtime"
+import { compositionRequest, conflictRequest, currentBranch, publishRequest, worktreeRequest } from "./command-requests"
+import { executeOperationCommand, OperationCancelledError, type OperationCommand, type OperationCommandResult, OperationRuntimeError } from "./operations/operation-runtime"
 
 let wrappers: Record<string, string[]> = { commit: ["commit"], stage: ["add"], unstage: ["restore", "--staged"], branch: ["branch"], stash: ["stash"] }
 let compositionOptions = {
@@ -61,7 +62,7 @@ export async function runCommandLine(argv: string[]): Promise<number | undefined
     if (
         ["local", "local-preview", "local-transfer", "test-mutation", "echo", "--version"].includes(argv[0] ?? "")
         || (["undo", "redo", "recover"].includes(argv[0] ?? "") && argv.includes("--crash-after"))
-        || (["worktree", "pull", "conflict", "recover"].includes(argv[0] ?? "") && argv.some(arg => arg == "--request" || arg == "--request-file"))
+        || (["worktree", "pull", "publish", "conflict", "recover"].includes(argv[0] ?? "") && argv.some(arg => arg == "--request" || arg == "--request-file"))
     ) {
         return undefined
     }
@@ -77,6 +78,7 @@ export async function runCommandLine(argv: string[]): Promise<number | undefined
             "reword",
             "worktree",
             "pull",
+            "publish",
             "conflict",
             "undo",
             "redo",
@@ -130,6 +132,12 @@ export async function runCommandLine(argv: string[]): Promise<number | undefined
         let repo = await connectRepository(cwd, gitPath)
         let noWait = flag(args, "no-wait")
         let execute = (operation: OperationCommand) => executeOperationCommand(operation, cwd, cancellation, repo.descriptor.git.path)
+        let graphOptions = (repositoryId: string): BranchGraphReadOptions => ({
+            authorIdentities: settings.authorIdentities ?? { secondary: [] },
+            selectedRemote: settings.repositories?.[repositoryId]?.selectedRemote,
+            remotePatterns: settings.repositories?.[repositoryId]?.remotePatterns ?? [],
+        })
+        let progress = (message: string, completed: number, total: number) => writeCommandResult({ type: "progress", command, message, completed, total }, json)
         let operation: OperationCommand
 
         if (["move", "copy", "rebase", "reword"].includes(command)) {
@@ -176,14 +184,12 @@ export async function runCommandLine(argv: string[]): Promise<number | undefined
                     branches: branches.map(branch => branch.startsWith("refs/heads/") ? branch : `refs/heads/${branch}`),
                     remote: option(args, "remote"),
                 },
-                graphOptions: repositoryId => ({
-                    authorIdentities: settings.authorIdentities ?? { secondary: [] },
-                    selectedRemote: settings.repositories?.[repositoryId]?.selectedRemote,
-                    remotePatterns: settings.repositories?.[repositoryId]?.remotePatterns ?? [],
-                }),
-                progress: (message, completed, total) => writeCommandResult({ type: "progress", command, message, completed, total }, json),
+                graphOptions,
+                progress,
             }
-        } else if (command == "recover") {
+        } else if (command == "publish")
+            operation = { command, noWait, request: await publishRequest(args, repo), graphOptions, progress }
+        else if (command == "recover") {
             operands(args, args.positionals.length ? 2 : 0)
             let parsed = args.positionals.length
                 ? RecoveryRequestSchema.safeParse({ action: args.positionals[0], operationId: args.positionals[1] })
@@ -203,7 +209,7 @@ export async function runCommandLine(argv: string[]): Promise<number | undefined
 
         let result = await execute(operation)
         writeCommandResult(result, json)
-        return "status" in result && result.status == "failed" ? ExitCode.failure : ExitCode.ok
+        return failed(result) ? ExitCode.failure : ExitCode.ok
     } catch (error) {
         if (error instanceof OperationCancelledError) {
             writeCommandResult({ type: "cancelled", command: argv[0] ?? "", message: error.message }, json)
@@ -265,6 +271,8 @@ function workflowArguments(command: string, rest: string[]) {
         definitions = { onto: "string", preview: "boolean", yes: "boolean", "allow-conflicts": "boolean", remote: "string" }
     else if (command == "pull")
         definitions = { remote: "string" }
+    else if (command == "publish")
+        definitions = { remote: "string", preview: "boolean", resume: "string", restore: "string" }
     else if (command == "undo")
         definitions = { "worktree-basename": "string" }
     else if (["redo", "history", "recover", "recovery-status"].includes(command))
@@ -276,4 +284,9 @@ function workflowArguments(command: string, rest: string[]) {
     if ((command == "worktree" || command == "conflict") && !action && !flag(args, "help"))
         throw new UsageError(`Choose an action. Use lane ${command} --help.`)
     return { args, action }
+}
+
+// A publish that leaves anything unpublished fails, so scripts notice partial publication.
+function failed(result: OperationCommandResult) {
+    return result.command == "publish" ? ["blocked", "partial", "stale", "failed"].includes(result.status) : "status" in result && result.status == "failed"
 }

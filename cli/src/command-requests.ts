@@ -1,5 +1,5 @@
 import { connectRepository, type RepositoryGit } from "@laneway/git"
-import type { CompositionTarget, ConflictRequest, LocalRequest, WorktreeRequest } from "@laneway/shared"
+import type { CompositionTarget, ConflictRequest, LocalRequest, PublishRequest, WorktreeRequest } from "@laneway/shared"
 import { readFile } from "node:fs/promises"
 import { posix, resolve } from "node:path"
 import { type Arguments, flag, multiple, operands, option, requiredOption, UsageError } from "./command-arguments"
@@ -145,6 +145,18 @@ export async function conflictRequest(
         else
             throw new UsageError(`Unknown conflict action "${action}". Use lane conflict --help.`)
     }
+}
+
+export async function publishRequest(args: Arguments, repo: RepositoryGit): Promise<PublishRequest> {
+    let resume = option(args, "resume"), restore = option(args, "restore")
+    if (resume && restore)
+        throw new UsageError("Use either --resume or --restore.")
+    let [branch] = operands(args, 0, resume || restore ? 0 : 1)
+    if (resume || restore)
+        return resume ? { action: "resume", receipt: resume } : { action: "restore", receipt: restore! }
+    let name = branch ?? await currentBranch(repo)
+    let ref = name.startsWith("refs/heads/") ? name : `refs/heads/${name}`
+    return { action: flag(args, "preview") ? "plan" : "publish", branch: ref, remote: option(args, "remote") }
 }
 
 export async function currentBranch(repo: RepositoryGit) {

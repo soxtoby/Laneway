@@ -29,6 +29,15 @@ Removal preserves Working Changes and Worktree-only Commits unless --discard is 
     pull: `lane pull [branch ...] [--remote <remote>]
 Fetch and synchronize the named Active Stacks, including their bases and upstreams.
 With no branches, use the current branch. This does not publish.`,
+    publish: `lane publish [branch] [--remote <remote>] [--preview]
+lane publish --resume <receipt>
+lane publish --restore <receipt>
+Publish the changed branches of the named Active Stack, or the current branch's, excluding its Base.
+Branches without an upstream create same-named branches on --remote (default: the selected remote).
+Every update carries an exact force-with-lease from the remote-tracking refs; a stale lease
+publishes nothing, so pull and publish again. --preview lists every destination.
+--resume finishes an interrupted or partial publish from its receipt; --restore force-publishes
+the remote tips that receipt replaced. Publishing is never part of undo.`,
     conflict: `lane conflict list
 lane conflict inspect <subject> [--file <path> ...]
 lane conflict choose <subject> <file> --side <left|right|base|delete|suggestion> [--hunk <index>]
@@ -66,6 +75,7 @@ Laneway workflows:
   reword           Edit a commit message and restack descendants
   worktree         Create, switch, rename, repair, remove, unlock, list
   pull             Fetch and synchronize Active Stacks
+  publish          Publish an Active Stack, resume, or restore from a receipt
   conflict         Inspect and resolve deferred conflicts
   undo, redo       Navigate operation history
   history          List operations
