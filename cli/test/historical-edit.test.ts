@@ -335,6 +335,7 @@ test("an interrupted entry or return is rolled back by the next Engine run", asy
 
     expect(git(path, "branch", "--show-current")).toBe("feature")
     expect(git(path, "status", "--porcelain")).toBe("?? notes.txt")
+    expect(await readFile(join(path, "notes.txt"), "utf8")).toBe("notes\n")
     expect(git(path, "stash", "list")).toBe("")
     expect((await edit(path, { action: "status" })).sessions).toEqual([])
 
@@ -345,7 +346,35 @@ test("an interrupted entry or return is rolled back by the next Engine run", asy
 
     expect(git(path, "rev-parse", "HEAD")).toBe(greeting)
     expect(git(path, "status", "--porcelain")).toBe("M greet.txt")
+    expect(await readFile(join(path, "greet.txt"), "utf8")).toBe("hello, world\nthere\nfriend\n")
     expect((await session(path))?.state).toBe("active")
+}, 120_000)
+
+test("recovery leaves an interrupted entry or return in place once files or refs changed after it", async () => {
+    let { path, base, greeting, tip } = await stack()
+    await writeFile(join(path, "notes.txt"), "notes\n")
+    await engine(path, ["edit", "--request", JSON.stringify({ action: "enter", path, commit: greeting }), "--crash-after", "worktrees-committed"], 86)
+    await writeFile(join(path, "draft.txt"), "draft\n")
+
+    expect(await engine(path, ["recover"], 1)).toContain("operation.recovery-blocked")
+    expect(git(path, "rev-parse", "HEAD")).toBe(greeting)
+    expect(await readFile(join(path, "draft.txt"), "utf8")).toBe("draft\n")
+    expect(git(path, "stash", "list", "--format=%gs")).toBe("On feature: Working Changes before Historical Edit")
+
+    // Once the repository is back to what the entry left, recovery rolls it back as usual.
+    await rm(join(path, "draft.txt"))
+    await engine(path, ["recover"])
+    await edit(path, { action: "enter", path, commit: greeting })
+    await writeFile(join(path, "greet.txt"), "hello, world\nthere\nfriend\n")
+    await engine(path, ["edit", "--request", JSON.stringify({ action: "return", path, mode: "bring" }), "--crash-after", "worktrees-committed"], 86)
+    let external = externalCommit(path, base)
+    git(path, "update-ref", "refs/heads/main", external)
+
+    expect(await engine(path, ["recover"], 1)).toContain("operation.recovery-blocked")
+    expect(git(path, "rev-parse", "main")).toBe(external)
+    expect(git(path, "branch", "--show-current")).toBe("feature")
+    expect(git(path, "rev-parse", "HEAD")).toBe(tip)
+    expect(await readFile(join(path, "notes.txt"), "utf8")).toBe("notes\n")
 }, 120_000)
 
 /** A feature branch of three commits on main, with a greeting its later commits build on. */
@@ -430,9 +459,10 @@ async function engine(path: string, args: string[], expected = 0) {
         stdout: "pipe",
         stderr: "pipe",
     })
-    let [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()])
+    let [exitCode, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
     if (exitCode != expected)
         throw new Error(`lane ${args[0]} exited ${exitCode}: ${stderr}`)
+    return stdout
 }
 
 async function temporaryDirectory() {

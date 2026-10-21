@@ -328,12 +328,6 @@ class OperationRuntime {
                 throw new Error(`${error instanceof Error ? error.message : String(error)} Laneway restored the Git state from before the operation.`)
             throw error
         }
-        if (!recorded) {
-            crashIfRequested("worktrees-committed", crashAfter)
-            await this.store.appendJournalPhase(executionId, operation.id, "apply", "finalized")
-            await releaseOperation(this.repository, operation.id)
-            return summarize(operation)
-        }
         let expected = await captureGitCheckpoint(this.repository, affected, before, undefined, undefined, false)
         if ((kind.startsWith("local.") || kind.startsWith("pull.") || kind.startsWith("git.")) && checkpointIdentity(before) == checkpointIdentity(expected)) {
             await this.abortBeforeCommit(executionId, operation, "apply")
@@ -344,8 +338,14 @@ class OperationRuntime {
             .filter(ref => before.refs[ref] != expected.refs[ref])
             .map(ref => ({ ref, before: before.refs[ref] ?? null, after: expected.refs[ref] ?? null }))
         operation = sealOperation({ ...operation, affectedRefs: refChanges.map(change => change.ref), refChanges, checkpoint: { restore: before, expected } })
-
+        await this.journalCompletedMutation(executionId, operation, "apply")
         crashIfRequested("worktrees-committed", crashAfter)
+
+        if (!recorded) {
+            await this.store.appendJournalPhase(executionId, operation.id, "apply", "finalized")
+            await releaseOperation(this.repository, operation.id)
+            return summarize(operation)
+        }
         crashIfRequested("refs-committed", crashAfter)
 
         await this.commitHistory(executionId, operation, "apply")
@@ -356,6 +356,19 @@ class OperationRuntime {
 
         await this.store.appendJournalPhase(executionId, operation.id, "apply", "finalized")
         return summarize(operation)
+    }
+
+    /** Records the state a checkpoint mutation left, which is the only state recovery may roll back from. */
+    private async journalCompletedMutation(executionId: string, operation: StoredOperation, action: "apply" | "undo" | "redo") {
+        await this.store.appendJournal({
+            schemaVersion: 1,
+            executionId,
+            operationId: operation.id,
+            action,
+            phase: "worktrees-committed",
+            timestamp: new Date().toISOString(),
+            operation,
+        })
     }
 
     private async rollBackFailedMutation(before: GitCheckpoint, operation: StoredOperation): Promise<"unchanged" | "restored" | "pending"> {
@@ -394,6 +407,7 @@ class OperationRuntime {
         await restoreGitCheckpoint(this.repository, departing, target)
         let expected = await captureGitCheckpoint(this.repository, target.worktrees.map(w => w.path), target, undefined, undefined, false)
         let updated = sealOperation({ ...operation, checkpoint: { restore: departing, expected } })
+        await this.journalCompletedMutation(executionId, sealOperation({ ...pending, checkpoint: { restore: departing, expected } }), action)
         crashIfRequested("refs-committed", crashAfter)
 
         await this.commitHistory(executionId, updated, action)
@@ -815,16 +829,29 @@ class OperationRuntime {
         if (operation.checkpoint) {
             let committed = await this.store.hasHistoryEvent(executionId)
             if (!committed && !execution.phases.has("aborted") && !execution.phases.has("cancelled")) {
-                let target = operation.checkpoint.restore
+                let { restore: target, expected } = operation.checkpoint
+                // Once the mutation finished, anything beyond the state it recorded is later work, which rolling back would undo.
+                // An interruption during the mutation has no such boundary, so it still rolls back whatever it finds.
+                let changedSince = false
                 try {
                     let current = await captureGitCheckpoint(this.repository, operation.affectedWorktrees, target)
                     await retainCheckpoint(this.repository, operation.id, target, current)
-                    if (checkpointIdentity(current) != checkpointIdentity(target))
+                    let identity = checkpointIdentity(current)
+                    changedSince = execution.phases.has("worktrees-committed") && identity != checkpointIdentity(target)
+                        && identity != checkpointIdentity(expected)
+                    if (!changedSince && identity != checkpointIdentity(target))
                         await restoreGitCheckpoint(this.repository, current, target)
                 } catch (error) {
                     throw recoveryBlocked(operation, action, "Git could not restore the starting checkpoint. It remains retained for manual recovery.", {
                         reason: error instanceof Error ? error.message : String(error),
                     })
+                }
+                if (changedSince) {
+                    throw recoveryBlocked(
+                        operation,
+                        action,
+                        "The repository changed after this operation was interrupted, so recovery left it as it is. The starting state remains retained for manual recovery.",
+                    )
                 }
             }
             if (action == "apply" && !committed)
