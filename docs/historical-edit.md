@@ -1,6 +1,6 @@
 # Historical Edit
 
-The settled behavior for [SOX-139](https://linear.app/soxtoby/issue/SOX-139/implement-historical-edit), from the SOX-123 prototype decisions of 2026-08-22. This document covers the Engine; the Workspace Column presentation is added with the desktop work.
+The settled behavior for [SOX-139](https://linear.app/soxtoby/issue/SOX-139/implement-historical-edit), from the SOX-123 prototype decisions of 2026-08-22.
 
 ## Accepted decisions
 
@@ -72,10 +72,22 @@ Entry, a clean Return, and Restart run inside a journaled checkpoint that is nev
 - **Pull latest** skips any stack that contains a session's branch, along with stacks overlapping it. A shared Base alone doesn't count as overlap.
 - **Worktree operations.** Worktree switch and removal refuse a worktree in a session. File extraction defers to the general planner whenever a session exists.
 
+### Desktop
+
+- **Reading sessions.** The Branch Graph read projects sessions in-process, as it does the conflict state. A session's detached worktree joins its original branch's `checkedOut` instead of becoming a Virtual Branch, so the column keeps its identity and Active Stack. The worktree carries the session and the edited commit's subject.
+- **Entering.** A commit row's menu offers **Edit from here** in a worktree-backed column outside a session, for a single-parent commit on a local branch other than the Primary Branch. The Engine checks the rest. Branch-only columns don't offer it.
+- **The column in a session.**
+  - A banner says "Editing from <subject> on <branch>" and offers **Return to <branch>**. A paused session shows why and waits. A stale one shows why and adds **Restart on latest**.
+  - **Apply changes** replaces Commit…. It moves the lines chosen in one diff, otherwise the chosen files, otherwise everything, as an ordinary `compose` transfer into `{ objectId: session.commit, branch: session.branch }`. Its review, when composition needs one, shows in the banner.
+  - Drags use every ordinary destination. The edited commit's row is marked **Editing**.
+  - The `Working Changes before Historical Edit` stash shows as the session's marker without Apply or Drop, because Return restores it.
+- **Returning.** A clean return goes at once. With Historical Working Changes left, a dialog offers **Drop**, **Bring along**, or **Cancel**, because the choice blocks progress. Drop and Bring along are recorded operations, so their notice offers Undo. Entry, a clean return, and Restart record nothing and offer no Undo.
+- **IPC.** `edit:operation` runs `lane edit --request <JSON>`. Apply uses the existing `local:operation` transport.
+
 ## Known limits
 
 - **Paused sessions don't check out the temporary branch.** The contract has the column check out the Unresolved Stack's temporary branch while paused. This release keeps the worktree at the materialized commit instead.
 - **Restart doesn't follow external rewrites.** It doesn't look for the edited commit in history that was rewritten outside Laneway.
 - **Branch renames don't carry over.** Renaming the original branch, even through Laneway, makes its session stale rather than following the rename.
 - **Removing a missing worktree leaves an inert session ref.** That ref reports the session stale.
-- **Desktop.** The desktop presentation (the banner, Apply as the default action, the Return choices, and the stale and paused notices) follows separately.
+- **Apply's Operation History entry is the generic "compose".** Undo works, but the entry doesn't name Historical Edit.
