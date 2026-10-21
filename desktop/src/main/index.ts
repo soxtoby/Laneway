@@ -105,6 +105,7 @@ function registerHandlers() {
         settings: await repositories.gitSettings(),
         appearance: await repositories.appearance(),
         fileListView: await repositories.fileListView(),
+        showCommitAges: await repositories.showCommitAges(),
         engine: engineStatus,
     }))
 

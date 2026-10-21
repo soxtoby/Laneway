@@ -175,6 +175,17 @@ describe("Laneway settings", () => {
         await expect(readSettings(path)).rejects.toMatchObject({ code: "settings.corrupt", path })
     })
 
+    test("round-trips hidden commit ages and rejects anything but true or false", async () => {
+        let path = await temporarySettingsPath()
+        await writeSettings({ version: 1, showCommitAges: false }, path)
+
+        expect(await readSettings(path)).toEqual({ version: 1, showCommitAges: false })
+
+        await writeFile(path, JSON.stringify({ version: 1, showCommitAges: "no" }))
+
+        await expect(readSettings(path)).rejects.toMatchObject({ code: "settings.corrupt", path })
+    })
+
     test("reports corrupt settings without falling back", async () => {
         let path = await temporarySettingsPath()
         await mkdir(resolve(path, ".."), { recursive: true })

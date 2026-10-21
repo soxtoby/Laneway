@@ -32,6 +32,8 @@ export type AppSnapshot =
         opening: boolean
         /** How every file list lays out and groups its files. */
         fileListView: FileListView
+        /** Whether commit rows show when each commit was authored. */
+        showCommitAges: boolean
         notice?: Notice
     }
 
@@ -64,6 +66,8 @@ export interface AppController extends Store<AppSnapshot> {
     toggleAppearance(): Promise<void>
     /** Shows every file list in the new view at once; a failed save only loses it for the next start. */
     setFileListView(view: FileListView): Promise<void>
+    /** Shows or hides every commit row's age at once; a failed save only loses it for the next start. */
+    setShowCommitAges(shown: boolean): Promise<void>
     /** Commits and stashes a column's worktree; an operation refreshes the column, and the Branch Graph when it changed. */
     composer(repositoryId: string, columnId: string, path: string, blocked: boolean): CommitComposer
     /** Rewords a commit on a local branch; `close` runs once it is rewritten. */
@@ -334,7 +338,14 @@ export function createAppController(api: Api): AppController {
             try {
                 let state = await api.getState()
                 gitSettings.load(state.settings)
-                store.publish({ status: "ready", appearance: state.appearance, workspace: state.workspace, opening: false, fileListView: state.fileListView })
+                store.publish({
+                    status: "ready",
+                    appearance: state.appearance,
+                    workspace: state.workspace,
+                    opening: false,
+                    fileListView: state.fileListView,
+                    showCommitAges: state.showCommitAges,
+                })
                 if (state.workspace.persistenceError?.code == "workspace.partial")
                     notify({ code: state.workspace.persistenceError.code, message: state.workspace.persistenceError.message })
                 showWorkspace(state.workspace)
@@ -362,6 +373,15 @@ export function createAppController(api: Api): AppController {
                 await api.setFileListView(view)
             } catch (error) {
                 notify({ code: "settings.file-list-view.failed", message: errorMessage(error) })
+            }
+        },
+
+        async setShowCommitAges(shown) {
+            update({ showCommitAges: shown })
+            try {
+                await api.setShowCommitAges(shown)
+            } catch (error) {
+                notify({ code: "settings.commit-ages.failed", message: errorMessage(error) })
             }
         },
 

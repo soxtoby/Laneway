@@ -203,6 +203,7 @@ export function registerRepositoryHandlers(repositories: OpenRepositories, works
                 throw new Error("Invalid file list view.")
             return repositories.setFileListView(view.data)
         })
+        ipcMain.handle("settings:show-commit-ages", (_event, request: { shown?: unknown }) => repositories.setShowCommitAges(request?.shown != false))
         ipcMain.handle("settings:open-file", async () => {
             let state = await repositories.gitSettings()
             return shell.openPath(state.path)

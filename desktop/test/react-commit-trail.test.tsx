@@ -47,6 +47,28 @@ describe("React Commit Trail", () => {
         expect([...trail().querySelectorAll(".stack-branch")].map(card => card.classList.contains("remote"))).toEqual([false, true])
     })
 
+    test("a column's menu hides and shows every commit's age, and saves the choice", async () => {
+        let scenario = inspectionScenario()
+        let saved: boolean[] = []
+        let app = await startReactApp({
+            ...scenario.api,
+            setShowCommitAges: async shown => {
+                saved.push(shown)
+                return shown
+            },
+        })
+        await app.act(() => press(button(trail().closest("[data-column-id]")!.querySelector<HTMLElement>("header")!, "Worktree actions")))
+        expect(trail().querySelector("time") == null).toBe(false)
+
+        // A checkbox item leaves the menu open.
+        await app.act(() => press(menuItem("Show commit ages")))
+        expect(trail().querySelector("time") == null).toBe(true)
+
+        await app.act(() => press(menuItem("Show commit ages")))
+        expect(trail().querySelector("time") == null).toBe(false)
+        expect(saved).toEqual([false, true])
+    })
+
     test("a commit unfolds to its message and files, and a merge compares the parent chosen", async () => {
         let scenario = inspectionScenario()
         let second = "6".repeat(40)
@@ -354,7 +376,7 @@ function toast() {
 }
 
 function menuItem(label: string) {
-    let item = [...document.querySelectorAll<HTMLElement>("[role=menu] [role=menuitem]")].find(item => item.textContent == label)
+    let item = [...document.querySelectorAll<HTMLElement>("[role=menu] :is([role=menuitem], [role=menuitemcheckbox])")].find(item => item.textContent == label)
     if (!item)
         throw new Error(`No ${label} menu item`)
     return item
