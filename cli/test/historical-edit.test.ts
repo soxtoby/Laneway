@@ -244,6 +244,24 @@ test("a branch moved outside the session makes it stale; composition refuses it 
     expect((await session(path))?.state).toBe("active")
 }, 90_000)
 
+test("return after an external rewrite replaced the edited commit refuses only commits made on top of it", async () => {
+    let { path, base, greeting, tip } = await stack()
+    await writeFile(join(path, "notes.txt"), "notes\n")
+    await edit(path, { action: "enter", path, commit: greeting })
+    let squashed = git(path, "commit-tree", `${tip}^{tree}`, "-p", base, "-m", "Squashed")
+    git(path, "update-ref", "refs/heads/feature", squashed)
+    await commit(path, "new.txt", "new\n", "New work")
+
+    await expect(edit(path, { action: "return", path, mode: "clean" })).rejects.toThrow("Create a branch")
+
+    git(path, "reset", "-q", "--hard", greeting)
+    await edit(path, { action: "return", path, mode: "clean" })
+
+    expect(git(path, "branch", "--show-current")).toBe("feature")
+    expect(git(path, "rev-parse", "HEAD")).toBe(squashed)
+    expect(await readFile(join(path, "notes.txt"), "utf8")).toBe("notes\n")
+}, 90_000)
+
 test("a descendant conflict pauses the session at the rewritten commit until the Unresolved Stack resolves", async () => {
     let { path, greeting } = await stack()
     await edit(path, { action: "enter", path, commit: greeting })
