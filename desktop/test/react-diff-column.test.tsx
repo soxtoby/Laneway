@@ -232,6 +232,46 @@ describe("React diff column", () => {
         expect(scenario.saved().repositories[0]!.columns.map(column => column.width)).toEqual([380])
     })
 
+    test("focusing narrows its source column to the diff's files and gives the diff the width, until Escape", async () => {
+        let scenario = inspectionScenario()
+        let app = await startReactApp(scenario.api)
+        let source = columns()[0]!
+        let row = fileRows(source, "working-staged")[0]!
+        await app.act(() => openRow(row))
+        await app.act(() => press(button(row, "Break out diff")))
+        let column = diffColumn()!
+
+        await app.act(() => press(button(column, "Focus diff")))
+        expect(source.querySelector("[aria-label='File navigator']") != null).toBe(true)
+        expect(source.querySelector(".commit-trail") == null).toBe(true)
+        expect(fileRows(source, "working-unstaged").map(file => file.textContent!.includes("other.txt"))).toEqual([false, true])
+        expect(source.style.width).toBe("260px")
+        expect(column.style.width).toBe("740px")
+        expect(order()).toEqual(["column", "auxiliary-column", "column-divider"])
+
+        // Choosing a file in the navigator still shows it in the diff column, which moves to the file's list.
+        await app.act(() => openRow(fileRows(source, "working-unstaged")[1]!))
+        expect(fileRows(source, "working-unstaged")[1]!.classList.contains("active")).toBe(true)
+
+        await app.act(() => press(button(source, "Collapse inspection file navigator")))
+        expect(source.classList.contains("collapsed")).toBe(true)
+        expect(diffColumn()!.style.width).toBe("948px")
+        await app.act(() => press(button(source, "Expand inspection file navigator")))
+        expect(source.style.width).toBe("260px")
+
+        await app.act(() => diffColumn()!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })))
+        expect(source.querySelector(".commit-trail") != null).toBe(true)
+        expect(source.style.width).toBe("380px")
+        expect(diffColumn()!.style.width).toBe("620px")
+        expect(scenario.saved().repositories[0]!.columns.map(saved => saved.width)).toEqual([380])
+
+        // Closing the focused diff gives its source column back whole.
+        await app.act(() => press(button(diffColumn()!, "Focus diff")))
+        await app.act(() => press(button(diffColumn()!, "Close diff column")))
+        expect(source.querySelector(".commit-trail") != null).toBe(true)
+        expect(source.style.width).toBe("380px")
+    })
+
     test("closes with its source column, cancelling the reads it started", async () => {
         let scenario = inspectionScenario()
         let main = scenario.graph.branches[0]!

@@ -97,6 +97,54 @@ export function ColumnBody({ controller, repositoryId, graph, column, inspected,
 }
 
 /**
+ * A column narrowed to a file navigator beside its diff column: the files of the list the diff column shows, which
+ * scroll it to their diffs. Working Changes list their staged files above the rest, as the column does.
+ */
+export function FileNavigator({ controller, repositoryId, graph, column, inspected, view }: Omit<ColumnBodyProps, "blocked" | "onViewChange"> & {
+    inspected: ColumnInspection
+}) {
+    let group = inspected.diffColumn?.group ?? ""
+    let list = (listed: string, label: string) => (
+        <FileList
+            columnId={column.id}
+            group={listed}
+            label={label}
+            files={inspected.files[listed]}
+            inspected={inspected}
+            inspection={controller.inspection}
+            view={view}
+            root={columnRoot(column)}
+            comparison={column.kind == "comparison" ? column.comparison : undefined}
+            empty="No changes"
+        />
+    )
+    let staged = inspected.files["working-staged"]?.inventory?.files.filter(file => !file.ignored).length ?? 0
+    return (
+        <ColumnScopes controller={controller} repositoryId={repositoryId} graph={graph} column={column}>
+            <div className="column-body">
+                <section className="file-navigator" aria-label="File navigator">
+                    {group.startsWith("working")
+                        ? (
+                            <>
+                                {staged > 0 && (
+                                    <>
+                                        {list("working-staged", "Staged files")}
+                                        <div className="staged-divider" role="separator" aria-label="Staged changes">
+                                            <span>Staged · {staged}</span>
+                                        </div>
+                                    </>
+                                )}
+                                {list("working-unstaged", "Working Changes files")}
+                            </>
+                        )
+                        : list(group, "Changed files")}
+                </section>
+            </div>
+        </ColumnScopes>
+    )
+}
+
+/**
  * What a column's lists and diffs share: where their changes move from, and how their diffs lay out. The
  * column's auxiliary columns share them too.
  */

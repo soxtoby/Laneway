@@ -1,14 +1,15 @@
 import type { ChangedFile } from "@laneway/shared"
-import { type MouseEvent, type RefObject, useLayoutEffect, useRef } from "react"
-import { Button as AriaButton } from "react-aria-components"
+import { type KeyboardEvent, type MouseEvent, type RefObject, useLayoutEffect, useRef } from "react"
+import { Button as AriaButton, ToggleButton } from "react-aria-components"
 import { Hint, IconButton } from "./controls"
 import { useRowMenu } from "./dense-row"
 import { DiffControls, DiffPanel } from "./diff-panel"
 import { CopyPathButton, FileLabel, FileMenuItems } from "./file-tree"
-import { ChevronDownIcon, CloseIcon, CollapseAllIcon, ExpandAllIcon, FileStatusIcon, MaximizeIcon, RestoreIcon } from "./icons"
+import { ChevronDownIcon, CloseIcon, CollapseAllIcon, CollapsePanelIcon, ExpandAllIcon, FileStatusIcon, MaximizeIcon, RestoreIcon } from "./icons"
 import { type ColumnInspection, type DiffColumnView, diffKey, type FileDiffState, type Inspection, matchesFilter } from "./inspection"
 import { ChevronRight } from "./ui/icons"
 import { MenuItem } from "./ui/Menu"
+import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 
 interface DiffColumnProps {
     view: DiffColumnView
@@ -30,7 +31,8 @@ interface DiffColumnProps {
 
 /**
  * One list's whole diff beside the column it came from: every file's diff, each under a toolbar that folds it.
- * Choosing a file in the source column scrolls its diff up under the header.
+ * Choosing a file in the source column scrolls its diff up under the header. Focusing the diff narrows the source
+ * column to a file navigator, giving the diff its width.
  */
 export let minimumDiffColumnWidth = 380
 
@@ -42,6 +44,7 @@ export function DiffColumn({ view, sourceName, stacked, inspected, inspection, r
     let listed = files?.inventory?.files.filter(file => !file.ignored && (!filter || matchesFilter(filter, file))) ?? []
     let stopAiming = useArrival(scroller, view, listed, inspected)
     let title = diffColumnTitle(view, sourceName)
+    let navigator = inspected?.diffColumn?.navigator
     let fold = (paths: string[], folded: boolean) => {
         // Folding moves the files, so the column stops chasing the one it scrolled to.
         stopAiming()
@@ -52,6 +55,13 @@ export function DiffColumn({ view, sourceName, stacked, inspected, inspection, r
         if (!(event.target instanceof Element && event.target.closest("button")))
             onMaximize()
     }
+    // Escape leaves the focused diff, as it does from the file navigator.
+    let keyDown = (event: KeyboardEvent) => {
+        if (event.key == "Escape" && navigator && !event.defaultPrevented) {
+            event.preventDefault()
+            inspection.setNavigator(view.sourceId, undefined)
+        }
+    }
     return (
         <aside
             className="auxiliary-column diff-column"
@@ -60,6 +70,7 @@ export function DiffColumn({ view, sourceName, stacked, inspected, inspection, r
             tabIndex={-1}
             style={{ width: view.width }}
             aria-label={`${sourceName} diff`}
+            onKeyDown={keyDown}
         >
             <header className="column-header auxiliary-header" onDoubleClick={toggleMaximized}>
                 <Hint text={title}>
@@ -77,6 +88,17 @@ export function DiffColumn({ view, sourceName, stacked, inspected, inspection, r
                 <IconButton label="Collapse all" onPress={() => fold(listed.map(file => file.path), true)}>
                     <CollapseAllIcon />
                 </IconButton>
+                <TooltipTrigger>
+                    <ToggleButton
+                        className="icon-button"
+                        aria-label="Focus diff"
+                        isSelected={navigator != undefined}
+                        onChange={focused => inspection.setNavigator(view.sourceId, focused ? "compact" : undefined)}
+                    >
+                        <CollapsePanelIcon />
+                    </ToggleButton>
+                    <Tooltip>{navigator ? "Show the whole source column (Esc)" : "Focus diff beside a file navigator"}</Tooltip>
+                </TooltipTrigger>
                 <IconButton label={maximized ? "Restore columns" : "Maximize column"} onPress={onMaximize}>
                     {maximized ? <RestoreIcon /> : <MaximizeIcon />}
                 </IconButton>

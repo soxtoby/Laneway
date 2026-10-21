@@ -6,7 +6,7 @@ import type { AppController } from "./app-controller"
 import { defaultAuxiliaryColumnWidth } from "./auxiliary-columns"
 import { branchDragType } from "./branch-graph"
 import { type BranchWorkspace, type ColumnsSnapshot, type ColumnView, defaultColumnWidth, minimumColumnWidth, workingSummary } from "./branch-workspace"
-import { ColumnBody, columnRoot, ColumnScopes } from "./column-body"
+import { ColumnBody, columnRoot, ColumnScopes, FileNavigator } from "./column-body"
 import { columnDropTarget, columnSpans } from "./column-drag"
 import { ColumnFilter } from "./column-filter"
 import { navigationKeyDown } from "./column-navigation"
@@ -14,7 +14,7 @@ import { Hint, IconButton } from "./controls"
 import { DiffColumn, minimumDiffColumnWidth } from "./diff-column"
 import { CommitDiffColumn, FileHistoryColumn } from "./file-history"
 import { BranchIcon, CloseIcon, CollapseColumnIcon, CompareIcon, ExpandColumnIcon, FolderIcon, MaximizeIcon, OpenColumnIcon, RestoreIcon, SearchIcon, WarningIcon } from "./icons"
-import type { AuxiliaryView, InspectionSnapshot } from "./inspection"
+import type { AuxiliaryView, FileNavigator as Navigator, InspectionSnapshot } from "./inspection"
 import { Button } from "./ui/Button"
 import { Tab, TabList, Tabs } from "./ui/Tabs"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
@@ -24,6 +24,9 @@ import { MissingWorktree, WorktreeMenu, WorktreeTitle } from "./worktree-control
 
 // Polls together with window focus: a hidden or unfocused window waits.
 let pollInterval = 5_000
+
+// A collapsed navigator is as wide as a collapsed column, whose width is in laneway.css.
+let navigatorWidths: Record<Navigator, number> = { compact: 260, collapsed: 52 }
 
 /** The active repository's Workspace Columns, side by side, each resizable, collapsible, and movable. */
 export function WorkspaceColumns({ controller, fileListView }: { controller: AppController; fileListView: FileListView }) {
@@ -115,6 +118,10 @@ export function WorkspaceColumns({ controller, fileListView }: { controller: App
                 let attached = auxiliary.length > 0
                 // A maximized column shares the window with its auxiliary columns, split at its own width.
                 let split = snapshot.maximizedId != undefined && attached
+                // A column narrowed to a file navigator gives the width it leaves to its diff column, so the columns
+                // after it stay where they were.
+                let navigator = attached ? current?.columns[column.id]?.diffColumn?.navigator : undefined
+                let gained = navigator ? Math.max(0, column.width - navigatorWidths[navigator]) : 0
                 return [
                     <ColumnFrame
                         key={column.id}
@@ -127,8 +134,9 @@ export function WorkspaceColumns({ controller, fileListView }: { controller: App
                         header={header}
                         attached={attached}
                         split={split}
+                        navigator={navigator}
                     />,
-                    !column.collapsed && (!snapshot.maximizedId || split) && (
+                    !column.collapsed && !navigator && (!snapshot.maximizedId || split) && (
                         <ColumnDivider
                             key={`${column.id}:divider`}
                             label="Resize branch column"
@@ -142,10 +150,12 @@ export function WorkspaceColumns({ controller, fileListView }: { controller: App
                     ...auxiliary.flatMap((view, index) => {
                         // The last one beside a maximized column takes the space the others leave.
                         let last = index == auxiliary.length - 1
+                        // Resizing it keeps what the navigator gave out of its own width.
+                        let width = view.kind == "diff" ? view.width + gained : view.width
                         return [
                             <AuxiliaryFrame
                                 key={view.id}
-                                view={view}
+                                view={{ ...view, width }}
                                 column={column}
                                 inspected={current}
                                 graph={graph!}
@@ -157,11 +167,11 @@ export function WorkspaceColumns({ controller, fileListView }: { controller: App
                                 <ColumnDivider
                                     key={`${view.id}:divider`}
                                     label="Resize auxiliary column"
-                                    width={view.width}
+                                    width={width}
                                     minimum={view.kind == "diff" ? minimumDiffColumnWidth : minimumColumnWidth}
                                     defaultWidth={defaultAuxiliaryColumnWidth}
                                     attached={!last}
-                                    onResize={width => controller.inspection.resizeAuxiliary(view.id, width)}
+                                    onResize={next => controller.inspection.resizeAuxiliary(view.id, next - width + view.width)}
                                 />
                             ),
                         ]
@@ -177,7 +187,7 @@ interface HeaderDrag {
     end(): void
 }
 
-function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListView, header, attached, split }: {
+function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListView, header, attached, split, navigator }: {
     column: ColumnView
     snapshot: ColumnsSnapshot
     /** The active repository's files, once the inspection has them. */
@@ -191,8 +201,10 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
     attached: boolean
     /** Whether it is maximized beside its auxiliary columns, keeping its own width. */
     split: boolean
+    /** How it narrows beside its diff column, if it does. */
+    navigator?: Navigator
 }) {
-    let { columns } = controller
+    let { columns, inspection } = controller
     let worktreeBusy = useSnapshot(controller.worktrees).busy
     let busy = snapshot.busy || worktreeBusy
     let prepare = (request: WorktreeRequest) => void controller.worktrees.prepare(snapshot.repositoryId!, request, column.id)
@@ -214,18 +226,26 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
     let filterButton = useRef<HTMLButtonElement>(null)
     let filterInput = useRef<HTMLInputElement>(null)
     let filterable = column.kind != "recovery"
+    // A collapsed navigator shows as a collapsed column does, and expands back to the navigator.
+    let collapsed = column.collapsed || navigator == "collapsed"
+    let expand = column.collapsed
+        ? { label: `Expand ${column.name}`, press: () => columns.toggleCollapsed(column.id) }
+        : { label: `Expand ${column.name} file navigator`, press: () => inspection.setNavigator(column.id, "compact") }
+    let collapse = navigator
+        ? { label: `Collapse ${column.name} file navigator`, press: () => inspection.setNavigator(column.id, "collapsed") }
+        : { label: `Collapse ${column.name}`, press: () => columns.toggleCollapsed(column.id) }
     // A filter that is already open takes focus again; a new one focuses its field as it shows.
     let openFilter = () => {
-        controller.inspection.openFilter(column.id)
+        inspection.openFilter(column.id)
         filterInput.current?.focus()
     }
     let closeFilter = () => {
-        controller.inspection.closeFilter(column.id)
+        inspection.closeFilter(column.id)
         filterButton.current?.focus({ preventScroll: true })
     }
     // F2 renames a branch column's branch and Delete deletes it, from anywhere in the column but a field.
     // Ctrl+Shift+< and > move the column; it keeps focus in its new place. Ctrl+F filters its files and Escape
-    // closes the filter.
+    // closes the filter, then the file navigator.
     let keyDown = (event: KeyboardEvent) => {
         let editing = event.target instanceof HTMLElement && event.target.closest("input, textarea, select")
         if (filterable && (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() == "f") {
@@ -238,6 +258,12 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
             event.preventDefault()
             event.stopPropagation()
             closeFilter()
+            return
+        }
+        if (event.key == "Escape" && navigator && !event.defaultPrevented) {
+            event.preventDefault()
+            event.stopPropagation()
+            inspection.setNavigator(column.id, undefined)
             return
         }
         if (column.kind == "branch" && (event.key == "F2" || event.key == "Delete") && !editing && !event.defaultPrevented) {
@@ -265,19 +291,25 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
     }
     return (
         <article
-            className={clsx("column", column.collapsed && "collapsed", column.worktree?.missing && "missing", attached && "attached", split && "split")}
+            className={clsx(
+                "column",
+                collapsed && "collapsed",
+                column.worktree?.missing && "missing",
+                attached && "attached",
+                split && "split",
+            )}
             data-column-id={column.id}
             aria-label={column.name}
             tabIndex={-1}
-            style={column.collapsed || maximized && !split ? undefined : { width: column.width }}
+            style={collapsed || maximized && !split ? undefined : { width: navigator ? navigatorWidths.compact : column.width }}
             onFocus={() => columns.focus(column.id)}
             onKeyDown={keyDown}
             onKeyDownCapture={event => filterable && navigationKeyDown(event, files?.diffColumn != undefined)}
         >
-            {column.collapsed
+            {collapsed
                 ? (
                     <Hint text={column.worktree?.path ?? column.name} placement="end">
-                        <button type="button" className="expand-column" aria-label={`Expand ${column.name}`} onClick={() => columns.toggleCollapsed(column.id)}>
+                        <button type="button" className="expand-column" aria-label={expand.label} onClick={expand.press}>
                             <ExpandColumnIcon className="expand-column-icon" />
                             <span className="expand-column-name">{column.name}</span>
                             <span className="expand-column-summary">{workingSummary(column, files)}</span>
@@ -297,7 +329,7 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                 onDragStart={event => header.start(column, event)}
                                 onDragEnd={header.end}
                             >
-                                <IconButton className="column-collapse" label={`Collapse ${column.name}`} onPress={() => columns.toggleCollapsed(column.id)}>
+                                <IconButton className="column-collapse" label={collapse.label} onPress={collapse.press}>
                                     <CollapseColumnIcon />
                                 </IconButton>
                                 <ColumnKind column={column} />
@@ -309,7 +341,8 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                         </div>
                                     )}
                                 <div className="column-actions" data-controls>
-                                    {column.kind == "branch" && (column.branch.unresolved || files?.conflictsOnly) && (
+                                    {/* A file navigator keeps only what narrows its files. */}
+                                    {!navigator && column.kind == "branch" && (column.branch.unresolved || files?.conflictsOnly) && (
                                         <TooltipTrigger>
                                             <ToggleButton
                                                 className="icon-button conflicts-only"
@@ -336,7 +369,7 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                             <Tooltip>Filter files (Ctrl+F)</Tooltip>
                                         </TooltipTrigger>
                                     )}
-                                    {(column.kind == "branch" || column.kind == "virtual") && (
+                                    {!navigator && (column.kind == "branch" || column.kind == "virtual") && (
                                         <WorktreeMenu
                                             column={column}
                                             graph={graph}
@@ -345,7 +378,7 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                             chooseDirectory={controller.chooseDirectory}
                                         />
                                     )}
-                                    {column.kind == "comparison" && (
+                                    {!navigator && column.kind == "comparison" && (
                                         // Mirrors Working Changes' control: it opens the comparison's whole diff, or focuses it.
                                         <TooltipTrigger>
                                             <ToggleButton
@@ -360,14 +393,19 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                             <Tooltip>Open diff column</Tooltip>
                                         </TooltipTrigger>
                                     )}
-                                    <IconButton
-                                        label={snapshot.maximizedId ? "Restore columns" : "Maximize column"}
-                                        onPress={() => columns.toggleMaximized(column.id)}
-                                    >
-                                        {snapshot.maximizedId ? <RestoreIcon /> : <MaximizeIcon />}
-                                    </IconButton>
-                                    {!column.worktree && column.kind != "recovery" && (
-                                        <IconButton label="Close column" onPress={() => columns.close(column.id)}>
+                                    {!navigator && (
+                                        <IconButton
+                                            label={snapshot.maximizedId ? "Restore columns" : "Maximize column"}
+                                            onPress={() => columns.toggleMaximized(column.id)}
+                                        >
+                                            {snapshot.maximizedId ? <RestoreIcon /> : <MaximizeIcon />}
+                                        </IconButton>
+                                    )}
+                                    {!navigator && !column.worktree && column.kind != "recovery" && (
+                                        <IconButton
+                                            label="Close column"
+                                            onPress={() => columns.close(column.id)}
+                                        >
                                             <CloseIcon />
                                         </IconButton>
                                     )}
@@ -392,6 +430,17 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                     busy={snapshot.recoveryBusy != undefined}
                                     error={snapshot.recoveryErrors[column.recovery.operationId]}
                                     onResolve={action => void columns.recover(column.recovery, action)}
+                                />
+                            )
+                            : navigator && files
+                            ? (
+                                <FileNavigator
+                                    controller={controller}
+                                    repositoryId={snapshot.repositoryId!}
+                                    graph={graph}
+                                    column={column}
+                                    inspected={files}
+                                    view={fileListView}
                                 />
                             )
                             : (

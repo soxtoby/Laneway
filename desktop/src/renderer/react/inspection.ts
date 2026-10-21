@@ -53,13 +53,19 @@ export interface ColumnInspection {
     bases: Record<string, string>
     /** Open diffs by `diffKey`; each shows under its file's row, or in the diff column while there is one. */
     diffs: Record<string, FileDiffState>
-    /** The list and file the column's diff column shows, while it has one. */
-    diffColumn?: { group: string; focus?: string }
+    /** The list and file the column's diff column shows, and how the column narrows beside it, while it has one. */
+    diffColumn?: { group: string; focus?: string; navigator?: FileNavigator }
     /** The column's file filter, while it is open. */
     filter?: FileFilter
     /** The Commit Trail shows only commits with conflicts to resolve. */
     conflictsOnly?: boolean
 }
+
+/**
+ * How a column with a diff column narrows beside it, leaving the diff the width: to a `compact` list of the diff
+ * column's files, or `collapsed` further to a strip.
+ */
+export type FileNavigator = "compact" | "collapsed"
 
 /** Narrows every list in a column to the files whose path contains `text`, with the chosen status or any. */
 export interface FileFilter {
@@ -190,6 +196,11 @@ export interface Inspection extends Store<InspectionSnapshot> {
     openDiffColumn(columnId: string, group: string, path?: string, subject?: string): void
     /** Opens the diff column on the Working Changes diff opened last, or else the first changed file. */
     openWorkingDiffColumn(columnId: string): void
+    /**
+     * Narrows a column beside its diff column to a file navigator, or back with none. It lasts while the column has a
+     * diff column, whichever list that shows, and isn't kept across restarts.
+     */
+    setNavigator(columnId: string, navigator?: FileNavigator): void
     /** Closes an auxiliary column and the ones opened from it. */
     closeAuxiliary(id: string): void
     resizeAuxiliary(id: string, width: number): void
@@ -296,6 +307,7 @@ interface DiffColumnState {
     focus?: string
     serial: number
     entireFiles: boolean
+    navigator?: FileNavigator
 }
 
 interface HistoryColumnState {
@@ -381,7 +393,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             history: { ...state.history },
             bases: { ...state.bases },
             diffs: { ...state.diffs },
-            diffColumn: state.diffColumn && { group: state.diffColumn.group, focus: state.diffColumn.focus },
+            diffColumn: state.diffColumn && { group: state.diffColumn.group, focus: state.diffColumn.focus, navigator: state.diffColumn.navigator },
             filter: state.filter,
             conflictsOnly: state.conflictsOnly,
         }
@@ -607,7 +619,8 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
 
     /**
      * Shows one list's whole diff in the column's diff column, scrolled to `path` when given; a diff column showing
-     * another list gives way to it, keeping its width. Opening it focuses it; choosing files in the column doesn't.
+     * another list gives way to it, keeping its width and its source's file navigator. Opening it focuses it; choosing
+     * files in the column doesn't.
      */
     async function showDiffColumn(state: ColumnState, group: string, path: string | undefined, subject: string | undefined, focus: boolean) {
         let current = state.diffColumn
@@ -634,6 +647,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             focus: path,
             serial: (current?.serial ?? 0) + 1,
             entireFiles: current?.entireFiles ?? false,
+            navigator: current?.navigator,
         }
         state.diffColumn = column
         if (previous)
@@ -1093,6 +1107,14 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             let path = shown?.path ?? state.files[group]?.inventory?.files.find(file => !file.ignored)?.path
             if (path)
                 void showDiffColumn(state, group, path, undefined, true)
+        },
+
+        setNavigator(columnId, navigator) {
+            let column = columnState(columnId)?.diffColumn
+            if (column) {
+                column.navigator = navigator
+                publish()
+            }
         },
 
         closeAuxiliary(id) {
