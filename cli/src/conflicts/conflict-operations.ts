@@ -2,6 +2,7 @@ import { blob, candidateReady, conflictHunks, conflictStateRef, gitText, hasConf
 import { type ConflictRequest, type ConflictState, type ConflictSubject, type UnresolvedStack } from "@laneway/shared"
 import { lstat, readFile, realpath } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
+import { verifyIgnoredFiles } from "../composition/composition"
 import { candidateRef, checkedCandidate, readCandidate, saveCandidate } from "./conflict-candidates"
 import { conflictResult, findSubject } from "./conflict-inspection"
 import { cleanupResolutionFiles, runMergeTool } from "./conflict-resolution-files"
@@ -609,6 +610,8 @@ export async function applyStashConflict(repo: RepositoryGit, path: string, stas
         let retained = dirty ? { beforeTree: current, beforeIndex: index, afterIndex: index } : {}
         state.working.push({ id: merged.conflict.id, path, branch, head, stash, conflict: merged.conflict, ...retained })
     }
+    // Ignored files are outside checkpoints, and the checkout below would overwrite one the stash also holds.
+    await verifyIgnoredFiles(repo, path, merged.tree)
     // Tracking the current untracked files first lets the checkout replace them where the stash changes them.
     await repo.command(path, ["read-tree", current])
     await repo.command(path, ["read-tree", "--reset", "-u", merged.tree])
