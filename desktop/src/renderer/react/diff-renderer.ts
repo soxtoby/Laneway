@@ -201,18 +201,20 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
         syncHorizontal()
     }
 
+    // Only rows up to the last one measured are walked; past it every row is one line, so without wrapping (when
+    // nothing is measured) both of these are plain arithmetic.
     function rowAt(offset: number) {
         let row = 0
         let top = 0
-        while (top + (heights[row] ?? lineHeight) <= offset)
+        while (row < heights.length && top + (heights[row] ?? lineHeight) <= offset)
             top += heights[row++] ?? lineHeight
-        return row
+        return row < heights.length ? row : row + Math.floor((offset - top) / lineHeight)
     }
 
     function rowsHeight(from: number, to: number) {
-        let height = 0
-        for (let row = from; row < to; row++)
-            height += heights[row] ?? lineHeight
+        let height = Math.max(0, to - from) * lineHeight
+        for (let row = from; row < Math.min(to, heights.length); row++)
+            height += (heights[row] ?? lineHeight) - lineHeight
         return height
     }
 
