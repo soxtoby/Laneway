@@ -3,6 +3,7 @@ import clsx from "clsx"
 import { useState } from "react"
 import { Button as AriaButton } from "react-aria-components"
 import type { ColumnView } from "./branch-workspace"
+import { authoredBy, authorInitials } from "./commit-authors"
 import { ConflictResolution } from "./conflict-resolution"
 import type { Conflicts } from "./conflicts"
 import { Hint, IconButton, MoreMenu } from "./controls"
@@ -272,6 +273,14 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
                         <span className="commit-subject">{commit.subject}</span>
                     </Hint>
                     {commit.body && !open && <MoreIcon className="message-indicator" role="img" aria-label="Has message body" aria-hidden={false} />}
+                    {/* The developer's own commits stay plain, so other people's stand out. */}
+                    {!authoredBy(props.graph.authorIdentities, commit.authorEmail) && (
+                        <Hint text={`${commit.authorName} <${commit.authorEmail}>`}>
+                            <span className="commit-author" role="img" aria-label={`Authored by ${commit.authorName}`}>
+                                {authorInitials(commit.authorName, commit.authorEmail)}
+                            </span>
+                        </Hint>
+                    )}
                 </AriaButton>
                 {open && (
                     <IconButton
