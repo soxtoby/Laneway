@@ -1,5 +1,6 @@
 import { gitText, readRegisteredWorktrees, type RepositoryGit } from "@laneway/git"
 import type { BranchGraphBranchNode, BranchGraphReadOptions, PullFetch, PullRequest, PullStackOutcome } from "@laneway/shared"
+import { isAncestor, readActiveStack } from "./active-stack"
 import { type ConflictSession, gitHead, openConflictSession, rewriteStack, type StackRewritePlan } from "./conflicts/conflict-operations"
 
 type Changes = Map<string, string | null>
@@ -64,39 +65,17 @@ export async function preparePull(
     let stacks: ScopedStack[] = []
     let blocked: PullStackOutcome[] = []
     for (let ref of [...new Set(request.branches)]) {
-        let branch = graph.branches.find(candidate => candidate.localRefs.includes(ref))
-        if (!branch)
+        let stack = await readActiveStack(repo, graph, ref)
+        if (!stack)
             continue
-        let chain = [scoped(branch, ref)]
-        let members = new Set([branch.id])
-        let current = branch
-        let ambiguous: string | undefined
-        for (;;) {
-            let known = current.base
-            // Branches that diverged from each other name each other as Base. Below the loop, use the
-            // next closest branch outside this chain so the stack still reaches its integration target.
-            if (known.status == "known" && members.has(known.branchId))
-                known = await nearestBase(repo, graph, current, members)
-            if (known.status == "ambiguous") {
-                ambiguous = `The Base of ${current.name} is ambiguous. Choose its Base in the Branch Graph, then pull again.`
-                break
-            }
-            if (known.status != "known")
-                break
-            let base = graph.branches.find(candidate => candidate.id == known.branchId)
-            if (!base)
-                break
-            chain.unshift(scoped(base, base.preferredRef))
-            members.add(base.id)
-            if (base.primary || base.remoteOnly)
-                break
-            current = base
-        }
+        let chain = stack.branches.map(item => scoped(item.node, item.ref))
         let id = crypto.randomUUID()
-        if (ambiguous)
-            blocked.push({ id, branches: chain.map(item => item.name), status: "skipped", message: ambiguous })
-        else
+        if (stack.ambiguous) {
+            let message = `The Base of ${stack.ambiguous} is ambiguous. Choose its Base in the Branch Graph, then pull again.`
+            blocked.push({ id, branches: chain.map(item => item.name), status: "skipped", message })
+        } else {
             stacks.push({ id, branches: chain })
+        }
     }
 
     // Longer chains first so an Active Stack that extends another synchronizes the shared prefix as one unit.
@@ -431,63 +410,6 @@ async function updateStack(
         conflicts,
         workingConflicts,
     }
-}
-
-// Mirrors Branch Graph Base inference restricted to branches outside the current chain.
-async function nearestBase(
-    repo: RepositoryGit,
-    graph: { branches: BranchGraphBranchNode[] },
-    branch: BranchGraphBranchNode,
-    excluded: Set<string>,
-): Promise<BranchGraphBranchNode["base"]> {
-    let candidates: Array<{ candidate: BranchGraphBranchNode; objectId: string }> = []
-    for (let candidate of graph.branches) {
-        if (excluded.has(candidate.id) || candidate.tip == branch.tip)
-            continue
-        let result = await repo.run(main(repo), ["merge-base", branch.tip, candidate.tip])
-        if (result.exitCode == 0)
-            candidates.push({ candidate, objectId: result.stdout.toString().trim() })
-    }
-
-    let closest: typeof candidates = []
-    for (let entry of candidates) {
-        let dominated = false
-        for (let other of candidates) {
-            if (other.objectId != entry.objectId && await isAncestor(repo, entry.objectId, other.objectId)) {
-                dominated = true
-                break
-            }
-        }
-        if (!dominated)
-            closest.push(entry)
-    }
-
-    let unique = [...new Map(closest.map(entry => [entry.candidate.id, entry])).values()]
-    if (!unique.length)
-        return { status: "unknown", candidates: [] }
-
-    let preferred = unique.length == 1
-        ? unique[0]
-        : new Set(unique.map(entry => entry.objectId)).size == 1
-        ? unique.find(entry => entry.candidate.primary)
-        : undefined
-    if (preferred) {
-        let { candidate } = preferred
-        return { status: "known", branchId: candidate.id, name: candidate.name, ref: candidate.preferredRef, tip: candidate.tip }
-    }
-    return {
-        status: "ambiguous",
-        candidates: unique.map(({ candidate }) => ({ branchId: candidate.id, name: candidate.name, ref: candidate.preferredRef, tip: candidate.tip })),
-    }
-}
-
-async function isAncestor(repo: RepositoryGit, ancestor: string, descendant: string) {
-    let result = await repo.run(main(repo), ["merge-base", "--is-ancestor", ancestor, descendant])
-    if (result.exitCode == 0)
-        return true
-    if (result.exitCode == 1)
-        return false
-    throw new Error(result.stderr.toString().trim() || "Git could not compare histories.")
 }
 
 // Commits in head but not upstream whose patch is not already present in upstream.
