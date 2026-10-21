@@ -1423,7 +1423,8 @@
     min-width: 0;
 }
 
-.message-indicator {
+.message-indicator,
+.commit-author {
     flex: 0 0 auto;
     width: var(--spacing-3);
     height: var(--spacing-3);

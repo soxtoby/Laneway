@@ -47,6 +47,31 @@ describe("React Commit Trail", () => {
         expect([...trail().querySelectorAll(".stack-branch")].map(card => card.classList.contains("remote"))).toEqual([false, true])
     })
 
+    test("marks commits by other authors with their name and email, but not the developer's own", async () => {
+        let scenario = inspectionScenario()
+        scenario.graph.authorIdentities = { primary: "developer@example.test", secondary: ["dev@home.test"] }
+        await startReactApp({
+            ...scenario.api,
+            readBranchHistory: async (_repositoryId, request) => {
+                let commits = [{ ...commit("4".repeat(40), "Mine"), authorName: "Developer", authorEmail: "Dev@Home.test" }, {
+                    ...commit("5".repeat(40), "Theirs"),
+                    authorName: "Alex Rivera",
+                    authorEmail: "alex@example.test",
+                }]
+                return { ok: true, page: { branchRef: request.branchRef, tip: request.tip, baseTips: request.baseTips, commits } }
+            },
+        })
+
+        expect(
+            commitRows().map(
+                row => [
+                    row.querySelector(".commit-subject")?.textContent,
+                    row.querySelector("[role=img][aria-label^='Authored by']")?.getAttribute("aria-description"),
+                ],
+            ),
+        ).toEqual([["Mine", undefined], ["Theirs", "Alex Rivera <alex@example.test>"]])
+    })
+
     test("a commit unfolds to its message and files, and a merge compares the parent chosen", async () => {
         let scenario = inspectionScenario()
         let second = "6".repeat(40)
