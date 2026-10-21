@@ -10,7 +10,7 @@ export interface FileListView {
 }
 /** Flat rows show their folders inline; a tree nests rows under collapsible folders. */
 export type FileListLayout = "flat" | "tree"
-/** `change` groups by added, changed, and removed; `kind` groups implementation, test, and generated files. */
+/** `change` groups by added, changed, and removed; `kind` groups docs, implementation, test, and generated files. */
 export type FileListGrouping = "none" | "change" | "kind"
 
 export let defaultFileListView: FileListView = { layout: "flat", grouping: "none" }

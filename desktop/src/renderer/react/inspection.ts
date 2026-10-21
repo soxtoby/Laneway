@@ -53,8 +53,8 @@ export interface ColumnInspection {
     bases: Record<string, string>
     /** Open diffs by `diffKey`; each shows under its file's row, or in the diff column while there is one. */
     diffs: Record<string, FileDiffState>
-    /** The list and file the column's diff column shows, while it has one. */
-    diffColumn?: { group: string; focus?: string }
+    /** The list the column's diff column shows, while it has one, and the file at its top, whose row is marked. */
+    diffColumn?: { group: string; shown?: string }
     /** The column's file filter, while it is open. */
     filter?: FileFilter
     /** The Commit Trail shows only commits with conflicts to resolve. */
@@ -195,6 +195,8 @@ export interface Inspection extends Store<InspectionSnapshot> {
     resizeAuxiliary(id: string, width: number): void
     /** Folds a diff column's files down to their toolbars, or unfolds them. */
     foldDiffs(id: string, paths: string[], folded: boolean): void
+    /** Marks the file a diff column has scrolled to the top of its files in its source column's list. */
+    scrolledTo(id: string, path: string): void
     /** Shows a diff column's files whole, or only around their changes, reading its diffs again. */
     toggleEntireFiles(id: string): void
     /**
@@ -295,6 +297,8 @@ interface DiffColumnState {
     collapsed: Set<string>
     focus?: string
     serial: number
+    /** The file at the top of its files: the one chosen, until the user scrolls it to another. */
+    shown?: string
     entireFiles: boolean
 }
 
@@ -381,7 +385,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             history: { ...state.history },
             bases: { ...state.bases },
             diffs: { ...state.diffs },
-            diffColumn: state.diffColumn && { group: state.diffColumn.group, focus: state.diffColumn.focus },
+            diffColumn: state.diffColumn && { group: state.diffColumn.group, shown: state.diffColumn.shown },
             filter: state.filter,
             conflictsOnly: state.conflictsOnly,
         }
@@ -614,6 +618,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
         if (current?.group == group) {
             if (path) {
                 current.focus = path
+                current.shown = path
                 current.serial++
                 current.collapsed.delete(path)
             }
@@ -633,6 +638,7 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             collapsed: new Set(),
             focus: path,
             serial: (current?.serial ?? 0) + 1,
+            shown: path,
             entireFiles: current?.entireFiles ?? false,
         }
         state.diffColumn = column
@@ -1122,6 +1128,14 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
                 else
                     column.collapsed.delete(path)
             }
+            publish()
+        },
+
+        scrolledTo(id, path) {
+            let column = auxiliaryNode(id)?.node.value
+            if (column?.kind != "diff" || column.shown == path)
+                return
+            column.shown = path
             publish()
         },
 

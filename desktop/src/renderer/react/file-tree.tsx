@@ -39,7 +39,7 @@ interface FileTreeProps {
 /** A list's diffs: which files show one, and what the row draws for it. */
 export interface FileInspection {
     isOpen(file: ChangedFile): boolean
-    /** Whether the file is the one the column's diff column shows; its row is marked. */
+    /** Whether the file's diff is at the top of the column's diff column; its row is marked. */
     isActive(file: ChangedFile): boolean
     toggle(file: ChangedFile): void
     /** Closes the diffs of files a folded folder or group hides. */
@@ -81,6 +81,14 @@ export function FileTree({ label, files, view, group, selected, onSelect, root, 
         let between = rows.slice(Math.min(from, to), Math.max(from, to) + 1)
         onSelect?.(between.flatMap(row => folders.has(row) && !folded.has(row) ? [] : rowFiles(row)), true)
     }
+
+    // The row the diff column has scrolled to stays in view, scrolling only the list's own column. The Tree redraws
+    // its rows a render later, so it waits a frame, by which time a diff that was open under the row has gone.
+    let active = files.find(file => inspect?.isActive(file))?.path
+    useEffect(() => {
+        let frame = requestAnimationFrame(() => tree.current?.querySelector(".file-row.active")?.scrollIntoView({ block: "nearest", container: "nearest" }))
+        return () => cancelAnimationFrame(frame)
+    }, [active])
 
     // Native capturing listeners see a press's modifiers and a Space before React Aria's own handlers.
     let pointerDown = useEffectEvent((event: PointerEvent) => {

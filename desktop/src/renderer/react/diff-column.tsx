@@ -1,5 +1,5 @@
 import type { ChangedFile, FileListView } from "@laneway/shared"
-import { Fragment, type MouseEvent, type RefObject, useLayoutEffect, useRef } from "react"
+import { Fragment, type KeyboardEvent, type MouseEvent, type RefObject, useLayoutEffect, useRef } from "react"
 import { Button as AriaButton } from "react-aria-components"
 import { Hint, IconButton } from "./controls"
 import { useRowMenu } from "./dense-row"
@@ -33,7 +33,8 @@ interface DiffColumnProps {
 
 /**
  * One list's whole diff beside the column it came from: every file's diff, each under a toolbar that folds it.
- * Choosing a file in the source column scrolls its diff up under the header.
+ * Choosing a file in the source column scrolls its diff up under the header, and the file at the top is marked there
+ * as the column scrolls.
  */
 export let minimumDiffColumnWidth = 380
 
@@ -46,6 +47,17 @@ export function DiffColumn({ view, sourceName, stacked, inspected, listView, ins
     // Its files follow their order and groups in the source list; each diff's path stands in for its folders.
     let ordered = orderedFiles(listed, listView)
     let stopAiming = useArrival(scroller, view, ordered.map(entry => entry.file), inspected)
+    let spy = useScrollSpy(scroller, view, path => inspection.scrolledTo(view.id, path))
+    // Once the user scrolls the column, it stops chasing the chosen file and marks whatever reaches the top.
+    let scrolledByUser = () => {
+        stopAiming()
+        spy.release()
+    }
+    // Only keys that scroll it count: Escape, Tab, and keys a diff's own controls handle leave it aiming.
+    let keyed = (event: KeyboardEvent) => {
+        if (!event.defaultPrevented && scrollingKeys.includes(event.key))
+            scrolledByUser()
+    }
     let title = diffColumnTitle(view, sourceName)
     let fold = (paths: string[], folded: boolean) => {
         // Folding moves the files, so the column stops chasing the one it scrolled to.
@@ -65,6 +77,9 @@ export function DiffColumn({ view, sourceName, stacked, inspected, listView, ins
             tabIndex={-1}
             style={{ width: view.width }}
             aria-label={`${sourceName} diff`}
+            onWheel={scrolledByUser}
+            onPointerDown={scrolledByUser}
+            onKeyDown={keyed}
         >
             <header className="column-header auxiliary-header" onDoubleClick={toggleMaximized}>
                 <Hint text={title}>
@@ -95,7 +110,7 @@ export function DiffColumn({ view, sourceName, stacked, inspected, listView, ins
                     <CloseIcon />
                 </IconButton>
             </header>
-            <div ref={scroller} className="diff-column-files" data-grouped={listView.grouping != "none" || undefined}>
+            <div ref={scroller} className="diff-column-files" data-grouped={listView.grouping != "none" || undefined} onScroll={spy.update}>
                 {files?.error && <p className="column-placeholder" role="alert">{files.error}</p>}
                 {files?.loading && !files.inventory && <p className="column-placeholder" role="status">Reading changes…</p>}
                 {ordered.map(({ file, group }, index) => {
@@ -127,6 +142,8 @@ export function DiffColumn({ view, sourceName, stacked, inspected, listView, ins
         </aside>
     )
 }
+
+let scrollingKeys = ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "]
 
 function DiffColumnFile({ view, file, id, diff, inspection, root, onFold }: {
     view: DiffColumnView
@@ -243,4 +260,52 @@ function highlight(toolbar: HTMLElement | null) {
     void toolbar.offsetWidth
     toolbar.setAttribute("data-arrived", "")
     toolbar.addEventListener("animationend", () => toolbar.removeAttribute("data-arrived"), { once: true })
+}
+
+/**
+ * Reports the file whose diff is at the top of the column's files, after each render and as they scroll. While the
+ * column scrolls to a file chosen in its source column, which stays marked, the files it passes aren't reported;
+ * `release` hands the mark back to the column once the user scrolls it, with the wheel, the keyboard, or the pointer.
+ */
+function useScrollSpy(scroller: RefObject<HTMLElement | null>, view: DiffColumnView, report: (path: string) => void) {
+    let seen = useRef<number>(undefined)
+    let held = useRef(false)
+
+    let update = () => {
+        let element = scroller.current
+        if (held.current || !element)
+            return
+        // Grouped, toolbars pin under the group heading, so a file is at the top where arrival leaves it: under that heading.
+        let toolbar = element.querySelector<HTMLElement>(".diff-toolbar")
+        let top = element.getBoundingClientRect().top + (toolbar ? parseFloat(getComputedStyle(toolbar).top) || 0 : 0)
+        let sections = [...element.querySelectorAll<HTMLElement>("[data-diff-path]")]
+            .map(section => ({ path: section.dataset.diffPath!, top: section.getBoundingClientRect().top - top }))
+        let path = shownFile(sections)
+        if (path)
+            report(path)
+    }
+
+    // Runs after `useArrival` has scrolled to a newly chosen file, and checks again once diffs load and fold.
+    useLayoutEffect(() => {
+        let focus = view.focus
+        if (focus && focus.serial != seen.current) {
+            seen.current = focus.serial
+            held.current = true
+        }
+        update()
+    })
+
+    let release = () => {
+        held.current = false
+    }
+    return { update, release }
+}
+
+/**
+ * The file at the top of a diff column: the last whose section starts at or above the top of the files, given each
+ * section's top relative to it, or the first while none has reached it. A pixel's leeway allows for fractional
+ * scrolling. Files too short to reach the top at the end of the column are only marked by choosing them.
+ */
+export function shownFile(sections: { path: string; top: number }[]) {
+    return (sections.findLast(section => section.top <= 1) ?? sections[0])?.path
 }
