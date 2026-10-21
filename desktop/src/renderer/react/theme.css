@@ -69,6 +69,11 @@
     --warning-border: oklch(from var(--orange) var(--lightness-600) c h);
     --warning-color: oklch(from var(--orange) var(--lightness-1000) c h);
 
+    /* Force publish replaces remote history, so its button is red with light ink rather than amber. */
+    --force-background: var(--highlight-background-invalid);
+    --force-background-pressed: oklch(from var(--highlight-background-invalid) calc(l - 0.06) c h);
+    --force-foreground: white;
+
     /* Workspace Column kinds: the Main Worktree, other worktrees, branches, and recoveries. */
     --identity-main: var(--tint-1000);
     --identity-worktree: oklch(from var(--green) var(--lightness-1000) c h);

@@ -12,6 +12,7 @@ import { createGitSettings, type GitSettings } from "./git-settings"
 import { createInspection, type Inspection } from "./inspection"
 import { createLocalBranches, type LocalBranches } from "./local-branches"
 import { errorMessage, type Notice } from "./notice"
+import { createPublish, type Publish } from "./publish"
 import { createPullLatest, type PullLatest } from "./pull-latest"
 import { createRepositoryEntry, type RepositoryEntry } from "./repository-entry"
 import { createRepositoryIdentityEditor, type RepositoryIdentityEditor } from "./repository-identity"
@@ -61,6 +62,8 @@ export interface AppController extends Store<AppSnapshot> {
     /** Resolving conflicts that rewrites deferred. */
     readonly conflicts: Conflicts
     readonly pull: PullLatest
+    /** Publishing the focused column's stack, which stays outside Operation History. */
+    readonly publish: Publish
     /** Moving and copying files, commits, and branches between columns. */
     readonly composition: Composition
     /** Loads the app state; also retries after a failed start. */
@@ -288,6 +291,15 @@ export function createAppController(api: Api): AppController {
         },
     })
 
+    // A publish changes no local commits, so it leaves the Undo notice for the latest operation in place.
+    let publish = createPublish({
+        api,
+        notify,
+        remote: () => columns.snapshot().graph?.selectedRemote,
+        pull: repositoryId => void pull.start(repositoryId),
+        completed: () => columns.refresh(false),
+    })
+
     let stashes = createStashes({
         api,
         mutating,
@@ -337,6 +349,7 @@ export function createAppController(api: Api): AppController {
         lens,
         conflicts,
         pull,
+        publish,
         composition,
 
         async start() {
@@ -532,6 +545,7 @@ export function createAppController(api: Api): AppController {
             clearTimeout(identitySave)
             composition.dispose()
             pull.dispose()
+            publish.dispose()
             for (let stop of unsubscribe)
                 stop()
             store.clear()
