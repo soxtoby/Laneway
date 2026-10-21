@@ -1,5 +1,5 @@
 import { isText, normalize, previewWorktree, readRegisteredWorktrees } from "@laneway/git"
-import { CommitDraftSchema, type ConflictActionResult, ConflictRequestSchema, DiscardRequestSchema, type DiscardResult, type DiscardUndoResult, type LocalActionResult, LocalRequestSchema, type PullActionResult, type PullProgress, PullRequestSchema, type RecoveryActionResult, RecoveryRequestSchema, type WorktreeActionResult, type WorktreePreviewResult, WorktreeRequestSchema } from "@laneway/shared"
+import { CommitDraftSchema, type ConflictActionResult, ConflictRequestSchema, DiscardRequestSchema, type DiscardResult, type DiscardUndoResult, type HistoricalEditActionResult, HistoricalEditRequestSchema, type LocalActionResult, LocalRequestSchema, type PullActionResult, type PullProgress, PullRequestSchema, type RecoveryActionResult, RecoveryRequestSchema, type WorktreeActionResult, type WorktreePreviewResult, WorktreeRequestSchema } from "@laneway/shared"
 import { ipcMain } from "electron"
 import { mkdtemp, rm, rmdir, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -20,6 +20,7 @@ export function registerOperationHandlers(repositories: OpenRepositories, engine
     registerLocalHandlers()
     registerDiscardHandlers()
     registerWorktreeHandlers()
+    registerHistoricalEditHandlers()
 
     // Discards bypass the engine: they are renames plus one Git call, and stay outside the Operation History.
     function registerDiscardHandlers() {
@@ -234,6 +235,31 @@ export function registerOperationHandlers(repositories: OpenRepositories, engine
                 return commitDrafts.read(repositoryId, draftWorktrees.get(key)!)
             else
                 await commitDrafts.write(repositoryId, draftWorktrees.get(key)!, CommitDraftSchema.parse(value))
+        })
+    }
+
+    // Apply is an ordinary compose request through local:operation; this carries entering, returning, and restarting.
+    function registerHistoricalEditHandlers() {
+        ipcMain.handle("edit:operation", async (_event, repositoryId: unknown, value: unknown): Promise<HistoricalEditActionResult> => {
+            try {
+                if (typeof repositoryId != "string")
+                    throw new Error("Choose a repository.")
+
+                let request = HistoricalEditRequestSchema.parse(value)
+                let repository = repositories.worktreeRepository(repositoryId)
+                let output = await runEngineCommand({
+                    enginePath,
+                    cwd: repository.descriptor.mainWorktree,
+                    args: ["edit", "--request", JSON.stringify(request), "--git-path", repository.descriptor.git.path],
+                }).result
+                let result = output.messages.find(message => message.type == "result" && message.command == "edit")
+                if (output.exitCode || !result || result.type != "result" || result.command != "edit")
+                    throw new Error(output.messages.find(message => message.type == "error")?.message ?? (output.diagnostics || "Historical Edit failed."))
+
+                return { ok: true, result }
+            } catch (error) {
+                return { ok: false, error: { message: error instanceof Error ? error.message : String(error) } }
+            }
         })
     }
 

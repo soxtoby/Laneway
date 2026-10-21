@@ -50,3 +50,5 @@ export let HistoricalEditResultSchema = z.object({
     operation: OperationSummarySchema.optional(),
 })
 export type HistoricalEditResult = z.infer<typeof HistoricalEditResultSchema>
+
+export type HistoricalEditActionResult = { ok: true; result: HistoricalEditResult } | { ok: false; error: { message: string } }
