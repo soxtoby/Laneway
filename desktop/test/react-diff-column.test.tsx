@@ -116,7 +116,17 @@ describe("React diff column", () => {
 
     test("marks the file at the top of its files in the source list as the user scrolls, and the chosen file while it scrolls there", async () => {
         let scenario = inspectionScenario()
-        let app = await startReactApp(scenario.api)
+        // The first file's diff is still loading, so the column keeps aiming at a file chosen below it.
+        let reading: (() => void)[] = []
+        let app = await startReactApp({
+            ...scenario.api,
+            readFileDiff: async (...args) => {
+                let result = await scenario.api.readFileDiff(...args)
+                if (args[2].path == "src/file.txt")
+                    await new Promise<void>(resolve => reading.push(resolve))
+                return result
+            },
+        })
         await app.act(() => press(button(trail(), "Inspect changes")))
         await app.act(() => press(button(trail(), "Show full diff for commit Inspect changes")))
         let column = diffColumn()!
@@ -151,7 +161,11 @@ describe("React diff column", () => {
         await app.act(() => openRow(second()))
         await scroll(100, false)
         expect(marked()).toEqual([false, true])
+        // The user's scrolling stands, even once the diffs above the chosen file have loaded.
         await scroll(100)
+        expect(marked()).toEqual([true, false])
+        await app.act(() => reading.splice(0).forEach(finish => finish()))
+        expect(files.scrollTop).toBe(100)
         expect(marked()).toEqual([true, false])
 
         await app.act(() => press(button(column, "Close diff column")))

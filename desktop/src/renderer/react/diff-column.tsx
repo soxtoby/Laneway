@@ -43,6 +43,11 @@ export function DiffColumn({ view, sourceName, stacked, inspected, inspection, r
     let listed = files?.inventory?.files.filter(file => !file.ignored && (!filter || matchesFilter(filter, file))) ?? []
     let stopAiming = useArrival(scroller, view, listed, inspected)
     let spy = useScrollSpy(scroller, view, path => inspection.scrolledTo(view.id, path))
+    // Once the user scrolls the column, it stops chasing the chosen file and marks whatever reaches the top.
+    let scrolledByUser = () => {
+        stopAiming()
+        spy.release()
+    }
     let title = diffColumnTitle(view, sourceName)
     let fold = (paths: string[], folded: boolean) => {
         // Folding moves the files, so the column stops chasing the one it scrolled to.
@@ -62,9 +67,9 @@ export function DiffColumn({ view, sourceName, stacked, inspected, inspection, r
             tabIndex={-1}
             style={{ width: view.width }}
             aria-label={`${sourceName} diff`}
-            onWheel={spy.release}
-            onPointerDown={spy.release}
-            onKeyDown={spy.release}
+            onWheel={scrolledByUser}
+            onPointerDown={scrolledByUser}
+            onKeyDown={scrolledByUser}
         >
             <header className="column-header auxiliary-header" onDoubleClick={toggleMaximized}>
                 <Hint text={title}>
