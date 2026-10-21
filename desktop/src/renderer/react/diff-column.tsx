@@ -1,9 +1,10 @@
-import type { ChangedFile } from "@laneway/shared"
-import { type KeyboardEvent, type MouseEvent, type RefObject, useLayoutEffect, useRef } from "react"
+import type { ChangedFile, FileListView } from "@laneway/shared"
+import { Fragment, type KeyboardEvent, type MouseEvent, type RefObject, useLayoutEffect, useRef } from "react"
 import { Button as AriaButton } from "react-aria-components"
 import { Hint, IconButton } from "./controls"
 import { useRowMenu } from "./dense-row"
 import { DiffControls, DiffPanel } from "./diff-panel"
+import { orderedFiles } from "./file-list-view"
 import { CopyPathButton, FileLabel, FileMenuItems } from "./file-tree"
 import { ChevronDownIcon, CloseIcon, CollapseAllIcon, ExpandAllIcon, FileStatusIcon, MaximizeIcon, RestoreIcon } from "./icons"
 import { type ColumnInspection, type DiffColumnView, diffKey, type FileDiffState, type Inspection, matchesFilter } from "./inspection"
@@ -18,6 +19,8 @@ interface DiffColumnProps {
     stacked: boolean
     /** What the column it came from shows, whose diffs this column draws. */
     inspected?: ColumnInspection
+    /** How the source column lists its files, whose order and groups this column follows. */
+    listView: FileListView
     inspection: Inspection
     /** The worktree the files live in, enabling "Copy full path". */
     root?: string
@@ -35,13 +38,15 @@ interface DiffColumnProps {
  */
 export let minimumDiffColumnWidth = 380
 
-export function DiffColumn({ view, sourceName, stacked, inspected, inspection, root, maximized, onMaximize, onClose }: DiffColumnProps) {
+export function DiffColumn({ view, sourceName, stacked, inspected, listView, inspection, root, maximized, onMaximize, onClose }: DiffColumnProps) {
     let scroller = useRef<HTMLDivElement>(null)
     let files = inspected?.files[view.group]
     // Its source column's filter narrows it as it does the source's own list.
     let filter = inspected?.filter
     let listed = files?.inventory?.files.filter(file => !file.ignored && (!filter || matchesFilter(filter, file))) ?? []
-    let stopAiming = useArrival(scroller, view, listed, inspected)
+    // Its files follow their order and groups in the source list; each diff's path stands in for its folders.
+    let ordered = orderedFiles(listed, listView)
+    let stopAiming = useArrival(scroller, view, ordered.map(entry => entry.file), inspected)
     let spy = useScrollSpy(scroller, view, path => inspection.scrolledTo(view.id, path))
     // Once the user scrolls the column, it stops chasing the chosen file and marks whatever reaches the top.
     let scrolledByUser = () => {
@@ -105,23 +110,32 @@ export function DiffColumn({ view, sourceName, stacked, inspected, inspection, r
                     <CloseIcon />
                 </IconButton>
             </header>
-            <div ref={scroller} className="diff-column-files" onScroll={spy.update}>
+            <div ref={scroller} className="diff-column-files" data-grouped={listView.grouping != "none" || undefined} onScroll={spy.update}>
                 {files?.error && <p className="column-placeholder" role="alert">{files.error}</p>}
                 {files?.loading && !files.inventory && <p className="column-placeholder" role="status">Reading changes…</p>}
-                {listed.map(file => {
+                {ordered.map(({ file, group }, index) => {
                     let id = diffKey(view.group, file.path)
                     let diff = inspected?.diffs[id]
-                    return diff && (
-                        <DiffColumnFile
-                            key={file.path}
-                            view={view}
-                            file={file}
-                            id={id}
-                            diff={diff}
-                            inspection={inspection}
-                            root={root}
-                            onFold={folded => fold([file.path], folded)}
-                        />
+                    return (
+                        <Fragment key={file.path}>
+                            {group != ordered[index - 1]?.group && (
+                                <h3 className="diff-column-group">
+                                    {group}
+                                    <span className="file-group-count">{ordered.filter(entry => entry.group == group).length}</span>
+                                </h3>
+                            )}
+                            {diff && (
+                                <DiffColumnFile
+                                    view={view}
+                                    file={file}
+                                    id={id}
+                                    diff={diff}
+                                    inspection={inspection}
+                                    root={root}
+                                    onFold={folded => fold([file.path], folded)}
+                                />
+                            )}
+                        </Fragment>
                     )
                 })}
             </div>
@@ -220,12 +234,15 @@ function useArrival(scroller: RefObject<HTMLElement | null>, view: DiffColumnVie
         let target = [...element.querySelectorAll<HTMLElement>("[data-diff-path]")].find(candidate => candidate.dataset.diffPath == focus.path)
         if (!aiming.current || !target)
             return
+        let toolbar = target.querySelector<HTMLElement>(".diff-toolbar")
+        // Under a group's heading the toolbar pins below it, so the file stops there to keep the heading in view.
+        let pinned = toolbar ? parseFloat(getComputedStyle(toolbar).top) || 0 : 0
         element.scrollTo({
-            top: element.scrollTop + target.getBoundingClientRect().top - element.getBoundingClientRect().top,
+            top: element.scrollTop + target.getBoundingClientRect().top - element.getBoundingClientRect().top - pinned,
             behavior: arrived && !matchMedia("(prefers-reduced-motion: reduce)").matches ? "smooth" : "instant",
         })
         if (arrived)
-            highlight(target.querySelector<HTMLElement>(".diff-toolbar"))
+            highlight(toolbar)
         let above = listed.slice(0, listed.findIndex(file => file.path == focus.path) + 1)
         if (above.every(file => !inspected?.diffs[diffKey(view.group, file.path)]?.loading))
             aiming.current = false
@@ -258,7 +275,9 @@ function useScrollSpy(scroller: RefObject<HTMLElement | null>, view: DiffColumnV
         let element = scroller.current
         if (held.current || !element)
             return
-        let top = element.getBoundingClientRect().top
+        // Grouped, toolbars pin under the group heading, so a file is at the top where arrival leaves it: under that heading.
+        let toolbar = element.querySelector<HTMLElement>(".diff-toolbar")
+        let top = element.getBoundingClientRect().top + (toolbar ? parseFloat(getComputedStyle(toolbar).top) || 0 : 0)
         let sections = [...element.querySelectorAll<HTMLElement>("[data-diff-path]")]
             .map(section => ({ path: section.dataset.diffPath!, top: section.getBoundingClientRect().top - top }))
         let path = shownFile(sections)

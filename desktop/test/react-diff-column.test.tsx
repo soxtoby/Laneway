@@ -114,6 +114,39 @@ describe("React diff column", () => {
         expect(document.querySelectorAll(".diff-panel")).toHaveLength(0)
     })
 
+    test("lists its files in the order and groups of its source list, following the list's view as it changes", async () => {
+        let scenario = inspectionScenario(["file.test.ts", "src/file.txt", "other.txt"])
+        let app = await startReactApp(scenario.api)
+        await app.act(() => press(button(trail(), "Inspect changes")))
+        await app.act(() => press(button(trail(), "Show full diff for commit Inspect changes")))
+        let column = diffColumn()!
+        expect(listing(column)).toEqual(["file.test.ts", "src/file.txt", "other.txt"])
+
+        await app.act(() => app.controller.setFileListView({ layout: "flat", grouping: "kind" }))
+        expect(listing(column)).toEqual(["# Implementation", "src/file.txt", "other.txt", "# Tests", "file.test.ts"])
+        // Folders list before the files beside them.
+        await app.act(() => app.controller.setFileListView({ layout: "tree", grouping: "none" }))
+        expect(listing(column)).toEqual(["src/file.txt", "file.test.ts", "other.txt"])
+    })
+
+    test("reads its files' diffs in the order its source list shows them", async () => {
+        let scenario = inspectionScenario(["file.test.ts", "src/file.txt", "other.txt"])
+        let read: string[] = []
+        let app = await startReactApp({
+            ...scenario.api,
+            readFileDiff: async (...args) => {
+                read.push(args[2].path)
+                return scenario.api.readFileDiff(...args)
+            },
+        })
+        await app.act(() => app.controller.setFileListView({ layout: "flat", grouping: "kind" }))
+        await app.act(() => press(button(trail(), "Inspect changes")))
+
+        await app.act(() => press(button(trail(), "Show full diff for commit Inspect changes")))
+
+        expect(read).toEqual(["src/file.txt", "other.txt", "file.test.ts"])
+    })
+
     test("marks the file at the top of its files in the source list as the user scrolls, and the chosen file while it scrolls there", async () => {
         let scenario = inspectionScenario()
         // The first file's diff is still loading, so the column keeps aiming at a file chosen below it.
@@ -384,6 +417,12 @@ function diffColumn() {
 
 function diffPaths(column: HTMLElement) {
     return [...column.querySelectorAll<HTMLElement>("[data-diff-path]")].map(element => element.dataset.diffPath)
+}
+
+// Its group headings, marked with "#", among the paths of its files' diffs.
+function listing(column: HTMLElement) {
+    return [...column.querySelectorAll<HTMLElement>(".diff-column-files > h3, [data-diff-path]")]
+        .map(element => element.dataset.diffPath ?? `# ${element.firstChild!.textContent}`)
 }
 
 function file(column: HTMLElement, path: string) {

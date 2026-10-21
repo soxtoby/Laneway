@@ -323,10 +323,12 @@ type AuxiliaryValue = DiffColumnState | HistoryColumnState | CommitColumnState
 interface InspectionOptions {
     api: Api
     notify(notice: Notice): () => void
+    /** Puts a list's files in the order its rows show them, the order a diff column reads their diffs in. */
+    displayOrder(files: ChangedFile[]): ChangedFile[]
 }
 
 /** The files and commits each Workspace Column shows, read from Git as the column needs them. */
-export function createInspection({ api, notify }: InspectionOptions): Inspection {
+export function createInspection({ api, notify, displayOrder }: InspectionOptions): Inspection {
     let store = createStore<InspectionSnapshot>({ columns: {}, auxiliary: {}, wrapLines: false })
     let repositories = new Map<string, Map<string, ColumnState>>()
     let graphs = new Map<string, BranchGraph>()
@@ -663,11 +665,13 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
     }
 
     // A diff column shows every file of its list, opening the diffs that aren't open yet.
+    // It starts their reads in the list's order, so the files at its top tend to arrive first; they still run at once
+    // and may finish in any order. Reads started before the list's view changes keep the order they started in.
     function populate(state: ColumnState, column: DiffColumnState) {
         let files = state.files[column.group]
         if (files?.error)
             return
-        for (let file of files?.inventory?.files ?? []) {
+        for (let file of displayOrder(files?.inventory?.files ?? [])) {
             let key = diffKey(column.group, file.path)
             if (file.ignored)
                 continue
@@ -1102,9 +1106,10 @@ export function createInspection({ api, notify }: InspectionOptions): Inspection
             }
             let shown = Object.values(state.diffs).findLast(diff => diff.group.startsWith("working"))
             let group = shown?.group ?? (state.files["working-staged"]?.inventory?.files.some(file => !file.ignored) ? "working-staged" : "working-unstaged")
-            let path = shown?.path ?? state.files[group]?.inventory?.files.find(file => !file.ignored)?.path
-            if (path)
-                void showDiffColumn(state, group, path, undefined, true)
+            // Without a diff open it starts at the top, which the file list's view may give to any of its files.
+            let listed = shown != undefined || state.files[group]?.inventory?.files.some(file => !file.ignored)
+            if (listed)
+                void showDiffColumn(state, group, shown?.path, undefined, true)
         },
 
         closeAuxiliary(id) {
