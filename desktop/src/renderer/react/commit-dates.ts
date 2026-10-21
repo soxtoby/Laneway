@@ -15,7 +15,7 @@ export function commitAge(authoredAt: number, now = new Date(), locales?: Intl.L
         ? units("day", minutes / (24 * 60), locales)
         : date.getFullYear() == now.getFullYear()
         ? new Intl.DateTimeFormat(locales, { month: "short", day: "numeric" }).format(date)
-        : String(date.getFullYear())
+        : new Intl.DateTimeFormat(locales, { year: "numeric" }).format(date)
 }
 
 function units(unit: string, count: number, locales?: Intl.LocalesArgument) {

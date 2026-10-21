@@ -16,6 +16,12 @@ describe("commitAge", () => {
         expect(result).toEqual(["Oct 14", "Jan 1", "2025"])
     })
 
+    test("shows an earlier year in the locale's own digits", () => {
+        let result = commitAge(seconds(new Date(2025, 11, 31, 23, 59)), now, "ar-EG")
+
+        expect(result).toBe("٢٠٢٥")
+    })
+
     test("shows a commit under a minute old, or dated ahead of the clock, as now", () => {
         let result = [minutesAgo(0.9), minutesAgo(-90)].map(age)
 
