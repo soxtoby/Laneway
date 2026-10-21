@@ -166,6 +166,17 @@ export function fakeLaneway(overrides: Partial<Window["laneway"]> = {}): Window[
         pullLatest: async () => ({ ok: false, error: { message: "Pull latest unavailable" } }),
         cancelPull: async () => false,
         onPullProgress: () => () => undefined,
+        publish: async () => ({
+            ok: true,
+            result: {
+                type: "result",
+                command: "publish",
+                status: "nothing",
+                message: "Everything in this stack is already published.",
+                plan: { stack: ["main", "feature/laneway"], updates: [], token: "fixture" },
+            },
+        }),
+        onPublishProgress: () => () => undefined,
         readConflictContent: async () => null,
         conflictOperation: async () => ({ ok: true, result: { type: "result", command: "conflict", conflicts: [], recovery: [] } }),
         localOperation: async () => ({

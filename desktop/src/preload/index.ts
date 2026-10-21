@@ -6,6 +6,7 @@ import type { CommitDraft, LocalRequest } from "@laneway/shared"
 import type { DiscardRequest } from "@laneway/shared"
 import type { ConflictRequest } from "@laneway/shared"
 import type { PullProgress, PullRequest } from "@laneway/shared"
+import type { PublishProgress, PublishRequest } from "@laneway/shared"
 import type { RecoveryRequest } from "@laneway/shared"
 import { contextBridge, ipcRenderer } from "electron"
 
@@ -17,6 +18,12 @@ contextBridge.exposeInMainWorld("laneway", {
         let handler = (_event: Electron.IpcRendererEvent, progress: PullProgress) => listener(progress)
         ipcRenderer.on("pull:progress", handler)
         return () => ipcRenderer.off("pull:progress", handler)
+    },
+    publish: (repositoryId: string, request: PublishRequest) => ipcRenderer.invoke("publish:run", repositoryId, request),
+    onPublishProgress: (listener: (progress: PublishProgress) => void) => {
+        let handler = (_event: Electron.IpcRendererEvent, progress: PublishProgress) => listener(progress)
+        ipcRenderer.on("publish:progress", handler)
+        return () => ipcRenderer.off("publish:progress", handler)
     },
     readConflictContent: (repositoryId: string, object: string) => ipcRenderer.invoke("conflict:content", repositoryId, object),
     conflictOperation: (repositoryId: string, request: ConflictRequest) => ipcRenderer.invoke("conflict:operation", repositoryId, request),

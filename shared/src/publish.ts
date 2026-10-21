@@ -78,3 +78,12 @@ export function publishReceiptStatus(receipt: PublishReceipt): "published" | "pa
         ? "partial"
         : "failed"
 }
+
+export interface PublishProgress {
+    repositoryId: string
+    message: string
+    completed: number
+    total: number
+}
+
+export type PublishActionResult = { ok: true; result: PublishResult } | { ok: false; error: { message: string } }

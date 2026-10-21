@@ -5,6 +5,7 @@ import type { CommitDraft, LocalActionResult, LocalRequest } from "@laneway/shar
 import type { DiscardRequest, DiscardResult, DiscardUndoResult } from "@laneway/shared"
 import type { ConflictActionResult, ConflictRequest } from "@laneway/shared"
 import type { PullActionResult, PullProgress, PullRequest } from "@laneway/shared"
+import type { PublishActionResult, PublishProgress, PublishRequest } from "@laneway/shared"
 import type { RecoveryActionResult, RecoveryRequest } from "@laneway/shared"
 
 interface EngineStatusReady {
@@ -41,6 +42,9 @@ declare global {
             pullLatest(repositoryId: string, request: PullRequest): Promise<PullActionResult>
             cancelPull(repositoryId: string): Promise<boolean>
             onPullProgress(listener: (progress: PullProgress) => void): () => void
+            /** Plans, publishes, resumes, or restores a stack's publication; plans run alongside a publish. */
+            publish(repositoryId: string, request: PublishRequest): Promise<PublishActionResult>
+            onPublishProgress(listener: (progress: PublishProgress) => void): () => void
             readConflictContent(repositoryId: string, object: string): Promise<string | null>
             conflictOperation(repositoryId: string, request: ConflictRequest): Promise<ConflictActionResult>
             previewWorktree(repositoryId: string, request: WorktreeRequest): Promise<WorktreePreviewResult>

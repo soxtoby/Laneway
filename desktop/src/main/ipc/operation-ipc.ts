@@ -1,6 +1,6 @@
 import { isText, normalize, previewWorktree, readRegisteredWorktrees } from "@laneway/git"
-import { CommitDraftSchema, type ConflictActionResult, ConflictRequestSchema, DiscardRequestSchema, type DiscardResult, type DiscardUndoResult, type LocalActionResult, LocalRequestSchema, type PullActionResult, type PullProgress, PullRequestSchema, type RecoveryActionResult, RecoveryRequestSchema, type WorktreeActionResult, type WorktreePreviewResult, WorktreeRequestSchema } from "@laneway/shared"
-import { ipcMain } from "electron"
+import { CommitDraftSchema, type ConflictActionResult, ConflictRequestSchema, DiscardRequestSchema, type DiscardResult, type DiscardUndoResult, type LocalActionResult, LocalRequestSchema, type PublishActionResult, type PublishProgress, type PublishRequest, PublishRequestSchema, type PullActionResult, type PullProgress, PullRequestSchema, type RecoveryActionResult, RecoveryRequestSchema, type WorktreeActionResult, type WorktreePreviewResult, WorktreeRequestSchema } from "@laneway/shared"
+import { ipcMain, type WebContents } from "electron"
 import { mkdtemp, rm, rmdir, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -14,9 +14,12 @@ export function registerOperationHandlers(repositories: OpenRepositories, engine
     let conflictInspections = new Map<string, ConflictActionResult>()
     // One Pull latest per repository; cancellation stops at the next safe boundary.
     let activePulls = new Map<string, { cancel(): void }>()
+    // One Publish per repository; reading plans goes on alongside.
+    let activePublishes = new Set<string>()
     let discards = new WorkingDiscards(repositoryId => repositories.worktreeRepository(repositoryId))
     registerConflictHandlers()
     registerPullHandlers()
+    registerPublishHandlers()
     registerLocalHandlers()
     registerDiscardHandlers()
     registerWorktreeHandlers()
@@ -169,6 +172,50 @@ export function registerOperationHandlers(repositories: OpenRepositories, engine
         } else {
             throw new Error(output.messages.find(message => message.type == "error")?.message ?? output.diagnostics ?? "Pull latest failed.")
         }
+    }
+
+    // Publish runs outside the mutation lock and Operation History, so it never waits for, or blocks, local operations.
+    function registerPublishHandlers() {
+        ipcMain.handle("publish:run", async (event, repositoryId: unknown, value: unknown): Promise<PublishActionResult> => {
+            try {
+                if (typeof repositoryId != "string")
+                    throw new Error("Choose a repository.")
+                let request = PublishRequestSchema.parse(value)
+                if (request.action == "plan")
+                    return await runPublish(event.sender, repositoryId, request)
+                if (activePublishes.has(repositoryId))
+                    throw new Error("A publish is already running for this repository.")
+
+                activePublishes.add(repositoryId)
+                try {
+                    return await runPublish(event.sender, repositoryId, request)
+                } finally {
+                    activePublishes.delete(repositoryId)
+                }
+            } catch (error) {
+                return { ok: false, error: { message: error instanceof Error ? error.message : String(error) } }
+            }
+        })
+    }
+
+    async function runPublish(sender: WebContents, repositoryId: string, request: PublishRequest): Promise<PublishActionResult> {
+        let repository = repositories.worktreeRepository(repositoryId)
+        let output = await runEngineCommand({
+            enginePath,
+            cwd: repository.descriptor.mainWorktree,
+            args: ["publish", "--request", JSON.stringify(request), "--git-path", repository.descriptor.git.path],
+            onMessage: message => {
+                if (message.type == "progress" && !sender.isDestroyed()) {
+                    let progress: PublishProgress = { repositoryId, message: message.message, completed: message.completed, total: message.total }
+                    sender.send("publish:progress", progress)
+                }
+            },
+        }).result
+        // Anything left unpublished exits with status 1, still reporting its result.
+        let result = output.messages.find(message => message.type == "result" && message.command == "publish")
+        if (result?.type != "result" || result.command != "publish")
+            throw new Error(output.messages.find(message => message.type == "error")?.message ?? (output.diagnostics || "Publish failed."))
+        return { ok: true, result }
     }
 
     function registerLocalHandlers() {
