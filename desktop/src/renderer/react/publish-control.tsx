@@ -209,7 +209,8 @@ export function PublishDialog({ publish, repositoryId }: { publish: Publish; rep
     let outcome = open ?? last
     let result = outcome?.result
     let receipt = result?.receipt
-    let status = receipt && publishReceiptStatus(receipt)
+    // A Resume refused before pushing, for an Unresolved Stack, returns the receipt as it was; its reason is the summary.
+    let status = receipt && result?.status != "blocked" ? publishReceiptStatus(receipt) : undefined
     let resumable = status == "partial" || status == "failed"
     return (
         <Modal isOpen={open != undefined} isDismissable onOpenChange={isOpen => isOpen || publish.close(outcome!.repositoryId)}>

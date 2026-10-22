@@ -146,6 +146,19 @@ describe("React Publish", () => {
         }])
     })
 
+    test("a Resume refused for an Unresolved Stack gives the reason without offering Resume again", async () => {
+        let partial = receipt([{ ...one, status: "published" }, { ...feature, status: "failed" }])
+        let { app } = await startPublishing(request =>
+            request.action == "plan" ? planned([feature], partial) : result("blocked", "Resolve this stack's conflicts before publishing.", partial)
+        )
+
+        await app.act(() => press(button(control(), "Resume")))
+
+        let outcome = document.querySelector<HTMLElement>(".publish-outcome")!
+        expect(outcome.querySelector(".publish-summary")?.textContent).toBe("Resolve this stack's conflicts before publishing.")
+        expect([...outcome.querySelectorAll("button")].map(element => element.textContent)).toEqual(["Close"])
+    })
+
     test("restoration lists what it force publishes, deleting created branches, and focus stays in the column once it has restored", async () => {
         let published = receipt([{ ...one, status: "published" }, { ...feature, status: "published" }])
         let restored = false
@@ -275,7 +288,7 @@ function planned(updates: PublishUpdate[], latest?: PublishReceipt): PublishActi
     }
 }
 
-function result(status: "published" | "partial" | "stale", message: string, published?: PublishReceipt): PublishActionResult {
+function result(status: "published" | "partial" | "stale" | "blocked", message: string, published?: PublishReceipt): PublishActionResult {
     return { ok: true, result: { type: "result", command: "publish", status, message, receipt: published } }
 }
 
