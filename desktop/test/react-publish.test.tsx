@@ -113,6 +113,19 @@ describe("React Publish", () => {
         expect(document.activeElement == publish).toBe(true)
     })
 
+    test("while a publish runs, each pending button keeps its action's name and names its progress", async () => {
+        let partial = receipt([{ ...one, status: "published" }, { ...feature, status: "failed" }])
+        let { app } = await startPublishing(request => request.action == "plan" ? planned([feature], partial) : new Promise(() => {}))
+
+        await app.act(() => press(button(control(), "Resume")))
+
+        expect([...control().querySelectorAll("button")].map(accessibleName)).toEqual([
+            "Publish Publishing…",
+            "Resume Resuming…",
+            "Force publish earlier tips Restoring…",
+        ])
+    })
+
     test("a partial publish's receipt offers Resume after a restart, and an outcome that stops again offers it too", async () => {
         let partial = receipt([{ ...one, status: "published" }, { ...feature, status: "failed", message: "[remote rejected] (pre-receive hook declined)" }])
         let { app, requests } = await startPublishing(request =>
@@ -214,6 +227,11 @@ function repositoryEntry(path: string, branches: string[]) {
 
 function control() {
     return document.querySelector<HTMLElement>(".publish-control")!
+}
+
+// Happy DOM computes no accessible names, so this follows a button's aria-labelledby to each part's label.
+function accessibleName(element: Element) {
+    return element.getAttribute("aria-labelledby")!.split(" ").map(id => document.getElementById(id)?.getAttribute("aria-label")).join(" ")
 }
 
 function destinations(list = "Destinations") {

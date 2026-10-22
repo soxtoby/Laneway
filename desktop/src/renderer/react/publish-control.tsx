@@ -54,8 +54,10 @@ export function PublishControl({ publish, repositoryId, branch, graph, busy }: {
     let plan = current?.plan
     let progress = running[repositoryId]
     // While a publish runs its controls stay, pending, so the one pressed keeps focus for the outcome to return to.
+    // Each keeps its name while its label gives way to progress, so it is labelled as well as showing that text.
     let pending = progress != undefined
     let force = plan?.updates.some(update => update.kind == "force")
+    let label = force ? "Force publish" : "Publish"
     let reason = current?.error ?? plan?.blocked
         ?? (!plan ? "Reading what this stack would publish…" : plan.updates.length == 0 ? "Everything in this stack is already published." : undefined)
     return (
@@ -69,10 +71,12 @@ export function PublishControl({ publish, repositoryId, branch, graph, busy }: {
                             data-force={force || undefined}
                             isDisabled={!pending && (busy || reason != undefined)}
                             isPending={pending}
+                            aria-label={label}
+                            pendingLabel="Publishing…"
                             onPress={() => void publish.publish()}
                         >
                             <PublishIcon />
-                            {force ? "Force publish" : "Publish"}
+                            {label}
                         </Button>
                     </span>
                 </Hint>
@@ -151,6 +155,8 @@ function LatestReceipt({ publish, repositoryId, receipt, busy, pending }: {
                             variant="secondary"
                             isDisabled={!pending && busy}
                             isPending={pending}
+                            aria-label="Resume"
+                            pendingLabel="Resuming…"
                             onPress={() => void publish.resume(repositoryId, receipt.id)}
                         >
                             Resume
@@ -168,6 +174,8 @@ function LatestReceipt({ publish, repositoryId, receipt, busy, pending }: {
                             data-force
                             isDisabled={!pending && busy}
                             isPending={pending}
+                            aria-label="Force publish earlier tips"
+                            pendingLabel="Restoring…"
                             onPress={() => void publish.restore(repositoryId, receipt.id)}
                         >
                             Force publish earlier tips
