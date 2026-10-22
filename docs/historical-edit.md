@@ -83,7 +83,8 @@ Entry, a clean Return, and Restart run inside a journaled checkpoint that is nev
   - A banner says "Editing from <subject> on <branch>" and offers **Return to <branch>**. A paused session shows why and waits. A stale one shows why and adds **Restart on latest**.
   - **Apply changes** replaces Commit…. It moves the lines chosen in one diff, otherwise the chosen files, otherwise everything, as an ordinary `compose` transfer into `{ objectId: session.commit, branch: session.branch }`. Its review, when composition needs one, shows in the banner.
   - Drags use every ordinary destination. The edited commit's row is marked **Editing**.
-  - The `Working Changes before Historical Edit` stash shows as the session's marker without Apply or Drop, because Return restores it.
+  - The `Working Changes before Historical Edit` stash shows as the session's marker without Apply or Drop, because Return restores it. That holds in whichever column shows it, including a branch another worktree checked out meanwhile.
+  - The worktree offers no Switch branch… or Remove worktree, takes no branch dropped on its header, and isn't listed as a checkout destination, because the Engine refuses those until it returns.
 - **Returning.** Return reads the worktree's Working Changes afresh, from its current path, to decide. A clean return goes at once. With Historical Working Changes left, or when they can't be read, a dialog offers **Drop**, **Bring along**, or **Cancel**, because the choice blocks progress. Drop and Bring along are recorded operations, so their notice offers Undo. Entry, a clean return, and Restart record nothing and offer no Undo.
 - **IPC.** `edit:operation` runs `lane edit --request <JSON>`. Apply uses the existing `local:operation` transport.
 

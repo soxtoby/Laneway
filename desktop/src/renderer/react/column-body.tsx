@@ -9,6 +9,7 @@ import { HistoricalEditBanner } from "./historical-edit-banner"
 import type { ColumnInspection } from "./inspection"
 import { TransferScopeContext } from "./transfer"
 import { FileList, StashedChanges, WorkingChanges } from "./working-changes"
+import { allWorktrees } from "./worktree-controls"
 
 interface ColumnBodyProps {
     controller: AppController
@@ -71,6 +72,7 @@ export function ColumnBody({ controller, repositoryId, graph, column, inspected,
                             inspection={inspection}
                             createComposer={() => controller.composer(repositoryId, column.id, path, blocked)}
                             blocked={blocked}
+                            sessionStashes={allWorktrees(graph).flatMap(worktree => worktree.historicalEdit?.stash ?? [])}
                             view={view}
                             onViewChange={onViewChange}
                         />

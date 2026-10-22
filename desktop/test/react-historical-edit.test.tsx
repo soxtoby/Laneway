@@ -164,6 +164,26 @@ describe("React Historical Edit", () => {
         expect(button(banner(), "Return to feature/laneway").hasAttribute("disabled")).toBe(true)
         expect(button(working(), "Apply changes").hasAttribute("disabled")).toBe(true)
     })
+
+    test("a session whose branch another worktree checked out keeps editing in its own column, but can't switch branch, go away, or lose its stash", async () => {
+        let scenario = sessionAside(inspectionScenario())
+        let app = await startReactApp(editing(scenario).api)
+        let session = columnElement("virtual:session")
+
+        expect(session.querySelector("[aria-label='Historical Edit']")?.textContent).toContain("Editing from Inspect changes on feature/laneway")
+        expect(button(session, "Apply changes").hasAttribute("disabled")).toBe(false)
+        expect(button(session, "Return to feature/laneway").hasAttribute("disabled")).toBe(false)
+        let branch = columnElement(scenario.graph.branches[1]!.id)
+        expect(branch.textContent).toContain("stash@{0}")
+        expect(branch.querySelector("[aria-label='Apply stash stash@{0}']") == null).toBe(true)
+        expect(branch.querySelector("[aria-label='Drop stash stash@{0}']") == null).toBe(true)
+
+        await app.act(() => press(button(session, "Worktree actions")))
+
+        expect(menuItems()).toContain("Copy worktree path")
+        expect(menuItems()).not.toContain("Switch branch…")
+        expect(menuItems()).not.toContain("Remove worktree")
+    })
 })
 
 /** The scenario's worktree, editing from its branch's only commit. */
@@ -182,6 +202,35 @@ function inSession(scenario: ReturnType<typeof inspectionScenario>, change: Part
         subject: "Inspect changes",
         ...change,
     }
+    return scenario
+}
+
+/**
+ * A linked worktree editing from the branch's only commit, with its earlier changes stashed on the branch, after the
+ * main worktree checked that branch out.
+ */
+function sessionAside(scenario: ReturnType<typeof inspectionScenario>) {
+    let branch = scenario.graph.branches[1]!
+    let path = "D:\\Source\\session"
+    let stash = {
+        id: "stash-0",
+        kind: "stash" as const,
+        label: "stash@{0}",
+        objectId: "3".repeat(40),
+        tooltip: "On feature/laneway: Working Changes before Historical Edit",
+    }
+    inSession(scenario, { worktreeId: "session", path, stash: stash.objectId })
+    let { historicalEdit, ...main } = branch.checkedOut[0]!
+    branch.checkedOut = [main]
+    branch.markers = [stash]
+    scenario.graph.virtualBranches = [{
+        kind: "virtual",
+        id: "virtual:session",
+        name: "session",
+        objectId: branch.tip,
+        worktree: { id: "session", path, name: "session", head: branch.tip, main: false, historicalEdit },
+        tooltip: "Detached worktree",
+    }]
     return scenario
 }
 
@@ -213,6 +262,10 @@ function editing(scenario: ReturnType<typeof inspectionScenario>, recorded = fal
 
 function banner() {
     return document.querySelector<HTMLElement>("[aria-label='Historical Edit']")!
+}
+
+function columnElement(id: string) {
+    return document.querySelector<HTMLElement>(`[data-column-id='${id}']`)!
 }
 
 function working() {

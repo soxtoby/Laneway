@@ -31,6 +31,8 @@ interface WorkingChangesProps {
     /** Called once; the composer lives as long as this view. */
     createComposer(): CommitComposer
     blocked: boolean
+    /** Every Historical Edit's stash, in any worktree. */
+    sessionStashes: string[]
     view: FileListView
     onViewChange(view: FileListView): void
 }
@@ -40,7 +42,7 @@ interface WorkingChangesProps {
  * it; a clean worktree folds to one quiet row. A detached worktree also shows the branch its next
  * commit creates. In a Historical Edit, the changes apply to the edited commit instead of committing.
  */
-export function WorkingChanges({ column, path, inspected, inspection, createComposer, blocked, view, onViewChange }: WorkingChangesProps) {
+export function WorkingChanges({ column, path, inspected, inspection, createComposer, blocked, sessionStashes, view, onViewChange }: WorkingChangesProps) {
     let [composer] = useState(createComposer)
     useEffect(() => void composer.start(), [composer])
     let state = useSnapshot(composer)
@@ -107,8 +109,9 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
                         inspection={inspection}
                         view={view}
                         root={path}
-                        // A Historical Edit's own stash comes back when it returns, so it stays as it is until then.
-                        actions={stash.objectId == edit?.stash
+                        // A Historical Edit's own stash comes back when it returns, so it stays as it is until then,
+                        // including on a branch another worktree checked out meanwhile.
+                        actions={sessionStashes.includes(stash.objectId)
                             ? undefined
                             : { disabled, apply: () => void composer.applyStash(stash.objectId), drop: () => void composer.dropStash(stash.objectId) }}
                     />
