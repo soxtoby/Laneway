@@ -330,6 +330,23 @@ test("a receipt whose recorded identifier is not its file name is never resumed"
     expect(await Bun.file(join(local, ".git", "forged.json")).exists()).toBe(false)
 }, 120_000)
 
+test("Resume keeps the receipt it resumes on disk while pushing when it is the oldest of more than 100 finished receipts", async () => {
+    let { local } = await fixture()
+    let hook = join(local, ".git", "hooks", "pre-push")
+    await writeHook(hook, "exit 1")
+    await advance(local, "one")
+    let failed = (await publish(local, { action: "publish", branch: "refs/heads/one" })).receipt!
+    let updates = failed.updates.map(update => ({ ...update, branch: "elsewhere", ref: "refs/heads/elsewhere", status: "published" }))
+    let newer = Array.from({ length: 100 }, (_, index) => `${failed.id}-${String(index).padStart(3, "0")}`)
+    await Promise.all(newer.map(id => writeFile(join(local, ".git", "laneway", "publish", `${id}.json`), JSON.stringify({ ...failed, id, updates }))))
+    // A crash during the push would leave the remote changed with whatever receipt is on disk now.
+    await writeHook(hook, `test -f .git/laneway/publish/${failed.id}.json`)
+
+    let resumed = await publish(local, { action: "resume", receipt: failed.id })
+
+    expect(resumed.status).toBe("published")
+}, 120_000)
+
 test("the command line and the request transport both exit with failure when a stale lease publishes nothing", async () => {
     let { other, local } = await fixture()
     await advance(local, "one", "two")
