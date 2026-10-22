@@ -165,6 +165,28 @@ test("Resume publishes nothing more once a branch it already published has moved
     expect(tip(origin, "two")).toBe(before)
 }, 120_000)
 
+test("Resume pushes nothing to any remote when the remote holding the receipt's published updates cannot be read", async () => {
+    let { origin, local } = await fixture()
+    let fork = join(origin, "..", "fork.git")
+    git(local, "clone", "-q", "--bare", origin, fork)
+    git(local, "remote", "add", "fork", fork)
+    git(local, "fetch", "-q", "fork")
+    git(local, "branch", "-q", "--set-upstream-to=fork/two", "two")
+    await refuseOnRemote(fork, "two")
+    await advance(local, "one", "two")
+    let result = await publish(local, { action: "publish", branch: "refs/heads/two" })
+    expect(result.receipt?.updates.map(update => [update.remote, update.status])).toEqual([["origin", "published"], ["fork", "failed"]])
+    let before = tip(fork, "two")
+    await rm(join(fork, "hooks", "pre-receive"))
+    git(local, "config", "remote.origin.pushurl", join(origin, "..", "missing.git"))
+
+    let resumed = await publish(local, { action: "resume", receipt: result.receipt!.id })
+
+    expect(resumed.receipt?.updates.map(update => update.status)).toEqual(["published", "failed"])
+    expect(resumed.receipt?.updates[1]?.message).toContain("missing.git")
+    expect(tip(fork, "two")).toBe(before)
+}, 120_000)
+
 test("a publish cancelled before pushing publishes nothing, and restoration finds an update that reached the remote unrecorded", async () => {
     let { origin, local } = await fixture()
     let before = tip(origin, "one")
@@ -182,6 +204,20 @@ test("a publish cancelled before pushing publishes nothing, and restoration find
     expect(restored.status).toBe("published")
     expect(restored.receipt?.updates.map(update => update.branch)).toEqual(["one"])
     expect(tip(origin, "one")).toBe(before)
+}, 120_000)
+
+test("restoration of an interrupted publish fails with Git's diagnostics when the remote cannot be read", async () => {
+    let { origin, local } = await fixture()
+    await advance(local, "one", "two")
+    let interrupted = await publish(local, { action: "publish", branch: "refs/heads/two" }, { isCancelled: () => true, wait: async () => true })
+    // As if a push of one reached the remote and a crash lost its outcome.
+    git(local, "push", "-q", origin, "one:refs/heads/one")
+    git(local, "config", "remote.origin.pushurl", join(origin, "..", "missing.git"))
+
+    let result = await publish(local, { action: "restore", receipt: interrupted.receipt!.id })
+
+    expect(result.status).toBe("failed")
+    expect(result.receipt?.updates[0]?.message).toContain("missing.git")
 }, 120_000)
 
 test("a stale lease aborts the whole publish and points to Pull latest", async () => {
