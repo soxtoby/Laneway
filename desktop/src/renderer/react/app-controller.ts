@@ -291,10 +291,11 @@ export function createAppController(api: Api): AppController {
         },
     })
 
-    // A publish changes no local commits, so it leaves the Undo notice for the latest operation in place.
+    // A publish changes no local commits, so it leaves the Undo notice for the latest operation in place: its
+    // confirmation doesn't replace a notice offering Undo, which would withdraw it and settle pending discards.
     let publish = createPublish({
         api,
-        notify,
+        notify: notice => ready()?.notice?.action ? undefined : notify(notice),
         remote: () => columns.snapshot().graph?.selectedRemote,
         pull: repositoryId => void pull.start(repositoryId),
         completed: () => columns.refresh(false),

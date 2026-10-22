@@ -142,6 +142,27 @@ describe("app controller", () => {
         expect(controller.columns.snapshot()).not.toBe(shown)
     })
 
+    test("a publish confirmed in passing leaves a pending discard's Undo notice showing, unsettled", async () => {
+        let scenario = inspectionScenario()
+        let settled: string[] = []
+        let controller = await started(fakeLaneway({
+            ...scenario.api,
+            discardChanges: async () => ({ ok: true, id: "discard-1", undoable: true }),
+            settleDiscard: async (_id, id) => void settled.push(id),
+            publish: async () => ({ ok: true, result: { type: "result", command: "publish", status: "published", message: "Published two." } }),
+        }))
+        await settle()
+        let [column] = controller.columns.snapshot().columns
+        await controller.inspection.discard(column!.id, "working-unstaged", scenario.page.file)
+        let discarded = ready(controller.snapshot()).notice
+
+        await controller.publish.resume(scenario.saved().activeRepositoryId!, "receipt")
+
+        expect(discarded?.message).toBe("Discarded src/file.txt")
+        expect(ready(controller.snapshot()).notice == discarded).toBe(true)
+        expect(settled).toEqual([])
+    })
+
     test("cancelling the open dialog leaves no notice, and an opened repository is confirmed", async () => {
         let opened = openedWorkspace(repositoryInfo("D:\\Source\\opened"))
         let cancel = true
