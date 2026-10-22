@@ -1,5 +1,5 @@
 import { type BranchGraph, type PublishReceipt, publishReceiptStatus, type PublishUpdate, type PublishUpdateStatus } from "@laneway/shared"
-import { useEffect, useMemo, useState } from "react"
+import { type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Hint } from "./controls"
 import { PublishIcon } from "./icons"
 import type { Publish } from "./publish"
@@ -45,45 +45,67 @@ export function PublishControl({ publish, repositoryId, branch, graph, busy }: {
     busy: boolean
 }) {
     let { review, running } = useSnapshot(publish)
+    let section = useRef<HTMLElement>(null)
     // A graph read again unchanged is a new object, which mustn't plan again.
     let version = useMemo(() => JSON.stringify(graph), [graph])
     useEffect(() => void publish.review(repositoryId, branch), [publish, repositoryId, branch, version])
+    useColumnFallback(section)
     let current = review?.repositoryId == repositoryId && review.branch == branch ? review : undefined
     let plan = current?.plan
     let progress = running[repositoryId]
+    // While a publish runs its controls stay, pending, so the one pressed keeps focus for the outcome to return to.
+    let pending = progress != undefined
     let force = plan?.updates.some(update => update.kind == "force")
     let reason = current?.error ?? plan?.blocked
         ?? (!plan ? "Reading what this stack would publish…" : plan.updates.length == 0 ? "Everything in this stack is already published." : undefined)
     return (
-        <section className="publish-control" aria-label="Publish this stack">
+        <section ref={section} className="publish-control" aria-label="Publish this stack">
             <div className="publish-row">
-                {progress != undefined
+                {/* The hint explains a disabled button too, so it sits on a wrapper. */}
+                <Hint text={pending ? undefined : reason} forControl>
+                    <span className="publish-button">
+                        <Button
+                            variant="accent"
+                            data-force={force || undefined}
+                            isDisabled={!pending && (busy || reason != undefined)}
+                            isPending={pending}
+                            onPress={() => void publish.publish()}
+                        >
+                            <PublishIcon />
+                            {force ? "Force publish" : "Publish"}
+                        </Button>
+                    </span>
+                </Hint>
+                {pending
                     ? <span className="publish-progress" role="status">{progress}</span>
-                    : (
-                        // The hint explains a disabled button too, so it sits on a wrapper.
-                        <Hint text={reason} forControl>
-                            <span className="publish-button">
-                                <Button
-                                    variant="accent"
-                                    data-force={force || undefined}
-                                    isDisabled={busy || reason != undefined}
-                                    onPress={() => void publish.publish()}
-                                >
-                                    <PublishIcon />
-                                    {force ? "Force publish" : "Publish"}
-                                </Button>
-                            </span>
-                        </Hint>
-                    )}
-                {plan && plan.stack.length > 1 && <span className="publish-stack">Stack: {plan.stack.join(" › ")}</span>}
+                    : plan && plan.stack.length > 1 && <span className="publish-stack">Stack: {plan.stack.join(" › ")}</span>}
             </div>
-            {plan && plan.updates.length > 0 && (
-                <ul className="publish-destinations" aria-label="Destinations">
-                    {plan.updates.map(update => <Destination key={update.ref} update={update} />)}
-                </ul>
-            )}
-            {plan?.receipt && progress == undefined && <LatestReceipt publish={publish} repositoryId={repositoryId} receipt={plan.receipt} busy={busy} />}
+            {plan && plan.updates.length > 0 && <Destinations label="Destinations" updates={plan.updates} />}
+            {plan?.receipt && <LatestReceipt publish={publish} repositoryId={repositoryId} receipt={plan.receipt} busy={busy} pending={pending} />}
         </section>
+    )
+}
+
+/**
+ * Focus stays in the column when the control holding it goes or is disabled, as Publish is once everything is
+ * published and restoration once it has restored. An outcome that outlives the control it returns focus to, such as a
+ * Resume that went stale, still leaves focus on the page when it closes; that is rare enough to leave.
+ */
+function useColumnFallback(section: RefObject<HTMLElement | null>) {
+    let held = useRef(false)
+    useLayoutEffect(() => {
+        let active = document.activeElement
+        if (held.current && (active == document.body || section.current?.contains(active) && active?.matches(":disabled")))
+            section.current?.closest<HTMLElement>(".column")?.focus({ preventScroll: true })
+        held.current = section.current?.contains(document.activeElement) ?? false
+    })
+}
+
+function Destinations({ label, updates }: { label: string; updates: PublishUpdate[] }) {
+    return (
+        <ul className="publish-destinations" aria-label={label}>
+            {updates.map(update => <Destination key={update.ref} update={update} />)}
+        </ul>
     )
 }
 
@@ -99,8 +121,18 @@ function Destination({ update }: { update: PublishUpdate }) {
     )
 }
 
-/** Resume when the stack's latest publish stopped short, and restoration of whatever it published. */
-function LatestReceipt({ publish, repositoryId, receipt, busy }: { publish: Publish; repositoryId: string; receipt: PublishReceipt; busy: boolean }) {
+/**
+ * Resume when the stack's latest publish stopped short, and restoration of whatever it published. Each lists the
+ * receipt's own destinations, which can differ from the current plan's: Resume publishes what the receipt left, with
+ * its leases, and restoration force publishes each published ref back to its earlier tip, deleting created branches.
+ */
+function LatestReceipt({ publish, repositoryId, receipt, busy, pending }: {
+    publish: Publish
+    repositoryId: string
+    receipt: PublishReceipt
+    busy: boolean
+    pending: boolean
+}) {
     let status = publishReceiptStatus(receipt)
     let published = receipt.updates.filter(update => update.status == "published")
     let remaining = receipt.updates.filter(update => update.status != "published")
@@ -108,26 +140,49 @@ function LatestReceipt({ publish, repositoryId, receipt, busy }: { publish: Publ
     let restorable = receipt.kind == "publish" && published.length > 0
     if (!resumable && !restorable)
         return null
-    let refs = published.map(update => `${update.remote}/${update.branch}`).join(", ")
     return (
         <div className="publish-receipt">
-            <span className="publish-receipt-summary">
-                {resumable
-                    ? `Last publish stopped: ${names(remaining)} not published.`
-                    : `Last ${receipt.kind == "restore" ? "restored" : "published"} ${names(published)}.`}
-            </span>
-            {resumable && <Button variant="secondary" isDisabled={busy} onPress={() => void publish.resume(repositoryId, receipt.id)}>Resume</Button>}
-            {restorable && (
-                <Hint text={`Force publish ${refs} back to the tips they had before, if nobody has changed them since`} forControl>
-                    <span className="publish-restore">
-                        <Button variant="quiet" isDisabled={busy} onPress={() => void publish.restore(repositoryId, receipt.id)}>
-                            Restore earlier remote tips
+            {resumable && (
+                <>
+                    <span className="publish-receipt-summary">Last publish stopped. Resume publishes the rest:</span>
+                    <Destinations label="Resume destinations" updates={remaining} />
+                    <span className="publish-button">
+                        <Button
+                            variant="secondary"
+                            isDisabled={!pending && busy}
+                            isPending={pending}
+                            onPress={() => void publish.resume(repositoryId, receipt.id)}
+                        >
+                            Resume
                         </Button>
                     </span>
-                </Hint>
+                </>
+            )}
+            {restorable && (
+                <>
+                    <span className="publish-receipt-summary">Restore the earlier remote tips:</span>
+                    <Destinations label="Restore destinations" updates={published.map(restoration)} />
+                    <span className="publish-button">
+                        <Button
+                            variant="accent"
+                            data-force
+                            isDisabled={!pending && busy}
+                            isPending={pending}
+                            onPress={() => void publish.restore(repositoryId, receipt.id)}
+                        >
+                            Force publish earlier tips
+                        </Button>
+                    </span>
+                </>
             )}
         </div>
     )
+}
+
+// What restoration does to a published update, as the Engine plans it: a created branch is deleted, and anything
+// else is forced back to its earlier tip, leasing on what was published.
+function restoration(update: PublishUpdate): PublishUpdate {
+    return { ...update, kind: update.expected == null ? "delete" : "force", setUpstream: false }
 }
 
 /**
@@ -181,8 +236,4 @@ export function PublishDialog({ publish, repositoryId }: { publish: Publish; rep
             </Dialog>
         </Modal>
     )
-}
-
-function names(updates: PublishUpdate[]) {
-    return updates.map(update => update.branch).join(", ")
 }

@@ -96,6 +96,23 @@ describe("React Publish", () => {
         expect(document.querySelector(".publish-outcome") == null).toBe(true)
     })
 
+    test("a publish started from the keyboard keeps focus on its button while it runs, and the outcome returns focus there", async () => {
+        let answer = Promise.withResolvers<PublishActionResult>()
+        let { app } = await startPublishing(request => request.action == "plan" ? planned([one, feature]) : answer.promise)
+        let publish = button(control(), "Publish")
+        await app.act(() => publish.focus())
+
+        await app.act(() => key(publish, "Enter"))
+        expect(control().querySelector(".publish-progress")?.textContent).toBe("Publishing…")
+        expect(document.activeElement == publish).toBe(true)
+
+        await app.act(() => answer.resolve(result("partial", "Published one.", receipt([{ ...one, status: "published" }, { ...feature, status: "failed" }]))))
+        await app.act(() => key(document.activeElement as HTMLElement, "Escape"))
+        await app.act(() => new Promise(resolve => requestAnimationFrame(resolve)))
+        expect(document.querySelector(".publish-outcome") == null).toBe(true)
+        expect(document.activeElement == publish).toBe(true)
+    })
+
     test("a partial publish's receipt offers Resume after a restart, and an outcome that stops again offers it too", async () => {
         let partial = receipt([{ ...one, status: "published" }, { ...feature, status: "failed", message: "[remote rejected] (pre-receive hook declined)" }])
         let { app, requests } = await startPublishing(request =>
@@ -104,8 +121,7 @@ describe("React Publish", () => {
                 : result("partial", "Published one. origin/feature/laneway was not published. Resume once the cause is fixed.", partial)
         )
 
-        expect(control().querySelector(".publish-receipt")?.textContent).toContain("Last publish stopped: feature/laneway not published.")
-        expect(control().querySelector(".publish-restore")?.getAttribute("aria-description")).toContain("origin/one")
+        expect(destinations("Resume destinations")).toEqual(["New origin/feature/laneway sets upstream"])
         await app.act(() => press(button(control(), "Resume")))
         let outcome = document.querySelector<HTMLElement>(".publish-outcome")!
         expect(outcome.querySelector(".publish-message")?.textContent).toBe("[remote rejected] (pre-receive hook declined)")
@@ -115,6 +131,25 @@ describe("React Publish", () => {
             action: "resume",
             receipt: partial.id,
         }])
+    })
+
+    test("restoration lists what it force publishes, deleting created branches, and focus stays in the column once it has restored", async () => {
+        let published = receipt([{ ...one, status: "published" }, { ...feature, status: "published" }])
+        let restored = false
+        let { app } = await startPublishing(request => {
+            if (request.action == "plan")
+                return planned([], restored ? { ...published, kind: "restore" } : published)
+            restored = true
+            return result("published", "Restored the earlier remote tips of one, feature/laneway.")
+        })
+        let restore = button(control(), "Force publish earlier tips")
+        expect(destinations("Restore destinations")).toEqual(["Force with lease origin/one", "Delete origin/feature/laneway"])
+        expect(restore.hasAttribute("data-force")).toBe(true)
+
+        await app.act(() => restore.focus())
+        await app.act(() => key(restore, "Enter"))
+        expect(control().querySelector(".publish-receipt") == null).toBe(true)
+        expect(document.activeElement == control().closest(".column")).toBe(true)
     })
 
     test("a stale outcome in a repository left while it published waits for it, and its Pull latest pulls that repository's stacks", async () => {
@@ -131,7 +166,9 @@ describe("React Publish", () => {
 
         await app.act(() => press(button(control(), "Publish")))
         await app.act(() => app.controller.selectRepository(second.id))
-        await app.act(() => answer.resolve(result("stale", "Nothing was published.", receipt([{ ...one, status: "stale" }, { ...feature, status: "pending" }]))))
+        await app.act(() =>
+            answer.resolve(result("stale", "Nothing was published.", receipt([{ ...one, status: "stale" }, { ...feature, status: "pending" }])))
+        )
         expect(document.querySelector(".publish-outcome") == null).toBe(true)
 
         await app.act(() => app.controller.selectRepository(first.id))
@@ -179,8 +216,14 @@ function control() {
     return document.querySelector<HTMLElement>(".publish-control")!
 }
 
-function destinations() {
-    return [...control().querySelectorAll(".publish-destinations li")].map(item => [...item.children].map(part => part.textContent).join(" "))
+function destinations(list = "Destinations") {
+    return [...control().querySelectorAll(`[aria-label="${list}"] li`)].map(item => [...item.children].map(part => part.textContent).join(" "))
+}
+
+// React Aria completes a keyboard press on its keyup.
+function key(element: HTMLElement, name: string) {
+    element.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }))
+    element.dispatchEvent(new KeyboardEvent("keyup", { key: name, bubbles: true, cancelable: true }))
 }
 
 function planned(updates: PublishUpdate[], latest?: PublishReceipt): PublishActionResult {

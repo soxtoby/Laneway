@@ -4013,16 +4013,14 @@
     font-size: var(--font-size-sm);
 }
 
-.publish-row,
-.publish-receipt {
+.publish-row {
     display: flex;
     align-items: center;
     gap: var(--spacing-2);
     min-width: 0;
 }
 
-.publish-button,
-.publish-restore {
+.publish-button {
     flex: 0 0 auto;
     display: inline-flex;
 }
@@ -4047,13 +4045,14 @@
     white-space: nowrap;
 }
 
-/* The receipt's summary takes its own line, with its actions beneath. */
+/* Each of the receipt's actions: what it does, the destinations it changes, and its button. */
 .publish-receipt {
-    flex-wrap: wrap;
-    row-gap: var(--spacing-1);
+    display: grid;
+    justify-items: start;
+    gap: var(--spacing-1);
+    margin-top: var(--spacing-1);
 
     .publish-receipt-summary {
-        flex: 1 0 100%;
         color: var(--text-color-placeholder);
         overflow-wrap: anywhere;
     }
@@ -4105,7 +4104,7 @@
 .publish-kind {
     color: var(--text-color-placeholder);
 
-    [data-kind="force"] > & {
+    :is([data-kind="force"], [data-kind="delete"]) > & {
         color: var(--invalid-color);
         font-weight: 600;
     }
