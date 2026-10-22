@@ -320,7 +320,7 @@ test("a descendant conflict pauses the session at the rewritten commit until the
     expect((await session(path))?.state).toBe("stale")
 
     git(path, "update-ref", "refs/heads/feature", pinned)
-    await acceptRightSide(path)
+    await acceptSide(path)
     let accepted = git(path, "rev-parse", "feature")
 
     expect((await session(path))?.state).toBe("active")
@@ -337,7 +337,7 @@ test("a descendant conflict pauses the session at the rewritten commit until the
     expect(git(path, "rev-parse", "feature~2")).toBe(paused!.commit)
 }, 120_000)
 
-test("accepting a conflict before another session's commit on the same branch moves that session to its rewrite with its changes", async () => {
+test("accepting a conflict before another session's commit on the same branch moves that session with its changes, or refuses staged overlaps", async () => {
     let { path, greeting } = await stack()
     let later = await commit(path, "extra.txt", "extra\n", "Add extra")
     await edit(path, { action: "enter", path, commit: greeting })
@@ -347,8 +347,18 @@ test("accepting a conflict before another session's commit on the same branch mo
     await writeFile(join(other, "draft.txt"), "draft\n")
     await writeFile(join(path, "greet.txt"), "hello\nthere\nbuddy\n")
     await apply(path, undefined, true)
+    let paused = git(other, "rev-parse", "HEAD")
+    await writeFile(join(other, "greet.txt"), "hello\nthere\nmate\n")
+    git(other, "add", "greet.txt")
+    git(other, "restore", "--source=HEAD", "--worktree", "greet.txt")
 
-    await acceptRightSide(path)
+    await expect(acceptSide(path, "left")).rejects.toThrow("overlap this resolution")
+
+    expect(git(other, "rev-parse", "HEAD")).toBe(paused)
+    expect(git(other, "show", ":greet.txt")).toBe("hello\nthere\nmate")
+
+    git(other, "restore", "--staged", "greet.txt")
+    await acceptSide(path, "left")
 
     let tip = git(path, "rev-parse", "feature")
     let sessions = (await edit(path, { action: "status" })).sessions
@@ -455,8 +465,8 @@ async function conflict(path: string, conflictRequest: ConflictRequest) {
     return await executeOperationCommand({ command: "conflict", request: conflictRequest, noWait: false }, path) as ConflictResult
 }
 
-/** Resolves the only commit conflict with the replayed commit's side and accepts it. */
-async function acceptRightSide(path: string) {
+/** Resolves the only commit conflict with one side, by default the replayed commit's, and accepts it. */
+async function acceptSide(path: string, side: "left" | "right" = "right") {
     let [subject] = (await conflict(path, { action: "list" })).conflicts
     let view = (await conflict(path, { action: "inspect", subject: subject!.id })).view!
     let chosen = await conflict(path, {
@@ -465,7 +475,7 @@ async function acceptRightSide(path: string) {
         input: view.subject.input,
         revision: view.candidate.revision,
         file: "greet.txt",
-        side: "right",
+        side,
     })
     await conflict(path, { action: "accept", subject: subject!.id, input: view.subject.input, revision: chosen.view!.candidate.revision })
 }

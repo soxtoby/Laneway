@@ -96,4 +96,4 @@ Entry, a clean Return, and Restart run inside a journaled checkpoint that is nev
 - **Removing a missing worktree leaves an inert session ref.** That ref reports the session stale.
 - **Apply's Operation History entry is the generic "compose".** Undo works, but the entry doesn't name Historical Edit.
 - **Recovery that leaves the repository alone blocks later mutations.** They stay blocked until the repository matches the interrupted operation's starting or finished state again. An interruption partway through a mutation has no finished state on record, so recovery still rolls that back, along with anything changed since.
-- **Overlapping changes block acceptance.** Accepting a conflict refuses when a paused session's Historical Working Changes overlap its commit's rewrite, rather than deferring them as a Working Changes Conflict.
+- **Overlapping changes block acceptance.** Accepting a conflict refuses when a paused session's Historical Working Changes, staged or unstaged, overlap its commit's rewrite, rather than deferring them as a Working Changes Conflict.

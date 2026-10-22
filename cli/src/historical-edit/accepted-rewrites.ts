@@ -42,15 +42,15 @@ async function moveDetached(repo: RepositoryGit, path: string, from: string, to:
     let index = (await repo.command(path, ["write-tree"])).toString().trim()
     let current = await workingTree(repo, path)
     let files = await replayTree(repo, from, to, current, crypto.randomUUID())
-    // Rare enough not to defer as a Working Changes Conflict: the user can apply or drop the overlapping changes first.
-    if (files.conflict)
-        throw new Error(`The Historical Working Changes in ${path} overlap this resolution. Apply or drop them, then accept it again.`)
     let staged = await replayTree(repo, from, to, index, crypto.randomUUID())
+    // Rare enough not to defer as a Working Changes Conflict: the user can apply or drop the overlapping changes first.
+    if (files.conflict || staged.conflict)
+        throw new Error(`The Historical Working Changes in ${path} overlap this resolution. Apply or drop them, then accept it again.`)
     await verifyIgnoredFiles(repo, path, files.tree)
 
     // Tracking the current untracked files first lets the checkout replace them where the rewrite changes them.
     await repo.command(path, ["read-tree", current])
     await repo.command(path, ["read-tree", "--reset", "-u", files.tree])
-    await repo.command(path, ["read-tree", staged.conflict ? to : staged.tree])
+    await repo.command(path, ["read-tree", staged.tree])
     await repo.command(path, ["update-ref", "--no-deref", "HEAD", to, from])
 }
