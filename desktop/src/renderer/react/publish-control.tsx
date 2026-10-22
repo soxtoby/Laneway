@@ -134,11 +134,14 @@ function LatestReceipt({ publish, repositoryId, receipt, busy }: { publish: Publ
  * A publish that didn't simply succeed: what each update did, what stayed as it was, and the way forward. A stale
  * lease leads to Pull latest, never a retry; anything else left unpublished can Resume.
  */
-export function PublishDialog({ publish }: { publish: Publish }) {
-    let { outcome: open } = useSnapshot(publish)
+export function PublishDialog({ publish, repositoryId }: { publish: Publish; repositoryId?: string }) {
+    let { outcomes } = useSnapshot(publish)
+    // Only the active repository's outcome shows, so Pull latest takes its open stacks; another repository's waits.
+    let shown = repositoryId == undefined ? undefined : outcomes[repositoryId]
+    let open = shown && repositoryId != undefined ? { repositoryId, ...shown } : undefined
     // The closing dialog keeps its content while it animates away.
     let [last, setLast] = useState(open)
-    if (open && open != last)
+    if (open && (open.repositoryId != last?.repositoryId || open.result != last.result || open.error != last.error))
         setLast(open)
     let outcome = open ?? last
     let result = outcome?.result
@@ -146,7 +149,7 @@ export function PublishDialog({ publish }: { publish: Publish }) {
     let status = receipt && publishReceiptStatus(receipt)
     let resumable = status == "partial" || status == "failed"
     return (
-        <Modal isOpen={open != undefined} isDismissable onOpenChange={isOpen => isOpen || publish.close()}>
+        <Modal isOpen={open != undefined} isDismissable onOpenChange={isOpen => isOpen || publish.close(outcome!.repositoryId)}>
             <Dialog className="react-aria-Dialog publish-outcome" aria-label="Publish outcome">
                 <Heading slot="title">{receipt?.kind == "restore" ? "Restore earlier remote tips" : "Publish"}</Heading>
                 {outcome?.error && <p className="publish-error" role="alert">{outcome.error}</p>}
@@ -165,11 +168,11 @@ export function PublishDialog({ publish }: { publish: Publish }) {
                 )}
                 {status && status != "published" && <p className="publish-note">{notes[status]}</p>}
                 <div className="dialog-actions">
-                    {status == "stale" && <Button variant="accent" onPress={publish.pull} autoFocus>Pull latest</Button>}
+                    {status == "stale" && <Button variant="accent" onPress={() => publish.pull(outcome!.repositoryId)} autoFocus>Pull latest</Button>}
                     {resumable && <Button variant="accent" onPress={() => void publish.resume(outcome!.repositoryId, receipt!.id)} autoFocus>Resume</Button>}
                     <Button
                         variant={status == "stale" || resumable ? "secondary" : "accent"}
-                        onPress={publish.close}
+                        onPress={() => publish.close(outcome!.repositoryId)}
                         autoFocus={status != "stale" && !resumable}
                     >
                         Close

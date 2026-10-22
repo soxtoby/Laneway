@@ -26,7 +26,7 @@ describe("publish controller", () => {
         }])
         expect(notices).toEqual([{ code: "publish.completed", message: "Published one, two.", transient: true }])
         expect(completed).toEqual([repositoryId])
-        expect(sut.snapshot().outcome).toBeUndefined()
+        expect(sut.snapshot().outcomes).toEqual({})
         expect(sut.snapshot().review?.plan?.receipt).toEqual(receipt)
     })
 
@@ -65,12 +65,32 @@ describe("publish controller", () => {
 
         await sut.publish()
         expect(notices).toEqual([])
-        expect(sut.snapshot().outcome?.result?.status).toBe("stale")
+        expect(sut.snapshot().outcomes[repositoryId]?.result?.status).toBe("stale")
 
-        sut.pull()
+        sut.pull(repositoryId)
         expect(pulled).toEqual([repositoryId])
-        expect(sut.snapshot().outcome).toBeUndefined()
+        expect(sut.snapshot().outcomes).toEqual({})
     })
+
+    test.each([[["first", "second"]], [["second", "first"]]])(
+        "publishes in two repositories each keep their outcome until it is closed, finishing in the order %p",
+        async order => {
+            let answers = new Map<string, (result: PublishActionResult) => void>()
+            let fake = fakeApi((_request, id) => new Promise(resolve => answers.set(id, resolve)))
+            let { sut } = publisher(fake)
+            let runs = new Map(["first", "second"].map(id => [id, sut.resume(id, "receipt")]))
+
+            for (let id of order) {
+                answers.get(id)!({ ok: true, result: { type: "result", command: "publish", status: "failed", message: `${id} was not published.` } })
+                await runs.get(id)
+            }
+            sut.close("first")
+
+            expect(sut.snapshot().outcomes).toEqual({
+                second: { result: { type: "result", command: "publish", status: "failed", message: "second was not published." } },
+            })
+        },
+    )
 
     test("an earlier review answering after a later one is dropped", async () => {
         let answers: Array<() => void> = []
@@ -106,16 +126,16 @@ function publisher(fake: ReturnType<typeof fakeApi>) {
     return { sut, notices, completed, pulled }
 }
 
-function fakeApi(respond: (request: PublishRequest) => PublishActionResult | Promise<PublishActionResult>) {
+function fakeApi(respond: (request: PublishRequest, repositoryId: string) => PublishActionResult | Promise<PublishActionResult>) {
     let requests: PublishRequest[] = []
     let listener: (progress: PublishProgress) => void = () => {}
     return {
         requests,
         progress: (progress: PublishProgress) => listener(progress),
         api: {
-            publish: async (_id: string, request: PublishRequest) => {
+            publish: async (id: string, request: PublishRequest) => {
                 requests.push(request)
-                return respond(request)
+                return respond(request, id)
             },
             onPublishProgress(next: (progress: PublishProgress) => void) {
                 listener = next

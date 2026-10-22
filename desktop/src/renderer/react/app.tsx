@@ -140,7 +140,7 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
             <WorktreeDialog worktrees={worktrees} />
             <StashesDialog stashes={stashes} />
             <RebaseDialog rebase={controller.rebase} />
-            <PublishDialog publish={controller.publish} />
+            <PublishDialog publish={controller.publish} repositoryId={active?.id} />
             <PullDialog pull={controller.pull} onResolve={(_repositoryId, branch) => columns.open(`branch:refs/heads/${branch}`)} />
             <CommandLensDialog controller={controller} workspace={workspace} />
             <RepositoryIdentityDialog editor={identity} repositories={workspace.repositories} api={api} />

@@ -1,4 +1,4 @@
-import type { PublishActionResult, PublishPlan, PublishReceipt, PublishRequest, PublishUpdate } from "@laneway/shared"
+import type { PublishActionResult, PublishPlan, PublishReceipt, PublishRequest, PublishUpdate, PullRequest, Workspace } from "@laneway/shared"
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
 import type { Window as HappyWindow } from "happy-dom"
 import { button, installReactDom, press, startReactApp, stopReactApps } from "./react-dom"
@@ -116,24 +116,37 @@ describe("React Publish", () => {
             receipt: partial.id,
         }])
     })
+
+    test("a stale outcome in a repository left while it published waits for it, and its Pull latest pulls that repository's stacks", async () => {
+        let answer = Promise.withResolvers<PublishActionResult>()
+        let pulled: [string, PullRequest][] = []
+        let [first, second] = [repositoryEntry("D:\\Source\\first", ["main", "feature/laneway"]), repositoryEntry("D:\\Source\\second", ["main"])]
+        let workspace: Workspace = { repositories: [first, second], activeRepositoryId: first.id }
+        let { app } = await startPublishing(request => request.action == "plan" ? planned([one, feature]) : answer.promise, {
+            getState: async () => ({ ...appState(), workspace }),
+            readBranchGraph: async id => ({ ok: true, graph: branchGraph(id) }),
+            selectRepository: async id => workspace = { ...workspace, activeRepositoryId: id },
+            pullLatest: async (id, request) => (pulled.push([id, request]), { ok: false, error: { message: "Offline" } }),
+        })
+
+        await app.act(() => press(button(control(), "Publish")))
+        await app.act(() => app.controller.selectRepository(second.id))
+        await app.act(() => answer.resolve(result("stale", "Nothing was published.", receipt([{ ...one, status: "stale" }, { ...feature, status: "pending" }]))))
+        expect(document.querySelector(".publish-outcome") == null).toBe(true)
+
+        await app.act(() => app.controller.selectRepository(first.id))
+        await app.act(() => press(button(document.querySelector<HTMLElement>(".publish-outcome")!, "Pull latest")))
+        expect(pulled).toEqual([[first.id, { branches: ["refs/heads/main", "refs/heads/feature/laneway"], remote: "origin" }]])
+    })
 })
 
-async function startPublishing(respond: (request: PublishRequest) => PublishActionResult, overrides: Partial<Window["laneway"]> = {}) {
-    let repository = repositoryInfo("D:\\Source\\publish")
+async function startPublishing(
+    respond: (request: PublishRequest) => PublishActionResult | Promise<PublishActionResult>,
+    overrides: Partial<Window["laneway"]> = {},
+) {
+    let repository = repositoryEntry("D:\\Source\\publish", ["main", "feature/laneway"])
     let graph = branchGraph(repository.id)
-    let [main, branch] = graph.branches
-    let workspace = {
-        repositories: [{
-            status: "available" as const,
-            id: repository.id,
-            path: repository.mainWorktree,
-            info: repository,
-            layoutInitialized: true,
-            focusedColumnId: branch!.id,
-            columns: [main!, branch!].map(item => ({ kind: "branch" as const, id: item.id, ref: item.preferredRef, lastSeenObjectId: item.tip, width: 380 })),
-        }],
-        activeRepositoryId: repository.id,
-    }
+    let workspace = { repositories: [repository], activeRepositoryId: repository.id }
     let requests: PublishRequest[] = []
     let app = await startReactApp(fakeLaneway({
         getState: async () => ({ ...appState(), workspace }),
@@ -145,6 +158,21 @@ async function startPublishing(respond: (request: PublishRequest) => PublishActi
         ...overrides,
     }))
     return { app, requests }
+}
+
+// A repository whose columns show the named branches, the last focused.
+function repositoryEntry(path: string, branches: string[]) {
+    let info = repositoryInfo(path)
+    let shown = branches.map(name => branchGraph(info.id).branches.find(branch => branch.name == name)!)
+    return {
+        status: "available" as const,
+        id: info.id,
+        path: info.mainWorktree,
+        info,
+        layoutInitialized: true,
+        focusedColumnId: shown.at(-1)!.id,
+        columns: shown.map(item => ({ kind: "branch" as const, id: item.id, ref: item.preferredRef, lastSeenObjectId: item.tip, width: 380 })),
+    }
 }
 
 function control() {

@@ -9,8 +9,16 @@ export interface PublishSnapshot {
     review?: PublishReview
     /** Publishes under way, by repository, with the Engine's latest progress. */
     running: Record<string, string>
-    /** A publish that didn't simply succeed: partial, failed, stale, or refused. */
-    outcome?: { repositoryId: string; result?: PublishResult; error?: string }
+    /**
+     * Publishes that didn't simply succeed, by repository, until acknowledged: partial, failed, stale, or refused.
+     * Each shows only while its repository is active, so Pull latest from it takes that repository's open stacks.
+     */
+    outcomes: Record<string, PublishOutcome>
+}
+
+export interface PublishOutcome {
+    result?: PublishResult
+    error?: string
 }
 
 export interface PublishReview {
@@ -31,9 +39,9 @@ export interface Publish extends Store<PublishSnapshot> {
     resume(repositoryId: string, receipt: string): Promise<void>
     /** Force publishes the remote tips a receipt replaced, leasing on what it published. */
     restore(repositoryId: string, receipt: string): Promise<void>
-    /** Closes the outcome and starts Pull latest, the way past a stale lease. */
-    pull(): void
-    close(): void
+    /** Closes the repository's outcome and starts Pull latest, the way past a stale lease. */
+    pull(repositoryId: string): void
+    close(repositoryId: string): void
     dispose(): void
 }
 
@@ -53,7 +61,7 @@ interface PublishOptions {
  * offers Resume and restoration.
  */
 export function createPublish({ api, notify, remote, pull, completed }: PublishOptions): Publish {
-    let store = createStore<PublishSnapshot>({ running: {} })
+    let store = createStore<PublishSnapshot>({ running: {}, outcomes: {} })
     let reviews = 0
     let set = (change: Partial<PublishSnapshot>) => store.publish({ ...store.snapshot(), ...change })
     let setRunning = (repositoryId: string, message?: string) => {
@@ -63,6 +71,14 @@ export function createPublish({ api, notify, remote, pull, completed }: PublishO
         else
             running[repositoryId] = message
         set({ running })
+    }
+    let setOutcome = (repositoryId: string, outcome?: PublishOutcome) => {
+        let outcomes = { ...store.snapshot().outcomes }
+        if (outcome)
+            outcomes[repositoryId] = outcome
+        else
+            delete outcomes[repositoryId]
+        set({ outcomes })
     }
     let unsubscribe = api.onPublishProgress(progress => {
         if (store.snapshot().running[progress.repositoryId] != undefined)
@@ -92,7 +108,7 @@ export function createPublish({ api, notify, remote, pull, completed }: PublishO
         if (store.snapshot().running[repositoryId] != undefined)
             return
         setRunning(repositoryId, request.action == "restore" ? "Restoring…" : "Publishing…")
-        set({ outcome: undefined })
+        setOutcome(repositoryId)
         try {
             let response = await api.publish(repositoryId, request)
             if (!response.ok)
@@ -100,9 +116,9 @@ export function createPublish({ api, notify, remote, pull, completed }: PublishO
             if (response.result.status == "published" || response.result.status == "nothing")
                 notify({ code: "publish.completed", message: response.result.message, transient: true })
             else
-                set({ outcome: { repositoryId, result: response.result } })
+                setOutcome(repositoryId, { result: response.result })
         } catch (error) {
-            set({ outcome: { repositoryId, error: errorMessage(error) } })
+            setOutcome(repositoryId, { error: errorMessage(error) })
         } finally {
             setRunning(repositoryId)
         }
@@ -128,14 +144,12 @@ export function createPublish({ api, notify, remote, pull, completed }: PublishO
 
         restore: (repositoryId, receipt) => run(repositoryId, { action: "restore", receipt }),
 
-        pull() {
-            let outcome = store.snapshot().outcome
-            set({ outcome: undefined })
-            if (outcome)
-                pull(outcome.repositoryId)
+        pull(repositoryId) {
+            setOutcome(repositoryId)
+            pull(repositoryId)
         },
 
-        close: () => set({ outcome: undefined }),
+        close: repositoryId => setOutcome(repositoryId),
 
         dispose: unsubscribe,
     }
