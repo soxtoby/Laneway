@@ -41,6 +41,15 @@ describe("Historical Edits", () => {
         expect(sut.snapshot().choosing).toEqual({ ...choice, count: undefined })
     })
 
+    test("an entry the Engine refuses, such as one blocked by a recovery, shows the Engine's explanation until dismissed", async () => {
+        let blocked = "Cannot recover apply for op-1: The repository changed after this operation was interrupted, so recovery left it as it is."
+        let { sut, notices } = edits({ failure: blocked })
+
+        await sut.enter("repo", path, "a".repeat(40))
+
+        expect(notices).toEqual([{ code: "edit.failed", message: blocked }])
+    })
+
     test("a chosen return that fails keeps the choice open with its error", async () => {
         let { sut } = edits({ working: ["a.txt", "b.txt"], failure: "feature is checked out in D:\\Source\\other." })
         await sut.return("repo", path, "feature")
