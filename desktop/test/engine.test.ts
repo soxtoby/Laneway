@@ -1,9 +1,18 @@
-import type { EngineMessage } from "@laneway/shared"
-import { describe, expect, test } from "bun:test"
+import { openRepository } from "@laneway/git"
+import type { EngineMessage, PublishRequest } from "@laneway/shared"
+import { afterEach, describe, expect, test } from "bun:test"
+import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { inspectEngine, parseEngineIdentity, parseEngineMessage, resolveEnginePath, runEngineCommand } from "../src/main/engine"
+import { runPublish } from "../src/main/publish"
 
 let enginePath = join(import.meta.dir, "../../cli/bin/lane.exe")
+let directories: string[] = []
+
+afterEach(async () => {
+    await Promise.all(directories.splice(0).map(directory => rm(directory, { recursive: true, force: true })))
+})
 
 describe("Laneway Engine client", () => {
     test("accepts the shipped Engine identity", () => {
@@ -109,3 +118,35 @@ describe("Laneway Engine client", () => {
         })
     })
 })
+
+describe("runPublish", () => {
+    test("a publish left unpublished exits with failure, and its result still comes back", async () => {
+        let path = await repositoryWithoutRemote()
+        let request: PublishRequest = { action: "plan", branch: "refs/heads/feature" }
+
+        let result = await runPublish(enginePath, (await openRepository(path)).descriptor, request)
+
+        expect(result).toMatchObject({ ok: true, result: { status: "blocked", message: "Add a remote to publish." } })
+        let direct = await runEngineCommand({ enginePath, cwd: path, args: ["publish", "--request", JSON.stringify(request)] }).result
+        expect(direct.exitCode).toBe(1)
+    })
+})
+
+async function repositoryWithoutRemote() {
+    let path = await realpath(await mkdtemp(join(tmpdir(), "laneway-publish-")))
+    directories.push(path)
+    let git = (...args: string[]) => {
+        let result = Bun.spawnSync(["git", ...args], { cwd: path, stdout: "pipe", stderr: "pipe" })
+        if (result.exitCode)
+            throw new Error(result.stderr.toString())
+    }
+    git("init", "-q", "-b", "main")
+    git("config", "user.name", "Publish Test")
+    git("config", "user.email", "test@example.invalid")
+    git("config", "commit.gpgsign", "false")
+    await writeFile(join(path, "file.txt"), "a\n")
+    git("add", ".")
+    git("commit", "-q", "-m", "init")
+    git("switch", "-qc", "feature")
+    return path
+}

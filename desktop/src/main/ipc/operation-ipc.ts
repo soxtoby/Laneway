@@ -1,12 +1,13 @@
 import { isText, normalize, previewWorktree, readRegisteredWorktrees } from "@laneway/git"
-import { CommitDraftSchema, type ConflictActionResult, ConflictRequestSchema, DiscardRequestSchema, type DiscardResult, type DiscardUndoResult, type HistoricalEditActionResult, HistoricalEditRequestSchema, type LocalActionResult, LocalRequestSchema, type PullActionResult, type PullProgress, PullRequestSchema, type RecoveryActionResult, RecoveryRequestSchema, type WorktreeActionResult, type WorktreePreviewResult, WorktreeRequestSchema } from "@laneway/shared"
-import { ipcMain } from "electron"
+import { CommitDraftSchema, type ConflictActionResult, ConflictRequestSchema, DiscardRequestSchema, type DiscardResult, type DiscardUndoResult, type HistoricalEditActionResult, HistoricalEditRequestSchema, type LocalActionResult, LocalRequestSchema, type PublishActionResult, type PublishProgress, type PublishRequest, PublishRequestSchema, type PullActionResult, type PullProgress, PullRequestSchema, type RecoveryActionResult, RecoveryRequestSchema, type WorktreeActionResult, type WorktreePreviewResult, WorktreeRequestSchema } from "@laneway/shared"
+import { ipcMain, type WebContents } from "electron"
 import { mkdtemp, rm, rmdir, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { CommitDrafts } from "../commit-drafts"
 import { WorkingDiscards } from "../discard"
 import { type EngineCommandResult, runEngineCommand } from "../engine"
+import { runPublish } from "../publish"
 import type { OpenRepositories } from "../repositories"
 
 export function registerOperationHandlers(repositories: OpenRepositories, enginePath: string, commitDrafts: CommitDrafts) {
@@ -14,9 +15,12 @@ export function registerOperationHandlers(repositories: OpenRepositories, engine
     let conflictInspections = new Map<string, ConflictActionResult>()
     // One Pull latest per repository; cancellation stops at the next safe boundary.
     let activePulls = new Map<string, { cancel(): void }>()
+    // One Publish per repository; reading plans goes on alongside.
+    let activePublishes = new Set<string>()
     let discards = new WorkingDiscards(repositoryId => repositories.worktreeRepository(repositoryId))
     registerConflictHandlers()
     registerPullHandlers()
+    registerPublishHandlers()
     registerLocalHandlers()
     registerDiscardHandlers()
     registerWorktreeHandlers()
@@ -170,6 +174,38 @@ export function registerOperationHandlers(repositories: OpenRepositories, engine
         } else {
             throw new Error(output.messages.find(message => message.type == "error")?.message ?? output.diagnostics ?? "Pull latest failed.")
         }
+    }
+
+    // Publish stays outside Operation History and takes the mutation lock only briefly, to retain its receipt's
+    // commits, so it never blocks local operations for long.
+    function registerPublishHandlers() {
+        ipcMain.handle("publish:run", async (event, repositoryId: unknown, value: unknown): Promise<PublishActionResult> => {
+            try {
+                if (typeof repositoryId != "string")
+                    throw new Error("Choose a repository.")
+                let request = PublishRequestSchema.parse(value)
+                if (request.action == "plan")
+                    return await publish(event.sender, repositoryId, request)
+                if (activePublishes.has(repositoryId))
+                    throw new Error("A publish is already running for this repository.")
+
+                activePublishes.add(repositoryId)
+                try {
+                    return await publish(event.sender, repositoryId, request)
+                } finally {
+                    activePublishes.delete(repositoryId)
+                }
+            } catch (error) {
+                return { ok: false, error: { message: error instanceof Error ? error.message : String(error) } }
+            }
+        })
+    }
+
+    function publish(sender: WebContents, repositoryId: string, request: PublishRequest) {
+        return runPublish(enginePath, repositories.worktreeRepository(repositoryId).descriptor, request, progress => {
+            if (!sender.isDestroyed())
+                sender.send("publish:progress", { repositoryId, ...progress } satisfies PublishProgress)
+        })
     }
 
     function registerLocalHandlers() {

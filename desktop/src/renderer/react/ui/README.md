@@ -7,7 +7,7 @@ Local changes:
 - Icons come from `./icons`, which draws Lucide's node data (ADR 0020) in place of `lucide-react`.
 - The per-file `@import` of `theme.css` and `utilities.css` is gone; the page imports each once, before these files.
 - `Toast.tsx` takes an optional action, such as Undo, and ignores the rejection when a new toast interrupts a view transition.
-- `Button.tsx` accepts an `accent` variant, keeps a `className` passed to it beside its own, and wraps text children in a `<span>` so an icon with a label is not styled as an icon-only button.
+- `Button.tsx` accepts an `accent` variant, keeps a `className` passed to it beside its own, and wraps text children in a `<span>` so an icon with a label is not styled as an icon-only button. Its `pendingLabel` names the progress shown while pending, which upstream hard-codes as "Saving...".
 - `Disclosure.css` pads only the panel's own wrapper (`> div`), not every `div` inside it.
 - The `"use client"` directives are gone; this is a client-only renderer.
 - `Modal.css` centres the modal in a fixed overlay. The upstream sticky offset left any modal taller than half the window against its top edge, and Laneway's page never scrolls.

@@ -4,12 +4,14 @@ import { type EngineMessage, engineVersion, type ErrorEvent, ExitCode } from "@l
 import { type WorktreeRequest, WorktreeRequestSchema } from "@laneway/shared"
 import { type LocalRequest, LocalRequestSchema } from "@laneway/shared"
 import { type ConflictRequest, ConflictRequestSchema } from "@laneway/shared"
+import { type PublishRequest, PublishRequestSchema } from "@laneway/shared"
 import { type PullRequest, PullRequestSchema } from "@laneway/shared"
 import { type RecoveryRequest, RecoveryRequestSchema } from "@laneway/shared"
 import { type HistoricalEditRequest, HistoricalEditRequestSchema } from "@laneway/shared"
 import { readFileSync, statSync } from "node:fs"
 import { monitorCancellation } from "./command-cancellation"
 import { runCommandLine } from "./command-line"
+import { resultExitCode } from "./command-output"
 import { executeOperationCommand, type JournalPhase, OperationCancelledError, type OperationCommand, OperationRuntimeError } from "./operations/operation-runtime.ts"
 
 let args = process.argv.slice(2)
@@ -38,7 +40,8 @@ else if (args[0] == "echo") {
 } else if (
     args[0] == "local" || args[0] == "local-preview" || args[0] == "local-transfer" || args[0] == "worktree" || args[0] == "undo" || args[0] == "redo"
     || args[0] == "history"
-    || args[0] == "recover" || args[0] == "recovery-status" || args[0] == "conflict" || args[0] == "pull" || args[0] == "edit"
+    || args[0] == "recover" || args[0] == "recovery-status" || args[0] == "conflict" || args[0] == "pull" || args[0] == "publish"
+    || args[0] == "edit"
 ) {
     process.exitCode = await runOperationCommand(args[0], args.slice(1))
 } else if (args[0] == "test-mutation" && process.env.LANEWAY_ENABLE_TEST_COMMANDS == "1")
@@ -178,7 +181,7 @@ async function runOperationCommand(command: Exclude<OperationCommand["command"],
     let cancellation = monitorCancellation()
     try {
         let settings = await readSettings(process.env.LANEWAY_SETTINGS_PATH)
-        let command = parsed.command.command == "pull"
+        let command = parsed.command.command == "pull" || parsed.command.command == "publish"
             ? {
                 ...parsed.command,
                 graphOptions: (repositoryId: string) => ({
@@ -187,14 +190,14 @@ async function runOperationCommand(command: Exclude<OperationCommand["command"],
                     remotePatterns: settings.repositories?.[repositoryId]?.remotePatterns ?? [],
                 }),
                 progress: (message: string, completed: number, total: number) =>
-                    write({ type: "progress", command: "pull", completed, total, message }, parsed.json),
+                    write({ type: "progress", command: parsed.command.command, completed, total, message }, parsed.json),
             }
             : "request" in parsed.command
             ? { ...parsed.command, branchPrefix: settings.virtualBranchPrefix }
             : parsed.command
         let result = await executeOperationCommand(command, process.cwd(), cancellation, parsed.gitPath ?? settings.gitPath)
         write(result, parsed.json)
-        return "status" in result && result.status == "failed" ? ExitCode.failure : ExitCode.ok
+        return resultExitCode(result)
     } catch (error) {
         if (error instanceof OperationCancelledError) {
             write({ type: "cancelled", command, message: error.message }, parsed.json)
@@ -278,6 +281,7 @@ function parseOperationArguments(command: Exclude<OperationCommand["command"], "
     let localRequest: LocalRequest | undefined
     let conflictRequest: ConflictRequest | undefined
     let pullRequest: PullRequest | undefined
+    let publishRequest: PublishRequest | undefined
     let editRequest: HistoricalEditRequest | undefined
     let token: string | undefined
     let worktreeBasename: string | undefined
@@ -311,6 +315,14 @@ function parseOperationArguments(command: Exclude<OperationCommand["command"], "
                 pullRequest = PullRequestSchema.parse(JSON.parse(commandArguments[++index]!))
             } catch {
                 return invalidOperationArgument(command, json, "Provide a valid pull request JSON object.", "--request")
+            }
+            continue
+        }
+        if (command == "publish" && argument == "--request") {
+            try {
+                publishRequest = PublishRequestSchema.parse(JSON.parse(commandArguments[++index]!))
+            } catch {
+                return invalidOperationArgument(command, json, "Provide a valid publish request JSON object.", "--request")
             }
             continue
         }
@@ -409,6 +421,8 @@ function parseOperationArguments(command: Exclude<OperationCommand["command"], "
         return invalidOperationArgument(command, json, "A conflict request is required.", "--request")
     if (command == "pull" && !pullRequest)
         return invalidOperationArgument(command, json, "A pull request is required.", "--request")
+    if (command == "publish" && !publishRequest)
+        return invalidOperationArgument(command, json, "A publish request is required.", "--request")
     if (command == "edit" && !editRequest)
         return invalidOperationArgument(command, json, "A Historical Edit request is required.", "--request")
     if (command == "worktree" && !request)
@@ -428,6 +442,8 @@ function parseOperationArguments(command: Exclude<OperationCommand["command"], "
             ? { command, request: editRequest!, noWait, crashAfter }
             : command == "pull"
             ? { command, request: pullRequest!, noWait, crashAfter, graphOptions: () => ({ authorIdentities: { secondary: [] }, remotePatterns: [] }) }
+            : command == "publish"
+            ? { command, request: publishRequest!, noWait, graphOptions: () => ({ authorIdentities: { secondary: [] }, remotePatterns: [] }) }
             : command == "local" || command == "local-preview" || command == "local-transfer"
             ? { command, request: localRequest!, token, noWait, crashAfter }
             : command == "worktree"

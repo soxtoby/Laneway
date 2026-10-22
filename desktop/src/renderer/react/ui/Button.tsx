@@ -12,9 +12,15 @@ interface ButtonProps extends RACButtonProps {
      * @default 'primary'
      */
     variant?: "primary" | "secondary" | "quiet" | "accent"
+    /**
+     * Names the progress shown in place of the label while pending, such as "Publishing…" (Laneway).
+     *
+     * @default 'Saving...'
+     */
+    pendingLabel?: string
 }
 
-export function Button(props: ButtonProps) {
+export function Button({ pendingLabel = "Saving...", ...props }: ButtonProps) {
     // Laneway places some buttons with its own classes, kept alongside the kit's.
     let className = composeRenderProps(props.className, extra => extra ? `react-aria-Button button-base ${extra}` : "react-aria-Button button-base")
     return (
@@ -22,7 +28,7 @@ export function Button(props: ButtonProps) {
             {composeRenderProps(props.children, (children, { isPending }) => (
                 <>
                     {!isPending && labelled(children)}
-                    {isPending && <ProgressCircle aria-label="Saving..." isIndeterminate />}
+                    {isPending && <ProgressCircle aria-label={pendingLabel} isIndeterminate />}
                 </>
             ))}
         </RACButton>

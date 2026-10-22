@@ -4001,6 +4001,164 @@
     }
 }
 
+/* Publish at the focused column's foot: the button, every destination, and the stack's latest receipt. */
+.publish-control {
+    flex: 0 0 auto;
+    margin-top: auto;
+    display: grid;
+    gap: var(--spacing-1);
+    padding: var(--spacing-2);
+    border-top: 1px solid var(--border-color);
+    background: var(--tray-background);
+    font-size: var(--font-size-sm);
+}
+
+.publish-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    min-width: 0;
+}
+
+.publish-button {
+    flex: 0 0 auto;
+    display: inline-flex;
+}
+
+.publish-button .button-base[data-force]:not([data-disabled]) {
+    --highlight-background: var(--force-background);
+    --highlight-background-pressed: var(--force-background-pressed);
+    --highlight-foreground: var(--force-foreground);
+}
+
+.publish-stack {
+    min-width: 0;
+    color: var(--text-color-placeholder);
+    overflow-wrap: anywhere;
+}
+
+.publish-progress {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-color-placeholder);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Each of the receipt's actions: what it does, the destinations it changes, and its button. */
+.publish-receipt {
+    display: grid;
+    justify-items: start;
+    gap: var(--spacing-1);
+    margin-top: var(--spacing-1);
+
+    .publish-receipt-summary {
+        color: var(--text-color-placeholder);
+        overflow-wrap: anywhere;
+    }
+}
+
+/* Kinds line up in a column of their own. */
+.publish-destinations {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 2px var(--spacing-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+
+    li {
+        display: contents;
+    }
+
+    small {
+        color: var(--text-color-placeholder);
+    }
+}
+
+.publish-updates {
+    display: grid;
+    gap: var(--spacing-1);
+    margin: var(--spacing-2) 0;
+    padding: 0;
+    list-style: none;
+
+    li {
+        display: flex;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: 0 var(--spacing-2);
+        min-width: 0;
+    }
+
+    small {
+        color: var(--text-color-placeholder);
+    }
+}
+
+.publish-destination {
+    overflow-wrap: anywhere;
+    font-weight: 600;
+}
+
+.publish-kind {
+    color: var(--text-color-placeholder);
+
+    :is([data-kind="force"], [data-kind="delete"]) > & {
+        color: var(--invalid-color);
+        font-weight: 600;
+    }
+}
+
+/* A publish that stopped short: each update's outcome, what stayed as it was, and the way forward. */
+.publish-outcome {
+    width: min(520px, calc(100vw - 32px));
+
+    p {
+        margin: var(--spacing-1) 0;
+        overflow-wrap: anywhere;
+    }
+}
+
+.publish-message {
+    flex: 1 0 100%;
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+    white-space: pre-wrap;
+}
+
+.publish-note {
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+}
+
+.publish-error {
+    color: var(--invalid-color);
+}
+
+.publish-status {
+    flex: 0 0 auto;
+    padding: 0 var(--spacing-2);
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+
+    &[data-status="published"] {
+        color: var(--status-added);
+    }
+
+    &:is([data-status="stale"], [data-status="failed"]) {
+        border-color: var(--invalid-color);
+        color: var(--invalid-color);
+    }
+
+    &[data-status="pending"] {
+        color: var(--warning-color);
+    }
+}
+
 /* Conflict resolution, in place in a conflicted commit or a branch's Working Changes conflict. */
 .conflict-resolution {
     display: grid;

@@ -15,6 +15,7 @@ import { DiffColumn, minimumDiffColumnWidth } from "./diff-column"
 import { CommitDiffColumn, FileHistoryColumn } from "./file-history"
 import { BranchIcon, CloseIcon, CollapseColumnIcon, CompareIcon, ExpandColumnIcon, FolderIcon, MaximizeIcon, OpenColumnIcon, RestoreIcon, SearchIcon, WarningIcon } from "./icons"
 import type { AuxiliaryView, InspectionSnapshot } from "./inspection"
+import { PublishControl } from "./publish-control"
 import { Button } from "./ui/Button"
 import { Tab, TabList, Tabs } from "./ui/Tabs"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
@@ -213,6 +214,9 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                 prepare({ action: "switch", path: column.worktree.path, branch: await item.getText(branchDragType), move: true })
         },
     })
+    // Publish follows focus: it publishes the focused column's stack. It sits at the column's foot, so rows don't
+    // move as focus arrives.
+    let publishBranch = snapshot.focusedId == column.id && column.kind == "branch" ? column.branch.localRefs[0] : undefined
     let filterButton = useRef<HTMLButtonElement>(null)
     let filterInput = useRef<HTMLInputElement>(null)
     let filterable = column.kind != "recovery"
@@ -409,6 +413,15 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                     onViewChange={view => void controller.setFileListView(view)}
                                 />
                             )}
+                        {publishBranch && (
+                            <PublishControl
+                                publish={controller.publish}
+                                repositoryId={snapshot.repositoryId!}
+                                branch={publishBranch}
+                                graph={snapshot.graph}
+                                busy={busy}
+                            />
+                        )}
                     </>
                 )}
         </article>

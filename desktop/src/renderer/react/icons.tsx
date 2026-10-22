@@ -1,4 +1,4 @@
-import { Archive, ArrowDownToLine, ArrowRight, Check, ChevronDown, ChevronsDownUp, ChevronsLeft, ChevronsRight, ChevronsUpDown, Copy, Diff, Ellipsis, ExternalLink, FaceSlightlySmiling, Folder, GitBranch, GitCompareArrows, GitGraph, type IconNode, Image, ImagePlus, ListTree, Maximize2, Minimize2, Minus, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Redo2, Search, SlidersHorizontal, Sun, Tag, TextWrap, TriangleAlert, Type, Undo2, X } from "lucide"
+import { Archive, ArrowDownToLine, ArrowRight, ArrowUpToLine, Check, ChevronDown, ChevronsDownUp, ChevronsLeft, ChevronsRight, ChevronsUpDown, Copy, Diff, Ellipsis, ExternalLink, FaceSlightlySmiling, Folder, GitBranch, GitCompareArrows, GitGraph, type IconNode, Image, ImagePlus, ListTree, Maximize2, Minimize2, Minus, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Redo2, Search, SlidersHorizontal, Sun, Tag, TextWrap, TriangleAlert, Type, Undo2, X } from "lucide"
 import { createElement, type ReactNode } from "react"
 import { customIconPaths } from "./icon-nodes"
 import { lucideIcon } from "./ui/icons"
@@ -6,6 +6,7 @@ import { lucideIcon } from "./ui/icons"
 // Application icons, drawn from Lucide's nodes (ADR 0020).
 export let ArchiveIcon = lucideIcon(Archive, "archive")
 export let PullIcon = lucideIcon(ArrowDownToLine, "arrow-down-to-line")
+export let PublishIcon = lucideIcon(ArrowUpToLine, "arrow-up-to-line")
 export let MoreIcon = lucideIcon(Ellipsis, "ellipsis")
 export let OpenColumnIcon = lucideIcon(ExternalLink, "external-link")
 export let FolderIcon = lucideIcon(Folder, "folder")

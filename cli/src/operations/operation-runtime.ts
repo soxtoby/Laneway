@@ -5,7 +5,7 @@ import { type OperationAvailability, type OperationAvailabilityReason, type Oper
 import type { WorktreeRequest, WorktreeResult } from "@laneway/shared"
 import type { LocalRequest, LocalResult } from "@laneway/shared"
 import type { ConflictRequest, ConflictResult } from "@laneway/shared"
-import type { BranchGraphReadOptions, PullRequest, PullResult } from "@laneway/shared"
+import type { BranchGraphReadOptions, PublishRequest, PublishResult, PullRequest, PullResult } from "@laneway/shared"
 import type { RecoveryRequest, RecoveryStatusResult, WorktreeRecovery } from "@laneway/shared"
 import type { HistoricalEditRequest, HistoricalEditResult } from "@laneway/shared"
 import type { GitResult } from "@laneway/shared"
@@ -15,6 +15,7 @@ import { isFileExtraction } from "../composition/file-extraction"
 import { conflictMutation, conflictPaths, executeConflict, suspendWorkingConflicts } from "../conflicts/conflict-operations"
 import { mutateHistoricalEdit, prepareHistoricalEdit } from "../historical-edit/historical-edit"
 import { LocalPreconditionError, mutateLocal, prepareLocal } from "../local-mutations"
+import { executePublish, type PublishProgressReporter } from "../publish"
 import { executePull, preparePull, type PullPreparation, type PullProgressReporter } from "../pull-latest"
 import { recoveryBackupPath } from "../worktrees/worktree-directory"
 import { mutateWorktree } from "../worktrees/worktree-mutations"
@@ -41,6 +42,13 @@ export type OperationCommand =
         crashAfter?: JournalPhase
         graphOptions: (repositoryId: string) => BranchGraphReadOptions
         progress?: PullProgressReporter
+    }
+    | {
+        command: "publish"
+        request: PublishRequest
+        noWait: boolean
+        graphOptions: (repositoryId: string) => BranchGraphReadOptions
+        progress?: PublishProgressReporter
     }
     | {
         command: "local" | "local-preview" | "local-transfer"
@@ -70,6 +78,7 @@ export type OperationCommandResult =
     | LocalResult
     | ConflictResult
     | PullResult
+    | PublishResult
     | HistoricalEditResult
 
 class OperationRuntime {
@@ -402,7 +411,7 @@ class OperationRuntime {
         crashIfRequested("recovery-retained", crashAfter)
         await this.cancelIfRequested(executionId, pending, action)
         crashIfRequested("preconditions-verified", crashAfter)
-        await restoreGitCheckpoint(this.repository, departing, target)
+        await restoreGitCheckpoint(this.repository, departing, target, operation.checkpoint!.expected)
         let expected = await captureGitCheckpoint(this.repository, target.worktrees.map(w => w.path), target, undefined, undefined, false)
         let updated = sealOperation({ ...operation, checkpoint: { restore: departing, expected } })
         await this.journalCompletedMutation(executionId, sealOperation({ ...pending, checkpoint: { restore: departing, expected } }), action)
@@ -962,6 +971,17 @@ export async function executeOperationCommand(
 
     if (command.command == "git")
         return executeNativeGit(repository, store, command.args, command.cwd, command.json, command.noWait, cancellation)
+
+    // Publish changes no local branch, so it runs outside Operation History and holds the mutation lock only
+    // to retain its receipt's commits.
+    if (command.command == "publish") {
+        let graphOptions = command.graphOptions(repository.descriptor.id)
+        return executePublish(repository, command.request, graphOptions, {
+            lock: work => store.withLock(command.noWait, cancellation, work),
+            cancelled: () => cancellation.isCancelled(),
+            progress: command.progress ?? (() => {}),
+        })
+    }
 
     // Fetching is network-bound and mutates only remote-tracking refs, so it runs before the mutation lock.
     let prepared: PullPreparation | undefined

@@ -1,4 +1,4 @@
-import type { EngineMessage, LocalPreview } from "@laneway/shared"
+import { type EngineMessage, ExitCode, type LocalPreview, publishReceiptStatus, type PublishResult, type PublishUpdate } from "@laneway/shared"
 
 export function writeCommandResult(result: EngineMessage, json: boolean) {
     if (json) {
@@ -71,12 +71,37 @@ export function writeCommandResult(result: EngineMessage, json: boolean) {
                 console.log(`fetch ${fetch.remote} ${fetch.status}${fetch.message ? ` ${fetch.message}` : ""}`)
             for (let stack of result.stacks)
                 console.log(`${stack.status} ${stack.branches.join(" > ")}${stack.message ? ` ${stack.message}` : ""}`)
-        } else if ("message" in result) {
+        } else if (result.command == "publish")
+            writePublish(result)
+        else if ("message" in result)
             console.log(result.message)
-        }
     } else if ("message" in result) {
         console.log(result.message)
     }
+}
+
+// A publish that leaves anything unpublished fails, so scripts and the desktop notice partial publication.
+export function resultExitCode(result: EngineMessage) {
+    let failed = result.type == "result" && result.command == "publish"
+        ? ["blocked", "partial", "stale", "failed"].includes(result.status)
+        : "status" in result && result.status == "failed"
+    return failed ? ExitCode.failure : ExitCode.ok
+}
+
+function writePublish(result: PublishResult) {
+    console.log(result.message)
+    let updates: Array<PublishUpdate & { status?: string; message?: string }> = result.receipt?.updates ?? result.plan?.updates ?? []
+    for (let update of updates) {
+        let status = update.status ? `${update.status} ` : ""
+        let range = `${update.expected?.slice(0, 7) ?? "(none)"} -> ${update.target?.slice(0, 7) ?? "(deleted)"}`
+        let notes = [update.kind == "force" ? "force with lease" : "", update.setUpstream ? "sets upstream" : ""].filter(Boolean).join(", ")
+        console.log(`  ${status}${update.kind} ${update.remote}/${update.branch} ${range}${notes ? ` (${notes})` : ""}`)
+        if (update.message)
+            console.log(update.message.replace(/^/gm, "    "))
+    }
+    let receipt = result.receipt ?? result.plan?.receipt
+    if (receipt)
+        console.log(`${result.receipt ? "Receipt" : "Last receipt"} ${receipt.id}${result.receipt ? "" : ` (${publishReceiptStatus(receipt)})`}`)
 }
 
 function writePreview(preview: LocalPreview) {
