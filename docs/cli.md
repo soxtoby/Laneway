@@ -111,7 +111,8 @@ reads a message file.
 branches above the Base, each with an exact force-with-lease; `--preview` lists the
 destinations, and `--remote` chooses where branches without an upstream are created.
 A stale lease publishes nothing. `--resume` finishes a partial publish from its
-receipt; `--restore` force-publishes the remote tips that receipt replaced. Publish
+receipt; `--restore` force-publishes the remote tips that receipt replaced. Neither takes
+`--preview`. Publish
 is outside undo/redo; anything left unpublished exits with status 1. See
 [Publish](publish.md).
 Worktree removal preserves Working Changes and Worktree-only Commits by default;

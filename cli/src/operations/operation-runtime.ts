@@ -899,10 +899,15 @@ export async function executeOperationCommand(
     if (command.command == "git")
         return executeNativeGit(repository, store, command.args, command.cwd, command.json, command.noWait, cancellation)
 
-    // Publish changes no local branch, so it runs outside the mutation lock and Operation History.
+    // Publish changes no local branch, so it runs outside Operation History and holds the mutation lock only
+    // to retain its receipt's commits.
     if (command.command == "publish") {
         let graphOptions = command.graphOptions(repository.descriptor.id)
-        return executePublish(repository, command.request, graphOptions, () => cancellation.isCancelled(), command.progress ?? (() => {}))
+        return executePublish(repository, command.request, graphOptions, {
+            lock: work => store.withLock(command.noWait, cancellation, work),
+            cancelled: () => cancellation.isCancelled(),
+            progress: command.progress ?? (() => {}),
+        })
     }
 
     // Fetching is network-bound and mutates only remote-tracking refs, so it runs before the mutation lock.

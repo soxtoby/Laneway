@@ -3,9 +3,14 @@ import { type BranchGraphReadOptions, type PublishPlan, type PublishReceipt, pub
 import { isAncestor, readActiveStack } from "./active-stack"
 import { executeConflict } from "./conflicts/conflict-operations"
 import { OperationRuntimeError } from "./operations/operation-contracts"
-import { latestReceipt, readReceipt, receiptId, saveReceipt } from "./publish-receipts"
+import { latestReceipt, type MutationLock, openReceipt, readReceipt, receiptId, saveReceipt } from "./publish-receipts"
 
 export type PublishProgressReporter = (message: string, completed: number, total: number) => void
+export interface PublishContext {
+    lock: MutationLock
+    cancelled: () => boolean
+    progress: PublishProgressReporter
+}
 
 type ReceiptUpdate = PublishReceipt["updates"][number]
 interface LocalBranch {
@@ -13,45 +18,59 @@ interface LocalBranch {
     upstream?: { tracking: string; remote: string; remoteRef: string }
 }
 
+let unresolved = "Resolve this stack's conflicts before publishing."
+
 // Publish changes only remote refs, remote-tracking refs, and upstream configuration. It never enters
 // Operation History; its receipt is the durable record, and restoration is another explicit publish.
 export async function executePublish(
     repo: RepositoryGit,
     request: PublishRequest,
     graphOptions: BranchGraphReadOptions,
-    cancelled: () => boolean,
-    progress: PublishProgressReporter,
+    context: PublishContext,
 ): Promise<PublishResult> {
     if (request.action == "plan" || request.action == "publish")
-        return publishStack(repo, request, graphOptions, cancelled, progress)
+        return publishStack(repo, request, graphOptions, context)
 
     let receipt = await readReceipt(repo, request.receipt)
     if (!receipt)
         throw new OperationRuntimeError("operation.precondition-failed", `There is no Publish Receipt ${request.receipt}.`)
-    return request.action == "resume" ? publishReceipt(repo, receipt, cancelled, progress) : restore(repo, receipt, cancelled, progress)
+    return request.action == "resume" ? resume(repo, receipt, context) : restore(repo, receipt, context)
 }
 
 async function publishStack(
     repo: RepositoryGit,
     request: Extract<PublishRequest, { action: "plan" | "publish" }>,
     graphOptions: BranchGraphReadOptions,
-    cancelled: () => boolean,
-    progress: PublishProgressReporter,
+    context: PublishContext,
 ) {
     let plan = await planPublish(repo, request.branch, request.remote, graphOptions)
     if (request.action == "publish" && request.token && request.token != plan.token)
         throw new OperationRuntimeError("operation.precondition-failed", "The stack changed after it was reviewed. Review the publish again.")
     return request.action == "plan" || plan.blocked || !plan.updates.length
         ? planResult(plan)
-        : publishReceipt(repo, newReceipt("publish", plan.stack, plan.updates), cancelled, progress)
+        : publishReceipt(repo, newReceipt("publish", plan.stack, plan.updates), context)
+}
+
+// Resume pushes the receipt's own commits under its own leases, but never while those branches are unresolved.
+async function resume(repo: RepositoryGit, receipt: PublishReceipt, context: PublishContext): Promise<PublishResult> {
+    return await publishable(repo, receipt.updates.map(update => update.ref))
+        ? publishReceipt(repo, receipt, context)
+        : { type: "result", command: "publish", status: "blocked", message: unresolved, receipt }
 }
 
 // Restoration is a new, lease-guarded force publish of the earlier tips of everything the receipt published.
-async function restore(repo: RepositoryGit, receipt: PublishReceipt, cancelled: () => boolean, progress: PublishProgressReporter): Promise<PublishResult> {
+// An update can reach the remote without its outcome being recorded, so the remote decides what that was.
+async function restore(repo: RepositoryGit, receipt: PublishReceipt, context: PublishContext): Promise<PublishResult> {
+    let unrecorded = receipt.updates.filter(update => update.status != "published")
+    if (unrecorded.length) {
+        await verifyRemote(repo, unrecorded)
+        await saveReceipt(repo, receipt)
+    }
+
     let published = receipt.updates.filter(update => update.status == "published")
     let restoration = { ...newReceipt("restore", receipt.stack, published.map(restoreUpdate)), restores: receipt.id }
     return published.length
-        ? publishReceipt(repo, restoration, cancelled, progress)
+        ? publishReceipt(repo, restoration, context)
         : { type: "result", command: "publish", status: "nothing", message: "Nothing from this publish reached the remote.", receipt }
 }
 
@@ -79,7 +98,7 @@ async function planPublish(repo: RepositoryGit, branch: string, remote: string |
         : unplaced && !selected
         ? `Choose a remote to publish ${shortName(unplaced)} to.`
         : !(await publishable(repo, refs))
-        ? "Resolve this stack's conflicts before publishing."
+        ? unresolved
         : undefined
 
     let updates: PublishUpdate[] = []
@@ -164,52 +183,72 @@ function restoreUpdate(update: PublishUpdate): PublishUpdate {
     }
 }
 
-// Verify every remaining remote tip, then push what is still pending. The receipt is saved before
+// Verify every remote tip the receipt names, then push what is still pending. The receipt is saved before
 // pushing and after every outcome, so after a crash Resume finds what reached the remote.
-async function publishReceipt(repo: RepositoryGit, receipt: PublishReceipt, cancelled: () => boolean, progress: PublishProgressReporter) {
-    await saveReceipt(repo, receipt)
-    let remaining = receipt.updates.filter(update => update.status != "published")
-    if (remaining.length) {
-        progress(`Checking ${list([...new Set(remaining.map(update => update.remote))])}…`, 0, remaining.length + 1)
-        await verifyRemote(repo, remaining)
-    }
+async function publishReceipt(repo: RepositoryGit, receipt: PublishReceipt, context: PublishContext) {
+    await openReceipt(repo, receipt, context.lock)
+    let remaining = receipt.updates.filter(update => update.status != "published").length
+    context.progress(`Checking ${list([...new Set(receipt.updates.map(update => update.remote))])}…`, 0, remaining + 1)
+    // Published entries are checked too, so a published branch someone has moved since stops the rest.
+    await verifyRemote(repo, receipt.updates)
 
     // Any stale lease or unreadable remote aborts the whole attempt; Laneway never refetches or retries on its own.
-    let unsettled = remaining.filter(update => update.status != "published")
-    if (unsettled.length && unsettled.every(update => update.status == "pending"))
-        receipt.mode = await push(repo, receipt, unsettled, cancelled, progress)
-
-    for (let update of receipt.updates.filter(update => update.status == "published" && update.setUpstream)) {
-        await gitText(repo, ["config", `branch.${update.branch}.remote`, update.remote])
-        await gitText(repo, ["config", `branch.${update.branch}.merge`, update.ref])
-    }
+    let unsettled = receipt.updates.filter(update => update.status != "published")
+    if (unsettled.length && unsettled.every(update => update.status == "pending") && !context.cancelled())
+        receipt.mode = await push(repo, receipt, unsettled, context)
     await saveReceipt(repo, receipt)
-    return receiptResult(receipt)
+
+    let result = receiptResult(receipt)
+    let problem = await recordPublished(repo, receipt)
+    return problem ? { ...result, message: `${result.message} ${problem}` } : result
 }
 
+// An update that reached the remote without its outcome being recorded is recognized here, not pushed again.
 async function verifyRemote(repo: RepositoryGit, updates: ReceiptUpdate[]) {
     for (let remote of new Set(updates.map(update => update.remote))) {
         let own = updates.filter(update => update.remote == remote)
-        let result = await repo.run(repo.descriptor.mainWorktree, ["ls-remote", remote, ...own.map(update => update.ref)])
-        let tips = new Map(result.stdout.toString().split("\n").filter(Boolean).map(line => line.split("\t").reverse() as [string, string]))
-        for (let update of own) {
-            let tip = tips.get(update.ref) ?? null
-            if (result.exitCode)
-                mark(update, "failed", diagnostics(result.stderr.toString(), `Git could not read ${remote}.`))
-            else if (tip == update.target)
-                mark(update, "published")
-            else if (tip == update.expected)
-                mark(update, "pending")
-            else
-                mark(update, "stale", changed(update))
+        let read = await readRemoteTips(repo, remote, own.map(update => update.ref))
+        if ("problem" in read) {
+            for (let update of own.filter(update => update.status != "published"))
+                mark(update, "failed", read.problem)
+        } else {
+            for (let update of own)
+                observe(update, read.tips.get(update.ref) ?? null)
         }
     }
 }
 
-async function push(repo: RepositoryGit, receipt: PublishReceipt, updates: ReceiptUpdate[], cancelled: () => boolean, progress: PublishProgressReporter) {
+// Publication changes the push URL's repository, which can differ from the fetch URL, so leases are checked
+// there. Git reads the same configuration again when pushing to the remote by name moments later.
+async function readRemoteTips(repo: RepositoryGit, remote: string, refs: string[]) {
+    let main = repo.descriptor.mainWorktree
+    let urls = await repo.run(main, ["remote", "get-url", "--push", "--all", remote])
+    let [url, ...others] = urls.stdout.toString().split("\n").filter(Boolean)
+    let result = url && !others.length ? await repo.run(main, ["ls-remote", url, ...refs]) : undefined
+    return urls.exitCode || !url
+        ? { problem: diagnostics(urls.stderr.toString(), `Git could not find ${remote}.`) }
+        : !result
+        ? { problem: `${remote} has several push URLs. Publish updates one repository, so keep a single push URL.` }
+        : result.exitCode
+        ? { problem: diagnostics(result.stderr.toString(), `Git could not read ${remote}.`) }
+        : { tips: new Map(result.stdout.toString().split("\n").filter(Boolean).map(line => line.split("\t").reverse() as [string, string])) }
+}
+
+function observe(update: ReceiptUpdate, tip: string | null) {
+    if (tip == update.target)
+        mark(update, "published")
+    else if (update.status == "published")
+        mark(update, "stale", `${update.remote}/${update.branch} changed after it was published.`)
+    else if (tip == update.expected)
+        mark(update, "pending")
+    else
+        mark(update, "stale", changed(update))
+}
+
+async function push(repo: RepositoryGit, receipt: PublishReceipt, updates: ReceiptUpdate[], context: PublishContext) {
     let atomic = updates.length > 1 && new Set(updates.map(update => update.remote)).size == 1
     if (atomic)
-        progress(`Publishing ${list(updates.map(update => update.branch))}…`, 1, 2)
+        context.progress(`Publishing ${list(updates.map(update => update.branch))}…`, 1, 2)
     let result = atomic ? await pushRefs(repo, updates, true) : undefined
     // Git refuses before sending anything when the remote does not advertise atomic push.
     if (result && !/does not support --atomic/i.test(result.stderr)) {
@@ -219,9 +258,9 @@ async function push(repo: RepositoryGit, receipt: PublishReceipt, updates: Recei
         // Lowest changed branch first; stop at the first failure and keep what already published.
         let stopped = false
         for (let [index, update] of updates.entries()) {
-            stopped ||= cancelled()
+            stopped ||= context.cancelled()
             if (!stopped) {
-                progress(`Publishing ${update.branch}…`, index + 1, updates.length + 1)
+                context.progress(`Publishing ${update.branch}…`, index + 1, updates.length + 1)
                 settle([update], await pushRefs(repo, [update], false))
                 await saveReceipt(repo, receipt)
                 stopped = update.status != "published"
@@ -231,16 +270,43 @@ async function push(repo: RepositoryGit, receipt: PublishReceipt, updates: Recei
     }
 }
 
+// Explicit refspecs already bypass push.default and remote.<name>.push; following tags and recursing into
+// submodules are the remaining configuration that would push refs the receipt does not name.
 async function pushRefs(repo: RepositoryGit, updates: ReceiptUpdate[], atomic: boolean) {
     let result = await repo.run(repo.descriptor.mainWorktree, [
         "push",
         "--porcelain",
+        "--no-follow-tags",
+        "--recurse-submodules=no",
         ...(atomic ? ["--atomic"] : []),
         ...updates.map(update => `--force-with-lease=${update.ref}:${update.expected ?? ""}`),
         updates[0]!.remote,
         ...updates.map(update => `${update.target ?? ""}:${update.ref}`),
     ])
     return { stdout: result.stdout.toString(), stderr: result.stderr.toString() }
+}
+
+// Git moves remote-tracking refs only once the remote answers, so after a crash a recognized update leaves
+// its tracking ref behind. Each moves from the receipt's lease to its target only if nothing has moved it since.
+// Upstreams are recorded after the receipt is saved, so a configuration error never hides what was published.
+async function recordPublished(repo: RepositoryGit, receipt: PublishReceipt) {
+    let main = repo.descriptor.mainWorktree
+    let published = receipt.updates.filter(update => update.status == "published")
+    for (let update of published) {
+        let tracking = `refs/remotes/${update.remote}/${update.branch}`
+        await repo.run(main, update.target ? ["update-ref", tracking, update.target, update.expected ?? ""] : ["update-ref", "-d", tracking, update.expected!])
+    }
+
+    let recording = published.filter(update => update.setUpstream)
+    try {
+        for (let update of recording) {
+            await gitText(repo, ["config", `branch.${update.branch}.remote`, update.remote])
+            await gitText(repo, ["config", `branch.${update.branch}.merge`, update.ref])
+        }
+        return undefined
+    } catch (error) {
+        return `Git could not record the upstreams of ${list(recording.map(update => update.branch))}: ${error instanceof Error ? error.message : error}`
+    }
 }
 
 // Porcelain lines are "<flag>\t<source>:<destination>\t<summary>"; "!" marks a refused ref. A failing
