@@ -71,6 +71,15 @@ export async function retainCheckpoint(repo: RepositoryGit, operation: string, .
 
 // left is the checkpoint the reversed operation produced, when restoring undoes or redoes one.
 export async function restoreGitCheckpoint(repo: RepositoryGit, source: GitCheckpoint, target: GitCheckpoint, left?: GitCheckpoint) {
+    try {
+        await restoreCheckpointState(repo, source, target, left)
+    } finally {
+        // Index files and worktree directories are written directly, which no Git command reports.
+        repo.forgetReads()
+    }
+}
+
+async function restoreCheckpointState(repo: RepositoryGit, source: GitCheckpoint, target: GitCheckpoint, left?: GitCheckpoint) {
     let main = repo.descriptor.mainWorktree
     let current = await readRegisteredWorktrees(repo)
     if (!await checkpointMatches(repo, source))

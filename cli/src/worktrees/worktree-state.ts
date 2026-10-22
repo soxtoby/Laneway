@@ -247,6 +247,15 @@ export async function worktreeStateObjects(repository: RepositoryGit, state: Wor
 }
 
 export async function restoreWorktreeState(repository: RepositoryGit, source: WorktreeState, target: WorktreeState) {
+    try {
+        await restoreRootsAndRefs(repository, source, target)
+    } finally {
+        // Worktree files and directories are written directly, which no Git command reports.
+        repository.forgetReads()
+    }
+}
+
+async function restoreRootsAndRefs(repository: RepositoryGit, source: WorktreeState, target: WorktreeState) {
     let objects = [...new Set(target.roots.flatMap(root => root.files.map(file => file.object)))]
     let content = new Map<string, Buffer>()
     if (objects.length) {

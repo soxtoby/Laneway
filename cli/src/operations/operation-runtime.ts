@@ -691,6 +691,8 @@ class OperationRuntime {
             if (registered)
                 await this.repository.command(this.repository.descriptor.mainWorktree, ["worktree", "remove", "--force", "--", worktree.path])
         }
+        // The worktree directory was removed or moved aside directly.
+        this.repository.forgetReads()
 
         if (request.action == "restore") {
             let source = await captureGitCheckpoint(this.repository, operation.affectedWorktrees, restore, undefined, undefined, false)
@@ -1016,6 +1018,9 @@ export async function executeOperationCommand(
     }
 
     return store.withLock(command.noWait, cancellation, async () => {
+        // Only this process changes the repository while it holds the lock, so repeated reads within the operation
+        // can share one Git launch.
+        repository.memoizeReads()
         let runtime = new OperationRuntime(repository, store, cancellation)
         if (command.command == "recovery-status")
             return runtime.recoveryStatus()

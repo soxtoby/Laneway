@@ -71,3 +71,26 @@ Changes:
 - Replay skips `merge-tree` when the new parent's tree equals the old parent's, which is every descendant of a reword, and worktree restoration skips it when the moved HEAD has the same tree. Draft commits remember their trees. A step's conflict-source draft is created only when an unresolved stack records the step. Checkouts are skipped for worktrees whose files and index are unchanged.
 
 Measured with `.tmp/diagnose/reword-bench.ts` on a fresh fixture with the compiled engine: Git launches per reword fell from 96 across two invocations to 56 in one, and wall time from 5–7 s to about 2 s, interleaved on the same machine while it was otherwise loaded. With three extra linked worktrees: 6.1 s to 4.1 s. The remaining cost is three checkpoint captures per call (preparation, pre-mutation verification, and the post-mutation expected state), the graph read, and about twenty sequential planning launches.
+
+## Repeated reads within an operation
+
+A trace of every Git launch across a reword, undo, redo, composition, worktree creation, and conflict acceptance on a fixture with two linked worktrees showed the same read commands launched again with nothing changed in between. The pre-mutation checkpoint verification repeats the preparation capture exactly when only object writes separate them, and an undo captures the departing state right after verifying it. Each capture costs four repository reads plus three to six per registered worktree.
+
+While the Engine holds the mutation lock, `RepositoryGit` memoizes read commands: a repeated read with the same directory, arguments, and input returns the first result. Any command that may change refs, configuration, the index, worktrees, or registrations drops the memo, as does any run with a custom environment, and code that writes worktree files or index files directly calls `forgetReads`. Failures are never kept, since another process's lock can cause one. The desktop's long-lived instances never enable the memo, because other processes change the repository under them.
+
+Measured with `.tmp/diagnose/git-repeats.ts`, in-process, two linked worktrees, launches per operation:
+
+| Operation | Before | After |
+| --- | ---: | ---: |
+| Reword (one call) | 84 | 68 |
+| Undo | 83 | 54 |
+| Redo | 82 | 53 |
+| Composition preview | 73 | 56 |
+| Composition apply | 67 | 53 |
+| Worktree creation | 22 | 21 |
+| Conflict rewrite | 107 | 100 |
+| Conflict choose | 34 | 32 |
+| Conflict acceptance | 119 | 109 |
+| History | 21 | 21 |
+
+Conflict operations gain least because their captures are separated by real changes, and the rest of their launches build trees. Within one process, a file the user edits between the preparation capture and the mutation is no longer caught by the pre-mutation verification; the post-mutation capture records it instead, and the cross-process guard between a preview and its confirmed apply is unchanged.

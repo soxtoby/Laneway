@@ -48,6 +48,7 @@ export async function withNativeIndex(repo: RepositoryGit, cwd: string, target: 
     } finally {
         await lock.close()
         await rm(`${path}.lock`, { force: true })
+        repo.forgetReads()
     }
 }
 

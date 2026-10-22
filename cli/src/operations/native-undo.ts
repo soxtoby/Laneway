@@ -162,6 +162,7 @@ async function applyNativeUndo(repo: RepositoryGit, undo: NativeUndo, action: "u
             await repo.command(undo.cwd, ["stash", "store", "-m", stash.message, stash.object])
     }
     await restoreFiles(repo, undo, target)
+    repo.forgetReads()
 }
 
 function nativeObjects(undo: NativeUndo) {

@@ -115,6 +115,75 @@ export function startGitProcess(options: GitRunOptions) {
     }
 }
 
+/**
+ * Whether a command only reads repository state ("read"), writes nothing a read could observe differently, such as
+ * content-addressed objects ("none"), or may change refs, configuration, the index, worktrees, or registrations
+ * ("change"). Anything unrecognised counts as a change. A run with its own environment is never a read, since the
+ * environment may redirect it, but one that writes objects at most, or works a temporary index without touching
+ * files, still changes nothing.
+ */
+export function commandEffect(args: string[], env?: Record<string, string>): "read" | "none" | "change" {
+    let i = 0
+    while (args[i]?.startsWith("-"))
+        i += args[i] == "-c" || args[i] == "-C" ? 2 : 1
+    let command = args[i]
+    let rest = args.slice(i + 1)
+    let effect = commandEffectWithoutEnvironment(command, rest)
+    if (!env)
+        return effect
+    if (effect != "change")
+        return "none"
+    if (env.GIT_INDEX_FILE && ["read-tree", "add", "update-index"].includes(command!) && !rest.includes("-u"))
+        return "none"
+    return "change"
+}
+
+function commandEffectWithoutEnvironment(command: string | undefined, rest: string[]): "read" | "none" | "change" {
+    switch (command) {
+        case "cat-file":
+        case "check-attr":
+        case "check-ignore":
+        case "diff":
+        case "diff-files":
+        case "diff-index":
+        case "diff-tree":
+        case "for-each-ref":
+        case "log":
+        case "ls-files":
+        case "ls-tree":
+        case "merge-base":
+        case "merge-tree":
+        case "name-rev":
+        case "rev-list":
+        case "rev-parse":
+        case "show":
+        case "show-ref":
+        case "status":
+        case "var":
+        case "write-tree":
+            return "read"
+        case "config":
+            return rest.some(arg => ["--get", "--get-all", "--get-regexp", "--list", "-l"].includes(arg)) ? "read" : "change"
+        case "worktree":
+            return rest[0] == "list" ? "read" : "change"
+        case "stash":
+            return rest[0] == "list" || rest[0] == "show" ? "read" : rest[0] == "create" ? "none" : "change"
+        case "branch":
+            return rest.includes("--list") || rest.includes("--show-current") ? "read" : "change"
+        case "symbolic-ref":
+            return rest.filter(arg => !arg.startsWith("-")).length < 2 && !rest.includes("-d") && !rest.includes("--delete") ? "read" : "change"
+        case "commit-tree":
+        case "hash-object":
+        case "index-pack":
+        case "mktree":
+        case "pack-objects":
+        case "stripspace":
+            return "none"
+        default:
+            return "change"
+    }
+}
+
 export function redactGitText(text: string, secrets: string[] = []) {
     let redacted = text
         .replace(credentialPattern, "$1")

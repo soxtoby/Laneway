@@ -6,7 +6,7 @@ import { type ChangesReadCache, startChangesRead, startFileDiffRead, startFileIm
 import { conflictComparisonSource, conflictHistoryRequest, projectConflictGraph } from "./conflict-graph"
 import { GitError } from "./git-error"
 import { selectGit } from "./git-installation"
-import { commandFailure, type GitRunResult, redactGitText, runGitProcess, startGitProcess } from "./git-process"
+import { commandEffect, commandFailure, type GitRunResult, redactGitText, runGitProcess, startGitProcess } from "./git-process"
 import { projectHistoricalEdits } from "./historical-edit"
 import { readRegisteredWorktrees } from "./worktrees"
 
@@ -57,11 +57,29 @@ export interface GitTask<T> {
     cancel(): void
 }
 
+/** Results above this size are not memoized, so a large diff is held once rather than twice. */
+let memoizedResultLimit = 16 * 1024 * 1024
+
 export class RepositoryGit {
     private branchGraphCache: BranchGraphReadCache | undefined
     private readonly changesCache: ChangesReadCache = new Map()
+    private memoizedReads: Map<string, Promise<GitRunResult>> | undefined
 
     constructor(readonly descriptor: RepositoryDescriptor) {}
+
+    /**
+     * Serves a repeated read command from its first result until a command through this instance changes the
+     * repository or `forgetReads` reports a change made another way. Only for a process that holds the mutation lock
+     * for as long as it keeps this instance, since nothing else can tell it the repository moved.
+     */
+    memoizeReads() {
+        this.memoizedReads = new Map()
+    }
+
+    /** Drops memoized reads because the repository changed without a Git command through this instance. */
+    forgetReads() {
+        this.memoizedReads?.clear()
+    }
 
     private get readDescriptor() {
         return { ...this.descriptor, selectedWorktree: this.descriptor.mainWorktree }
@@ -241,7 +259,31 @@ export class RepositoryGit {
     }
 
     run(cwd: string, args: string[], input?: string | Uint8Array, env?: Record<string, string>) {
-        return runGitProcess({ installation: this.descriptor.git, cwd, args, input, env })
+        let memo = this.memoizedReads
+        if (!memo)
+            return runGitProcess({ installation: this.descriptor.git, cwd, args, input, env })
+
+        let effect = commandEffect(args, env)
+        if (effect == "change")
+            memo.clear()
+        if (effect != "read")
+            return runGitProcess({ installation: this.descriptor.git, cwd, args, input, env })
+
+        let key = [cwd, ...args, input == undefined ? "" : Buffer.from(input).toString("latin1")].join("\0")
+        let pending = memo.get(key)
+        if (!pending) {
+            pending = runGitProcess({ installation: this.descriptor.git, cwd, args, input }).then(result => {
+                // A failure may be transient, such as a lock another process holds, so only successes are kept.
+                if (result.exitCode != 0 || result.stdout.length > memoizedResultLimit)
+                    memo.delete(key)
+                return result
+            }, error => {
+                memo.delete(key)
+                throw error
+            })
+            memo.set(key, pending)
+        }
+        return pending
     }
 
     async command(cwd: string, args: string[], input?: string | Uint8Array, env?: Record<string, string>) {

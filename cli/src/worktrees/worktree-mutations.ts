@@ -44,16 +44,20 @@ export async function mutateWorktree(repository: RepositoryGit, preview: Worktre
     else if (request.action == "remove") {
         // A worktree another program is using fails here with nothing to undo. An interrupted removal
         // leaves the directory where the recovery column expects its backup.
-        await removeLinkedWorktree(current!, recoveryBackupPath(current!.path, operationId), async () => {
-            if (!request.preserve)
-                return
-            if (current!.missing) {
-                if (await hasUniqueCommits(repository, current!))
-                    await protectBranch(repository, current!, branchPrefix, changedRefs)
-            } else {
-                await preserveBeforeSwitch(repository, current!, branchPrefix, changedRefs)
-            }
-        })
+        try {
+            await removeLinkedWorktree(current!, recoveryBackupPath(current!.path, operationId), async () => {
+                if (!request.preserve)
+                    return
+                if (current!.missing) {
+                    if (await hasUniqueCommits(repository, current!))
+                        await protectBranch(repository, current!, branchPrefix, changedRefs)
+                } else {
+                    await preserveBeforeSwitch(repository, current!, branchPrefix, changedRefs)
+                }
+            })
+        } finally {
+            repository.forgetReads()
+        }
     }
 
     return changedRefs
