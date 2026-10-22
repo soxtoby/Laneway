@@ -16,8 +16,9 @@ export async function readHistoricalEdits(repo: RepositoryGit): Promise<Historic
 
 /**
  * Keeps a session's worktree in its original branch's column, where it would otherwise be a Virtual Branch, and
- * marks the worktree with its session wherever it shows. Damaged session metadata shows no sessions here; the
- * Engine explains it when the worktree is next used.
+ * marks the worktree with its session wherever it shows. A branch's column shows one worktree, so once another
+ * worktree checks the branch out (Git allows it while the session is detached), the session stays a Virtual Branch.
+ * Damaged session metadata shows no sessions here; the Engine explains it when the worktree is next used.
  */
 export async function projectHistoricalEdits(repo: RepositoryGit, graph: BranchGraph) {
     let edits = await readHistoricalEdits(repo).catch(() => [])
@@ -25,7 +26,7 @@ export async function projectHistoricalEdits(repo: RepositoryGit, graph: BranchG
         let subject = await gitText(repo, ["log", "-1", "--format=%s", edit.commit])
         let detached = graph.virtualBranches.find(virtual => virtual.worktree.id == edit.worktreeId)
         let branch = graph.branches.find(candidate => candidate.localRefs.includes(edit.branch))
-        if (detached && branch) {
+        if (detached && branch && !branch.checkedOut.some(worktree => worktree.branchRef == edit.branch)) {
             graph.virtualBranches = graph.virtualBranches.filter(virtual => virtual != detached)
             graph.history = graph.history.filter(point => point.lineId != detached.id)
             branch.checkedOut = [...branch.checkedOut, { ...detached.worktree, branchRef: edit.branch }]

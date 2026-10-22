@@ -64,6 +64,18 @@ test("the Branch Graph keeps a session's worktree in its original branch's colum
     expect(feature.markers.map(marker => marker.objectId)).toEqual([worktree.historicalEdit!.stash!])
 }, 60_000)
 
+test("the Branch Graph keeps a session's worktree in its own column once another worktree checks out its original branch", async () => {
+    let { path, greeting } = await stack()
+    await edit(path, { action: "enter", path, commit: greeting })
+    git(path, "worktree", "add", "-q", join(await temporaryDirectory(), "other"), "feature")
+
+    let graph = await (await connectRepository(path)).startReadBranchGraph({ authorIdentities: { secondary: [] }, remotePatterns: [] }).result
+
+    let feature = graph.branches.find(branch => branch.name == "feature")!
+    expect(feature.checkedOut.map(w => [w.main, w.historicalEdit?.state])).toEqual([[false, undefined]])
+    expect(graph.virtualBranches.map(virtual => [virtual.worktree.main, virtual.worktree.historicalEdit?.state])).toEqual([[true, "active"]])
+}, 60_000)
+
 test("entry refuses a detached worktree, Primary Branch history, populated submodules, and a second session; the worktree cannot switch away", async () => {
     let { path, base, greeting } = await stack()
     git(path, "update-ref", "refs/remotes/origin/main", greeting)

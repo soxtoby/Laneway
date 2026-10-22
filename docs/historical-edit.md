@@ -74,7 +74,7 @@ Entry, a clean Return, and Restart run inside a journaled checkpoint that is nev
 
 ### Desktop
 
-- **Reading sessions.** The Branch Graph read projects sessions in-process, as it does the conflict state. A session's detached worktree joins its original branch's `checkedOut` instead of becoming a Virtual Branch, so the column keeps its identity and Active Stack. The worktree carries the session and the edited commit's subject.
+- **Reading sessions.** The Branch Graph read projects sessions in-process, as it does the conflict state. A session's detached worktree joins its original branch's `checkedOut` instead of becoming a Virtual Branch, so the column keeps its identity and Active Stack. The worktree carries the session and the edited commit's subject. If another worktree checks out the original branch meanwhile, which Git allows, that worktree keeps the branch's column and the session shows as a Virtual Branch.
 - **Entering.** A commit row's menu offers **Edit from here** in a worktree-backed column outside a session, for a single-parent commit on a local branch other than the Primary Branch. The Engine checks the rest. Branch-only columns don't offer it.
 - **The column in a session.**
   - A banner says "Editing from <subject> on <branch>" and offers **Return to <branch>**. A paused session shows why and waits. A stale one shows why and adds **Restart on latest**.
