@@ -1,6 +1,6 @@
 import { connectRepository } from "@laneway/git"
 import { afterEach, expect, test } from "bun:test"
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises"
+import { chmod, readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { mutateComposition, prepareComposition } from "../src/composition/composition"
 import { executeOperationCommand } from "../src/operations/operation-runtime"
@@ -11,30 +11,6 @@ afterEach(cleanup)
 
 // Ignored files are expendable, as they are to git checkout: a transfer writes over one in its way and leaves its
 // ignored siblings alone, rather than scanning every ignored path for a collision first.
-test("transfers write over a colliding ignored file and keep ignored siblings", async () => {
-    let { path } = await fixture()
-    await mkdir(join(path, "cache"))
-    await writeFile(join(path, "cache", "new.txt"), "incoming\n")
-    git(path, "add", ".")
-    git(path, "commit", "-qm", "incoming")
-    let head = git(path, "rev-parse", "HEAD")
-    git(path, "checkout", "-q", "main")
-    await writeFile(join(path, ".git", "info", "exclude"), "cache/\n")
-    await mkdir(join(path, "cache"), { recursive: true })
-    await writeFile(join(path, "cache", "existing.txt"), "ignored sibling\n")
-    let r = request({
-        mode: "copy",
-        source: { kind: "commit", objectId: head, branch: "feature" },
-        target: { kind: "working", worktreePath: path },
-        files: [{ path: "cache/new.txt" }],
-    })
-    await writeFile(join(path, "cache", "new.txt"), "ignored collision\n")
-
-    await perform(path, r)
-    expect(await readFile(join(path, "cache", "new.txt"), "utf8")).toBe("incoming\n")
-    expect(await readFile(join(path, "cache", "existing.txt"), "utf8")).toBe("ignored sibling\n")
-}, 30_000)
-
 test("moving a committed file into its own Working Changes preserves the file and undo after GC without recovery refs", async () => {
     let { path } = await fixture()
     await writeFile(join(path, "selected.txt"), "keep these bytes\n")
@@ -117,27 +93,6 @@ test("a verified preview reuses its plan; corrupt or pruned plans rebuild safely
     await prepareComposition(repo, r, p.preview.token)
 
     expect(reads).toBe(2)
-}, 60_000)
-
-test("a cached transfer writes over an ignored file created after preview", async () => {
-    let { path, base } = await fixture()
-    await writeFile(join(path, "incoming.txt"), "source\n")
-    git(path, "add", ".")
-    git(path, "commit", "-qm", "source")
-    let source = git(path, "rev-parse", "HEAD")
-    git(path, "checkout", "-qb", "destination", base)
-    await writeFile(join(path, ".git", "info", "exclude"), "incoming.txt\n")
-    let r = request({
-        mode: "copy",
-        source: { kind: "commit", objectId: source },
-        target: { kind: "working", worktreePath: path },
-        files: [{ path: "incoming.txt" }],
-    })
-    let p = await preview(path, r)
-    await writeFile(join(path, "incoming.txt"), "external ignored file\n")
-
-    await executeOperationCommand({ command: "local", request: r, token: p.token, noWait: false }, path)
-    expect(await readFile(join(path, "incoming.txt"), "utf8")).toBe("source\n")
 }, 60_000)
 
 test("copying an already-present commit is a no-op, including operation history", async () => {

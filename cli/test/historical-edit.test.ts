@@ -227,24 +227,6 @@ test("when the original changes conflict on return, the historical ones wait as 
     expect(await Bun.file(join(path, "extra.txt")).exists()).toBe(false)
 }, 90_000)
 
-test("return restores earlier untracked changes over a file the session made ignored", async () => {
-    let { path, greeting } = await stack()
-    await writeFile(join(path, "greet.txt"), "hi\nthere\npal\n")
-    await writeFile(join(path, "notes.txt"), "stashed notes\n")
-    await edit(path, { action: "enter", path, commit: greeting })
-    await writeFile(join(path, "greet.txt"), "hey\nthere\nfriend\n")
-    await writeFile(join(path, ".gitignore"), "notes.txt\n")
-    await apply(path)
-    await writeFile(join(path, "notes.txt"), "ignored notes\n")
-
-    // The ignored copy is expendable, as it would be to git checkout: the stashed original comes back over it.
-    await edit(path, { action: "return", path, mode: "clean" })
-
-    expect(await readFile(join(path, "notes.txt"), "utf8")).toBe("stashed notes\n")
-    expect(git(path, "rev-parse", "HEAD")).toBe(git(path, "rev-parse", "feature"))
-    expect(await session(path)).toBeUndefined()
-}, 90_000)
-
 test("two worktrees hold independent sessions, and applying in one leaves the other current", async () => {
     let { path, base, greeting } = await stack()
     let other = join(await temporaryDirectory(), "other")

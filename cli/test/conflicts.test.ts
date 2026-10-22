@@ -206,38 +206,29 @@ test("switching follows the unresolved branch and suspends Working Changes confl
     expect(git(path, "stash", "list")).toBe("")
 }, 180_000)
 
-test("compiled recovery survives rewrite and acceptance crashes with GC retaining candidates", async () => {
+test("compiled recovery survives an acceptance crash with GC retaining candidates", async () => {
+    // Rolling back at each journal boundary is covered once, in composition-conflicts; this keeps the conflict-specific claim.
     let engine = resolve(import.meta.dir, "../bin/lane.exe")
-    for (let phase of ["intent", "worktrees-committed", "history-committed"]) {
-        let { path, base, before } = await fixture()
-        await run(path, ["conflict", "--request", JSON.stringify({ action: "rewrite", branches: ["topic"], base, path }), "--crash-after", phase], 86)
-        await run(path, ["recover"])
+    let { path, base } = await fixture()
+    await run(path, ["conflict", "--request", JSON.stringify({ action: "rewrite", branches: ["topic"], base, path })])
+    let subject = (await conflict(path, { action: "list" })).conflicts[0].id
+    let view = (await choose(path, subject, "right")).view!
+    git(path, "gc", "--prune=now")
+    await run(path, [
+        "conflict",
+        "--request",
+        JSON.stringify({ action: "accept", subject, input: view.subject.input, revision: view.candidate.revision }),
+        "--crash-after",
+        "history-committed",
+    ], 86)
+    await run(path, ["recover"])
 
-        expect(git(path, "rev-parse", "topic")).toBe(before)
+    expect(git(path, "branch", "--show-current")).toBe("topic")
 
-        if (phase != "history-committed") {
-            expect((await conflict(path, { action: "list" })).conflicts).toHaveLength(0)
+    await run(path, ["undo"])
 
-            continue
-        }
-        let subject = (await conflict(path, { action: "list" })).conflicts[0].id
-        let view = (await choose(path, subject, "right")).view!
-        git(path, "gc", "--prune=now")
-        await run(path, [
-            "conflict",
-            "--request",
-            JSON.stringify({ action: "accept", subject, input: view.subject.input, revision: view.candidate.revision }),
-            "--crash-after",
-            phase,
-        ], 86)
-        await run(path, ["recover"])
+    expect((await conflict(path, { action: "inspect", subject })).view!.ready).toBe(true)
 
-        expect(git(path, "branch", "--show-current")).toBe("topic")
-
-        await run(path, ["undo"])
-
-        expect((await conflict(path, { action: "inspect", subject })).view!.ready).toBe(true)
-    }
     async function run(path: string, args: string[], expected = 0) {
         let child = Bun.spawn([engine, ...args, "--json"], {
             cwd: path,

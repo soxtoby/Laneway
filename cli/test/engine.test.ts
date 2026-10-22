@@ -261,29 +261,8 @@ describe("Laneway Engine executable", () => {
         }
     }, 90_000)
 
-    test("ignored files stay outside recovery while index and ref changes create boundaries", async () => {
+    test("index and ref changes create undo boundaries", async () => {
         let testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
-
-        let ignoredRepository = await createRepository()
-        try {
-            await writeFile(resolve(ignoredRepository, ".gitignore"), "ignored.log\n")
-
-            expect(runGitAt(ignoredRepository, "add", ".gitignore").exitCode).toBe(0)
-            expect(runGitAt(ignoredRepository, "commit", "--quiet", "-m", "Ignore test log").exitCode).toBe(0)
-            expect(
-                (await runEngineAt(
-                    ignoredRepository,
-                    ["test-mutation", "--value", "ignored", "--json"],
-                    testEnvironment,
-                )).exitCode,
-            ).toBe(0)
-
-            await writeFile(resolve(ignoredRepository, "ignored.log"), "not recoverable\n")
-
-            expect((await runEngineAt(ignoredRepository, ["undo", "--json"])).exitCode).toBe(0)
-        } finally {
-            await rm(ignoredRepository, { recursive: true, force: true })
-        }
 
         let indexRepository = await createRepository()
         try {

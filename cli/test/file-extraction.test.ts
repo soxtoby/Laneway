@@ -164,61 +164,52 @@ test("journal checkpoints preserve audit bytes, detect historical corruption, an
     expect((await readFile(journal, "utf8")).startsWith(original)).toBe(true)
 }, 30_000)
 
-test("compiled file extraction rolls back interruption until history commits", async () => {
+test("compiled file extraction recovers crashes around undo and redo once history commits", async () => {
+    // Rolling back before history commits is covered once, in composition-conflicts; this keeps the extraction-specific claims.
     let engine = resolve(import.meta.dir, "../bin/lane.exe")
-    for (let phase of ["intent", "worktrees-committed", "history-committed"]) {
-        let { path, git, head, request } = await fixture()
-        let requestPath = join(path, ".git", "request.json")
-        await writeFile(requestPath, JSON.stringify(request))
-        let run = async (args: string[], expected = 0) => {
-            let child = Bun.spawn([engine, ...args, "--json"], {
-                cwd: path,
-                env: { ...process.env, LANEWAY_ENABLE_TEST_COMMANDS: "1" },
-                stdout: "pipe",
-                stderr: "pipe",
-            })
-            let [code, out, err] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+    let { path, git, head, request } = await fixture()
+    let requestPath = join(path, ".git", "request.json")
+    await writeFile(requestPath, JSON.stringify(request))
+    let run = async (args: string[], expected = 0) => {
+        let child = Bun.spawn([engine, ...args, "--json"], {
+            cwd: path,
+            env: { ...process.env, LANEWAY_ENABLE_TEST_COMMANDS: "1" },
+            stdout: "pipe",
+            stderr: "pipe",
+        })
+        let [code, out, err] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
 
-            expect(code, out + err).toBe(expected)
+        expect(code, out + err).toBe(expected)
 
-            return out.trim() ? JSON.parse(out.trim().split("\n").at(-1)!) : undefined
-        }
-        if (phase == "intent")
-            await run(["local-transfer", "--request-file", requestPath, "--crash-after", phase], 86)
-        else {
-            let preview = await run(["local-preview", "--request-file", requestPath])
-            await run(["local", "--request-file", requestPath, "--expected", preview.preview.token, "--crash-after", phase], 86)
-        }
-        await run(["recover"])
-        if (phase != "history-committed")
-            expect(git("rev-parse", "HEAD")).toBe(head)
-        else {
-            expect(git("show", ":selected.txt")).toBe("before")
-
-            let moved = git("rev-parse", "HEAD")
-            await run(["undo", "--crash-after", "refs-committed"], 86)
-            await run(["recover"])
-
-            expect(git("rev-parse", "HEAD")).toBe(moved)
-            expect(git("show", ":selected.txt")).toBe("before")
-
-            await run(["undo"])
-
-            expect(git("rev-parse", "HEAD")).toBe(head)
-
-            await run(["redo", "--crash-after", "refs-committed"], 86)
-            await run(["recover"])
-
-            expect(git("rev-parse", "HEAD")).toBe(head)
-            expect(git("show", ":selected.txt")).toBe("after")
-
-            await run(["redo"])
-
-            expect(git("show", ":selected.txt")).toBe("before")
-        }
-
-        expect(await readFile(join(path, "selected.txt"), "utf8")).toBe("after\n")
+        return out.trim() ? JSON.parse(out.trim().split("\n").at(-1)!) : undefined
     }
+    let preview = await run(["local-preview", "--request-file", requestPath])
+    await run(["local", "--request-file", requestPath, "--expected", preview.preview.token, "--crash-after", "history-committed"], 86)
+    await run(["recover"])
+
+    expect(git("show", ":selected.txt")).toBe("before")
+
+    let moved = git("rev-parse", "HEAD")
+    await run(["undo", "--crash-after", "refs-committed"], 86)
+    await run(["recover"])
+
+    expect(git("rev-parse", "HEAD")).toBe(moved)
+    expect(git("show", ":selected.txt")).toBe("before")
+
+    await run(["undo"])
+
+    expect(git("rev-parse", "HEAD")).toBe(head)
+
+    await run(["redo", "--crash-after", "refs-committed"], 86)
+    await run(["recover"])
+
+    expect(git("rev-parse", "HEAD")).toBe(head)
+    expect(git("show", ":selected.txt")).toBe("after")
+
+    await run(["redo"])
+
+    expect(git("show", ":selected.txt")).toBe("before")
+    expect(await readFile(join(path, "selected.txt"), "utf8")).toBe("after\n")
 }, 60_000)
 async function fixture(format = "sha1") {
     let path = await mkdtemp(join(tmpdir(), "laneway-extract-"))

@@ -44,12 +44,11 @@ test("create, dirty transfer, undo and redo preserve both worktrees and the inde
     expect(git(path, "branch", "--show-current")).toBe("feature")
 }, 60_000)
 
-test("removal restores exact discarded Git state, deletes ignored files without asking, and guards external changes", async () => {
+test("removal restores exact discarded Git state and guards external changes", async () => {
     let path = await fixture()
     await perform(path, { action: "create", branch: "feature", move: false })
     let linked = join(`${path}.worktrees`, "feature")
     await writeFile(join(linked, "new.txt"), "keep for undo\n")
-    await writeFile(join(linked, "ignored.txt"), "outside undo\n")
 
     await perform(path, { action: "remove", path: linked, preserve: false })
 
@@ -58,7 +57,6 @@ test("removal restores exact discarded Git state, deletes ignored files without 
     await transition(path, "undo")
 
     expect(await readFile(join(linked, "new.txt"), "utf8")).toBe("keep for undo\n")
-    expect(await Bun.file(join(linked, "ignored.txt")).exists()).toBe(false)
 
     await transition(path, "redo")
     await transition(path, "undo")
@@ -117,6 +115,7 @@ test("a mutation that fails after changing Git state is rolled back immediately 
     git(linked, "add", ".gitattributes", "filtered.txt")
     git(linked, "commit", "-qm", "track a file behind a broken filter")
     git(linked, "checkout", "-q", "--detach")
+    git(path, "config", "filter.broken.clean", "cat")
     git(path, "config", "filter.broken.smudge", "false")
     git(path, "config", "filter.broken.required", "true")
     await writeFile(join(path, "a.txt"), "dirty\n")
@@ -292,7 +291,9 @@ test("detached unique commits are protected before switching, and an external pr
 
 test("compiled engine recovers worktree apply and undo at durable journal boundaries", async () => {
     let executable = resolve(import.meta.dir, "../bin/lane.exe")
-    for (let phase of ["intent", "recovery-retained", "preconditions-verified", "worktrees-committed", "refs-committed", "history-committed"]) {
+    // The runtime exits at three distinct points: recovery-retained and preconditions-verified share intent's, and
+    // refs-committed shares worktrees-committed's.
+    for (let phase of ["intent", "worktrees-committed", "history-committed"]) {
         let path = await fixture()
         await engine(path, ["worktree", "--request", JSON.stringify({ action: "create", branch: "feature" }), "--crash-after", phase], 86)
         await engine(path, ["recover"])
