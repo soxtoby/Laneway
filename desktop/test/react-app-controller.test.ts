@@ -142,7 +142,7 @@ describe("app controller", () => {
         expect(controller.columns.snapshot()).not.toBe(shown)
     })
 
-    test("a publish confirmed in passing leaves a pending discard's Undo notice showing, unsettled", async () => {
+    test("a publish's confirmation leaves a pending discard's Undo notice showing, unsettled, and shows once it closes", async () => {
         let scenario = inspectionScenario()
         let settled: string[] = []
         let controller = await started(fakeLaneway({
@@ -161,6 +161,9 @@ describe("app controller", () => {
         expect(discarded?.message).toBe("Discarded src/file.txt")
         expect(ready(controller.snapshot()).notice == discarded).toBe(true)
         expect(settled).toEqual([])
+
+        controller.dismissNotice(discarded!)
+        expect(ready(controller.snapshot()).notice?.message).toBe("Published two.")
     })
 
     test("cancelling the open dialog leaves no notice, and an opened repository is confirmed", async () => {

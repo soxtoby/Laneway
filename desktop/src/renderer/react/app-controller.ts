@@ -292,10 +292,17 @@ export function createAppController(api: Api): AppController {
     })
 
     // A publish changes no local commits, so it leaves the Undo notice for the latest operation in place: its
-    // confirmation doesn't replace a notice offering Undo, which would withdraw it and settle pending discards.
+    // confirmation waits for a notice offering Undo to close rather than replacing it, which would withdraw the Undo
+    // and settle pending discards.
+    let waitingConfirmation: Notice | undefined
     let publish = createPublish({
         api,
-        notify: notice => ready()?.notice?.action ? undefined : notify(notice),
+        notify(notice) {
+            if (ready()?.notice?.action)
+                waitingConfirmation = notice
+            else
+                notify(notice)
+        },
         remote: () => columns.snapshot().graph?.selectedRemote,
         pull: repositoryId => void pull.start(repositoryId),
         completed: () => columns.refresh(false),
@@ -540,6 +547,11 @@ export function createAppController(api: Api): AppController {
                 return
             update({ notice: undefined })
             notice.closed?.()
+            // A publish's confirmation that waited for this notice shows now, unless closing it showed another.
+            if (waitingConfirmation && !ready()?.notice) {
+                notify(waitingConfirmation)
+                waitingConfirmation = undefined
+            }
         },
 
         dispose() {
