@@ -42,6 +42,8 @@ export interface Publish extends Store<PublishSnapshot> {
     /** Closes the repository's outcome and starts Pull latest, the way past a stale lease. */
     pull(repositoryId: string): void
     close(repositoryId: string): void
+    /** Forgets every other repository's publishes, ignoring their results, since a reopened repository starts afresh. */
+    retain(repositoryIds: string[]): void
     dispose(): void
 }
 
@@ -63,6 +65,8 @@ interface PublishOptions {
 export function createPublish({ api, notify, remote, pull, completed }: PublishOptions): Publish {
     let store = createStore<PublishSnapshot>({ running: {}, outcomes: {} })
     let reviews = 0
+    // The run under way in each repository, so a result for a repository closed meanwhile is ignored.
+    let runs = new Map<string, object>()
     let set = (change: Partial<PublishSnapshot>) => store.publish({ ...store.snapshot(), ...change })
     let setRunning = (repositoryId: string, message?: string) => {
         let running = { ...store.snapshot().running }
@@ -105,28 +109,38 @@ export function createPublish({ api, notify, remote, pull, completed }: PublishO
     }
 
     async function run(repositoryId: string, request: PublishRequest) {
-        if (store.snapshot().running[repositoryId] != undefined)
+        if (runs.has(repositoryId))
             return
+        let started = {}
+        runs.set(repositoryId, started)
         setRunning(repositoryId, request.action == "restore" ? "Restoring…" : "Publishing…")
         setOutcome(repositoryId)
+
+        let outcome = await attempt(repositoryId, request)
+        if (runs.get(repositoryId) == started) {
+            runs.delete(repositoryId)
+            setRunning(repositoryId)
+            if (outcome.result?.status == "published" || outcome.result?.status == "nothing")
+                notify({ code: "publish.completed", message: outcome.result.message, transient: true })
+            else
+                setOutcome(repositoryId, outcome)
+
+            await completed(repositoryId)
+            let current = store.snapshot().review
+            if (current?.repositoryId == repositoryId)
+                await review(repositoryId, current.branch)
+        }
+    }
+
+    async function attempt(repositoryId: string, request: PublishRequest): Promise<PublishOutcome> {
         try {
             let response = await api.publish(repositoryId, request)
             if (!response.ok)
                 throw new Error(response.error.message)
-            if (response.result.status == "published" || response.result.status == "nothing")
-                notify({ code: "publish.completed", message: response.result.message, transient: true })
-            else
-                setOutcome(repositoryId, { result: response.result })
+            return { result: response.result }
         } catch (error) {
-            setOutcome(repositoryId, { error: errorMessage(error) })
-        } finally {
-            setRunning(repositoryId)
+            return { error: errorMessage(error) }
         }
-
-        await completed(repositoryId)
-        let current = store.snapshot().review
-        if (current?.repositoryId == repositoryId)
-            await review(repositoryId, current.branch)
     }
 
     return {
@@ -150,6 +164,15 @@ export function createPublish({ api, notify, remote, pull, completed }: PublishO
         },
 
         close: repositoryId => setOutcome(repositoryId),
+
+        retain(repositoryIds) {
+            let open = new Set(repositoryIds)
+            let kept = <T>(byRepository: Record<string, T>) => Object.fromEntries(Object.entries(byRepository).filter(([id]) => open.has(id)))
+            for (let id of [...runs.keys()].filter(id => !open.has(id)))
+                runs.delete(id)
+            let { review, running, outcomes } = store.snapshot()
+            set({ review: review && open.has(review.repositoryId) ? review : undefined, running: kept(running), outcomes: kept(outcomes) })
+        },
 
         dispose: unsubscribe,
     }

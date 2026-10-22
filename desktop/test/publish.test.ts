@@ -92,6 +92,17 @@ describe("publish controller", () => {
         },
     )
 
+    test("closing a repository forgets its outcome, so reopening it shows none", async () => {
+        let fake = fakeApi(() => ({ ok: true, result: { type: "result", command: "publish", status: "failed", message: "Nothing was published." } }))
+        let { sut } = publisher(fake)
+        await sut.resume(repositoryId, "receipt")
+
+        sut.retain([])
+        sut.retain([repositoryId])
+
+        expect(sut.snapshot().outcomes).toEqual({})
+    })
+
     test("an earlier review answering after a later one is dropped", async () => {
         let answers: Array<() => void> = []
         let fake = fakeApi(request =>

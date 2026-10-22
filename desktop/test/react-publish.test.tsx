@@ -188,6 +188,27 @@ describe("React Publish", () => {
         await app.act(() => press(button(document.querySelector<HTMLElement>(".publish-outcome")!, "Pull latest")))
         expect(pulled).toEqual([[first.id, { branches: ["refs/heads/main", "refs/heads/feature/laneway"], remote: "origin" }]])
     })
+
+    test("a repository closed while it publishes is ready to publish again when reopened, with no outcome from before", async () => {
+        let answer = Promise.withResolvers<PublishActionResult>()
+        let repository = repositoryEntry("D:\\Source\\publish", ["main", "feature/laneway"])
+        let workspace: Workspace = { repositories: [repository], activeRepositoryId: repository.id }
+        let { app } = await startPublishing(request => request.action == "plan" ? planned([one, feature]) : answer.promise, {
+            getState: async () => ({ ...appState(), workspace }),
+            closeRepository: async () => workspace = { repositories: [] },
+            openRepository: async () => ({ ok: true, workspace: workspace = { repositories: [repository], activeRepositoryId: repository.id } }),
+        })
+        await app.act(() => press(button(control(), "Publish")))
+        await app.act(() => app.controller.closeRepository(repository.id))
+
+        await app.act(() =>
+            answer.resolve(result("stale", "Nothing was published.", receipt([{ ...one, status: "stale" }, { ...feature, status: "pending" }])))
+        )
+        await app.act(() => app.controller.openRepository())
+
+        expect(document.querySelector(".publish-outcome") == null).toBe(true)
+        expect(button(control(), "Publish").hasAttribute("data-pending")).toBe(false)
+    })
 })
 
 async function startPublishing(

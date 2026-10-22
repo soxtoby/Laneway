@@ -127,6 +127,7 @@ export function createAppController(api: Api): AppController {
     // Each workspace change that can move the active repository shows that repository's columns.
     function showWorkspace(workspace: Workspace) {
         update({ workspace })
+        publish.retain(workspace.repositories.map(repository => repository.id))
         let active = activeRepository(workspace)
         if (active?.status == "available")
             columns.activate(active.id)
