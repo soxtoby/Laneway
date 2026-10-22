@@ -82,5 +82,5 @@ Entry, a clean Return, and Restart run inside a journaled checkpoint that is nev
 - **Branch renames don't carry over.** Renaming the original branch, even through Laneway, makes its session stale rather than following the rename.
 - **Removing a missing worktree leaves an inert session ref.** That ref reports the session stale.
 - **Recovery that leaves the repository alone blocks later mutations.** They stay blocked until the repository matches the interrupted operation's starting or finished state again. An interruption partway through a mutation has no finished state on record, so recovery still rolls that back, along with anything changed since.
-- **Overlapping changes block acceptance.** Accepting a conflict refuses when a paused session's Historical Working Changes overlap its commit's rewrite, rather than deferring them as a Working Changes Conflict.
+- **Overlapping changes block acceptance.** Accepting a conflict refuses when a paused session's Historical Working Changes, staged or unstaged, overlap its commit's rewrite, rather than deferring them as a Working Changes Conflict.
 - **Desktop.** The desktop presentation (the banner, Apply as the default action, the Return choices, and the stale and paused notices) follows separately.
