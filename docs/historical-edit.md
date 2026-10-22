@@ -9,9 +9,9 @@ The settled behavior for [SOX-139](https://linear.app/soxtoby/issue/SOX-139/impl
 - Historical Edit is an explicit, per-worktree checkout context for editing from an older snapshot. It isn't a special one-commit workflow.
 - **Entry.**
   - It is available for a commit unique to the focused Active Stack when the column has existing Worktree Backing. A branch-only column must first gain that backing.
-  - It preserves tracked, staged, and untracked Working Changes, checks for checkout collisions first, and detaches the same worktree at the selected commit.
+  - It preserves tracked, staged, and untracked Working Changes and detaches the same worktree at the selected commit.
   - It never creates another worktree or Workspace Column, and it creates no operation.
-  - Ignored files are untouched and outside undo.
+  - Ignored files are outside undo and expendable, as they are to `git checkout` ([ADR 0022](adr/0022-treat-ignored-files-as-git-does.md)).
   - Populated submodules block entry.
 - **Composition.**
   - New Historical Working Changes use every normal composition target: the materialized commit, other eligible commits, branches, Working Changes, and new-commit seams.
@@ -62,7 +62,6 @@ Entry, a clean Return, and Restart run inside a journaled checkpoint that is nev
   - If the original stash conflicted, the historical stash waits on the branch as `Historical Working Changes from <commit> <subject>`, because a worktree holds one active Working Changes Conflict at a time.
   - A historical restore conflict over restored original changes records those files, so Keep stashed returns to them.
 - **Return refuses** while the session is paused, when the branch is gone or checked out in another worktree, and when commits made on top of the session's commit are held by no branch or tag. The session's own commit doesn't count, so Return still works after an external rewrite has replaced it.
-  - It also refuses when restoring either stash would replace an ignored file, because ignored files are outside checkpoints.
 
 ### Staleness, conflicts, and other operations
 

@@ -2,7 +2,6 @@ import { blob, candidateReady, conflictHunks, conflictStateRef, gitText, hasConf
 import { type ConflictRequest, type ConflictState, type ConflictSubject, type UnresolvedStack } from "@laneway/shared"
 import { lstat, readFile, realpath } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
-import { verifyIgnoredFiles } from "../composition/composition"
 import { followAcceptedRewrites } from "../historical-edit/accepted-rewrites"
 import { candidateRef, checkedCandidate, readCandidate, saveCandidate } from "./conflict-candidates"
 import { conflictResult, findSubject } from "./conflict-inspection"
@@ -514,12 +513,6 @@ async function publishProvisional(
             : { tree: await gitText(repo, ["rev-parse", `${target}^{tree}`]) }
         let index = (await repo.command(holder.path, ["write-tree"])).toString().trim()
         let staged = dirty ? await replayTree(repo, oldHead, target, index, crypto.randomUUID()) : merged
-        let targetFiles = await treeEntries(repo, merged.tree)
-        let ignored = (await repo.command(holder.path, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"])).toString().split("\0").filter(
-            Boolean,
-        )
-        if (ignored.some(name => [...targetFiles.keys()].some(file => file == name || file.startsWith(name + "/") || name.startsWith(file + "/"))))
-            throw new Error("The rewritten tree would replace an ignored file. Move that file before retrying.")
         if (await gitHead(repo, holder.path) != oldHead || await workingTree(repo, holder.path) != current)
             throw new Error("Working Changes moved while preparing resolution. Refresh and retry.")
         working.set(holder.path, { ...merged, oldHead, index: staged.conflict ? await gitText(repo, ["rev-parse", `${target}^{tree}`]) : staged.tree })
@@ -614,8 +607,6 @@ export async function applyStashConflict(repo: RepositoryGit, path: string, stas
         let retained = dirty ? { beforeTree: current, beforeIndex: index, afterIndex: index } : {}
         state.working.push({ id: merged.conflict.id, path, branch, head, stash, conflict: merged.conflict, ...retained })
     }
-    // Ignored files are outside checkpoints, and the checkout below would overwrite one the stash also holds.
-    await verifyIgnoredFiles(repo, path, merged.tree)
     // Tracking the current untracked files first lets the checkout replace them where the stash changes them.
     await repo.command(path, ["read-tree", current])
     await repo.command(path, ["read-tree", "--reset", "-u", merged.tree])

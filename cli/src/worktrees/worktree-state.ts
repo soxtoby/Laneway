@@ -276,11 +276,6 @@ export async function restoreWorktreeState(repository: RepositoryGit, source: Wo
             && target.roots.find(item => item.kind == "working" && item.present && item.files.some(file => file.name == ".git" && file.object == link.object))
         if (next)
             moved.set(root.path, next.path)
-        else {
-            let ignored = await repository.command(root.path, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"])
-            if (ignored.length)
-                throw new Error(`Move ignored files out of ${root.path} before undo/redo deletes this directory. Ignored files are outside recovery.`)
-        }
     }
 
     // Rename the directory itself so ignored files survive rename undo/redo too.

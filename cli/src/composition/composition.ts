@@ -7,7 +7,7 @@ import { join } from "node:path"
 import { captureGitCheckpoint, checkpointIdentity, checkpointMatches, type GitCheckpoint } from "../operations/git-checkpoint"
 import { commitAuthor, compositionCommit, prepareCommitContext, rawCommit } from "./composition-commits"
 import { type CommitPlan, type Plan, readPlan, type WorkingPlan, writePlan } from "./composition-plan"
-import { hasPathCollision, selectionTrees, workingTree } from "./composition-source"
+import { selectionTrees, workingTree } from "./composition-source"
 import { extractFiles, isFileExtraction, prepareFileExtraction } from "./file-extraction"
 
 type TreeChange = Awaited<ReturnType<typeof replayTree>>
@@ -68,8 +68,6 @@ export async function prepareComposition(
 
     let cached = expectedToken == token ? await readPlan(repo, token) : undefined
     if (cached) {
-        for (let working of cached.plan.working)
-            await verifyIgnoredFiles(repo, working.path, working.tree)
         cached.plan.before = before
         plans.set(cached.preview, cached.plan)
         return { before, preview: cached.preview }
@@ -463,7 +461,6 @@ export async function prepareComposition(
         })
         if (edit)
             sessions.push({ ref: edit.ref, before: edit.value, session: HistoricalEditSessionSchema.parse({ ...edit.edit, commit: newHead }) })
-        await verifyIgnoredFiles(repo, holder.path, files.tree)
     }
 
     // A plan applied in this same invocation is verified again right before its refs change, so it can skip this check.
@@ -754,21 +751,6 @@ export async function prepareComposition(
             throw new Error("The selected local branch no longer exists.")
         return value
     }
-}
-
-export async function verifyIgnoredFiles(repo: RepositoryGit, path: string, tree: string) {
-    // Skip unrelated ignored directories (often entire dependency/build trees).
-    // A directory match is only a candidate: adding a sibling file is harmless.
-    let summarized = (await repo.command(path, ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"])).toString()
-        .split("\0").filter(Boolean).map(name => name.replace(/\/$/, ""))
-    if (!summarized.length)
-        return
-    let names = [...(await treeEntries(repo, tree)).keys()]
-    if (!hasPathCollision(names, summarized))
-        return
-    let ignored = (await repo.command(path, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"])).toString().split("\0").filter(Boolean)
-    if (hasPathCollision(names, ignored))
-        throw new Error("A transfer would replace an ignored file. Move that file before retrying.")
 }
 
 export async function mutateComposition(

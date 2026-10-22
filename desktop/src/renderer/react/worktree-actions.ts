@@ -56,7 +56,7 @@ export function createWorktreeActions({ api, completed, transitioned, mutating }
     // Choosing what a removal keeps leaves the token valid; the engine re-reads the worktree under
     // its lock and refuses if anything reviewed has changed since.
     async function run(repositoryId: string, preview: WorktreePreview, preserve: boolean) {
-        let request = preview.request.action == "remove" ? { ...preview.request, preserve, allowIgnoredLoss: true } : preview.request
+        let request = preview.request.action == "remove" ? { ...preview.request, preserve } : preview.request
         let result = await api.executeWorktree(repositoryId, request, preview.token)
         if (!result.ok)
             throw new Error(result.error.message)

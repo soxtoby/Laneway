@@ -44,16 +44,14 @@ test("create, dirty transfer, undo and redo preserve both worktrees and the inde
     expect(git(path, "branch", "--show-current")).toBe("feature")
 }, 60_000)
 
-test("removal restores exact discarded Git state, excludes ignored files, and guards external changes", async () => {
+test("removal restores exact discarded Git state, deletes ignored files without asking, and guards external changes", async () => {
     let path = await fixture()
     await perform(path, { action: "create", branch: "feature", move: false })
     let linked = join(`${path}.worktrees`, "feature")
     await writeFile(join(linked, "new.txt"), "keep for undo\n")
     await writeFile(join(linked, "ignored.txt"), "outside undo\n")
 
-    await expect(perform(path, { action: "remove", path: linked, preserve: false, allowIgnoredLoss: false })).rejects.toThrow("ignored")
-
-    await perform(path, { action: "remove", path: linked, preserve: false, allowIgnoredLoss: true })
+    await perform(path, { action: "remove", path: linked, preserve: false })
 
     expect(await Bun.file(join(linked, "new.txt")).exists()).toBe(false)
 
@@ -80,7 +78,7 @@ test.if(process.platform == "win32")("removal refuses while another program uses
     await writeFile(join(linked, "ignored.txt"), "outside undo\n")
     let handle = openSync(join(linked, "new.txt"), "r")
     try {
-        await expect(perform(path, { action: "remove", path: linked, preserve: true, allowIgnoredLoss: true })).rejects.toThrow(
+        await expect(perform(path, { action: "remove", path: linked, preserve: true })).rejects.toThrow(
             "Another program is using files",
         )
     } finally {
@@ -97,7 +95,7 @@ test.if(process.platform == "win32")("removal refuses while another program uses
         entries: [expect.objectContaining({ kind: "worktree.create" })],
     })
 
-    await perform(path, { action: "remove", path: linked, preserve: true, allowIgnoredLoss: true })
+    await perform(path, { action: "remove", path: linked, preserve: true })
 
     expect(await pathExists(linked)).toBe(false)
     expect(await readdir(`${path}.worktrees`)).toEqual([])
@@ -113,18 +111,20 @@ test("a mutation that fails after changing Git state is rolled back immediately 
     let path = await fixture()
     await perform(path, { action: "create", branch: "feature", move: false })
     let linked = join(`${path}.worktrees`, "feature")
-    // feature tracks a file that is ignored in main's worktree, so checkout refuses to overwrite it after stashing.
-    await writeFile(join(linked, "ignored.txt"), "tracked on feature\n")
-    git(linked, "add", "-f", "ignored.txt")
-    git(linked, "commit", "-qm", "track an ignored name")
+    // feature adds a file whose required smudge filter fails, so checkout aborts after the Working Changes were stashed.
+    await writeFile(join(linked, ".gitattributes"), "filtered.txt filter=broken\n")
+    await writeFile(join(linked, "filtered.txt"), "tracked on feature\n")
+    git(linked, "add", ".gitattributes", "filtered.txt")
+    git(linked, "commit", "-qm", "track a file behind a broken filter")
     git(linked, "checkout", "-q", "--detach")
-    await writeFile(join(path, "ignored.txt"), "local ignored\n")
+    git(path, "config", "filter.broken.smudge", "false")
+    git(path, "config", "filter.broken.required", "true")
     await writeFile(join(path, "a.txt"), "dirty\n")
 
     await expect(perform(path, { action: "switch", path, branch: "feature", move: false })).rejects.toThrow("restored the Git state")
 
     expect(await readFile(join(path, "a.txt"), "utf8")).toBe("dirty\n")
-    expect(await readFile(join(path, "ignored.txt"), "utf8")).toBe("local ignored\n")
+    expect(await Bun.file(join(path, "filtered.txt")).exists()).toBe(false)
     expect(git(path, "branch", "--show-current")).toBe("main")
     expect(git(path, "stash", "list")).toBe("")
     expect(await executeOperationCommand({ command: "recovery-status", noWait: false }, path)).toMatchObject({ worktrees: [] })
@@ -147,7 +147,7 @@ test("removal deletes ignored trees beyond Windows path limits while ignored chu
     await writeFile(join(deep, "index.js"), "module.exports = 1\n")
     await writeFile(join(linked, "ignored.txt"), "outside undo\n")
 
-    let preview = await previewWorktree(repository, { action: "remove", path: linked, preserve: true, allowIgnoredLoss: false })
+    let preview = await previewWorktree(repository, { action: "remove", path: linked, preserve: true })
 
     expect(preview.ignored).toEqual(["ignored.txt", "node_modules/"])
     expect(preview.ignoredCount).toBe(2)
@@ -155,7 +155,7 @@ test("removal deletes ignored trees beyond Windows path limits while ignored chu
     await writeFile(join(deep, "touched.js"), "churn\n")
     await executeOperationCommand({
         command: "worktree",
-        request: { action: "remove", path: linked, preserve: false, allowIgnoredLoss: true },
+        request: { action: "remove", path: linked, preserve: false },
         token: preview.token,
         noWait: false,
     }, path)
@@ -185,7 +185,7 @@ test("rename retains registration identity; locked/main protections and preview 
 
     expect(await readFile(join(linked, "ignored.txt"), "utf8")).toBe("keep through rename\n")
     expect((await readRegisteredWorktrees(repository))[1]!.path).toBe(resolve(linked))
-    await expect(perform(path, { action: "remove", path, preserve: true, allowIgnoredLoss: false })).rejects.toThrow("Main Worktree")
+    await expect(perform(path, { action: "remove", path, preserve: true })).rejects.toThrow("Main Worktree")
 
     let request: WorktreeRequest = { action: "switch", path, branch: "feature", move: true }
     let preview = await previewWorktree(repository, request)
@@ -205,7 +205,7 @@ test("missing worktrees can be located, repaired, removed and recovered without 
     expect(git(moved, "rev-parse", "--show-toplevel").replaceAll("\\", "/")).toBe(moved.replaceAll("\\", "/"))
 
     await rm(moved, { recursive: true })
-    await perform(path, { action: "remove", path: moved, preserve: true, allowIgnoredLoss: false })
+    await perform(path, { action: "remove", path: moved, preserve: true })
 
     expect(git(path, "worktree", "list", "--porcelain")).not.toContain("moved")
 
@@ -229,7 +229,7 @@ test("dirty populated submodules survive preserving removal and undo", async () 
 
     await expect(perform(path, { action: "rename", path: linked, basename: "no" })).rejects.toThrow("populated submodules")
 
-    await perform(path, { action: "remove", path: linked, preserve: true, allowIgnoredLoss: false })
+    await perform(path, { action: "remove", path: linked, preserve: true })
     await transition(path, "undo")
 
     expect(await readFile(join(linked, "module", "a.txt"), "utf8")).toBe("module edits\n")
@@ -245,7 +245,7 @@ test("removal undo accepts an alternate basename without overwriting an occupied
     let path = await fixture()
     await perform(path, { action: "create", branch: "feature", move: false })
     let linked = join(`${path}.worktrees`, "feature")
-    await perform(path, { action: "remove", path: linked, preserve: true, allowIgnoredLoss: false })
+    await perform(path, { action: "remove", path: linked, preserve: true })
     await mkdir(linked)
     await writeFile(join(linked, "unrelated.txt"), "do not overwrite")
 
@@ -468,7 +468,6 @@ async function interruptedRemoval() {
             action: "remove",
             path: linked,
             preserve: true,
-            allowIgnoredLoss: true,
         }),
         "--crash-after",
         "intent",

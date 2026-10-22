@@ -1,6 +1,5 @@
 import { type readStoredHistoricalEdits, replayTree, type RepositoryGit, storeHistoricalEdit } from "@laneway/git"
 import { type ConflictState, HistoricalEditSessionSchema, type UnresolvedStack } from "@laneway/shared"
-import { verifyIgnoredFiles } from "../composition/composition"
 import { workingTree } from "../composition/composition-source"
 
 type StoredEdit = Awaited<ReturnType<typeof readStoredHistoricalEdits>>[number]
@@ -46,7 +45,6 @@ async function moveDetached(repo: RepositoryGit, path: string, from: string, to:
     // Rare enough not to defer as a Working Changes Conflict: the user can apply or drop the overlapping changes first.
     if (files.conflict || staged.conflict)
         throw new Error(`The Historical Working Changes in ${path} overlap this resolution. Apply or drop them, then accept it again.`)
-    await verifyIgnoredFiles(repo, path, files.tree)
 
     // Tracking the current untracked files first lets the checkout replace them where the rewrite changes them.
     await repo.command(path, ["read-tree", current])

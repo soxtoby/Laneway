@@ -2,22 +2,6 @@ import { blob, gitText, isText, replaceTreeFiles, type RepositoryGit, treeEntrie
 import type { CompositionRequest, DiffLine } from "@laneway/shared"
 import { join } from "node:path"
 
-/** Check exact paths and file/directory collisions without comparing every pair. */
-export function hasPathCollision(files: Iterable<string>, protectedPaths: Iterable<string>) {
-    let names = new Set(files), directories = new Set<string>()
-    for (let name of names) {
-        for (let slash = name.indexOf("/"); slash >= 0; slash = name.indexOf("/", slash + 1))
-            directories.add(name.slice(0, slash))
-    }
-
-    for (let path of protectedPaths) {
-        if (names.has(path) || directories.has(path) || hasParentFile(path, names))
-            return true
-    }
-
-    return false
-}
-
 export async function selectionTrees(repo: RepositoryGit, request: CompositionRequest) {
     let source = request.source
     if (source.kind == "branch")
@@ -151,14 +135,6 @@ export function selectedText(before: string, lines: DiffLine[], ids: number[]) {
     }
 
     return result
-}
-
-function hasParentFile(path: string, names: Set<string>) {
-    let collision = false
-    for (let slash = path.indexOf("/"); slash >= 0 && !collision; slash = path.indexOf("/", slash + 1))
-        collision = names.has(path.slice(0, slash))
-
-    return collision
 }
 
 async function readSelectedLines(repo: RepositoryGit, request: Parameters<RepositoryGit["startReadFileDiff"]>[0]) {

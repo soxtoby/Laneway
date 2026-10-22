@@ -246,8 +246,6 @@ class OperationRuntime {
         ) {
             throw new OperationRuntimeError("operation.precondition-failed", "Confirm moving the branch from its current worktree first.")
         }
-        if (request.action == "remove" && preview.ignoredCount && !request.allowIgnoredLoss)
-            throw new OperationRuntimeError("operation.precondition-failed", "Review ignored-file loss before removal.")
 
         let operation = await this.applyCheckpoint(
             preview.affected,
@@ -655,7 +653,7 @@ class OperationRuntime {
             // An earlier interrupted recovery may have left its backup where removal moves the directory.
             await rm(resolve(backupPath), { recursive: true, force: true })
             if (registered) {
-                let preview = await previewWorktree(this.repository, { action: "remove", path: worktree.path, preserve: true, allowIgnoredLoss: true })
+                let preview = await previewWorktree(this.repository, { action: "remove", path: worktree.path, preserve: true })
                 await mutateWorktree(this.repository, preview, operation.id)
             }
             await rm(resolve(worktree.path), { recursive: true, force: true })

@@ -1,7 +1,6 @@
 import { gitText, historicalEditRef, normalize, pathExists, populatedSubmodules, readConflictState, readRegisteredWorktrees, readStoredHistoricalEdits, type RepositoryGit, storeHistoricalEdit, temporaryBranchPrefix } from "@laneway/git"
 import { type HistoricalEditRequest, HistoricalEditSessionSchema, type RegisteredWorktree } from "@laneway/shared"
 import { join } from "node:path"
-import { verifyIgnoredFiles } from "../composition/composition"
 import { applyStashConflict, dropStash } from "../conflicts/conflict-operations"
 import { checkStashApplication } from "../local-mutations"
 
@@ -66,7 +65,6 @@ async function prepareEntry(
     if ((await populatedSubmodules(repo, worktree.path)).length)
         throw new Error("Historical Edit is unavailable in a worktree with populated submodules.")
     await requireUniqueCommit(repo, request.commit, branch)
-    await verifyIgnoredFiles(repo, worktree.path, await gitText(repo, ["rev-parse", `${request.commit}^{tree}`]))
 
     return { request, worktree, summary: `Edit ${request.commit.slice(0, 8)} from ${display(branch)}`, recorded: false }
 }
@@ -90,7 +88,6 @@ async function prepareReturn(
     if (await hasNewCommits(repo, worktree, edit.commit))
         throw new Error("Create a branch for the commits made during this Historical Edit before returning.")
     await requireNoWorkingConflict(repo, worktree)
-    await verifyIgnoredFiles(repo, worktree.path, await gitText(repo, ["rev-parse", `${tip}^{tree}`]))
 
     let dirty = await isDirty(repo, worktree.path)
     if (dirty && request.mode == "clean")
@@ -127,7 +124,7 @@ async function enter(repo: RepositoryGit, worktree: RegisteredWorktree, commit: 
         await repo.command(path, ["stash", "push", "--include-untracked", "--quiet", "-m", originalStashMessage])
         stash = (await repo.resolveRef("refs/stash"))!
     }
-    await repo.command(path, ["checkout", "--quiet", "--detach", "--no-overwrite-ignore", commit])
+    await repo.command(path, ["checkout", "--quiet", "--detach", commit])
 
     let session = { version: 1 as const, worktreeId: worktree.id, path, branch, tip: worktree.head, selected: commit, commit, stash }
     await repo.updateRefs([{ ref: historicalEditRef(worktree.id), before: null, after: await storeHistoricalEdit(repo, session) }])
@@ -148,7 +145,7 @@ async function returnToBranch(repo: RepositoryGit, plan: HistoricalEditPlan, mod
         await repo.command(path, ["reset", "--hard", "--quiet"])
         await repo.command(path, ["clean", "-fd", "--quiet"])
     }
-    await repo.command(path, ["switch", "--quiet", "--no-guess", "--no-overwrite-ignore", name])
+    await repo.command(path, ["switch", "--quiet", "--no-guess", name])
     await repo.updateRefs([{ ref, before: value, after: null }])
 
     let notes = [`Returned to ${name}.`]

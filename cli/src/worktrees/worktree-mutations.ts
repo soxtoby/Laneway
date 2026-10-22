@@ -23,7 +23,7 @@ export async function mutateWorktree(repository: RepositoryGit, preview: Worktre
 
         if (current) {
             await preserveBeforeSwitch(repository, current, branchPrefix, changedRefs)
-            await repository.command(current.path, ["checkout", "--no-overwrite-ignore", branch!])
+            await repository.command(current.path, ["checkout", branch!])
         } else {
             await mkdir(dirname(destination!), { recursive: true })
             await repository.command(main, [
@@ -42,9 +42,6 @@ export async function mutateWorktree(repository: RepositoryGit, preview: Worktre
     else if (request.action == "unlock")
         await repository.command(main, ["worktree", "unlock", "--", current!.path])
     else if (request.action == "remove") {
-        if (preview.ignoredCount && !request.allowIgnoredLoss)
-            throw new Error("Removal would delete ignored files. Review and acknowledge their loss first.")
-
         // A worktree another program is using fails here with nothing to undo. An interrupted removal
         // leaves the directory where the recovery column expects its backup.
         await removeLinkedWorktree(current!, recoveryBackupPath(current!.path, operationId), async () => {

@@ -100,15 +100,10 @@ export async function restoreGitCheckpoint(repo: RepositoryGit, source: GitCheck
                 throw new Error(`The worktree registration for ${from.path} is gone.`)
             if (registration.locked)
                 throw new Error(`Unlock ${from.path} before restoring this checkpoint.`)
-            if (from.present) {
-                let ignored = await repo.command(from.path, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"])
-                if (ignored.length)
-                    throw new Error(`Move ignored files out of ${from.path} before restoring this checkpoint.`)
-            }
             await removeLinkedWorktree(registration, `${registration.path}.laneway-removing`)
         } else if (to.present && !to.scope && await pathExists(to.path)) {
             if (from.head)
-                await repo.command(to.path, ["checkout", "--detach", "--force", "--no-overwrite-ignore", from.head])
+                await repo.command(to.path, ["checkout", "--detach", "--force", from.head])
             await repo.command(to.path, ["clean", "-fd"])
         }
     }
@@ -130,7 +125,7 @@ export async function restoreGitCheckpoint(repo: RepositoryGit, source: GitCheck
         else {
             let base = to.head || (to.stash ? (await repo.command(main, ["rev-parse", `${to.stash}^1`])).toString().trim() : "")
             if (base)
-                await repo.command(to.path, ["checkout", "--detach", "--force", "--no-overwrite-ignore", base])
+                await repo.command(to.path, ["checkout", "--detach", "--force", base])
             if (to.stash)
                 await repo.command(to.path, ["stash", "apply", "--index", to.stash])
             if (to.index) {
@@ -151,7 +146,7 @@ export async function restoreGitCheckpoint(repo: RepositoryGit, source: GitCheck
                 await copyObjects(repo, main, path, [module.head, ...(module.stash ? [module.stash] : [])])
                 for (let [key, value] of module.remotes)
                     await repo.command(path, ["config", key, value])
-                await repo.command(path, ["checkout", "--detach", "--force", "--no-overwrite-ignore", module.head])
+                await repo.command(path, ["checkout", "--detach", "--force", module.head])
                 await repo.command(path, ["clean", "-fd"])
                 if (module.stash)
                     await repo.command(path, ["stash", "apply", "--index", module.stash])

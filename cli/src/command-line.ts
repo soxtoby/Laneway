@@ -31,7 +31,7 @@ let worktreeOptions: Record<string, Record<string, "string" | "boolean">> = {
     switch: { path: "string", move: "boolean" },
     rename: {},
     repair: {},
-    remove: { discard: "boolean", "allow-ignored-loss": "boolean" },
+    remove: { discard: "boolean" },
     unlock: {},
     list: {},
 }

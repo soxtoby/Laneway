@@ -10,7 +10,7 @@ export let WorktreeRequestSchema = z.discriminatedUnion("action", [
     z.object({ action: z.literal("switch"), path: z.string(), branch: z.string().min(1), move: z.boolean().default(false) }),
     z.object({ action: z.literal("rename"), path: z.string(), basename: z.string().min(1) }),
     z.object({ action: z.literal("repair"), path: z.string(), destination: z.string() }),
-    z.object({ action: z.literal("remove"), path: z.string(), preserve: z.boolean().default(true), allowIgnoredLoss: z.boolean().default(false) }),
+    z.object({ action: z.literal("remove"), path: z.string(), preserve: z.boolean().default(true) }),
     z.object({ action: z.literal("unlock"), path: z.string() }),
 ])
 export type WorktreeRequest = z.infer<typeof WorktreeRequestSchema>

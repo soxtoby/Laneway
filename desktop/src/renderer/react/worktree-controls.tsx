@@ -112,7 +112,7 @@ export function WorktreeMenu({ column, graph, busy, onPrepare, chooseDirectory, 
                     {worktree && !worktree.main && !editing && (
                         <MenuItem
                             isDisabled={worktree.locked}
-                            onAction={() => onPrepare({ action: "remove", path: worktree.path, preserve: true, allowIgnoredLoss: false })}
+                            onAction={() => onPrepare({ action: "remove", path: worktree.path, preserve: true })}
                         >
                             {worktree.missing ? "Remove missing worktree" : "Remove worktree"}
                         </MenuItem>
@@ -198,7 +198,7 @@ export function MissingWorktree({ worktree, busy, onPrepare, chooseDirectory }: 
                 <Button
                     variant="secondary"
                     isDisabled={busy || worktree.locked}
-                    onPress={() => onPrepare({ action: "remove", path: worktree.path, preserve: true, allowIgnoredLoss: false })}
+                    onPress={() => onPrepare({ action: "remove", path: worktree.path, preserve: true })}
                 >
                     Remove
                 </Button>

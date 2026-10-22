@@ -3,27 +3,15 @@ import { afterEach, expect, test } from "bun:test"
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { mutateComposition, prepareComposition } from "../src/composition/composition"
-import { hasPathCollision } from "../src/composition/composition-source"
 import { executeOperationCommand } from "../src/operations/operation-runtime"
 import { createCompositionFixtures, git, perform, preview, request } from "./composition-fixture"
 
 let { fixture, cleanup } = createCompositionFixtures()
 afterEach(cleanup)
 
-test("ignored path collision checks distinguish files, ancestors, and similarly named siblings", () => {
-    let paths = ["src/file.ts", "package", "a-b/file", "α/β"]
-    for (let ignored of ["src/file.ts", "src", "package/ignored", "α"])
-        expect(hasPathCollision(paths, [ignored])).toBe(true)
-
-    expect(hasPathCollision(paths, ["src/other.ts", "packages/file", "a/file", "α/γ"])).toBe(false)
-    // Same scale as BI, without touching a worktree or asserting machine timings.
-    expect(hasPathCollision(
-        Array.from({ length: 32_415 }, (_, i) => `src/${i}/file.ts`),
-        Array.from({ length: 111_112 }, (_, i) => `node_modules/${i}/file.js`),
-    )).toBe(false)
-})
-
-test("transfers preserve ignored siblings but reject ignored file collisions", async () => {
+// Ignored files are expendable, as they are to git checkout: a transfer writes over one in its way and leaves its
+// ignored siblings alone, rather than scanning every ignored path for a collision first.
+test("transfers write over a colliding ignored file and keep ignored siblings", async () => {
     let { path } = await fixture()
     await mkdir(join(path, "cache"))
     await writeFile(join(path, "cache", "new.txt"), "incoming\n")
@@ -40,10 +28,10 @@ test("transfers preserve ignored siblings but reject ignored file collisions", a
         target: { kind: "working", worktreePath: path },
         files: [{ path: "cache/new.txt" }],
     })
-    await preview(path, r)
     await writeFile(join(path, "cache", "new.txt"), "ignored collision\n")
 
-    await expect(preview(path, r)).rejects.toThrow("ignored")
+    await perform(path, r)
+    expect(await readFile(join(path, "cache", "new.txt"), "utf8")).toBe("incoming\n")
     expect(await readFile(join(path, "cache", "existing.txt"), "utf8")).toBe("ignored sibling\n")
 }, 30_000)
 
@@ -131,7 +119,7 @@ test("a verified preview reuses its plan; corrupt or pruned plans rebuild safely
     expect(reads).toBe(2)
 }, 60_000)
 
-test("a cached transfer rejects ignored files created after preview", async () => {
+test("a cached transfer writes over an ignored file created after preview", async () => {
     let { path, base } = await fixture()
     await writeFile(join(path, "incoming.txt"), "source\n")
     git(path, "add", ".")
@@ -148,8 +136,8 @@ test("a cached transfer rejects ignored files created after preview", async () =
     let p = await preview(path, r)
     await writeFile(join(path, "incoming.txt"), "external ignored file\n")
 
-    await expect(executeOperationCommand({ command: "local", request: r, token: p.token, noWait: false }, path)).rejects.toThrow("ignored")
-    expect(await readFile(join(path, "incoming.txt"), "utf8")).toBe("external ignored file\n")
+    await executeOperationCommand({ command: "local", request: r, token: p.token, noWait: false }, path)
+    expect(await readFile(join(path, "incoming.txt"), "utf8")).toBe("source\n")
 }, 60_000)
 
 test("copying an already-present commit is a no-op, including operation history", async () => {

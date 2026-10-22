@@ -108,8 +108,8 @@ reads a message file.
 
 `pull` defaults to the current branch's Active Stack and never publishes.
 Worktree removal preserves Working Changes and Worktree-only Commits by default;
-`--discard` opts out. `--allow-ignored-loss` explicitly permits deleting ignored
-files. `recover restore|remove <operation-id>` resolves one pending worktree recovery.
+`--discard` opts out; ignored files in the worktree are deleted with it, as they are
+outside undo. `recover restore|remove <operation-id>` resolves one pending worktree recovery.
 
 `edit` is [Historical Edit](historical-edit.md) in the current worktree (or `--path`).
 `enter <commit>` stashes Working Changes on the branch and checks the commit out detached;

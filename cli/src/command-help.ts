@@ -20,7 +20,7 @@ Repeat -m for paragraphs, or use -F <message-file>. Branch defaults to the curre
 lane worktree switch <branch> [--path <worktree>] [--move]
 lane worktree rename <path> <basename>
 lane worktree repair <path> <destination>
-lane worktree remove <path> [--discard] [--allow-ignored-loss]
+lane worktree remove <path> [--discard]
 lane worktree unlock <path>
 lane worktree list
 Paths resolve from the current directory. Switch defaults to the current worktree.

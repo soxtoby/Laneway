@@ -63,7 +63,7 @@ export async function worktreeRequest(action: string, args: Arguments, repo: Rep
         return { action, path: resolve(cwd, path!), destination: resolve(cwd, destination!) }
     } else if (action == "remove") {
         let [path] = operands(args, 1)
-        return { action, path: resolve(cwd, path!), preserve: !flag(args, "discard"), allowIgnoredLoss: flag(args, "allow-ignored-loss") }
+        return { action, path: resolve(cwd, path!), preserve: !flag(args, "discard") }
     } else if (action == "unlock") {
         let [path] = operands(args, 1)
         return { action, path: resolve(cwd, path!) }

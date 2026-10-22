@@ -67,8 +67,8 @@ describe("React worktree actions", () => {
         expect(previews[0]).toEqual({ action: "repair", path: worktree.path, destination: "D:/relocated/missing" })
         await app.act(() => press(button(dialog(), "Cancel")))
         await app.act(() => press(button(column, "Remove")))
-        expect(previews[1]).toEqual({ action: "remove", path: worktree.path, preserve: true, allowIgnoredLoss: false })
-        expect(executions).toEqual([{ action: "remove", path: worktree.path, preserve: true, allowIgnoredLoss: true }])
+        expect(previews[1]).toEqual({ action: "remove", path: worktree.path, preserve: true })
+        expect(executions).toEqual([{ action: "remove", path: worktree.path, preserve: true }])
         expect(document.querySelector("[role=dialog]") == null).toBe(true)
 
         await app.act(() => press(button(column, "Collapse missing")))
@@ -197,7 +197,7 @@ describe("React worktree actions", () => {
         await app.act(() => press(menuItem("Remove worktree")))
 
         expect(executions).toEqual([{
-            request: { action: "remove", path: "D:\\Source\\inspection", preserve: true, allowIgnoredLoss: true },
+            request: { action: "remove", path: "D:\\Source\\inspection", preserve: true },
             token: "clean",
         }])
         expect(document.querySelector("[role=dialog]") == null).toBe(true)
@@ -257,12 +257,12 @@ describe("React worktree actions", () => {
         await app.act(() => press(button(header(), "Worktree actions")))
         expect(menuItems()).not.toContain("New worktree")
         await app.act(() => press(menuItem("Remove worktree")))
-        expect(requests[2]).toEqual({ action: "remove", path: "D:\\Source\\inspection", preserve: true, allowIgnoredLoss: false })
+        expect(requests[2]).toEqual({ action: "remove", path: "D:\\Source\\inspection", preserve: true })
         expect(dialog().textContent).toContain("Working Changes detected")
         expect(dialog().textContent).toContain("outside undo: generated.bin.")
         await app.act(() => press(button(dialog(), "Remove worktree")))
 
-        expect(executed).toEqual({ action: "remove", path: "D:\\Source\\inspection", preserve: true, allowIgnoredLoss: true })
+        expect(executed).toEqual({ action: "remove", path: "D:\\Source\\inspection", preserve: true })
     })
 
     test("undo and redo run from the header and the keyboard, and an undo into a taken directory asks for another name", async () => {

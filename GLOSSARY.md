@@ -173,6 +173,10 @@ _Avoid_: Binary diff, image preview
 The uncommitted, non-ignored changes belonging to one worktree. Before checkout changes, Laneway stores them in an ordinary Git stash associated with the old branch and exposes that stash as a Branch Marker. When Worktree Backing transfers between open columns, the old column keeps them visible as Stashed Working Changes. Ordinary commits use Git's staged snapshot when present, otherwise all Working Changes; transfers to arbitrary destinations use Change Selection.
 _Avoid_: Staged changes, unstaged changes
 
+**Ignored Files**:
+Files Git excludes through its ignore rules, which Laneway treats exactly as Git does: expendable. They are never Working Changes, stay outside undo, and may be overwritten or deleted by any Laneway Operation that touches their path or worktree without a listing, a warning, or a confirmation ([ADR 0022](docs/adr/0022-treat-ignored-files-as-git-does.md)).
+_Avoid_: Precious files, local files, excluded files
+
 **Change Selection**:
 A selection of files, hunks, or complete lines from exact Working Changes or committed content for a later Laneway Operation. Within-file selection belongs to one visible file diff, never automatically includes paired lines, and becomes invalid when its source content changes; partial-line fragments and text derived by a custom diff program are not selectable.
 _Avoid_: Staging, highlighted text
