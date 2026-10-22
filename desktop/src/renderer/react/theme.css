@@ -69,9 +69,10 @@
     --warning-border: oklch(from var(--orange) var(--lightness-600) c h);
     --warning-color: oklch(from var(--orange) var(--lightness-1000) c h);
 
-    /* Force publish replaces remote history, so its button is red with light ink rather than amber. */
-    --force-background: var(--highlight-background-invalid);
-    --force-background-pressed: oklch(from var(--highlight-background-invalid) calc(l - 0.06) c h);
+    /* Force publish replaces remote history, so its button is red with white ink rather than amber. Like the
+       kit's highlight, the fill is the same in both appearances, dark enough for the ink: 5.3:1, and 6.9:1 pressed. */
+    --force-background: oklch(from var(--red) 55% c h);
+    --force-background-pressed: oklch(from var(--red) 49% c h);
     --force-foreground: white;
 
     /* Workspace Column kinds: the Main Worktree, other worktrees, branches, and recoveries. */
@@ -97,6 +98,15 @@
     /* An image difference shows what changed against black; the swipe divider keeps an edge on any picture. */
     --image-difference-background: #000;
     --image-divider-edge: rgb(0 0 0 / 40%);
+}
+
+/* Buttons opt out of forced colours, so Force publish takes the system's pair for emphasis. */
+@media (forced-colors: active) {
+    :root:root {
+        --force-background: Highlight;
+        --force-background-pressed: Highlight;
+        --force-foreground: HighlightText;
+    }
 }
 
 [data-tone] {
