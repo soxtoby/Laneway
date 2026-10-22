@@ -59,13 +59,15 @@ interface WorktreeMenuProps {
 /**
  * A worktree column's actions: switching its branch, unlocking, repairing, or removing it. A branch column
  * without a worktree offers checking the branch out instead, in an existing worktree or a new one. Either
- * ends with copying the branch name and worktree path, then showing or hiding every commit row's age.
+ * ends with copying the branch name and worktree path, then showing or hiding every commit row's age. A
+ * worktree in a Historical Edit neither switches branch nor goes away until it returns.
  */
 export function WorktreeMenu({ column, graph, busy, onPrepare, chooseDirectory, onShowCommitAges }: WorktreeMenuProps) {
     let [choosing, setChoosing] = useState(false)
     let showCommitAges = useContext(CommitAgesShown)
     let worktree = column.worktree
-    let worktrees = allWorktrees(graph)
+    let editing = worktree?.historicalEdit != undefined
+    let worktrees = allWorktrees(graph).filter(item => !item.historicalEdit)
     let branchRef = column.kind == "branch" ? column.branch.preferredRef : undefined
     let repair = async (path: string) => {
         let destination = await chooseDirectory(path)
@@ -82,7 +84,7 @@ export function WorktreeMenu({ column, graph, busy, onPrepare, chooseDirectory, 
                     <Tooltip>{worktree ? "Worktree actions" : "Check out branch"}</Tooltip>
                 </TooltipTrigger>
                 <Menu aria-label={worktree ? "Worktree actions" : "Check out branch"}>
-                    {worktree && !worktree.missing && (
+                    {worktree && !worktree.missing && !editing && (
                         <MenuItem aria-label="Switch worktree branch" onAction={() => setChoosing(true)}>
                             Switch branch…
                         </MenuItem>
@@ -107,7 +109,7 @@ export function WorktreeMenu({ column, graph, busy, onPrepare, chooseDirectory, 
                         <MenuItem onAction={() => onPrepare({ action: "unlock", path: worktree.path })}>Unlock worktree</MenuItem>
                     )}
                     {worktree && !worktree.main && worktree.missing && <MenuItem onAction={() => void repair(worktree.path)}>Locate and repair</MenuItem>}
-                    {worktree && !worktree.main && (
+                    {worktree && !worktree.main && !editing && (
                         <MenuItem
                             isDisabled={worktree.locked}
                             onAction={() => onPrepare({ action: "remove", path: worktree.path, preserve: true, allowIgnoredLoss: false })}
@@ -206,7 +208,7 @@ export function MissingWorktree({ worktree, busy, onPrepare, chooseDirectory }: 
 }
 
 /** Every worktree in the repository, once each. */
-function allWorktrees(graph: BranchGraph) {
+export function allWorktrees(graph: BranchGraph) {
     let worktrees = [...graph.branches.flatMap(branch => branch.checkedOut), ...graph.virtualBranches.map(branch => branch.worktree)]
     return worktrees.filter((item, index) => worktrees.findIndex(other => other.path == item.path) == index)
 }

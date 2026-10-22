@@ -1,3 +1,4 @@
+import { type HistoricalEdit } from "./historical-edit"
 import { type AuthorIdentitySettings, type EntryError } from "./workspace"
 import { type WorktreeRecovery } from "./worktree-recovery"
 
@@ -11,6 +12,8 @@ export interface BranchGraphWorktree {
     head: string
     branchRef?: string
     main: boolean
+    /** The worktree's Historical Edit, with the subject of the commit it edits; its column stays its original branch's. */
+    historicalEdit?: HistoricalEdit & { subject: string }
 }
 
 export interface BranchGraphMarker {

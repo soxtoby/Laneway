@@ -4,12 +4,14 @@ import { Button as AriaButton, Form } from "react-aria-components"
 import type { ColumnView } from "./branch-workspace"
 import { type CommitComposer, defaultBranchName } from "./commit-composer"
 import { type ComparisonColumnNode, comparisonHistorySource } from "./comparison-columns"
-import type { Landing } from "./composition"
+import type { Landing, TransferSelection } from "./composition"
 import { Hint, IconButton } from "./controls"
 import { DiffControls, DiffPanel } from "./diff-panel"
 import { EditableName } from "./editable-name"
 import { fileListViewOptions } from "./file-list-view"
 import { type FileInspection, FileTree } from "./file-tree"
+import { applySelection } from "./historical-edit"
+import { applyTarget } from "./historical-edit-banner"
 import { ArchiveIcon, ChevronDownIcon, CloseIcon, DetachedIcon, FolderIcon, OpenColumnIcon, TreeIcon } from "./icons"
 import { type ColumnInspection, diffKey, type FilesState, type Inspection, matchesFilter } from "./inspection"
 import { TransferGrip, TransferReview, transferSource, useTransferScope, useTransferTarget } from "./transfer"
@@ -29,6 +31,8 @@ interface WorkingChangesProps {
     /** Called once; the composer lives as long as this view. */
     createComposer(): CommitComposer
     blocked: boolean
+    /** Every Historical Edit's stash, in any worktree. */
+    sessionStashes: string[]
     view: FileListView
     onViewChange(view: FileListView): void
 }
@@ -36,9 +40,9 @@ interface WorkingChangesProps {
 /**
  * A worktree's Working Changes and their stashes. Staged files sit above a divider and the rest below
  * it; a clean worktree folds to one quiet row. A detached worktree also shows the branch its next
- * commit creates.
+ * commit creates. In a Historical Edit, the changes apply to the edited commit instead of committing.
  */
-export function WorkingChanges({ column, path, inspected, inspection, createComposer, blocked, view, onViewChange }: WorkingChangesProps) {
+export function WorkingChanges({ column, path, inspected, inspection, createComposer, blocked, sessionStashes, view, onViewChange }: WorkingChangesProps) {
     let [composer] = useState(createComposer)
     useEffect(() => void composer.start(), [composer])
     let state = useSnapshot(composer)
@@ -49,7 +53,8 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
     let disabled = state.busy || blocked
     let clean = working?.inventory != undefined && files.length == 0 && !state.composing && !state.stashing
     let { draft, preview } = state
-    let detached = column.kind == "virtual" || state.loaded && preview != undefined && (!preview.branch || preview.unborn)
+    let edit = column.worktree?.historicalEdit
+    let detached = !edit && (column.kind == "virtual" || state.loaded && preview != undefined && (!preview.branch || preview.unborn))
     let unborn = column.kind == "virtual" && /^0+$/.test(column.branch.objectId) || preview?.unborn == true
     let canCommit = !disabled && draft.title.trim() != "" && files.length > 0 && (preview?.branch != undefined || draft.branch.trim() != "") && !state.hook
     let reveal = (action: () => void) => () => {
@@ -104,7 +109,11 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
                         inspection={inspection}
                         view={view}
                         root={path}
-                        actions={{ disabled, apply: () => void composer.applyStash(stash.objectId), drop: () => void composer.dropStash(stash.objectId) }}
+                        // A Historical Edit's own stash comes back when it returns, so it stays as it is until then,
+                        // including on a branch another worktree checked out meanwhile.
+                        actions={sessionStashes.includes(stash.objectId)
+                            ? undefined
+                            : { disabled, apply: () => void composer.applyStash(stash.objectId), drop: () => void composer.dropStash(stash.objectId) }}
                     />
                 ))}
             <div className={clean ? "commit-card clean" : "commit-card"} data-expanded={expanded || undefined}>
@@ -139,8 +148,16 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
                             </IconButton>
                         </>
                     )}
+                    {!clean && edit && scope && (
+                        <ApplyButton
+                            disabled={disabled || !files.length || edit.state != "active"}
+                            selection={applySelection(scope.repositoryId, path, inspected, scope.selectedRemote)}
+                            apply={selection =>
+                                scope.composition.land(selection, { kind: "compose", repositoryId: scope.repositoryId, target: applyTarget(edit) }, false)}
+                        />
+                    )}
                     {/* The form's own Commit button takes over while composing. */}
-                    {!clean && !state.composing && (
+                    {!clean && !edit && !state.composing && (
                         <div className="commit-split">
                             <Button variant="accent" isDisabled={disabled || !state.loaded || !files.length} onPress={reveal(composer.compose)}>
                                 Commit…
@@ -266,6 +283,15 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
                 </Hint>
             )}
         </section>
+    )
+}
+
+/** Apply changes, the default action of a Historical Edit: the chosen changes, or all of them, into the edited commit. */
+function ApplyButton({ disabled, selection, apply }: { disabled: boolean; selection: TransferSelection; apply(selection: TransferSelection): void }) {
+    return (
+        <Button variant="accent" isDisabled={disabled} onPress={() => apply(selection)}>
+            {selection.files ? "Apply selected" : "Apply changes"}
+        </Button>
     )
 }
 

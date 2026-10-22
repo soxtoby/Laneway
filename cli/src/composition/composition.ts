@@ -1,6 +1,6 @@
-import { blob, conflictHunks, conflictStateRef, gitText, normalize, pathExists, readConflictState, readRegisteredWorktrees, replaceTreeFiles, replayTree, type RepositoryGit, retainedDocument, storeConflictState, temporaryBranchPrefix, treeEntries } from "@laneway/git"
+import { blob, conflictHunks, conflictStateRef, gitText, historicalEditPrefix, normalize, pathExists, readConflictState, readRegisteredWorktrees, readStoredHistoricalEdits, replaceTreeFiles, replayTree, type RepositoryGit, retainedDocument, storeConflictState, storeHistoricalEdit, temporaryBranchPrefix, treeEntries } from "@laneway/git"
 import type { CompositionPreview, CompositionRequest, ConflictSubject, LocalPreview, LocalResult, ReplayStep, ResolutionCandidate, RewordRequest, UnresolvedStack } from "@laneway/shared"
-import { CompositionRequestSchema, RewordRequestSchema } from "@laneway/shared"
+import { CompositionRequestSchema, HistoricalEditSessionSchema, RewordRequestSchema } from "@laneway/shared"
 import { createHash } from "node:crypto"
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
@@ -75,10 +75,12 @@ export async function prepareComposition(
         return { before, preview: cached.preview }
     }
 
-    let [state, graph, selection] = await Promise.all([
+    let [state, graph, selection, historicalEdits] = await Promise.all([
         readConflictState(repo, before.refs[conflictStateRef] ?? null),
         repo.startReadBranchGraph({ authorIdentities: { secondary: [] }, remotePatterns: [], selectedRemote: request.selectedRemote }).result,
         compose && compose.source.kind != "branch" ? selectionTrees(repo, compose) : undefined,
+        // The checkpoint already lists session refs, so a repository without one skips the read.
+        Object.keys(before.refs).some(ref => ref.startsWith(historicalEditPrefix)) ? readStoredHistoricalEdits(repo) : [],
     ])
     let originalState = structuredClone(state)
     let tips = new Map(Object.entries(before.refs).filter(([ref]) => ref.startsWith("refs/heads/") && !ref.startsWith(temporaryBranchPrefix)))
@@ -366,15 +368,25 @@ export async function prepareComposition(
     }
 
     let working: WorkingPlan[] = []
+    let sessions: Plan["sessions"] = []
     for (let holder of worktrees) {
+        // A Historical Edit worktree takes part in rewrites of its original branch while staying detached at the edited commit.
+        let edit = historicalEdits.find(stored => stored.edit.worktreeId == holder.id)
         let oldStack = originalState.stacks.find(s => s.temporaryRef == holder.branchRef)
-        let ref = oldStack?.branches.at(-1)?.ref ?? holder.branchRef
+        let ref = edit ? undefined : oldStack?.branches.at(-1)?.ref ?? holder.branchRef
+        let followed = edit?.edit.branch ?? ref ?? ""
         let source = workingSource != undefined && normalize(holder.path) == normalize(workingSource)
         let target = workingTarget != undefined && normalize(holder.path) == normalize(workingTarget)
-        if (!changedBranches.includes(ref ?? "") && !sourceWorking && !destinationWorking || !changedBranches.includes(ref ?? "") && !source && !target)
+        if (!changedBranches.includes(followed) && !sourceWorking && !destinationWorking || !changedBranches.includes(followed) && !source && !target)
             continue
         if (holder.missing)
             throw new Error("An affected worktree is unavailable. Locate it before composition.")
+        if (edit?.edit.state == "stale") {
+            let name = displayName(edit.edit.branch)
+            throw new Error(
+                `The Historical Edit in ${holder.name} is out of date: ${edit.edit.reason} Restart it on the latest ${name}, or return to ${name}, first.`,
+            )
+        }
         let head = (await repo.command(holder.path, ["rev-parse", "HEAD"])).toString().trim()
         let current = await currentTree(holder.path), index = (await repo.command(holder.path, ["write-tree"])).toString().trim()
         let files: TreeChange = { tree: current }, staged: TreeChange = { tree: index }
@@ -400,7 +412,10 @@ export async function prepareComposition(
         let stashBase = target ? selection!.base : head
         let stashTree = target ? selection!.selected : files.tree
         let stashIndex = target ? selection!.base : staged.tree
-        let newHead = ref ? newTips.get(ref) ?? head : head
+        // A commit emptied by this transfer leaves the session on its parent.
+        let newHead = edit && !preview.noop ? await rewrite(head, inheritsTarget(edit.edit.branch)) : ref ? newTips.get(ref) ?? head : head
+        if (edit && commits.find(c => c.oid == newHead)?.conflict)
+            throw new Error("This transfer would leave the commit being edited conflicted. Apply it to a later commit instead.")
         if (!await sameTree(head, newHead)) {
             if (!stagedSource)
                 files = await merge(head, newHead, files.tree, "worktree restoration")
@@ -446,6 +461,8 @@ export async function prepareComposition(
             conflictBaseline: target ? current : await tree(repo, newHead),
             conflictIndex: target ? index : await tree(repo, newHead),
         })
+        if (edit)
+            sessions.push({ ref: edit.ref, before: edit.value, session: HistoricalEditSessionSchema.parse({ ...edit.edit, commit: newHead }) })
         await verifyIgnoredFiles(repo, holder.path, files.tree)
     }
 
@@ -470,7 +487,7 @@ export async function prepareComposition(
         worktrees: [],
     }
 
-    let plan = { before, commits, refs, working, state, candidates, preview }
+    let plan = { before, commits, refs, working, state, candidates, sessions, preview }
     plans.set(local, plan)
     await writePlan(repo, local, plan)
     return { before, preview: local }
@@ -739,7 +756,7 @@ export async function prepareComposition(
     }
 }
 
-async function verifyIgnoredFiles(repo: RepositoryGit, path: string, tree: string) {
+export async function verifyIgnoredFiles(repo: RepositoryGit, path: string, tree: string) {
     // Skip unrelated ignored directories (often entire dependency/build trees).
     // A directory match is only a candidate: adding a sibling file is harmless.
     let summarized = (await repo.command(path, ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"])).toString()
@@ -835,6 +852,13 @@ export async function mutateComposition(
             })
         }
     }
+    // A session follows its edited commit and pins the branch tip this operation leaves, or the Unresolved Stack pausing it.
+    for (let { ref, before, session } of plan.sessions) {
+        let tip = plan.refs.find(update => update.ref == session.branch)?.after ?? plan.before.refs[session.branch]!
+        let unresolved = plan.state.stacks.find(stack => stack.branches.some(branch => branch.ref == session.branch))?.temporaryRef
+        let next = { ...session, commit: final.get(session.commit) ?? session.commit, tip, unresolved }
+        updates.push({ ref, before, after: await storeHistoricalEdit(repo, next) })
+    }
     let stateBefore = plan.before.refs[conflictStateRef] ?? null
     if (JSON.stringify(plan.state) != JSON.stringify(await readConflictState(repo)))
         updates.push({ ref: conflictStateRef, before: stateBefore, after: await storeConflictState(repo, plan.state, stateBefore, false) })
@@ -855,6 +879,11 @@ export async function mutateComposition(
         }
         if (working.ref && working.ref != working.beforeRef)
             await repo.command(working.path, ["symbolic-ref", "HEAD", working.ref])
+        else if (!working.ref) {
+            let head = (await repo.command(working.path, ["rev-parse", "HEAD"])).toString().trim()
+            if (head != working.head)
+                await repo.command(working.path, ["update-ref", "--no-deref", "HEAD", working.head, head])
+        }
     }
     return {
         type: "result",

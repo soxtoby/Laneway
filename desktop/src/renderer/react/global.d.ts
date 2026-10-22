@@ -6,6 +6,7 @@ import type { DiscardRequest, DiscardResult, DiscardUndoResult } from "@laneway/
 import type { ConflictActionResult, ConflictRequest } from "@laneway/shared"
 import type { PullActionResult, PullProgress, PullRequest } from "@laneway/shared"
 import type { RecoveryActionResult, RecoveryRequest } from "@laneway/shared"
+import type { HistoricalEditActionResult, HistoricalEditRequest } from "@laneway/shared"
 
 interface EngineStatusReady {
     state: "ready"
@@ -43,6 +44,8 @@ declare global {
             onPullProgress(listener: (progress: PullProgress) => void): () => void
             readConflictContent(repositoryId: string, object: string): Promise<string | null>
             conflictOperation(repositoryId: string, request: ConflictRequest): Promise<ConflictActionResult>
+            /** Enters, returns from, or restarts a worktree's Historical Edit; applying is a compose request. */
+            historicalEdit(repositoryId: string, request: HistoricalEditRequest): Promise<HistoricalEditActionResult>
             previewWorktree(repositoryId: string, request: WorktreeRequest): Promise<WorktreePreviewResult>
             localOperation(repositoryId: string, request: LocalRequest, token?: string): Promise<LocalActionResult>
             /** Applies a Working Changes Discard immediately, setting the originals aside for a short undo window. */

@@ -1,4 +1,4 @@
-import { gitText, readRegisteredWorktrees, type RepositoryGit } from "@laneway/git"
+import { gitText, readHistoricalEditSessions, readRegisteredWorktrees, type RepositoryGit } from "@laneway/git"
 import type { BranchGraphBranchNode, BranchGraphReadOptions, PullFetch, PullRequest, PullStackOutcome } from "@laneway/shared"
 import { isAncestor, readActiveStack } from "./active-stack"
 import { type ConflictSession, gitHead, openConflictSession, rewriteStack, type StackRewritePlan } from "./conflicts/conflict-operations"
@@ -132,6 +132,8 @@ export async function executePull(
     for (let worktree of worktrees)
         headsBefore.set(worktree.path, await gitHead(repo, worktree.path))
 
+    let editing = new Map((await readHistoricalEditSessions(repo)).map(({ session }) => [session.branch, session]))
+    let held = heldBranches(prepared.stacks, editing)
     let failedRemotes = new Set(prepared.fetches.filter(fetch => fetch.status == "failed").map(fetch => fetch.remote))
     let processed = new Map<string, { before: string; current: string }>()
     let outcomes: PullStackOutcome[] = [...prepared.blocked]
@@ -148,6 +150,15 @@ export async function executePull(
         let snapshot = new Map(changes)
         let working = session.state.working.length
         try {
+            let own = stack.branches.slice(1)
+            if (own.some(branch => held.has(branch.ref))) {
+                let edit = own.map(branch => editing.get(branch.ref)).find(Boolean)
+                throw new PullSkip(
+                    edit
+                        ? `${edit.branch.slice(11)} is in a Historical Edit in ${edit.path}, so this stack was not updated.`
+                        : "This stack overlaps one in a Historical Edit, so it was not updated.",
+                )
+            }
             let failed = prepared.remotesFor(stack).filter(remote => failedRemotes.has(remote))
             if (failed.length) {
                 let messages = prepared.fetches.filter(fetch => failed.includes(fetch.remote)).map(fetch => `${fetch.remote}: ${fetch.message}`)
@@ -186,6 +197,15 @@ export async function executePull(
         await session.persist()
 
     return outcomes
+}
+
+/**
+ * The branches of every stack holding a Historical Edit, found before any update so that processing order doesn't matter.
+ * Stacks sharing one are skipped with it; a shared Base alone is not an overlap.
+ */
+function heldBranches(stacks: ScopedStack[], editing: Map<string, unknown>) {
+    let own = stacks.map(stack => stack.branches.slice(1).map(branch => branch.ref))
+    return new Set(own.filter(refs => refs.some(ref => editing.has(ref))).flat())
 }
 
 async function updateStack(

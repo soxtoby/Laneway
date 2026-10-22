@@ -36,6 +36,8 @@ export interface CommitTrailProps {
     renameBranch(name: string): Promise<void>
     createBranchAt(commit: BranchHistoryCommit): void
     reword(branch: BranchGraphBranchNode, commit: BranchHistoryCommit, close: () => void): Reword
+    /** Starts a Historical Edit from a commit; only a worktree-backed column outside one can. */
+    editFrom?(commit: BranchHistoryCommit): void
     /** Opens the Branch Comparison Column from `from` to `to` beside this column. */
     compare(from: ComparisonRef, to: ComparisonRef): void
     /** Resolves the conflicts that rewrites deferred in the column's commits. */
@@ -203,12 +205,16 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
     let { commit, branch, below, column, inspected, inspection, view, onViewChange, rewording, onReword } = props
     let files = inspected?.files[commit.objectId]
     let open = files?.open == true
-    // Only a local branch's history can be reworded, and merge commits can't be.
+    // Only a local branch's history can be reworded, and merge commits can't be. Historical Edit also leaves the Primary Branch alone.
     let rewordable = !branch.remoteOnly && commit.parentIds.length == 1
+    let editFrom = props.editFrom
+    let edit = column.worktree?.historicalEdit
+    let editing = edit?.commit == commit.objectId
     let menu = {
         label: `Actions for commit ${commit.subject}`,
         items: () => (
             <>
+                {editFrom && rewordable && !branch.primary && <MenuItem onAction={() => editFrom(commit)}>Edit from here</MenuItem>}
                 {rewordable && <MenuItem onAction={() => onReword(commit.objectId)}>Reword commit…</MenuItem>}
                 <MenuItem onAction={() => props.createBranchAt(commit)}>Create branch here…</MenuItem>
                 <Separator />
@@ -234,7 +240,7 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
     let seamBelow = !branch.remoteOnly && parentId && !(branch.base.status == "known" && branch.base.tip == parentId && below)
     let comparedParent = files?.source.kind == "commit" ? files.source.parentId : undefined
     return (
-        <div className="trail-commit" data-expanded={open || undefined} data-remote={commit.remote || undefined}>
+        <div className="trail-commit" data-expanded={open || undefined} data-remote={commit.remote || undefined} data-editing={editing || undefined}>
             <div
                 ref={element => {
                     rowRef.current = element
@@ -286,6 +292,7 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
                         </Hint>
                     )}
                 </AriaButton>
+                {editing && <small className="commit-editing">Editing</small>}
                 <CommitAge authoredAt={commit.authoredAt} />
                 {open && (
                     <IconButton
@@ -302,7 +309,10 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
                 </span>
             </div>
             {rewording == commit.objectId && <RewordForm {...props} close={() => onReword(undefined)} />}
-            {scope && <TransferReview composition={scope.composition} repositoryId={scope.repositoryId} target={commitTarget} />}
+            {/* The Historical Edit banner shows the review of changes applied to the commit it edits. */}
+            {scope && !(editing && edit?.branch == branch.preferredRef) && (
+                <TransferReview composition={scope.composition} repositoryId={scope.repositoryId} target={commitTarget} />
+            )}
             {open && files && (
                 <div className="commit-files">
                     {commit.body && <CommitMessage body={commit.body} />}

@@ -4203,6 +4203,51 @@
     }
 }
 
+/* A column in Historical Edit says so above its Working Changes; a stale session takes the warning colours. */
+.historical-edit {
+    display: grid;
+    gap: var(--spacing-2);
+    padding: var(--spacing-2);
+    border: 1px solid var(--changes-border);
+    border-radius: var(--radius);
+    background: var(--changes-background);
+
+    &[data-state="stale"] {
+        border-color: var(--warning-border);
+        background: var(--warning-background);
+    }
+
+    p {
+        margin: 0;
+        overflow-wrap: anywhere;
+    }
+}
+
+.historical-edit-title {
+    display: flex;
+    align-items: baseline;
+    gap: var(--spacing-2);
+
+    > svg {
+        flex: 0 0 auto;
+        align-self: center;
+        width: var(--spacing-4);
+        height: var(--spacing-4);
+    }
+}
+
+.historical-edit-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-1);
+}
+
+.commit-editing {
+    flex: 0 0 auto;
+    color: var(--status-modified);
+    font-weight: 600;
+}
+
 .conflict-controls-title {
     color: var(--warning-color);
 }

@@ -65,6 +65,8 @@ export async function prepareFileExtraction(repo: RepositoryGit, request: Compos
             "refs/remotes",
             "refs/laneway/conflicts/current",
             "refs/laneway/conflict-candidates",
+            // A Historical Edit worktree must follow the rewrite, which only the general planner does.
+            "refs/laneway/historical-edits",
             "refs/replace",
         ]),
         Promise.all(["pre-commit", "prepare-commit-msg", "commit-msg", "reference-transaction", "post-index-change"].map(async name => {

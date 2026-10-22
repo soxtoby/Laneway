@@ -6,6 +6,7 @@ import { CommitAgesShown } from "./commit-age"
 import { ContextMenuHost } from "./context-menu"
 import { Hint } from "./controls"
 import { GitSettingsDialog } from "./git-settings-dialog"
+import { ReturnDialog } from "./historical-edit-banner"
 import { ArchiveIcon, BrandMark, GraphIcon, MoonIcon, PullIcon, RedoIcon, SearchIcon, SettingsIcon, SunIcon, UndoIcon } from "./icons"
 import { LocalBranchDialog } from "./local-branch-dialog"
 import { MissingRepository } from "./missing-repository"
@@ -139,6 +140,7 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
             <WorktreeDialog worktrees={worktrees} />
             <StashesDialog stashes={stashes} />
             <RebaseDialog rebase={controller.rebase} />
+            <ReturnDialog edits={controller.edits} />
             <PullDialog pull={controller.pull} onResolve={(_repositoryId, branch) => columns.open(`branch:refs/heads/${branch}`)} />
             <CommandLensDialog controller={controller} workspace={workspace} />
             <RepositoryIdentityDialog editor={identity} repositories={workspace.repositories} api={api} />
