@@ -7,6 +7,7 @@ import { join } from "node:path"
 import type { CommitDrafts } from "../commit-drafts"
 import { WorkingDiscards } from "../discard"
 import { type EngineCommandResult, runEngineCommand } from "../engine"
+import { runPublish } from "../publish"
 import type { OpenRepositories } from "../repositories"
 
 export function registerOperationHandlers(repositories: OpenRepositories, enginePath: string, commitDrafts: CommitDrafts) {
@@ -174,7 +175,8 @@ export function registerOperationHandlers(repositories: OpenRepositories, engine
         }
     }
 
-    // Publish runs outside the mutation lock and Operation History, so it never waits for, or blocks, local operations.
+    // Publish stays outside Operation History and takes the mutation lock only briefly, to retain its receipt's
+    // commits, so it never blocks local operations for long.
     function registerPublishHandlers() {
         ipcMain.handle("publish:run", async (event, repositoryId: unknown, value: unknown): Promise<PublishActionResult> => {
             try {
@@ -182,13 +184,13 @@ export function registerOperationHandlers(repositories: OpenRepositories, engine
                     throw new Error("Choose a repository.")
                 let request = PublishRequestSchema.parse(value)
                 if (request.action == "plan")
-                    return await runPublish(event.sender, repositoryId, request)
+                    return await publish(event.sender, repositoryId, request)
                 if (activePublishes.has(repositoryId))
                     throw new Error("A publish is already running for this repository.")
 
                 activePublishes.add(repositoryId)
                 try {
-                    return await runPublish(event.sender, repositoryId, request)
+                    return await publish(event.sender, repositoryId, request)
                 } finally {
                     activePublishes.delete(repositoryId)
                 }
@@ -198,24 +200,11 @@ export function registerOperationHandlers(repositories: OpenRepositories, engine
         })
     }
 
-    async function runPublish(sender: WebContents, repositoryId: string, request: PublishRequest): Promise<PublishActionResult> {
-        let repository = repositories.worktreeRepository(repositoryId)
-        let output = await runEngineCommand({
-            enginePath,
-            cwd: repository.descriptor.mainWorktree,
-            args: ["publish", "--request", JSON.stringify(request), "--git-path", repository.descriptor.git.path],
-            onMessage: message => {
-                if (message.type == "progress" && !sender.isDestroyed()) {
-                    let progress: PublishProgress = { repositoryId, message: message.message, completed: message.completed, total: message.total }
-                    sender.send("publish:progress", progress)
-                }
-            },
-        }).result
-        // Anything left unpublished exits with status 1, still reporting its result.
-        let result = output.messages.find(message => message.type == "result" && message.command == "publish")
-        if (result?.type != "result" || result.command != "publish")
-            throw new Error(output.messages.find(message => message.type == "error")?.message ?? (output.diagnostics || "Publish failed."))
-        return { ok: true, result }
+    function publish(sender: WebContents, repositoryId: string, request: PublishRequest) {
+        return runPublish(enginePath, repositories.worktreeRepository(repositoryId).descriptor, request, progress => {
+            if (!sender.isDestroyed())
+                sender.send("publish:progress", { repositoryId, ...progress } satisfies PublishProgress)
+        })
     }
 
     function registerLocalHandlers() {
