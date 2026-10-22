@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { ConflictResultSchema } from "./conflicts"
+import { HistoricalEditResultSchema } from "./historical-edit"
 import { LocalResultSchema } from "./local-operations"
 import { OperationHistoryResultSchema, OperationTransitionResultSchema, RecoveryResultSchema, TestMutationResultSchema, WorktreeResultSchema } from "./operation-history"
 import { PublishResultSchema } from "./publish"
@@ -90,6 +91,7 @@ export let EngineMessageSchema = z.union([
     ConflictResultSchema,
     PullResultSchema,
     PublishResultSchema,
+    HistoricalEditResultSchema,
     RecoveryResultSchema,
     RecoveryStatusResultSchema,
     CancelledEventSchema,

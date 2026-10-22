@@ -51,6 +51,17 @@ lane conflict discard <stack>
 lane conflict publish-check <branch ...>
 lane conflict rewrite <branch ...> --onto <revision> [--path <worktree>]
 Subject and stack IDs come from list/inspect. Candidate versions are read automatically.`,
+    edit: `lane edit enter <commit> [--path <worktree>]
+lane edit apply [--file <path> ...] [--view combined|staged|unstaged] [--yes] [--allow-conflicts]
+lane edit return [--drop | --bring]
+lane edit restart
+lane edit status
+Historical Edit: edit from an older commit of the current branch in this worktree.
+Enter preserves Working Changes as a stash on the branch and checks out the commit detached.
+Apply moves Historical Working Changes into that commit, keeping its author and message,
+and restacks descendants; it is undoable. Return restores the earlier Working Changes on the
+branch's current tip; with changes left, choose --drop or --bring (each undoable).
+Restart re-pins a session whose branch moved outside it.`,
     undo: "lane undo [--worktree-basename <name>]\nUndo the latest eligible Laneway Operation, including Git wrappers.",
     redo: "lane redo\nRedo the next eligible Laneway Operation.",
     history: "lane history\nShow the repository's persistent operation history and undo/redo position.",
@@ -77,6 +88,7 @@ Laneway workflows:
   pull             Fetch and synchronize Active Stacks
   publish          Publish an Active Stack, resume, or restore from a receipt
   conflict         Inspect and resolve deferred conflicts
+  edit             Edit from an older commit: enter, apply, return, restart, status
   undo, redo       Navigate operation history
   history          List operations
   recover          Recover interrupted operations

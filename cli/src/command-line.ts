@@ -1,6 +1,6 @@
 import { connectRepository, GitError, readRegisteredWorktrees } from "@laneway/git"
 import { readSettings, SettingsError } from "@laneway/settings"
-import { ConflictRequestSchema, type ErrorEvent, ExitCode, LocalRequestSchema, RecoveryRequestSchema, WorktreeRequestSchema } from "@laneway/shared"
+import { ConflictRequestSchema, type ErrorEvent, ExitCode, HistoricalEditRequestSchema, LocalRequestSchema, RecoveryRequestSchema, WorktreeRequestSchema } from "@laneway/shared"
 import type { BranchGraphReadOptions } from "@laneway/shared"
 import { resolve } from "node:path"
 import { ZodError } from "zod"
@@ -8,7 +8,7 @@ import { commonOptions, flag, operands, option, parseArguments, UsageError } fro
 import { monitorCancellation } from "./command-cancellation"
 import { commandHelp } from "./command-help"
 import { resultExitCode, writeCommandResult } from "./command-output"
-import { compositionRequest, conflictRequest, currentBranch, publishRequest, worktreeRequest } from "./command-requests"
+import { compositionRequest, conflictRequest, currentBranch, historicalApplyRequest, historicalEditRequest, publishRequest, worktreeRequest } from "./command-requests"
 import { executeOperationCommand, OperationCancelledError, type OperationCommand, OperationRuntimeError } from "./operations/operation-runtime"
 
 let wrappers: Record<string, string[]> = { commit: ["commit"], stage: ["add"], unstage: ["restore", "--staged"], branch: ["branch"], stash: ["stash"] }
@@ -52,6 +52,13 @@ let conflictOptions: Record<string, Record<string, "string" | "boolean" | "multi
     "publish-check": {},
     rewrite: { onto: "string", path: "string" },
 }
+let editOptions: Record<string, Record<string, "string" | "boolean" | "multiple">> = {
+    enter: { path: "string" },
+    apply: { path: "string", file: "multiple", view: "string", preview: "boolean", yes: "boolean", "allow-conflicts": "boolean", remote: "string" },
+    return: { path: "string", drop: "boolean", bring: "boolean" },
+    restart: { path: "string" },
+    status: {},
+}
 
 export async function runCommandLine(argv: string[]): Promise<number | undefined> {
     if (argv[0] == "echo" && argv.length == 2 && (argv[1] == "--help" || argv[1] == "-h")) {
@@ -62,7 +69,8 @@ export async function runCommandLine(argv: string[]): Promise<number | undefined
     if (
         ["local", "local-preview", "local-transfer", "test-mutation", "echo", "--version"].includes(argv[0] ?? "")
         || (["undo", "redo", "recover"].includes(argv[0] ?? "") && argv.includes("--crash-after"))
-        || (["worktree", "pull", "publish", "conflict", "recover"].includes(argv[0] ?? "") && argv.some(arg => arg == "--request" || arg == "--request-file"))
+        || (["worktree", "pull", "publish", "conflict", "recover", "edit"].includes(argv[0] ?? "")
+            && argv.some(arg => arg == "--request" || arg == "--request-file"))
     ) {
         return undefined
     }
@@ -80,6 +88,7 @@ export async function runCommandLine(argv: string[]): Promise<number | undefined
             "pull",
             "publish",
             "conflict",
+            "edit",
             "undo",
             "redo",
             "history",
@@ -140,8 +149,10 @@ export async function runCommandLine(argv: string[]): Promise<number | undefined
         let progress = (message: string, completed: number, total: number) => writeCommandResult({ type: "progress", command, message, completed, total }, json)
         let operation: OperationCommand
 
-        if (["move", "copy", "rebase", "reword"].includes(command)) {
-            let request = LocalRequestSchema.parse(await compositionRequest(command, args, repo, cwd))
+        if (["move", "copy", "rebase", "reword"].includes(command) || command == "edit" && action == "apply") {
+            let request = LocalRequestSchema.parse(
+                command == "edit" ? await historicalApplyRequest(args, repo, cwd) : await compositionRequest(command, args, repo, cwd),
+            )
             let preview = await execute({ command: "local-preview", request, noWait })
             if (preview.command != "local-preview" || !preview.preview)
                 throw new Error("The engine did not return a composition preview.")
@@ -175,6 +186,8 @@ export async function runCommandLine(argv: string[]): Promise<number | undefined
             }
         } else if (command == "conflict")
             operation = { command, request: ConflictRequestSchema.parse(await conflictRequest(action!, args, repo, cwd, execute)), noWait }
+        else if (command == "edit")
+            operation = { command, request: HistoricalEditRequestSchema.parse(await historicalEditRequest(action!, args, repo, cwd)), noWait }
         else if (command == "pull") {
             let branches = args.positionals.length ? args.positionals : [await currentBranch(repo)]
             operation = {
@@ -257,9 +270,9 @@ function splitCommand(argv: string[]) {
 function workflowArguments(command: string, rest: string[]) {
     let definitions: Record<string, "string" | "boolean" | "multiple">
     let action: string | undefined
-    if (command == "worktree" || command == "conflict") {
+    if (command == "worktree" || command == "conflict" || command == "edit") {
         action = rest[0]?.startsWith("-") ? undefined : rest.shift()
-        let actions = command == "worktree" ? worktreeOptions : conflictOptions
+        let actions = command == "worktree" ? worktreeOptions : command == "edit" ? editOptions : conflictOptions
         if (action && !actions[action])
             throw new UsageError(`Unknown ${command} action "${action}". Use lane ${command} --help.`)
         definitions = action ? actions[action]! : {}
@@ -281,7 +294,7 @@ function workflowArguments(command: string, rest: string[]) {
         throw new UsageError(`Unknown command "${command}".`)
 
     let args = parseArguments(rest, definitions)
-    if ((command == "worktree" || command == "conflict") && !action && !flag(args, "help"))
+    if ((command == "worktree" || command == "conflict" || command == "edit") && !action && !flag(args, "help"))
         throw new UsageError(`Choose an action. Use lane ${command} --help.`)
     return { args, action }
 }

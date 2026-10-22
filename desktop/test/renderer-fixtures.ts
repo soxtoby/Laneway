@@ -179,6 +179,7 @@ export function fakeLaneway(overrides: Partial<Window["laneway"]> = {}): Window[
         onPublishProgress: () => () => undefined,
         readConflictContent: async () => null,
         conflictOperation: async () => ({ ok: true, result: { type: "result", command: "conflict", conflicts: [], recovery: [] } }),
+        historicalEdit: async () => ({ ok: false, error: { message: "Historical Edit unavailable" } }),
         localOperation: async () => ({
             ok: true,
             result: {

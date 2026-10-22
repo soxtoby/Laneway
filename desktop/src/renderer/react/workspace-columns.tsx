@@ -200,8 +200,10 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
     let files = inspected?.columns[column.id]
     let maximized = snapshot.maximizedId == column.id
     let headerRef = useRef<HTMLElement>(null)
-    // A branch dragged from the Branch Graph onto a worktree column's header switches that worktree to it.
+    // A branch dragged from the Branch Graph onto a worktree column's header switches that worktree to it, unless
+    // it is in a Historical Edit.
     let switchable = column.kind != "recovery" && column.kind != "comparison" && column.worktree != undefined && !column.worktree.missing
+        && !column.worktree.historicalEdit
     let { dropProps, isDropTarget } = useDrop({
         ref: headerRef,
         isDisabled: !switchable,

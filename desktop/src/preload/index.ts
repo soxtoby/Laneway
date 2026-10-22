@@ -8,6 +8,7 @@ import type { ConflictRequest } from "@laneway/shared"
 import type { PullProgress, PullRequest } from "@laneway/shared"
 import type { PublishProgress, PublishRequest } from "@laneway/shared"
 import type { RecoveryRequest } from "@laneway/shared"
+import type { HistoricalEditRequest } from "@laneway/shared"
 import { contextBridge, ipcRenderer } from "electron"
 
 contextBridge.exposeInMainWorld("laneway", {
@@ -27,6 +28,7 @@ contextBridge.exposeInMainWorld("laneway", {
     },
     readConflictContent: (repositoryId: string, object: string) => ipcRenderer.invoke("conflict:content", repositoryId, object),
     conflictOperation: (repositoryId: string, request: ConflictRequest) => ipcRenderer.invoke("conflict:operation", repositoryId, request),
+    historicalEdit: (repositoryId: string, request: HistoricalEditRequest) => ipcRenderer.invoke("edit:operation", repositoryId, request),
     previewWorktree: (repositoryId: string, request: WorktreeRequest) => ipcRenderer.invoke("worktree:preview", repositoryId, request),
     localOperation: (repositoryId: string, request: LocalRequest, token?: string) => ipcRenderer.invoke("local:operation", repositoryId, request, token),
     discardChanges: (repositoryId: string, request: DiscardRequest) => ipcRenderer.invoke("discard:apply", repositoryId, request),

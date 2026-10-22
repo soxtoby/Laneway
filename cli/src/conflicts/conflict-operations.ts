@@ -1,7 +1,9 @@
-import { blob, candidateReady, conflictHunks, conflictStateRef, gitText, hasConflictMarkers, isText, normalize, readConflictState, readRegisteredWorktrees, replaceTreeFiles, replayTree, type RepositoryGit, rewriteCommit, storeConflictState, temporaryBranchPrefix, treeEntries, withConflictScratch } from "@laneway/git"
+import { blob, candidateReady, conflictHunks, conflictStateRef, gitText, hasConflictMarkers, isText, normalize, readConflictState, readRegisteredWorktrees, readStoredHistoricalEdits, replaceTreeFiles, replayTree, type RepositoryGit, rewriteCommit, storeConflictState, temporaryBranchPrefix, treeEntries, withConflictScratch } from "@laneway/git"
 import { type ConflictRequest, type ConflictState, type ConflictSubject, type UnresolvedStack } from "@laneway/shared"
 import { lstat, readFile, realpath } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
+import { verifyIgnoredFiles } from "../composition/composition"
+import { followAcceptedRewrites } from "../historical-edit/accepted-rewrites"
 import { candidateRef, checkedCandidate, readCandidate, saveCandidate } from "./conflict-candidates"
 import { conflictResult, findSubject } from "./conflict-inspection"
 import { cleanupResolutionFiles, runMergeTool } from "./conflict-resolution-files"
@@ -139,6 +141,8 @@ export async function executeConflict(repo: RepositoryGit, request: ConflictRequ
             if (request.action == "keep-stashed")
                 throw new Error("Only Working Changes Conflicts can be kept stashed.")
             let stack = found.stack!
+            let sessions = await readStoredHistoricalEdits(repo)
+            let previous = new Map(state.stacks.flatMap(s => s.steps.map(step => [step.id, step.current] as const)))
             await followTemporaryBranch(repo, stack)
             if (!stack.steps.includes(found.step!))
                 throw new Error("The temporary branch no longer contains this commit. Update the stack to follow its current history.")
@@ -151,6 +155,7 @@ export async function executeConflict(repo: RepositoryGit, request: ConflictRequ
             let affectedStacks = [...state.stacks].filter(s => s.id == stack.id || dependsOn(state, s, stack.id))
             for (let affected of affectedStacks)
                 await publishProvisional(repo, state, affected, updateRefs, changes)
+            await followAcceptedRewrites(repo, sessions, affectedStacks, previous, state, changes)
         }
         await persist()
         await cleanupResolutionFiles(repo, subject)
@@ -574,13 +579,21 @@ async function requireWorktree(repo: RepositoryGit, path: string, clean = false)
     return worktree
 }
 
-export async function applyStashConflict(repo: RepositoryGit, path: string, stash: string, changes: Changes) {
+/**
+ * Merges a stash into the worktree's current files, deferring any conflict as a Working Changes Conflict, and returns
+ * whether it did. A clean merge is written only with `allowClean`, arriving unstaged; the caller then consumes the stash.
+ */
+export async function applyStashConflict(repo: RepositoryGit, path: string, stash: string, changes: Changes, allowClean = false) {
     let state = await readConflictState(repo)
     if (state.working.some(w => normalize(w.path) == normalize(path) && !w.suspended))
         throw new Error("This worktree already has a Working Changes Conflict.")
 
     let before = await repo.resolveRef(conflictStateRef)
     let head = await gitHead(repo, path)
+    let index = (await repo.command(path, ["write-tree"])).toString().trim()
+    // Returning from Historical Edit restores its changes over the original ones, which Keep stashed must leave in place.
+    let current = await workingTree(repo, path)
+    let dirty = current != index || index != await gitText(repo, ["rev-parse", `${head}^{tree}`])
     let stashTree = await gitText(repo, ["rev-parse", `${stash}^{tree}`])
     // Include the stash's untracked parent in the same merge so collisions are deferred too.
     let untracked = await repo.run(path, ["rev-parse", "--verify", `${stash}^3`])
@@ -589,18 +602,27 @@ export async function applyStashConflict(repo: RepositoryGit, path: string, stas
         stashTree = await replaceTreeFiles(repo, stashTree, Object.fromEntries(extras))
     }
 
-    let merged = await replayTree(repo, await commitParent(repo, stash), head, stashTree, crypto.randomUUID(), {
+    let merged = await replayTree(repo, await commitParent(repo, stash), current, stashTree, crypto.randomUUID(), {
         left: `Current files before restoring stash at ${head.slice(0, 8)}`,
         right: `Stashed changes ${stash.slice(0, 8)}`,
     })
-    if (!merged.conflict)
+    if (!merged.conflict && !allowClean)
         throw new Error("The stash failed for a reason other than a content conflict. Its original state is preserved.")
 
-    let branch = (await repo.run(path, ["symbolic-ref", "--quiet", "HEAD"])).stdout.toString().trim() || null
-    state.working.push({ id: merged.conflict.id, path, branch, head, stash, conflict: merged.conflict })
+    if (merged.conflict) {
+        let branch = (await repo.run(path, ["symbolic-ref", "--quiet", "HEAD"])).stdout.toString().trim() || null
+        let retained = dirty ? { beforeTree: current, beforeIndex: index, afterIndex: index } : {}
+        state.working.push({ id: merged.conflict.id, path, branch, head, stash, conflict: merged.conflict, ...retained })
+    }
+    // Ignored files are outside checkpoints, and the checkout below would overwrite one the stash also holds.
+    await verifyIgnoredFiles(repo, path, merged.tree)
+    // Tracking the current untracked files first lets the checkout replace them where the stash changes them.
+    await repo.command(path, ["read-tree", current])
     await repo.command(path, ["read-tree", "--reset", "-u", merged.tree])
-    await repo.command(path, ["read-tree", head])
-    changes.set(conflictStateRef, await storeConflictState(repo, state, before))
+    await repo.command(path, ["read-tree", index])
+    if (merged.conflict)
+        changes.set(conflictStateRef, await storeConflictState(repo, state, before))
+    return Boolean(merged.conflict)
 }
 export async function gitHead(repo: RepositoryGit, path: string) {
     return (await repo.command(path, ["rev-parse", "HEAD"])).toString().trim()
@@ -613,7 +635,7 @@ async function workingTree(repo: RepositoryGit, path: string) {
         return (await repo.command(path, ["write-tree"], undefined, env)).toString().trim()
     })
 }
-async function dropStash(repo: RepositoryGit, oid: string, changes: Changes) {
+export async function dropStash(repo: RepositoryGit, oid: string, changes: Changes) {
     let list = (await gitText(repo, ["stash", "list", "--format=%H"])).split("\n")
     let index = list.indexOf(oid)
     if (index < 0)

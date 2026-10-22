@@ -9,6 +9,7 @@ import { type Conflicts, createConflicts } from "./conflicts"
 import { undoWindowMs } from "./discard"
 import { orderedFiles } from "./file-list-view"
 import { createGitSettings, type GitSettings } from "./git-settings"
+import { createHistoricalEdits, type HistoricalEdits } from "./historical-edit"
 import { createInspection, type Inspection } from "./inspection"
 import { createLocalBranches, type LocalBranches } from "./local-branches"
 import { errorMessage, type Notice } from "./notice"
@@ -66,6 +67,8 @@ export interface AppController extends Store<AppSnapshot> {
     readonly publish: Publish
     /** Moving and copying files, commits, and branches between columns. */
     readonly composition: Composition
+    /** Entering, returning from, and restarting each worktree's Historical Edit. */
+    readonly edits: HistoricalEdits
     /** Loads the app state; also retries after a failed start. */
     start(): Promise<void>
     toggleAppearance(): Promise<void>
@@ -263,6 +266,14 @@ export function createAppController(api: Api): AppController {
         resolve: repositoryId => void resolveFirstConflict(repositoryId),
     })
 
+    let edits = createHistoricalEdits({
+        api,
+        notify,
+        mutating,
+        changed: rewritten,
+        offerUndo: (repositoryId, message) => offerUndo(repositoryId, "edit.returned", message),
+    })
+
     let rebase = createBranchRebase({
         api,
         notify,
@@ -360,6 +371,7 @@ export function createAppController(api: Api): AppController {
         pull,
         publish,
         composition,
+        edits,
 
         async start() {
             store.publish({ status: "starting" })
