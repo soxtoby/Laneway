@@ -10,6 +10,7 @@ import { type RecoveryRequest, RecoveryRequestSchema } from "@laneway/shared"
 import { readFileSync, statSync } from "node:fs"
 import { monitorCancellation } from "./command-cancellation"
 import { runCommandLine } from "./command-line"
+import { resultExitCode } from "./command-output"
 import { executeOperationCommand, type JournalPhase, OperationCancelledError, type OperationCommand, OperationRuntimeError } from "./operations/operation-runtime.ts"
 
 let args = process.argv.slice(2)
@@ -194,7 +195,7 @@ async function runOperationCommand(command: Exclude<OperationCommand["command"],
             : parsed.command
         let result = await executeOperationCommand(command, process.cwd(), cancellation, parsed.gitPath ?? settings.gitPath)
         write(result, parsed.json)
-        return "status" in result && result.status == "failed" ? ExitCode.failure : ExitCode.ok
+        return resultExitCode(result)
     } catch (error) {
         if (error instanceof OperationCancelledError) {
             write({ type: "cancelled", command, message: error.message }, parsed.json)

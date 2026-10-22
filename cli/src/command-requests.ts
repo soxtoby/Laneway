@@ -151,6 +151,9 @@ export async function publishRequest(args: Arguments, repo: RepositoryGit): Prom
     let resume = option(args, "resume"), restore = option(args, "restore")
     if (resume && restore)
         throw new UsageError("Use either --resume or --restore.")
+    // Resume and restoration publish from a receipt; there is no preview of either.
+    if ((resume || restore) && flag(args, "preview"))
+        throw new UsageError("--preview previews a stack's publish; it cannot be combined with --resume or --restore.")
     let [branch] = operands(args, 0, resume || restore ? 0 : 1)
     if (resume || restore)
         return resume ? { action: "resume", receipt: resume } : { action: "restore", receipt: restore! }

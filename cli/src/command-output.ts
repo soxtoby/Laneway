@@ -1,4 +1,4 @@
-import { type EngineMessage, type LocalPreview, publishReceiptStatus, type PublishResult, type PublishUpdate } from "@laneway/shared"
+import { type EngineMessage, ExitCode, type LocalPreview, publishReceiptStatus, type PublishResult, type PublishUpdate } from "@laneway/shared"
 
 export function writeCommandResult(result: EngineMessage, json: boolean) {
     if (json) {
@@ -69,6 +69,14 @@ export function writeCommandResult(result: EngineMessage, json: boolean) {
     } else if ("message" in result) {
         console.log(result.message)
     }
+}
+
+// A publish that leaves anything unpublished fails, so scripts and the desktop notice partial publication.
+export function resultExitCode(result: EngineMessage) {
+    let failed = result.type == "result" && result.command == "publish"
+        ? ["blocked", "partial", "stale", "failed"].includes(result.status)
+        : "status" in result && result.status == "failed"
+    return failed ? ExitCode.failure : ExitCode.ok
 }
 
 function writePublish(result: PublishResult) {
