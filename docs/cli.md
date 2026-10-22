@@ -77,6 +77,10 @@ lane conflict inspect <subject-id>
 lane conflict choose <subject-id> src/app.ts --side right
 lane conflict use-file <subject-id> src/app.ts ./resolved-app.ts
 lane conflict accept <subject-id>
+lane edit enter HEAD~2
+lane edit apply --file src/app.ts
+lane edit return --bring
+lane edit status
 lane history
 lane undo
 lane redo
@@ -106,6 +110,14 @@ reads a message file.
 Worktree removal preserves Working Changes and Worktree-only Commits by default;
 `--discard` opts out. `--allow-ignored-loss` explicitly permits deleting ignored
 files. `recover restore|remove <operation-id>` resolves one pending worktree recovery.
+
+`edit` is [Historical Edit](historical-edit.md) in the current worktree (or `--path`).
+`enter <commit>` stashes Working Changes on the branch and checks the commit out detached;
+`apply` moves Historical Working Changes into that commit and restacks descendants,
+taking `--file`, `--view`, `--yes`, and `--allow-conflicts` like `move`. `return` restores
+the earlier Working Changes on the branch's current tip; with changes left it needs
+`--drop` or `--bring`. `restart` re-pins a stale session; `status` lists every session.
+Entering, a clean return, and restarting are not operations; apply, drop, and bring are.
 
 Laneway workflow commands accept `--json`, `--no-wait`, `--git-path`, and `-C`
 before the command or among its options. `--no-wait` fails instead of waiting for

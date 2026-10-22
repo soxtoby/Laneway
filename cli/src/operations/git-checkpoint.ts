@@ -1,4 +1,4 @@
-import { normalize, pathExists, populatedSubmodules, readRegisteredWorktrees, type RepositoryGit } from "@laneway/git"
+import { historicalEditPrefix, normalize, pathExists, populatedSubmodules, readRegisteredWorktrees, type RepositoryGit } from "@laneway/git"
 import type { RegisteredWorktree } from "@laneway/shared"
 import { createHash } from "node:crypto"
 import { lstat, mkdir, readFile, readlink, rm, writeFile } from "node:fs/promises"
@@ -327,6 +327,7 @@ export async function readCheckpointRefs(repo: RepositoryGit, includeRemoteRefs 
         "refs/stash",
         "refs/laneway/conflicts/current",
         "refs/laneway/conflict-candidates",
+        historicalEditPrefix,
     ])
     return Object.fromEntries(output.toString().trim().split("\n").filter(Boolean).map(line => line.split(" ")))
 }

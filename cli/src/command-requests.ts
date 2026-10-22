@@ -1,5 +1,5 @@
-import { connectRepository, type RepositoryGit } from "@laneway/git"
-import type { CompositionTarget, ConflictRequest, LocalRequest, WorktreeRequest } from "@laneway/shared"
+import { connectRepository, normalize, readHistoricalEdits, readRegisteredWorktrees, type RepositoryGit } from "@laneway/git"
+import type { CompositionTarget, ConflictRequest, HistoricalEditRequest, LocalRequest, WorktreeRequest } from "@laneway/shared"
 import { readFile } from "node:fs/promises"
 import { posix, resolve } from "node:path"
 import { type Arguments, flag, multiple, operands, option, requiredOption, UsageError } from "./command-arguments"
@@ -145,6 +145,55 @@ export async function conflictRequest(
         else
             throw new UsageError(`Unknown conflict action "${action}". Use lane conflict --help.`)
     }
+}
+
+/** Apply changes moves the selected, or all, Historical Working Changes into the commit being edited. */
+export async function historicalApplyRequest(args: Arguments, repo: RepositoryGit, cwd: string): Promise<LocalRequest> {
+    operands(args, 0)
+    let path = await worktreePath(repo, cwd, option(args, "path"))
+    let edit = await historicalEdit(repo, path)
+    let files = multiple(args, "file").map(gitFilePath)
+    let view = option(args, "view") ?? "combined"
+    if (view != "combined" && view != "staged" && view != "unstaged")
+        throw new UsageError("--view must be combined, staged, or unstaged.")
+    return {
+        action: "compose",
+        mode: "move",
+        source: { kind: "working", worktreePath: path },
+        target: { kind: "commit", objectId: edit.commit, branch: edit.branch },
+        files: files.length ? files.map(file => ({ path: file })) : undefined,
+        message: "",
+        view,
+        descendants: true,
+        allowConflicts: flag(args, "allow-conflicts"),
+        selectedRemote: option(args, "remote"),
+    }
+}
+
+export async function historicalEditRequest(action: string, args: Arguments, repo: RepositoryGit, cwd: string): Promise<HistoricalEditRequest> {
+    if (action == "status") {
+        operands(args, 0)
+        return { action }
+    }
+    let path = await worktreePath(repo, cwd, option(args, "path"))
+    if (action == "enter") {
+        let [revision] = operands(args, 1)
+        return { action, path, commit: await commitId(repo, revision!) }
+    }
+    operands(args, 0)
+    if (action == "restart")
+        return { action, path }
+    if (flag(args, "drop") && flag(args, "bring"))
+        throw new UsageError("Choose either --drop or --bring.")
+    return { action: "return", path, mode: flag(args, "drop") ? "drop" : flag(args, "bring") ? "bring" : "clean" }
+}
+
+async function historicalEdit(repo: RepositoryGit, path: string) {
+    let worktree = (await readRegisteredWorktrees(repo)).find(w => normalize(w.path) == normalize(path))
+    let edit = (await readHistoricalEdits(repo)).find(e => e.worktreeId == worktree?.id)
+    if (!edit)
+        throw new UsageError("This worktree is not in a Historical Edit. Start one with lane edit enter <commit>.")
+    return edit
 }
 
 export async function currentBranch(repo: RepositoryGit) {

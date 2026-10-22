@@ -5,9 +5,11 @@ import type { ColumnView } from "./branch-workspace"
 import { CommitTrail } from "./commit-trail"
 import { ConflictControls } from "./conflict-resolution"
 import { DiffScopeContext } from "./diff-panel"
+import { HistoricalEditBanner } from "./historical-edit-banner"
 import type { ColumnInspection } from "./inspection"
 import { TransferScopeContext } from "./transfer"
 import { FileList, StashedChanges, WorkingChanges } from "./working-changes"
+import { allWorktrees } from "./worktree-controls"
 
 interface ColumnBodyProps {
     controller: AppController
@@ -50,23 +52,27 @@ export function ColumnBody({ controller, repositoryId, graph, column, inspected,
         )
     }
     let path = columnRoot(column)
+    let edit = path ? column.worktree?.historicalEdit : undefined
     return (
         <ColumnScopes controller={controller} repositoryId={repositoryId} graph={graph} column={column}>
             <div className="column-body">
+                {edit && path && <HistoricalEditBanner edits={controller.edits} repositoryId={repositoryId} path={path} edit={edit} />}
                 {column.kind == "branch" && column.branch.unresolved && !column.worktree?.missing && (
                     <ConflictControls conflicts={conflicts} repositoryId={repositoryId} branch={column.branch} path={path} />
                 )}
                 {path
                     ? (
-                        // A cleared recovery recreates the composer, so its preview runs again.
+                        // A cleared recovery recreates the composer, so its preview runs again. Entering or leaving a
+                        // Historical Edit does too, closing any open form while the saved draft carries over.
                         <WorkingChanges
-                            key={`${path}:${blocked}`}
+                            key={`${path}:${blocked}:${edit != undefined}`}
                             column={column}
                             path={path}
                             inspected={inspected}
                             inspection={inspection}
                             createComposer={() => controller.composer(repositoryId, column.id, path, blocked)}
                             blocked={blocked}
+                            sessionStashes={allWorktrees(graph).flatMap(worktree => worktree.historicalEdit?.stash ?? [])}
                             view={view}
                             onViewChange={onViewChange}
                         />
@@ -86,6 +92,9 @@ export function ColumnBody({ controller, repositoryId, graph, column, inspected,
                         renameBranch={newName => branches.perform(repositoryId, { action: "branch-rename", name: column.branch.name, newName })}
                         createBranchAt={commit => branches.createAt(repositoryId, commit.objectId)}
                         reword={(branch, commit, close) => controller.reword(repositoryId, branch.preferredRef, commit, close)}
+                        editFrom={path && !column.worktree?.historicalEdit
+                            ? commit => void controller.edits.enter(repositoryId, path, commit.objectId)
+                            : undefined}
                         compare={(from, to) => controller.columns.openComparison(column.id, from, to)}
                         conflicts={conflicts}
                         repositoryId={repositoryId}

@@ -380,7 +380,7 @@ export async function createCommitObject(
     )).toString().trim()
 }
 
-async function checkStashApplication(repository: RepositoryGit, path: string, objectId: string) {
+export async function checkStashApplication(repository: RepositoryGit, path: string, objectId: string) {
     let root = resolve(tmpdir())
     let scratch = await mkdtemp(join(root, "laneway-stash-"))
     try {
