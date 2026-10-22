@@ -1,4 +1,4 @@
-import { gitText, hasUniqueCommits, historicalEditRef, normalize, pathExists, populatedSubmodules, readConflictState, readRegisteredWorktrees, readStoredHistoricalEdits, type RepositoryGit, storeHistoricalEdit, temporaryBranchPrefix } from "@laneway/git"
+import { gitText, historicalEditRef, normalize, pathExists, populatedSubmodules, readConflictState, readRegisteredWorktrees, readStoredHistoricalEdits, type RepositoryGit, storeHistoricalEdit, temporaryBranchPrefix } from "@laneway/git"
 import { type HistoricalEditRequest, HistoricalEditSessionSchema, type RegisteredWorktree } from "@laneway/shared"
 import { join } from "node:path"
 import { verifyIgnoredFiles } from "../composition/composition"
@@ -87,7 +87,7 @@ async function prepareReturn(
     let holder = worktrees.find(w => w.branchRef == edit.branch)
     if (holder)
         throw new Error(`${name} is checked out in ${holder.path}. Switch that worktree away before returning.`)
-    if (await hasUniqueCommits(repo, worktree))
+    if (await hasNewCommits(repo, worktree, edit.commit))
         throw new Error("Create a branch for the commits made during this Historical Edit before returning.")
     await requireNoWorkingConflict(repo, worktree)
     await verifyIgnoredFiles(repo, worktree.path, await gitText(repo, ["rev-parse", `${tip}^{tree}`]))
@@ -222,6 +222,11 @@ async function requireNoWorkingConflict(repo: RepositoryGit, worktree: Registere
     let state = await readConflictState(repo)
     if (state.working.some(w => !w.suspended && normalize(w.path) == normalize(worktree.path)))
         throw new Error("Resolve this worktree's Working Changes Conflict first.")
+}
+
+/** An external rewrite can leave the session's own snapshot off every branch, so only commits made on top of it count. */
+async function hasNewCommits(repo: RepositoryGit, worktree: RegisteredWorktree, snapshot: string) {
+    return (await gitText(repo, ["rev-list", "--max-count=1", worktree.head, "--not", "--branches", "--tags", snapshot])).length > 0
 }
 
 async function isDirty(repo: RepositoryGit, path: string) {

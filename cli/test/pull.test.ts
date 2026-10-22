@@ -225,6 +225,27 @@ test("stacks overlapping a Historical Edit are skipped and the session continues
     expect(git(local, "rev-parse", "HEAD")).toBe(before.one)
 }, 120_000)
 
+test("sibling stacks sharing a branch with a Historical Edit's stack are skipped whatever their order and length", async () => {
+    let { other, local } = await fixture()
+    git(other, "switch", "-qc", "one", "origin/one")
+    await commit(other, "shared.txt", "from colleague\n", "colleague on one")
+    git(other, "push", "-q", "origin", "one")
+    git(local, "switch", "-qc", "three", "one")
+    await commit(local, "three.txt", "three\n", "three")
+    git(local, "switch", "-qc", "four")
+    await commit(local, "four.txt", "four\n", "four")
+    git(local, "switch", "-q", "two")
+    let one = git(local, "rev-parse", "one")
+    await executeOperationCommand({ command: "edit", request: { action: "enter", path: local, commit: one }, noWait: false }, local)
+
+    for (let branches of [["three", "two"], ["two", "three"], ["four", "two"]]) {
+        let result = await pull(local, branches.map(name => `refs/heads/${name}`))
+
+        expect(result.stacks.map(stack => stack.status), branches.join()).toEqual(["skipped", "skipped"])
+        expect(git(local, "rev-parse", "one"), branches.join()).toBe(one)
+    }
+}, 180_000)
+
 // A shared bare "origin" with a separate contributor clone that publishes upstream changes,
 // and the local clone under test with main and a two-branch stack tracking origin.
 async function fixture() {

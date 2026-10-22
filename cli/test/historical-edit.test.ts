@@ -40,6 +40,11 @@ test("entry preserves staged, unstaged, and untracked changes and detaches the s
     expect(git(path, "branch", "--show-current")).toBe("feature")
     expect(git(path, "rev-parse", "HEAD")).toBe(tip)
     expect(git(path, "status", "--porcelain")).toBe(before)
+    expect(git(path, "show", ":print.txt")).toBe("print loudly")
+    expect(await readFile(join(path, "print.txt"), "utf8")).toBe("print loudly\n")
+    expect(git(path, "show", ":greet.txt")).toBe("hello\nthere\npal")
+    expect(await readFile(join(path, "greet.txt"), "utf8")).toBe("hello\nthere\npal\nbye\n")
+    expect(await readFile(join(path, "notes.txt"), "utf8")).toBe("notes\n")
     expect(git(path, "stash", "list")).toBe("")
     expect((await edit(path, { action: "status" })).sessions).toEqual([])
     expect((await history(path)).entries).toEqual([])
@@ -220,6 +225,22 @@ test("when the original changes conflict on return, the historical ones wait as 
     expect(await Bun.file(join(path, "extra.txt")).exists()).toBe(false)
 }, 90_000)
 
+test("return refuses to restore earlier untracked changes over a file the session made ignored", async () => {
+    let { path, greeting } = await stack()
+    await writeFile(join(path, "greet.txt"), "hi\nthere\npal\n")
+    await writeFile(join(path, "notes.txt"), "stashed notes\n")
+    await edit(path, { action: "enter", path, commit: greeting })
+    await writeFile(join(path, "greet.txt"), "hey\nthere\nfriend\n")
+    await writeFile(join(path, ".gitignore"), "notes.txt\n")
+    await apply(path)
+    await writeFile(join(path, "notes.txt"), "ignored notes\n")
+
+    await expect(edit(path, { action: "return", path, mode: "clean" })).rejects.toThrow("ignored file")
+
+    expect(await readFile(join(path, "notes.txt"), "utf8")).toBe("ignored notes\n")
+    expect(git(path, "rev-parse", "HEAD")).toBe((await session(path))!.commit)
+}, 90_000)
+
 test("two worktrees hold independent sessions, and applying in one leaves the other current", async () => {
     let { path, base, greeting } = await stack()
     let other = join(await temporaryDirectory(), "other")
@@ -259,6 +280,24 @@ test("a branch moved outside the session makes it stale; composition refuses it 
     expect((await session(path))?.state).toBe("active")
 }, 90_000)
 
+test("return after an external rewrite replaced the edited commit refuses only commits made on top of it", async () => {
+    let { path, base, greeting, tip } = await stack()
+    await writeFile(join(path, "notes.txt"), "notes\n")
+    await edit(path, { action: "enter", path, commit: greeting })
+    let squashed = git(path, "commit-tree", `${tip}^{tree}`, "-p", base, "-m", "Squashed")
+    git(path, "update-ref", "refs/heads/feature", squashed)
+    await commit(path, "new.txt", "new\n", "New work")
+
+    await expect(edit(path, { action: "return", path, mode: "clean" })).rejects.toThrow("Create a branch")
+
+    git(path, "reset", "-q", "--hard", greeting)
+    await edit(path, { action: "return", path, mode: "clean" })
+
+    expect(git(path, "branch", "--show-current")).toBe("feature")
+    expect(git(path, "rev-parse", "HEAD")).toBe(squashed)
+    expect(await readFile(join(path, "notes.txt"), "utf8")).toBe("notes\n")
+}, 90_000)
+
 test("a descendant conflict pauses the session at the rewritten commit until the Unresolved Stack resolves", async () => {
     let { path, greeting } = await stack()
     await edit(path, { action: "enter", path, commit: greeting })
@@ -273,25 +312,49 @@ test("a descendant conflict pauses the session at the rewritten commit until the
     expect(git(path, "show", "HEAD:greet.txt")).toBe("hello\nthere\nbuddy")
     await expect(edit(path, { action: "return", path, mode: "clean" })).rejects.toThrow("Resolve the conflicts on feature")
 
-    let [subject] = (await conflict(path, { action: "list" })).conflicts
-    let view = (await conflict(path, { action: "inspect", subject: subject!.id })).view!
-    let chosen = await conflict(path, {
-        action: "choose",
-        subject: subject!.id,
-        input: view.subject.input,
-        revision: view.candidate.revision,
-        file: "greet.txt",
-        side: "right",
-    })
-    await conflict(path, { action: "accept", subject: subject!.id, input: view.subject.input, revision: chosen.view!.candidate.revision })
+    let pinned = git(path, "rev-parse", "feature")
+    git(path, "update-ref", "refs/heads/feature", externalCommit(path, pinned))
+
+    expect((await session(path))?.state).toBe("stale")
+
+    git(path, "update-ref", "refs/heads/feature", pinned)
+    await acceptRightSide(path)
+    let accepted = git(path, "rev-parse", "feature")
 
     expect((await session(path))?.state).toBe("active")
     expect(git(path, "rev-parse", "HEAD")).toBe(paused!.commit)
 
+    git(path, "update-ref", "refs/heads/feature", externalCommit(path, accepted))
+
+    expect((await session(path))?.state).toBe("stale")
+
+    git(path, "update-ref", "refs/heads/feature", accepted)
     await edit(path, { action: "return", path, mode: "clean" })
 
     expect(git(path, "branch", "--show-current")).toBe("feature")
     expect(git(path, "rev-parse", "feature~2")).toBe(paused!.commit)
+}, 120_000)
+
+test("accepting a conflict before another session's commit on the same branch moves that session to its rewrite with its changes", async () => {
+    let { path, greeting } = await stack()
+    let later = await commit(path, "extra.txt", "extra\n", "Add extra")
+    await edit(path, { action: "enter", path, commit: greeting })
+    let other = join(await temporaryDirectory(), "other")
+    git(path, "worktree", "add", "-q", other, "feature")
+    await edit(other, { action: "enter", path: other, commit: later })
+    await writeFile(join(other, "draft.txt"), "draft\n")
+    await writeFile(join(path, "greet.txt"), "hello\nthere\nbuddy\n")
+    await apply(path, undefined, true)
+
+    await acceptRightSide(path)
+
+    let tip = git(path, "rev-parse", "feature")
+    let sessions = (await edit(path, { action: "status" })).sessions
+
+    expect(sessions.map(s => s.state)).toEqual(["active", "active"])
+    expect(sessions.find(s => s.worktreeId != "main")?.commit).toBe(tip)
+    expect(git(other, "rev-parse", "HEAD")).toBe(tip)
+    expect(await readFile(join(other, "draft.txt"), "utf8")).toBe("draft\n")
 }, 120_000)
 
 test("an interrupted entry or return is rolled back by the next Engine run", async () => {
@@ -303,6 +366,7 @@ test("an interrupted entry or return is rolled back by the next Engine run", asy
 
     expect(git(path, "branch", "--show-current")).toBe("feature")
     expect(git(path, "status", "--porcelain")).toBe("?? notes.txt")
+    expect(await readFile(join(path, "notes.txt"), "utf8")).toBe("notes\n")
     expect(git(path, "stash", "list")).toBe("")
     expect((await edit(path, { action: "status" })).sessions).toEqual([])
 
@@ -313,7 +377,35 @@ test("an interrupted entry or return is rolled back by the next Engine run", asy
 
     expect(git(path, "rev-parse", "HEAD")).toBe(greeting)
     expect(git(path, "status", "--porcelain")).toBe("M greet.txt")
+    expect(await readFile(join(path, "greet.txt"), "utf8")).toBe("hello, world\nthere\nfriend\n")
     expect((await session(path))?.state).toBe("active")
+}, 120_000)
+
+test("recovery leaves an interrupted entry or return in place once files or refs changed after it", async () => {
+    let { path, base, greeting, tip } = await stack()
+    await writeFile(join(path, "notes.txt"), "notes\n")
+    await engine(path, ["edit", "--request", JSON.stringify({ action: "enter", path, commit: greeting }), "--crash-after", "worktrees-committed"], 86)
+    await writeFile(join(path, "draft.txt"), "draft\n")
+
+    expect(await engine(path, ["recover"], 1)).toContain("operation.recovery-blocked")
+    expect(git(path, "rev-parse", "HEAD")).toBe(greeting)
+    expect(await readFile(join(path, "draft.txt"), "utf8")).toBe("draft\n")
+    expect(git(path, "stash", "list", "--format=%gs")).toBe("On feature: Working Changes before Historical Edit")
+
+    // Once the repository is back to what the entry left, recovery rolls it back as usual.
+    await rm(join(path, "draft.txt"))
+    await engine(path, ["recover"])
+    await edit(path, { action: "enter", path, commit: greeting })
+    await writeFile(join(path, "greet.txt"), "hello, world\nthere\nfriend\n")
+    await engine(path, ["edit", "--request", JSON.stringify({ action: "return", path, mode: "bring" }), "--crash-after", "worktrees-committed"], 86)
+    let external = externalCommit(path, base)
+    git(path, "update-ref", "refs/heads/main", external)
+
+    expect(await engine(path, ["recover"], 1)).toContain("operation.recovery-blocked")
+    expect(git(path, "rev-parse", "main")).toBe(external)
+    expect(git(path, "branch", "--show-current")).toBe("feature")
+    expect(git(path, "rev-parse", "HEAD")).toBe(tip)
+    expect(await readFile(join(path, "notes.txt"), "utf8")).toBe("notes\n")
 }, 120_000)
 
 /** A feature branch of three commits on main, with a greeting its later commits build on. */
@@ -361,6 +453,26 @@ async function conflict(path: string, conflictRequest: ConflictRequest) {
     return await executeOperationCommand({ command: "conflict", request: conflictRequest, noWait: false }, path) as ConflictResult
 }
 
+/** Resolves the only commit conflict with the replayed commit's side and accepts it. */
+async function acceptRightSide(path: string) {
+    let [subject] = (await conflict(path, { action: "list" })).conflicts
+    let view = (await conflict(path, { action: "inspect", subject: subject!.id })).view!
+    let chosen = await conflict(path, {
+        action: "choose",
+        subject: subject!.id,
+        input: view.subject.input,
+        revision: view.candidate.revision,
+        file: "greet.txt",
+        side: "right",
+    })
+    await conflict(path, { action: "accept", subject: subject!.id, input: view.subject.input, revision: chosen.view!.candidate.revision })
+}
+
+/** A commit on top of `parent`, as an external tool would make without checking anything out. */
+function externalCommit(path: string, parent: string) {
+    return git(path, "commit-tree", `${parent}^{tree}`, "-p", parent, "-m", "External")
+}
+
 async function keepStashed(path: string, subject: string) {
     let view = (await conflict(path, { action: "inspect", subject })).view!
     return conflict(path, { action: "keep-stashed", subject, input: view.subject.input, revision: view.candidate.revision })
@@ -378,9 +490,10 @@ async function engine(path: string, args: string[], expected = 0) {
         stdout: "pipe",
         stderr: "pipe",
     })
-    let [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()])
+    let [exitCode, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
     if (exitCode != expected)
         throw new Error(`lane ${args[0]} exited ${exitCode}: ${stderr}`)
+    return stdout
 }
 
 async function temporaryDirectory() {

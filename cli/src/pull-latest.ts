@@ -154,8 +154,7 @@ export async function executePull(
         headsBefore.set(worktree.path, await gitHead(repo, worktree.path))
 
     let editing = new Map((await readHistoricalEditSessions(repo)).map(({ session }) => [session.branch, session]))
-    // Stacks overlapping one that holds a Historical Edit are skipped with it; a shared Base alone is not an overlap.
-    let held = new Set<string>()
+    let held = heldBranches(prepared.stacks, editing)
     let failedRemotes = new Set(prepared.fetches.filter(fetch => fetch.status == "failed").map(fetch => fetch.remote))
     let processed = new Map<string, { before: string; current: string }>()
     let outcomes: PullStackOutcome[] = [...prepared.blocked]
@@ -173,8 +172,7 @@ export async function executePull(
         let working = session.state.working.length
         try {
             let own = stack.branches.slice(1)
-            if (own.some(branch => editing.has(branch.ref) || held.has(branch.ref))) {
-                own.forEach(branch => held.add(branch.ref))
+            if (own.some(branch => held.has(branch.ref))) {
                 let edit = own.map(branch => editing.get(branch.ref)).find(Boolean)
                 throw new PullSkip(
                     edit
@@ -220,6 +218,15 @@ export async function executePull(
         await session.persist()
 
     return outcomes
+}
+
+/**
+ * The branches of every stack holding a Historical Edit, found before any update so that processing order doesn't matter.
+ * Stacks sharing one are skipped with it; a shared Base alone is not an overlap.
+ */
+function heldBranches(stacks: ScopedStack[], editing: Map<string, unknown>) {
+    let own = stacks.map(stack => stack.branches.slice(1).map(branch => branch.ref))
+    return new Set(own.filter(refs => refs.some(ref => editing.has(ref))).flat())
 }
 
 async function updateStack(

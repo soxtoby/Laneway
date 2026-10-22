@@ -54,22 +54,25 @@ Each session is stored in its own private ref, `refs/laneway/historical-edits/<w
 
 Operation checkpoints include `refs/laneway/historical-edits/`. Undoing an Apply, Drop, or Bring along therefore restores the session ref with the worktree and branches, and so reopens or rewinds the session without special handling.
 
-Entry, a clean Return, and Restart run inside a journaled checkpoint that is never recorded in Operation History. An interruption rolls them back on the next Engine run, and success adds no undo entry.
+Entry, a clean Return, and Restart run inside a journaled checkpoint that is never recorded in Operation History. An interruption rolls them back on the next Engine run, and success adds no undo entry. Like every checkpoint operation, each journals the state it left before finishing. Recovery rolls back only from that state or the starting one: if files or refs changed after the interruption, it leaves the repository as it is and keeps the starting state retained.
 
 - **Entry** stashes Working Changes as an ordinary stash on the original branch, labelled `Working Changes before Historical Edit`, so they show as its Branch Marker. It then checks out the commit detached.
 - **Return** stashes the Historical Working Changes, or discards them for Drop. Next it switches to the branch's current tip, then restores the original stash. When the stash restores cleanly it is applied with its index and consumed; otherwise it becomes a Working Changes Conflict. Finally, Bring along restores the historical stash the same way.
   - Historical changes restored over the original ones arrive unstaged.
   - If the original stash conflicted, the historical stash waits on the branch as `Historical Working Changes from <commit> <subject>`, because a worktree holds one active Working Changes Conflict at a time.
   - A historical restore conflict over restored original changes records those files, so Keep stashed returns to them.
-- **Return refuses** while the session is paused, when the branch is gone or checked out in another worktree, and when the detached HEAD has commits no branch or tag holds.
+- **Return refuses** while the session is paused, when the branch is gone or checked out in another worktree, and when commits made on top of the session's commit are held by no branch or tag. The session's own commit doesn't count, so Return still works after an external rewrite has replaced it.
+  - It also refuses when restoring either stash would replace an ignored file, because ignored files are outside checkpoints.
 
 ### Staleness, conflicts, and other operations
 
 - **A session follows compositions.** A session worktree takes part in every composition that rewrites its original branch, wherever the composition was started. Its HEAD follows the materialized commit's rewrite, and the session's pin moves in the same ref transaction. A rewrite that would leave the materialized commit itself conflicted is refused.
 - **Any other movement makes the session stale.** That includes external Git, a `lane commit` in another worktree, a branch rename or deletion, and a HEAD moved outside Laneway. Composition refuses a stale session.
 - **Restart on latest** re-pins the session when its HEAD is still part of the branch. Otherwise it explains that Return with Bring along is the way forward.
-- **Pausing and resuming.** When Apply creates an Unresolved Stack, the session records the stack's temporary branch and is `paused`. The worktree stays at the materialized commit, which can't itself conflict when changes are applied to it, so resolving the stack inline needs no checkout. When the temporary branch is gone and the commit is still on the branch, the session is active again.
-- **Pull latest** skips any stack that contains a session's branch, along with stacks overlapping it. A shared Base alone doesn't count as overlap.
+- **Pausing and resuming.** When Apply creates an Unresolved Stack, the session records the stack's temporary branch and is `paused`. The worktree stays at the materialized commit, which can't itself conflict when changes are applied to it, so resolving the stack inline needs no checkout.
+  - Accepting a conflict moves every session the stack pauses to its commit's rewrite, carrying its Historical Working Changes. This matters for a second session on the same branch, whose commit is replayed after the conflict.
+  - Final acceptance re-pins those sessions to the published tip, and they're active again. A branch that moves any other way, paused or not, makes the session stale.
+- **Pull latest** skips any stack that contains a session's branch, along with stacks sharing any of its branches, whatever order the stacks run in. A shared Base alone doesn't count as overlap.
 - **Worktree operations.** Worktree switch and removal refuse a worktree in a session. File extraction defers to the general planner whenever a session exists.
 
 ### Desktop
@@ -91,3 +94,5 @@ Entry, a clean Return, and Restart run inside a journaled checkpoint that is nev
 - **Branch renames don't carry over.** Renaming the original branch, even through Laneway, makes its session stale rather than following the rename.
 - **Removing a missing worktree leaves an inert session ref.** That ref reports the session stale.
 - **Apply's Operation History entry is the generic "compose".** Undo works, but the entry doesn't name Historical Edit.
+- **Recovery that leaves the repository alone blocks later mutations.** They stay blocked until the repository matches the interrupted operation's starting or finished state again. An interruption partway through a mutation has no finished state on record, so recovery still rolls that back, along with anything changed since.
+- **Overlapping changes block acceptance.** Accepting a conflict refuses when a paused session's Historical Working Changes overlap its commit's rewrite, rather than deferring them as a Working Changes Conflict.

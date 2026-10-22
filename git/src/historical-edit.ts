@@ -80,17 +80,15 @@ async function sessionState(repo: RepositoryGit, session: HistoricalEditSession,
         return stale("The worktree is unavailable.")
     if (worktree.branchRef || worktree.head != session.commit)
         return stale("The worktree's HEAD moved outside Laneway.")
-    if (session.unresolved && conflicts.stacks.some(stack => stack.temporaryRef == session.unresolved))
-        return { state: "paused" as const, reason: `Resolve the conflicts on ${name} to continue.` }
 
+    // Accepting the last conflict of a pausing Unresolved Stack re-pins the session, so any other movement is external.
     let tip = await repo.resolveRef(session.branch)
     if (!tip)
         return stale(`${name} no longer exists.`)
-    // Accepting the last conflict of the session's own Unresolved Stack advances the branch; the session resumes there.
-    let resumed = session.unresolved != undefined
-        && !(await repo.run(repo.descriptor.mainWorktree, ["merge-base", "--is-ancestor", session.commit, tip])).exitCode
-    if (tip != session.tip && !resumed)
+    if (tip != session.tip)
         return stale(`${name} moved outside this Historical Edit.`)
+    if (session.unresolved && conflicts.stacks.some(stack => stack.temporaryRef == session.unresolved))
+        return { state: "paused" as const, reason: `Resolve the conflicts on ${name} to continue.` }
     return { state: "active" as const }
 }
 
