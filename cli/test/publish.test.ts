@@ -165,6 +165,28 @@ test("Resume publishes nothing more once a branch it already published has moved
     expect(tip(origin, "two")).toBe(before)
 }, 120_000)
 
+test("Resume pushes nothing to any remote when the remote holding the receipt's published updates cannot be read", async () => {
+    let { origin, local } = await fixture()
+    let fork = join(origin, "..", "fork.git")
+    git(local, "clone", "-q", "--bare", origin, fork)
+    git(local, "remote", "add", "fork", fork)
+    git(local, "fetch", "-q", "fork")
+    git(local, "branch", "-q", "--set-upstream-to=fork/two", "two")
+    await refuseOnRemote(fork, "two")
+    await advance(local, "one", "two")
+    let result = await publish(local, { action: "publish", branch: "refs/heads/two" })
+    expect(result.receipt?.updates.map(update => [update.remote, update.status])).toEqual([["origin", "published"], ["fork", "failed"]])
+    let before = tip(fork, "two")
+    await rm(join(fork, "hooks", "pre-receive"))
+    git(local, "config", "remote.origin.pushurl", join(origin, "..", "missing.git"))
+
+    let resumed = await publish(local, { action: "resume", receipt: result.receipt!.id })
+
+    expect(resumed.receipt?.updates.map(update => update.status)).toEqual(["published", "failed"])
+    expect(resumed.receipt?.updates[1]?.message).toContain("missing.git")
+    expect(tip(fork, "two")).toBe(before)
+}, 120_000)
+
 test("a publish cancelled before pushing publishes nothing, and restoration finds an update that reached the remote unrecorded", async () => {
     let { origin, local } = await fixture()
     let before = tip(origin, "one")
@@ -182,6 +204,20 @@ test("a publish cancelled before pushing publishes nothing, and restoration find
     expect(restored.status).toBe("published")
     expect(restored.receipt?.updates.map(update => update.branch)).toEqual(["one"])
     expect(tip(origin, "one")).toBe(before)
+}, 120_000)
+
+test("restoration of an interrupted publish fails with Git's diagnostics when the remote cannot be read", async () => {
+    let { origin, local } = await fixture()
+    await advance(local, "one", "two")
+    let interrupted = await publish(local, { action: "publish", branch: "refs/heads/two" }, { isCancelled: () => true, wait: async () => true })
+    // As if a push of one reached the remote and a crash lost its outcome.
+    git(local, "push", "-q", origin, "one:refs/heads/one")
+    git(local, "config", "remote.origin.pushurl", join(origin, "..", "missing.git"))
+
+    let result = await publish(local, { action: "restore", receipt: interrupted.receipt!.id })
+
+    expect(result.status).toBe("failed")
+    expect(result.receipt?.updates[0]?.message).toContain("missing.git")
 }, 120_000)
 
 test("a stale lease aborts the whole publish and points to Pull latest", async () => {
@@ -328,6 +364,23 @@ test("a receipt whose recorded identifier is not its file name is never resumed"
 
     await expect(publish(local, { action: "resume", receipt: "forged" })).rejects.toThrow("There is no Publish Receipt forged.")
     expect(await Bun.file(join(local, ".git", "forged.json")).exists()).toBe(false)
+}, 120_000)
+
+test("Resume keeps the receipt it resumes on disk while pushing when it is the oldest of more than 100 finished receipts", async () => {
+    let { local } = await fixture()
+    let hook = join(local, ".git", "hooks", "pre-push")
+    await writeHook(hook, "exit 1")
+    await advance(local, "one")
+    let failed = (await publish(local, { action: "publish", branch: "refs/heads/one" })).receipt!
+    let updates = failed.updates.map(update => ({ ...update, branch: "elsewhere", ref: "refs/heads/elsewhere", status: "published" }))
+    let newer = Array.from({ length: 100 }, (_, index) => `${failed.id}-${String(index).padStart(3, "0")}`)
+    await Promise.all(newer.map(id => writeFile(join(local, ".git", "laneway", "publish", `${id}.json`), JSON.stringify({ ...failed, id, updates }))))
+    // A crash during the push would leave the remote changed with whatever receipt is on disk now.
+    await writeHook(hook, `test -f .git/laneway/publish/${failed.id}.json`)
+
+    let resumed = await publish(local, { action: "resume", receipt: failed.id })
+
+    expect(resumed.status).toBe("published")
 }, 120_000)
 
 test("the command line and the request transport both exit with failure when a stale lease publishes nothing", async () => {

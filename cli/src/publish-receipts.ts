@@ -16,13 +16,15 @@ export function receiptId() {
 }
 
 // Saves the receipt and retains the commits it names, so Resume and restoration outlive reflog expiry.
-// Retention shares Operation History's protected packs; pruning a receipt releases its commits.
+// Retention shares Operation History's protected packs; pruning a receipt releases its commits. The receipt
+// being pushed, and the one it restores, are never pruned here; a concurrent publish could still prune an old
+// receipt being resumed, which takes two publishes at once in a repository with 100 newer finished receipts.
 export async function openReceipt(repo: RepositoryGit, receipt: PublishReceipt, lock: MutationLock) {
     await saveReceipt(repo, receipt)
     let objects = receipt.updates.flatMap(update => [update.expected, update.target]).filter((object): object is string => object != null)
     await lock(async () => {
         await retainRecoveryObjects(repo, retentionKey(receipt.id), objects)
-        for (let id of await prunable(repo)) {
+        for (let id of await prunable(repo, [receipt.id, receipt.restores])) {
             await rm(receiptPath(repo, id), { force: true })
             await releaseRecoveryObjects(repo, retentionKey(id))
         }
@@ -55,8 +57,8 @@ export async function latestReceipt(repo: RepositoryGit, branches: string[]) {
 
 // The cap never drops a receipt Resume may still need: one whose remote may hold some of its updates but not
 // others, or whose attempt stopped before Git answered. A damaged receipt has nothing left to lose.
-async function prunable(repo: RepositoryGit) {
-    let finished = (await readReceipts(repo)).filter(([, receipt]) => !receipt || !resumable(receipt)).map(([id]) => id)
+async function prunable(repo: RepositoryGit, active: Array<string | undefined>) {
+    let finished = (await readReceipts(repo)).filter(([id, receipt]) => !active.includes(id) && (!receipt || !resumable(receipt))).map(([id]) => id)
     return finished.slice(0, -retainedReceipts)
 }
 

@@ -19,6 +19,7 @@ interface LocalBranch {
 }
 
 let unresolved = "Resolve this stack's conflicts before publishing."
+let unchecked = "Nothing was restored, because Git could not check what this publish changed on the remote. Restore once the cause is fixed."
 
 // Publish changes only remote refs, remote-tracking refs, and upstream configuration. It never enters
 // Operation History; its receipt is the durable record, and restoration is another explicit publish.
@@ -59,17 +60,19 @@ async function resume(repo: RepositoryGit, receipt: PublishReceipt, context: Pub
 }
 
 // Restoration is a new, lease-guarded force publish of the earlier tips of everything the receipt published.
-// An update can reach the remote without its outcome being recorded, so the remote decides what that was.
+// An update can reach the remote without its outcome being recorded, so the remote decides what that was,
+// and nothing is restored while it cannot answer.
 async function restore(repo: RepositoryGit, receipt: PublishReceipt, context: PublishContext): Promise<PublishResult> {
     let unrecorded = receipt.updates.filter(update => update.status != "published")
-    if (unrecorded.length) {
-        await verifyRemote(repo, unrecorded)
+    let verified = !unrecorded.length || await verifyRemote(repo, unrecorded)
+    if (unrecorded.length)
         await saveReceipt(repo, receipt)
-    }
 
     let published = receipt.updates.filter(update => update.status == "published")
     let restoration = { ...newReceipt("restore", receipt.stack, published.map(restoreUpdate)), restores: receipt.id }
-    return published.length
+    return !verified
+        ? { type: "result", command: "publish", status: "failed", message: unchecked, receipt }
+        : published.length
         ? publishReceipt(repo, restoration, context)
         : { type: "result", command: "publish", status: "nothing", message: "Nothing from this publish reached the remote.", receipt }
 }
@@ -204,11 +207,15 @@ async function publishReceipt(repo: RepositoryGit, receipt: PublishReceipt, cont
 }
 
 // An update that reached the remote without its outcome being recorded is recognized here, not pushed again.
+// The receipt is verified whole: an unreadable remote fails every pending update, on every remote, with its
+// diagnostic, so nothing is pushed. Returns whether every remote could be read.
 async function verifyRemote(repo: RepositoryGit, updates: ReceiptUpdate[]) {
+    let problem: string | undefined
     for (let remote of new Set(updates.map(update => update.remote))) {
         let own = updates.filter(update => update.remote == remote)
         let read = await readRemoteTips(repo, remote, own.map(update => update.ref))
         if ("problem" in read) {
+            problem ??= read.problem
             for (let update of own.filter(update => update.status != "published"))
                 mark(update, "failed", read.problem)
         } else {
@@ -216,6 +223,9 @@ async function verifyRemote(repo: RepositoryGit, updates: ReceiptUpdate[]) {
                 observe(update, read.tips.get(update.ref) ?? null)
         }
     }
+    for (let update of problem ? updates.filter(update => update.status == "pending") : [])
+        mark(update, "failed", problem)
+    return !problem
 }
 
 // Publication changes the push URL's repository, which can differ from the fetch URL, so leases are checked
