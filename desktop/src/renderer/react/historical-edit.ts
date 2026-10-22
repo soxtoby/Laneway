@@ -12,7 +12,8 @@ export interface ReturnChoice {
     path: string
     /** The original branch's name, which the return goes back to. */
     branch: string
-    count: number
+    /** How many files remain, when the worktree could be read. */
+    count?: number
 }
 
 export interface HistoricalEditsSnapshot {
@@ -30,7 +31,7 @@ export interface HistoricalEditsSnapshot {
 export interface HistoricalEdits extends Store<HistoricalEditsSnapshot> {
     enter(repositoryId: string, path: string, commit: string): Promise<void>
     /** Returns at once when no Historical Working Changes remain; otherwise asks whether to drop or bring them. */
-    return(choice: ReturnChoice): Promise<void>
+    return(repositoryId: string, path: string, branch: string): Promise<void>
     choose(mode: "drop" | "bring"): Promise<void>
     cancelReturn(): void
     /** Pins a stale session to its branch's latest tip. */
@@ -38,7 +39,7 @@ export interface HistoricalEdits extends Store<HistoricalEditsSnapshot> {
 }
 
 interface HistoricalEditOptions {
-    api: Pick<Api, "historicalEdit">
+    api: Pick<Api, "historicalEdit" | "readChanges">
     notify(notice: Notice): void
     mutating(busy: boolean): void
     /** Runs after an operation moved the worktree, its changes, or its session. */
@@ -84,11 +85,13 @@ export function createHistoricalEdits({ api, notify, mutating, changed, offerUnd
 
         enter: (repositoryId, path, commit) => run(repositoryId, { action: "enter", path, commit }),
 
-        async return(choice) {
-            if (choice.count)
-                set({ choosing: choice })
+        async return(repositoryId, path, branch) {
+            // Changes saved between this read and the return make the Engine refuse it; returning again asks.
+            let count = await remaining(repositoryId, path)
+            if (count == 0)
+                await run(repositoryId, { action: "return", path, mode: "clean" })
             else
-                await run(choice.repositoryId, { action: "return", path: choice.path, mode: "clean" })
+                set({ choosing: { repositoryId, path, branch, count } })
         },
 
         async choose(mode) {
@@ -103,6 +106,15 @@ export function createHistoricalEdits({ api, notify, mutating, changed, offerUnd
         },
 
         restart: (repositoryId, path) => run(repositoryId, { action: "restart", path }),
+    }
+
+    /**
+     * How many Historical Working Changes remain, read afresh because the column's last read may be missing or old.
+     * An unreadable worktree asks anyway: the Engine returns a clean one whichever way the choice goes.
+     */
+    async function remaining(repositoryId: string, path: string) {
+        let result = await api.readChanges(repositoryId, `edit:return:${path}`, { source: { kind: "working", worktreePath: path } }).catch(() => undefined)
+        return result?.ok ? result.inventory.files.filter(file => !file.ignored).length : undefined
     }
 }
 

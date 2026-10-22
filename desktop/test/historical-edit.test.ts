@@ -1,4 +1,4 @@
-import type { HistoricalEditActionResult, HistoricalEditRequest } from "@laneway/shared"
+import type { ChangesResult, HistoricalEditActionResult, HistoricalEditRequest } from "@laneway/shared"
 import { describe, expect, test } from "bun:test"
 import { applySelection, createHistoricalEdits } from "../src/renderer/react/historical-edit"
 import type { ColumnInspection } from "../src/renderer/react/inspection"
@@ -9,9 +9,9 @@ let choice = { repositoryId: "repo", path, branch: "feature", count: 2 }
 
 describe("Historical Edits", () => {
     test("a return with Historical Working Changes left waits for a choice, and the chosen return offers Undo", async () => {
-        let { sut, requests, undoOffers } = edits({ message: "Dropped and returned to feature.", recorded: true })
+        let { sut, requests, undoOffers } = edits({ working: ["a.txt", "b.txt"], message: "Dropped and returned to feature.", recorded: true })
 
-        await sut.return(choice)
+        await sut.return("repo", path, "feature")
         expect(requests).toEqual([])
         expect(sut.snapshot().choosing).toEqual(choice)
 
@@ -23,18 +23,27 @@ describe("Historical Edits", () => {
     })
 
     test("a clean return goes at once and reports it without Undo", async () => {
-        let { sut, requests, notices, undoOffers } = edits({ message: "Returned to feature.", recorded: false })
+        let { sut, requests, notices, undoOffers } = edits({ working: [], message: "Returned to feature.", recorded: false })
 
-        await sut.return({ ...choice, count: 0 })
+        await sut.return("repo", path, "feature")
 
         expect(requests).toEqual([{ action: "return", path, mode: "clean" }])
         expect(notices.map(notice => notice.message)).toEqual(["Returned to feature."])
         expect(undoOffers).toEqual([])
     })
 
+    test("a return from a worktree whose Working Changes can't be read asks for the choice without a count", async () => {
+        let { sut, requests } = edits({})
+
+        await sut.return("repo", path, "feature")
+
+        expect(requests).toEqual([])
+        expect(sut.snapshot().choosing).toEqual({ ...choice, count: undefined })
+    })
+
     test("a chosen return that fails keeps the choice open with its error", async () => {
-        let { sut } = edits({ failure: "feature is checked out in D:\\Source\\other." })
-        await sut.return(choice)
+        let { sut } = edits({ working: ["a.txt", "b.txt"], failure: "feature is checked out in D:\\Source\\other." })
+        await sut.return("repo", path, "feature")
 
         await sut.choose("bring")
 
@@ -74,12 +83,19 @@ describe("applySelection", () => {
     })
 })
 
-function edits(outcome: { message?: string; recorded?: boolean; failure?: string }) {
+/** `working` names the worktree's changed files, which it lists beside an ignored one; without it, the worktree can't be read. */
+function edits(outcome: { working?: string[]; message?: string; recorded?: boolean; failure?: string }) {
     let requests: HistoricalEditRequest[] = []
     let notices: Notice[] = []
     let undoOffers: string[] = []
     let sut = createHistoricalEdits({
         api: {
+            readChanges: async (_repositoryId, _requestId, request): Promise<ChangesResult> => {
+                if (!outcome.working)
+                    return { ok: false, error: { code: "git.command-failed", message: "Git failed." } }
+                let files = [...outcome.working.map(file => changed(file, false)), changed("build.log", true)]
+                return { ok: true, inventory: { source: request.source, version: "v1", files, parents: [] } }
+            },
             historicalEdit: async (_repositoryId, request): Promise<HistoricalEditActionResult> => {
                 requests.push(request)
                 if (outcome.failure)
@@ -96,6 +112,10 @@ function edits(outcome: { message?: string; recorded?: boolean; failure?: string
         offerUndo: (_repositoryId, message) => undoOffers.push(message),
     })
     return { sut, requests, notices, undoOffers }
+}
+
+function changed(path: string, ignored: boolean) {
+    return { path, status: ignored ? "!!" : "M", staged: false, unstaged: !ignored, untracked: false, ignored, conflicted: false }
 }
 
 function inspected(change: object) {

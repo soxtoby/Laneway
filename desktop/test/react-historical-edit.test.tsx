@@ -124,6 +124,38 @@ describe("React Historical Edit", () => {
         expect(requests).toEqual([{ action: "restart", path: root }])
     })
 
+    test("a session whose worktree was renamed restarts and returns from where the worktree is now", async () => {
+        let scenario = inSession(inspectionScenario(), { path: "D:\\Source\\before-rename", state: "stale", reason: "feature/laneway moved." })
+        let { api, requests } = editing(scenario)
+        let app = await startReactApp(api)
+
+        await app.act(() => press(button(banner(), "Restart on latest")))
+        await app.act(() => press(button(banner(), "Return to feature/laneway")))
+        await app.act(() => press(button(document.querySelector<HTMLElement>("[role=dialog]")!, "Drop")))
+
+        expect(requests).toEqual([{ action: "restart", path: root }, { action: "return", path: root, mode: "drop" }])
+    })
+
+    test("returning asks about Historical Working Changes saved since the column last read them", async () => {
+        let scenario = inSession(inspectionScenario())
+        let saved = false
+        let { api, requests } = editing(scenario)
+        let app = await startReactApp({
+            ...api,
+            readChanges: async (...args) => {
+                let result = await api.readChanges(...args)
+                return result.ok && !saved ? { ok: true, inventory: { ...result.inventory, files: [] } } : result
+            },
+        })
+        expect(working().textContent).toContain("No Working Changes")
+        saved = true
+
+        await app.act(() => press(button(banner(), "Return to feature/laneway")))
+
+        expect(document.querySelector("[role=dialog]")?.textContent).toContain("Historical Working Changes remain in 2 files")
+        expect(requests).toEqual([])
+    })
+
     test("a paused session waits for its conflicts before applying or returning", async () => {
         let scenario = inSession(inspectionScenario(), { state: "paused", reason: "Resolve the conflicts on feature/laneway to continue." })
         await startReactApp(editing(scenario).api)

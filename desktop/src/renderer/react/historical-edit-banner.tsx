@@ -15,17 +15,16 @@ type Session = NonNullable<BranchGraphWorktree["historicalEdit"]>
  * A column in Historical Edit names the commit it edits and the branch it came from, and offers the way back.
  * A paused session waits for its conflicts, which resolve in the Commit Trail below; a stale one offers to restart.
  */
-export function HistoricalEditBanner({ edits, repositoryId, edit, count }: {
+export function HistoricalEditBanner({ edits, repositoryId, path, edit }: {
     edits: HistoricalEdits
     repositoryId: string
+    /** The worktree's current path. The session keeps the path it was entered from, which a rename leaves behind. */
+    path: string
     edit: Session
-    /** How many Historical Working Changes remain, once they are read. */
-    count?: number
 }) {
     let { busy } = useSnapshot(edits)
     let scope = useTransferScope()
     let branch = branchName(edit)
-    let returning = () => void edits.return({ repositoryId, path: edit.path, branch, count: count ?? 0 })
     return (
         <section className="historical-edit" aria-label="Historical Edit" data-state={edit.state}>
             <p className="historical-edit-title">
@@ -40,9 +39,9 @@ export function HistoricalEditBanner({ edits, repositoryId, edit, count }: {
             {edit.state != "active" && <p role={edit.state == "stale" ? "alert" : "status"}>{edit.reason}</p>}
             <div className="historical-edit-actions">
                 {edit.state == "stale" && (
-                    <Button variant="secondary" isDisabled={busy} onPress={() => void edits.restart(repositoryId, edit.path)}>Restart on latest</Button>
+                    <Button variant="secondary" isDisabled={busy} onPress={() => void edits.restart(repositoryId, path)}>Restart on latest</Button>
                 )}
-                <Button variant="secondary" isDisabled={busy || edit.state == "paused" || count == undefined} onPress={returning}>
+                <Button variant="secondary" isDisabled={busy || edit.state == "paused"} onPress={() => void edits.return(repositoryId, path, branch)}>
                     Return to {branch}
                 </Button>
             </div>
@@ -69,7 +68,9 @@ export function ReturnDialog({ edits }: { edits: HistoricalEdits }) {
     if (choosing && choosing != last)
         setLast(choosing)
     let shown = choosing ?? last
-    let files = shown?.count == 1 ? "1 file" : `${shown?.count} files`
+    let remaining = shown?.count == undefined
+        ? "Historical Working Changes may remain."
+        : `Historical Working Changes remain in ${shown.count == 1 ? "1 file" : `${shown.count} files`}.`
     return (
         <Modal isOpen={choosing != undefined} onOpenChange={isOpen => isOpen || edits.cancelReturn()} isKeyboardDismissDisabled={busy}>
             <Dialog className="react-aria-Dialog return-dialog" aria-label={shown && `Return to ${shown.branch}`}>
@@ -77,8 +78,7 @@ export function ReturnDialog({ edits }: { edits: HistoricalEdits }) {
                     <>
                         <Heading slot="title">Return to {shown.branch}</Heading>
                         <p>
-                            Historical Working Changes remain in {files}. Drop them, or bring them along onto the latest{" "}
-                            {shown.branch}. Your earlier Working Changes are restored first.
+                            {remaining} Drop them, or bring them along onto the latest {shown.branch}. Your earlier Working Changes are restored first.
                         </p>
                         <FormError message={error} />
                         <div className="dialog-actions">

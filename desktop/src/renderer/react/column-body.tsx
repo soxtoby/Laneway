@@ -52,11 +52,10 @@ export function ColumnBody({ controller, repositoryId, graph, column, inspected,
     }
     let path = columnRoot(column)
     let edit = path ? column.worktree?.historicalEdit : undefined
-    let working = inspected?.files.working?.inventory?.files.filter(file => !file.ignored)
     return (
         <ColumnScopes controller={controller} repositoryId={repositoryId} graph={graph} column={column}>
             <div className="column-body">
-                {edit && <HistoricalEditBanner edits={controller.edits} repositoryId={repositoryId} edit={edit} count={working?.length} />}
+                {edit && path && <HistoricalEditBanner edits={controller.edits} repositoryId={repositoryId} path={path} edit={edit} />}
                 {column.kind == "branch" && column.branch.unresolved && !column.worktree?.missing && (
                     <ConflictControls conflicts={conflicts} repositoryId={repositoryId} branch={column.branch} path={path} />
                 )}
