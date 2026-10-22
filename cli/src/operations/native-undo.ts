@@ -3,6 +3,7 @@ import type { GitResult } from "@laneway/shared"
 import { chmod, lstat, mkdir, readdir, rm, rmdir, symlink, writeFile } from "node:fs/promises"
 import { dirname, resolve, sep } from "node:path"
 import { runNativeGit } from "../native-git"
+import { upstreamBranch } from "./git-checkpoint"
 import { nativeIndexEntries, withNativeIndex } from "./native-index"
 import { captureNativeState, nativeStateChanges, readBranchConfig, readHead, readNativeRef, readRefLog, readStashes, readWorkingFile, readWorktreeHead, refLogPath } from "./native-state"
 import type { NativeUndo } from "./native-undo-record"
@@ -72,10 +73,13 @@ export async function validateNativeUndo(repo: RepositoryGit, undo: NativeUndo, 
     }
     if (undo.index && await nativeIndexEntries(repo, undo.cwd) != undo.index[side].entries)
         throw changed("index-changed", "The index changed outside Laneway.")
-    if (undo.config.length) {
-        let config = await readBranchConfig(repo, undo.cwd)
-        for (let entry of undo.config) {
-            if (!same(config[entry.key] ?? [], entry[side]))
+    // Publish records upstreams outside Operation History, so they never block undo; undo still restores the
+    // upstream configuration the Git command changed.
+    let config = undo.config.filter(entry => upstreamBranch(entry.key) == undefined)
+    if (config.length) {
+        let current = await readBranchConfig(repo, undo.cwd)
+        for (let entry of config) {
+            if (!same(current[entry.key] ?? [], entry[side]))
                 throw changed("ref-changed", `${entry.key} changed outside Laneway.`)
         }
     }

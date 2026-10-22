@@ -69,7 +69,8 @@ export async function retainCheckpoint(repo: RepositoryGit, operation: string, .
     )
 }
 
-export async function restoreGitCheckpoint(repo: RepositoryGit, source: GitCheckpoint, target: GitCheckpoint) {
+// left is the checkpoint the reversed operation produced, when restoring undoes or redoes one.
+export async function restoreGitCheckpoint(repo: RepositoryGit, source: GitCheckpoint, target: GitCheckpoint, left?: GitCheckpoint) {
     let main = repo.descriptor.mainWorktree
     let current = await readRegisteredWorktrees(repo)
     if (!await checkpointMatches(repo, source))
@@ -182,9 +183,11 @@ export async function restoreGitCheckpoint(repo: RepositoryGit, source: GitCheck
     let configKeys = new Set([...source.branchConfig, ...target.branchConfig].map(([key]) => key))
     for (let key of configKeys) {
         let old = source.branchConfig.filter(([k]) => k == key), next = target.branchConfig.filter(([k]) => k == key)
-        // Keep an upstream that Publish recorded after the target was captured, while its branch survives.
+        // Publish records upstreams outside Operation History. A surviving branch keeps its current upstream
+        // unless the reversed operation changed it, or, without that record, unless the target had one.
         let branch = upstreamBranch(key)
-        let published = branch != undefined && !next.length && Boolean(target.refs[`refs/heads/${branch}`])
+        let unchanged = left ? JSON.stringify(left.branchConfig.filter(([k]) => k == key)) == JSON.stringify(next) : !next.length
+        let published = branch != undefined && unchanged && Boolean(target.refs[`refs/heads/${branch}`])
         if (JSON.stringify(old) != JSON.stringify(next) && !published) {
             await repo.run(main, ["config", "--unset-all", key])
             for (let [, value] of next)
@@ -350,7 +353,7 @@ export function checkpointIdentity(checkpoint: GitCheckpoint) {
     })
 }
 
-function upstreamBranch(key: string) {
+export function upstreamBranch(key: string) {
     return /^branch\.(.+)\.(?:remote|merge)$/.exec(key)?.[1]
 }
 

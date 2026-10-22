@@ -352,7 +352,7 @@ class OperationRuntime {
         crashIfRequested("recovery-retained", crashAfter)
         await this.cancelIfRequested(executionId, pending, action)
         crashIfRequested("preconditions-verified", crashAfter)
-        await restoreGitCheckpoint(this.repository, departing, target)
+        await restoreGitCheckpoint(this.repository, departing, target, operation.checkpoint!.expected)
         let expected = await captureGitCheckpoint(this.repository, target.worktrees.map(w => w.path), target, undefined, undefined, false)
         let updated = sealOperation({ ...operation, checkpoint: { restore: departing, expected } })
         crashIfRequested("refs-committed", crashAfter)
