@@ -1,7 +1,7 @@
 import type { CompositionRequest, HistoricalEdit, HistoricalEditActionResult, HistoricalEditRequest } from "@laneway/shared"
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
 import type { Window as HappyWindow } from "happy-dom"
-import { button, installReactDom, press, startReactApp, stopReactApps } from "./react-dom"
+import { button, installReactDom, press, startReactApp, stopReactApps, type } from "./react-dom"
 import { inspectionScenario } from "./renderer-fixtures"
 
 let browserWindow: HappyWindow
@@ -25,6 +25,30 @@ describe("React Historical Edit", () => {
         await app.act(() => press(menuItem("Edit from here")))
 
         expect(requests).toEqual([{ action: "enter", path: root, commit: scenario.graph.branches[1]!.tip }])
+    })
+
+    test("entering with the commit form open closes it, and its draft comes back after the return", async () => {
+        let scenario = inspectionScenario()
+        let draft = { title: "", message: "", branch: "" }
+        let { api } = editing(scenario)
+        let app = await startReactApp({
+            ...api,
+            readCommitDraft: async () => ({ ...draft }),
+            saveCommitDraft: async (_id, _path, value) => {
+                draft = { ...value }
+            },
+        })
+        await app.act(() => press(button(working(), "Commit…")))
+        await app.act(() => type(commitTitle()!, "Half written"))
+
+        await app.act(() => press(button(commitRows()[0]!, "Actions for commit Inspect changes")))
+        await app.act(() => press(menuItem("Edit from here")))
+        expect(commitTitle() == undefined).toBe(true)
+
+        await app.act(() => press(button(banner(), "Return to feature/laneway")))
+        await app.act(() => press(button(document.querySelector<HTMLElement>("[role=dialog]")!, "Drop")))
+        await app.act(() => press(button(working(), "Commit…")))
+        expect(commitTitle()?.value).toBe("Half written")
     })
 
     test("a branch-only column offers no Historical Edit", async () => {
@@ -136,6 +160,10 @@ function editing(scenario: ReturnType<typeof inspectionScenario>, recorded = fal
         ...scenario.api,
         historicalEdit: async (_repositoryId, request): Promise<HistoricalEditActionResult> => {
             requests.push(request)
+            if (request.action == "enter")
+                inSession(scenario)
+            else if (request.action == "return")
+                delete scenario.graph.branches[1]!.checkedOut[0]!.historicalEdit
             let operation = recorded
                 ? { id: "bring", timestamp: "2026-10-22T00:00:00.000Z", kind: "edit.bring", summary: "Bring", affectedRefs: [], affectedWorktrees: [] }
                 : undefined
@@ -157,6 +185,10 @@ function banner() {
 
 function working() {
     return document.querySelector<HTMLElement>("[aria-label='Working Changes']")!
+}
+
+function commitTitle() {
+    return document.querySelector<HTMLInputElement>("[aria-label='Commit title']") ?? undefined
 }
 
 function commitRows() {

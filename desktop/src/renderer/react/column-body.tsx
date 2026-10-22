@@ -62,9 +62,10 @@ export function ColumnBody({ controller, repositoryId, graph, column, inspected,
                 )}
                 {path
                     ? (
-                        // A cleared recovery recreates the composer, so its preview runs again.
+                        // A cleared recovery recreates the composer, so its preview runs again. Entering or leaving a
+                        // Historical Edit does too, closing any open form while the saved draft carries over.
                         <WorkingChanges
-                            key={`${path}:${blocked}`}
+                            key={`${path}:${blocked}:${edit != undefined}`}
                             column={column}
                             path={path}
                             inspected={inspected}
