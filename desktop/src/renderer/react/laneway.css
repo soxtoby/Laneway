@@ -3929,13 +3929,38 @@
 }
 
 /* A Pull latest that needs attention: each fetch, then each stack's outcome. */
-.pull-outcome {
-    width: min(520px, calc(100vw - 32px));
+.react-aria-Modal.pull-modal {
+    width: min(640px, calc(100vw - 32px));
+    max-width: none;
+}
+
+.react-aria-Dialog.pull-outcome {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-4);
+    min-width: 0;
+    width: 100%;
+    padding: var(--spacing-6);
+    overflow: hidden;
+
+    .react-aria-Heading[slot="title"] {
+        margin: 0;
+    }
 
     p {
         margin: var(--spacing-1) 0;
         overflow-wrap: anywhere;
     }
+
+    .dialog-actions {
+        flex: 0 0 auto;
+        margin: 0;
+    }
+}
+
+.pull-outcome-body {
+    min-height: 0;
+    overflow: auto;
 }
 
 .pull-fetches {
@@ -3946,12 +3971,15 @@
     list-style: none;
 
     li {
-        display: flex;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
         align-items: baseline;
-        gap: var(--spacing-2);
+        gap: var(--spacing-1) var(--spacing-2);
+        overflow-wrap: anywhere;
     }
 
     small {
+        grid-column: 1 / -1;
         color: var(--text-color-placeholder);
     }
 }
@@ -3967,13 +3995,61 @@
     color: var(--invalid-color);
 }
 
-.pull-stack {
+.react-aria-Disclosure.pull-stack {
+    width: auto;
     margin: var(--spacing-1) 0;
     border: 1px solid var(--border-color);
     border-radius: var(--radius);
     background: var(--tray-background);
 
-    .react-aria-Heading .react-aria-Button {
+    .disclosure-button {
+        align-items: start;
+        gap: var(--spacing-2);
+
+        > svg {
+            flex: 0 0 auto;
+            margin-top: var(--spacing-1);
+        }
+
+        > span {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: start;
+            gap: var(--spacing-3);
+            flex: 1;
+            min-width: 0;
+        }
+    }
+
+    .pull-status {
+        justify-self: start;
+    }
+
+    .button-base {
+        box-sizing: border-box;
+        max-width: 100%;
+        min-height: var(--spacing-8);
+        height: auto;
+        padding-block: var(--spacing-1);
+        overflow-wrap: anywhere;
+        white-space: normal;
+    }
+}
+
+.pull-stack-heading {
+    display: grid;
+    gap: var(--spacing-1);
+    min-width: 0;
+    overflow-wrap: anywhere;
+
+    small {
+        font-weight: normal;
+    }
+}
+
+@media (width <= 560px) {
+    .react-aria-Disclosure.pull-stack .disclosure-button > span {
+        grid-template-columns: minmax(0, 1fr);
         gap: var(--spacing-2);
     }
 }

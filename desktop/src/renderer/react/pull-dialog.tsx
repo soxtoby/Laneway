@@ -32,48 +32,50 @@ export function PullDialog({ pull, onResolve }: { pull: PullLatest; onResolve(re
     for (let stack of result?.stacks ?? [])
         counts.set(stack.status, (counts.get(stack.status) ?? 0) + 1)
     return (
-        <Modal isOpen={open != undefined} isDismissable onOpenChange={isOpen => isOpen || pull.close()}>
+        <Modal className="react-aria-Modal pull-modal" isOpen={open != undefined} isDismissable onOpenChange={isOpen => isOpen || pull.close()}>
             <Dialog className="react-aria-Dialog pull-outcome" aria-label="Pull latest outcome">
                 <Heading slot="title">Pull latest</Heading>
-                {outcome?.error && <p className="pull-error" role="alert">{outcome.error}</p>}
-                {result && (
-                    <>
-                        <p className="pull-summary">{result.message}</p>
-                        {result.fetches.length > 0 && (
-                            <ul className="pull-fetches">
-                                {result.fetches.map(fetch => (
-                                    <li key={fetch.remote}>
-                                        <span className="pull-status" data-status={fetch.status == "fetched" ? "updated" : "failed"}>
-                                            {fetch.status == "fetched" ? "Fetched" : "Fetch failed"}
-                                        </span>
-                                        {fetch.remote}
-                                        {fetch.message && <small>{fetch.message}</small>}
-                                    </li>
+                <div className="pull-outcome-body">
+                    {outcome?.error && <p className="pull-error" role="alert">{outcome.error}</p>}
+                    {result && (
+                        <>
+                            <p className="pull-summary">{result.message}</p>
+                            {result.fetches.length > 0 && (
+                                <ul className="pull-fetches">
+                                    {result.fetches.map(fetch => (
+                                        <li key={fetch.remote}>
+                                            <span className="pull-status" data-status={fetch.status == "fetched" ? "updated" : "failed"}>
+                                                {fetch.status == "fetched" ? "Fetched" : "Fetch failed"}
+                                            </span>
+                                            {fetch.remote}
+                                            {fetch.message && <small>{fetch.message}</small>}
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                            {counts.size > 0 && (
+                                <p className="pull-counts">
+                                    {[...counts].map(([status, count]) => `${count} ${statusLabels[status].toLocaleLowerCase()}`).join(" · ")}
+                                </p>
+                            )}
+                            <div className="pull-stacks">
+                                {result.stacks.map(stack => (
+                                    <StackOutcome
+                                        key={stack.id}
+                                        stack={stack}
+                                        onResolve={branch => {
+                                            pull.close()
+                                            onResolve(outcome!.repositoryId, branch)
+                                        }}
+                                    />
                                 ))}
-                            </ul>
-                        )}
-                        {counts.size > 0 && (
-                            <p className="pull-counts">
-                                {[...counts].map(([status, count]) => `${count} ${statusLabels[status].toLocaleLowerCase()}`).join(" · ")}
-                            </p>
-                        )}
-                        <div className="pull-stacks">
-                            {result.stacks.map(stack => (
-                                <StackOutcome
-                                    key={stack.id}
-                                    stack={stack}
-                                    onResolve={branch => {
-                                        pull.close()
-                                        onResolve(outcome!.repositoryId, branch)
-                                    }}
-                                />
-                            ))}
-                        </div>
-                        {result.operation && (
-                            <p className="pull-note">Undo reverses this pull's local changes across stacks. Fetched history stays available.</p>
-                        )}
-                    </>
-                )}
+                            </div>
+                            {result.operation && (
+                                <p className="pull-note">Undo reverses this pull's local changes across stacks. Fetched history stays available.</p>
+                            )}
+                        </>
+                    )}
+                </div>
                 <div className="dialog-actions">
                     <Button variant="accent" onPress={pull.close} autoFocus>Close</Button>
                 </div>
@@ -87,9 +89,11 @@ function StackOutcome({ stack, onResolve }: { stack: PullStackOutcome; onResolve
     return (
         <Disclosure className="react-aria-Disclosure pull-stack" defaultExpanded={stack.status != "current" && stack.status != "updated"}>
             <DisclosureHeader>
+                <span className="pull-stack-heading">
+                    <strong>{tip}</strong>
+                    {stack.branches.length > 1 && <small>on {stack.branches.slice(0, -1).join(" › ")}</small>}
+                </span>
                 <span className="pull-status" data-status={stack.status}>{statusLabels[stack.status]}</span>
-                <strong>{tip}</strong>
-                {stack.branches.length > 1 && <small>on {stack.branches.slice(0, -1).join(" › ")}</small>}
             </DisclosureHeader>
             <DisclosurePanel>
                 <p>Stack: {stack.branches.join(" › ")}</p>
