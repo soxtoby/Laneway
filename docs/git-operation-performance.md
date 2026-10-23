@@ -94,3 +94,24 @@ Measured with `.tmp/diagnose/git-repeats.ts`, in-process, two linked worktrees, 
 | History | 21 | 21 |
 
 Conflict operations gain least because their captures are separated by real changes, and the rest of their launches build trees. Within one process, a file the user edits between the preparation capture and the mutation is no longer caught by the pre-mutation verification; the post-mutation capture records it instead, and the cross-process guard between a preview and its confirmed apply is unchanged.
+
+## Recorded changes instead of checkpoints
+
+[ADR 0023](adr/0023-undo-reverses-recorded-changes.md) replaced the three whole-repository checkpoint captures with a record of what each operation changed. An operation now reads refs, registered worktrees, the stash list, branch configuration, and metadata before and after it mutates, four launches each time however many worktrees exist, and the mutations that touch a worktree's index or files report the trees they replaced, costing a few launches only for that worktree. Undo moves the refs back in one transaction that expects the values the operation left, which is the only check it makes, and merges the recorded trees over the worktree as it is now rather than restoring it by force.
+
+Measured with `.tmp/diagnose/git-repeats.ts`, in-process, launches per operation with two linked worktrees, against the memoized checkpoint model above, and with none:
+
+| Operation | Checkpoints | Records | Records, no linked worktrees |
+| --- | ---: | ---: | ---: |
+| Reword (one call) | 68 | 40 | 38 |
+| Undo | 54 | 11 | 11 |
+| Redo | 53 | 11 | 11 |
+| Composition preview | 56 | 37 | 35 |
+| Composition apply | 53 | 30 | 28 |
+| Worktree creation | 21 | 18 | 18 |
+| Conflict rewrite | 100 | 65 | 63 |
+| Conflict choose | 32 | 32 | 30 |
+| Conflict acceptance | 109 | 73 | 71 |
+| History | 21 | 2 | 2 |
+
+Linked worktrees no longer add to an operation that does not touch them, and the history read no longer fingerprints anything. Rewording a commit, editing a file, then undoing now reverses the reword and keeps the edit, where the checkpoint model refused.

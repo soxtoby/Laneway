@@ -29,7 +29,7 @@ The settled behavior for [SOX-139](https://linear.app/soxtoby/issue/SOX-139/impl
   - The original Working Changes restore first, then the historical ones. Each restore conflict is a distinct Working Changes Conflict.
   - Kept historical changes become a stash on the branch, labelled with their historical base.
 - **Recovery and concurrency.**
-  - The session, its pinned refs, the original stash, and its checkpoints are journaled.
+  - The session, its pinned refs, and the original stash are journaled with the operation's record.
   - Each worktree may hold its own session, while mutations stay serialized.
   - When pinned refs move, only that session becomes stale and offers Restart on latest or Return.
   - Publication stays blocked during unresolved conflicts.
@@ -52,9 +52,9 @@ Each session is stored in its own private ref, `refs/laneway/historical-edits/<w
 
 ### Entry, Return, and Restart
 
-Operation checkpoints include `refs/laneway/historical-edits/`. Undoing an Apply, Drop, or Bring along therefore restores the session ref with the worktree and branches, and so reopens or rewinds the session without special handling.
+Operation records include `refs/laneway/historical-edits/`. Undoing an Apply, Drop, or Bring along therefore moves the session ref back with the worktree and branches, and so reopens or rewinds the session without special handling ([ADR 0023](adr/0023-undo-reverses-recorded-changes.md)).
 
-Entry, a clean Return, and Restart run inside a journaled checkpoint that is never recorded in Operation History. An interruption rolls them back on the next Engine run, and success adds no undo entry. Like every checkpoint operation, each journals the state it left before finishing. Recovery rolls back only from that state or the starting one: if files or refs changed after the interruption, it leaves the repository as it is and keeps the starting state retained.
+Entry, a clean Return, and Restart are journaled like every operation but never recorded in Operation History: success adds no undo entry. An interruption before their record is written is reversed on the next Engine run, which moves the refs and the worktree's HEAD back and leaves files and stashes in place; one after it is completed.
 
 - **Entry** stashes Working Changes as an ordinary stash on the original branch, labelled `Working Changes before Historical Edit`, so they show as its Branch Marker. It then checks out the commit detached.
 - **Return** stashes the Historical Working Changes, or discards them for Drop. Next it switches to the branch's current tip, then restores the original stash. When the stash restores cleanly it is applied with its index and consumed; otherwise it becomes a Working Changes Conflict. Finally, Bring along restores the historical stash the same way.
