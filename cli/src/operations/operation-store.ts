@@ -163,7 +163,7 @@ export class OperationStore {
             if (execution.phases.has("finalized") || execution.phases.has(event.phase))
                 throw new OperationRuntimeError("operation.journal-corrupt", "The recovery journal contains an invalid repeated phase.")
             execution.phases.add(event.phase)
-            if (event.phase == "worktrees-committed" && event.operation) {
+            if ((event.phase == "recorded" || event.phase == "worktrees-committed") && event.operation) {
                 validateOperationIntegrity(event.operation, "operation.journal-corrupt")
                 execution.intent.operation = event.operation
             }

@@ -2,8 +2,9 @@ import { gitText, readHistoricalEditSessions, readRegisteredWorktrees, type Repo
 import type { BranchGraphBranchNode, BranchGraphReadOptions, PullFetch, PullRequest, PullStackOutcome } from "@laneway/shared"
 import { isAncestor, readActiveStack } from "./active-stack"
 import { type ConflictSession, gitHead, openConflictSession, rewriteStack, type StackRewritePlan } from "./conflicts/conflict-operations"
+import type { ChangeRecorder } from "./operations/change-recorder"
 
-type Changes = Map<string, string | null>
+type Changes = ChangeRecorder
 export type PullProgressReporter = (message: string, completed: number, total: number) => void
 
 interface ScopedBranch {

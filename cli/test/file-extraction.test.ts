@@ -6,6 +6,7 @@ import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
 import { prepareComposition } from "../src/composition/composition"
 import { prepareFileExtraction } from "../src/composition/file-extraction"
+import { isFileExtraction } from "../src/composition/file-extraction"
 import { executeOperationCommand } from "../src/operations/operation-runtime"
 
 let directories: string[] = []
@@ -23,7 +24,7 @@ for (let format of ["sha1", "sha256"]) {
         let repo = await connectRepository(path)
         let prepared = await prepareComposition(repo, request)
 
-        expect(prepared.before.worktrees.find(worktree => worktree.path == path)?.scope).toEqual(["selected.txt"])
+        expect(isFileExtraction(prepared.preview)).toBe(true)
 
         let result = await executeOperationCommand({ command: "local", request, token: prepared.preview.token, noWait: false }, path) as LocalResult
 
@@ -61,7 +62,7 @@ test("file extraction rejects a stale selected file and falls back when descenda
     git("commit", "-qm", "Descendant edits the selected path")
     let fallback = await prepareComposition(await connectRepository(path), request)
 
-    expect(fallback.before.worktrees.find(worktree => worktree.path == path)?.scope).toBeUndefined()
+    expect(isFileExtraction(fallback.preview)).toBe(false)
 }, 30_000)
 
 test("file extraction leaves shared history, hooks, and staged selected content to the general planner", async () => {
@@ -100,7 +101,7 @@ test("one-shot transfer applies eligible extraction but returns a preview for sh
     expect(await readFile(join(path, "selected.txt"), "utf8")).toBe("after\n")
 }, 30_000)
 
-test("transfers retain only the starting checkpoint and capture redo when undo runs", async () => {
+test("transfers record their ref and index changes, and both sides stay retained through undo", async () => {
     let { path, git, head, request } = await fixture()
     await executeOperationCommand({ command: "local-transfer", request, noWait: false }, path)
     let after = git("rev-parse", "HEAD")
@@ -108,9 +109,9 @@ test("transfers retain only the starting checkpoint and capture redo when undo r
     let initial = (await history())[0].operation
 
     expect(initial.lifecycle).toBeUndefined()
-    expect(initial.checkpoint.restore.refs["refs/heads/feature"]).toBe(head)
-    expect(initial.checkpoint.restore.worktrees[0].stash).toBeUndefined()
-    expect(initial.checkpoint.expected.worktrees[0].stash).toBeUndefined()
+    expect(initial.checkpoint).toBeUndefined()
+    expect(initial.changes).toContainEqual({ type: "ref", ref: "refs/heads/feature", before: head, after })
+    expect(initial.changes.filter((change: { type: string }) => change.type == "tree")).toHaveLength(1)
 
     let retained = async () => {
         let envelope = JSON.parse(await readFile(join(path, ".git", "laneway", "recovery-objects.json"), "utf8"))
@@ -118,11 +119,11 @@ test("transfers retain only the starting checkpoint and capture redo when undo r
     }
 
     expect(await retained()).toContain(head)
-    expect(await retained()).not.toContain(after)
+    expect(await retained()).toContain(after)
 
     await executeOperationCommand({ command: "undo", noWait: false }, path)
 
-    expect((await history()).at(-1).operation.checkpoint.restore.refs["refs/heads/feature"]).toBe(after)
+    expect((await history()).at(-1).operation.changes).toContainEqual({ type: "ref", ref: "refs/heads/feature", before: head, after })
     expect(await retained()).toContain(after)
 
     git("reflog", "expire", "--expire=now", "--all")
@@ -164,8 +165,8 @@ test("journal checkpoints preserve audit bytes, detect historical corruption, an
     expect((await readFile(journal, "utf8")).startsWith(original)).toBe(true)
 }, 30_000)
 
-test("compiled file extraction recovers crashes around undo and redo once history commits", async () => {
-    // Rolling back before history commits is covered once, in composition-conflicts; this keeps the extraction-specific claims.
+test("compiled file extraction completes an undo or redo that crashed after writing its record", async () => {
+    // Reversing before the record is covered once, in composition-conflicts; this keeps the extraction-specific claims.
     let engine = resolve(import.meta.dir, "../bin/lane.exe")
     let { path, git, head, request } = await fixture()
     let requestPath = join(path, ".git", "request.json")
@@ -190,24 +191,16 @@ test("compiled file extraction recovers crashes around undo and redo once histor
     expect(git("show", ":selected.txt")).toBe("before")
 
     let moved = git("rev-parse", "HEAD")
-    await run(["undo", "--crash-after", "refs-committed"], 86)
-    await run(["recover"])
-
-    expect(git("rev-parse", "HEAD")).toBe(moved)
-    expect(git("show", ":selected.txt")).toBe("before")
-
-    await run(["undo"])
-
-    expect(git("rev-parse", "HEAD")).toBe(head)
-
-    await run(["redo", "--crash-after", "refs-committed"], 86)
+    await run(["undo", "--crash-after", "recorded"], 86)
     await run(["recover"])
 
     expect(git("rev-parse", "HEAD")).toBe(head)
     expect(git("show", ":selected.txt")).toBe("after")
 
-    await run(["redo"])
+    await run(["redo", "--crash-after", "recorded"], 86)
+    await run(["recover"])
 
+    expect(git("rev-parse", "HEAD")).toBe(moved)
     expect(git("show", ":selected.txt")).toBe("before")
     expect(await readFile(join(path, "selected.txt"), "utf8")).toBe("after\n")
 }, 60_000)

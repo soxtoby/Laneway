@@ -5,7 +5,11 @@ import { createHash } from "node:crypto"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { z } from "zod"
-import { type GitCheckpoint, GitCheckpointSchema } from "../operations/git-checkpoint"
+
+/** The refs a plan was prepared against; its ref transaction expects them unchanged. */
+export interface RefsBefore {
+    refs: Record<string, string>
+}
 
 export interface CommitPlan {
     oid: string
@@ -35,7 +39,7 @@ export interface WorkingPlan {
 }
 
 export interface Plan {
-    before: GitCheckpoint
+    before: RefsBefore
     commits: CommitPlan[]
     refs: Array<{ ref: string; before: string | null; after: string | null }>
     working: WorkingPlan[]
@@ -47,7 +51,7 @@ export interface Plan {
 }
 
 let PlanSchema = z.object({
-    before: GitCheckpointSchema,
+    before: z.object({ refs: z.record(z.string(), z.string()) }),
     commits: z.array(
         z.object({
             oid: z.string(),

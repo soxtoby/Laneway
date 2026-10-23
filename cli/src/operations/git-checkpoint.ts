@@ -5,16 +5,9 @@ import { lstat, mkdir, readFile, readlink, rm, writeFile } from "node:fs/promise
 import { dirname, join, relative, resolve, sep } from "node:path"
 import { z } from "zod"
 import { removeLinkedWorktree } from "../worktrees/worktree-directory"
+import { copyObjects, safePath, saveWorkingChanges } from "../worktrees/worktree-registration"
 import { retainRecoveryObjects } from "./recovery-objects"
 
-let identity = {
-    GIT_AUTHOR_NAME: "Laneway",
-    GIT_AUTHOR_EMAIL: "checkpoint@laneway.invalid",
-    GIT_COMMITTER_NAME: "Laneway",
-    GIT_COMMITTER_EMAIL: "checkpoint@laneway.invalid",
-    GIT_AUTHOR_DATE: "2000-01-01T00:00:00Z",
-    GIT_COMMITTER_DATE: "2000-01-01T00:00:00Z",
-}
 let WorktreeSchema = z.object({
     id: z.string(),
     path: z.string(),
@@ -264,7 +257,7 @@ export async function captureGitCheckpoint(
                         .filter(entry => entry && !entry.startsWith("160000 "))
                         .map(entry => entry.split(" ")[1]!)
                 }
-                state.stash = await saveWorkingChanges(repo, state, Boolean(unmerged.length))
+                state.stash = await saveWorkingChanges(repo, state.path, state.head, Boolean(unmerged.length))
             }
             if (!scope) {
                 for (let path of await populatedSubmodules(repo, w.path)) {
@@ -274,7 +267,7 @@ export async function captureGitCheckpoint(
                     if (format != repo.descriptor.objectFormat)
                         throw new Error("Submodules with a different Git object format require manual recovery.")
                     let child = { ...state, path, head, scope: undefined }
-                    let stash = retain ? await saveWorkingChanges(repo, child) : undefined
+                    let stash = retain ? await saveWorkingChanges(repo, path, head) : undefined
                     let remotes = (await repo.run(path, ["config", "--null", "--get-regexp", "^remote\\."])).stdout.toString()
                         .split("\0").filter(Boolean).map(record => {
                             let split = record.indexOf("\n")
@@ -390,66 +383,4 @@ export async function workingFingerprint(repo: RepositoryGit, w: Pick<Worktree, 
     }
 
     return hash.digest("hex")
-}
-
-async function saveWorkingChanges(repo: RepositoryGit, w: Worktree, unmerged = false) {
-    let status = await repo.command(w.path, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])
-    if (!status.length)
-        return undefined
-
-    // Git creates the tracked/index stash without clearing the user's working files.
-    let head = w.head || await commit(repo, w.path, (await repo.command(w.path, ["mktree"], "")).toString().trim(), [])
-    let tracked = w.head && !unmerged ? (await repo.command(w.path, ["stash", "create"], undefined, identity)).toString().trim() : ""
-    let untracked = (await repo.command(w.path, ["ls-files", "--others", "--exclude-standard", "-z"])).toString().split("\0").filter(Boolean)
-    if (!untracked.length && tracked)
-        return tracked
-    if (!untracked.length && !tracked && w.head && !unmerged)
-        return undefined
-
-    let indexTree = tracked
-        ? (await repo.command(w.path, ["rev-parse", `${tracked}^2^{tree}`])).toString().trim()
-        : unmerged
-        ? (await repo.command(w.path, ["rev-parse", `${head}^{tree}`])).toString().trim()
-        : (await repo.command(w.path, ["write-tree"])).toString().trim()
-    let indexCommit = tracked
-        ? (await repo.command(w.path, ["rev-parse", `${tracked}^2`])).toString().trim()
-        : await commit(repo, w.path, indexTree, [head])
-
-    let index = join(repo.descriptor.commonDirectory, "laneway", `stash-index-${crypto.randomUUID()}`), env = { GIT_INDEX_FILE: index }
-    await mkdir(dirname(index), { recursive: true })
-    try {
-        let working: string
-        if (tracked)
-            working = (await repo.command(w.path, ["rev-parse", `${tracked}^{tree}`])).toString().trim()
-        else {
-            await repo.command(w.path, ["read-tree", indexTree], undefined, env)
-            await repo.command(w.path, ["add", unmerged ? "-A" : "-u"], undefined, env)
-            working = (await repo.command(w.path, ["write-tree"], undefined, env)).toString().trim()
-        }
-        if (!untracked.length || unmerged)
-            return commit(repo, w.path, working, [head, indexCommit])
-        await repo.command(w.path, ["read-tree", "--empty"], undefined, env)
-        await repo.command(w.path, ["--literal-pathspecs", "add", "--pathspec-from-file=-", "--pathspec-file-nul"], untracked.join("\0") + "\0", env)
-        let tree = (await repo.command(w.path, ["write-tree"], undefined, env)).toString().trim()
-        let extra = await commit(repo, w.path, tree, [])
-        return commit(repo, w.path, working, [head, indexCommit, extra])
-    } finally {
-        await rm(index, { force: true })
-    }
-}
-
-async function commit(repo: RepositoryGit, path: string, tree: string, parents: string[]) {
-    return (await repo.command(path, ["commit-tree", tree, ...parents.flatMap(p => ["-p", p])], "Laneway checkpoint\n", identity)).toString().trim()
-}
-
-async function copyObjects(repo: RepositoryGit, from: string, to: string, roots: string[]) {
-    let pack = await repo.command(from, ["pack-objects", "--stdout", "--revs"], roots.join("\n") + "\n")
-    await repo.command(to, ["index-pack", "--stdin"], pack)
-}
-
-function safePath(root: string, name: string) {
-    let path = resolve(root, name)
-    if (!path.startsWith(resolve(root) + sep) || relative(root, path).startsWith(".."))
-        throw new Error("Invalid checkpoint path.")
-    return path
 }

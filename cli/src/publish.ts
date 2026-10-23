@@ -2,6 +2,7 @@ import { gitText, redactGitText, type RepositoryGit } from "@laneway/git"
 import { type BranchGraphReadOptions, type PublishPlan, type PublishReceipt, publishReceiptStatus, type PublishRequest, type PublishResult, type PublishUpdate } from "@laneway/shared"
 import { isAncestor, readActiveStack } from "./active-stack"
 import { executeConflict } from "./conflicts/conflict-operations"
+import { ChangeRecorder } from "./operations/change-recorder"
 import { OperationRuntimeError } from "./operations/operation-contracts"
 import { latestReceipt, type MutationLock, openReceipt, readReceipt, receiptId, saveReceipt } from "./publish-receipts"
 
@@ -142,7 +143,7 @@ async function planUpdate(repo: RepositoryGit, ref: string, local: LocalBranch, 
 }
 
 async function publishable(repo: RepositoryGit, refs: string[]) {
-    let result = await executeConflict(repo, { action: "publish-check", branches: refs }, new Map())
+    let result = await executeConflict(repo, { action: "publish-check", branches: refs }, new ChangeRecorder(repo))
     return result.publishable != false
 }
 

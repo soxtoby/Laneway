@@ -3,6 +3,7 @@ import { afterEach, expect, test } from "bun:test"
 import { chmod, readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { mutateComposition, prepareComposition } from "../src/composition/composition"
+import { ChangeRecorder } from "../src/operations/change-recorder"
 import { executeOperationCommand } from "../src/operations/operation-runtime"
 import { createCompositionFixtures, git, perform, preview, request } from "./composition-fixture"
 
@@ -54,7 +55,7 @@ test("cancellation and stale preflight leave refs, files and staging unchanged",
         })
     let p = (await prepareComposition(repo, r)).preview
 
-    await expect(mutateComposition(repo, r, p, new Map(), () => true)).rejects.toThrow("cancelled")
+    await expect(mutateComposition(repo, r, p, new ChangeRecorder(repo), () => true)).rejects.toThrow("cancelled")
     expect(git(path, "rev-parse", "HEAD")).toBe(base)
     expect(git(path, "show", ":a.txt")).toBe("selected")
 

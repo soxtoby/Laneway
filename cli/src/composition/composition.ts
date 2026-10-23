@@ -4,9 +4,10 @@ import { CompositionRequestSchema, HistoricalEditSessionSchema, RewordRequestSch
 import { createHash } from "node:crypto"
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
-import { captureGitCheckpoint, checkpointIdentity, checkpointMatches, type GitCheckpoint } from "../operations/git-checkpoint"
+import { type ChangeRecorder, worktreeTrees } from "../operations/change-recorder"
+import { readRecordedRefs } from "../operations/repository-snapshot"
 import { commitAuthor, compositionCommit, prepareCommitContext, rawCommit } from "./composition-commits"
-import { type CommitPlan, type Plan, readPlan, type WorkingPlan, writePlan } from "./composition-plan"
+import { type CommitPlan, type Plan, readPlan, type RefsBefore, type WorkingPlan, writePlan } from "./composition-plan"
 import { selectionTrees, workingTree } from "./composition-source"
 import { extractFiles, isFileExtraction, prepareFileExtraction } from "./file-extraction"
 
@@ -20,8 +21,7 @@ export async function prepareComposition(
     repo: RepositoryGit,
     request: RewriteRequest,
     expectedToken?: string,
-    verify = true,
-): Promise<{ before: GitCheckpoint; preview: LocalPreview }> {
+): Promise<{ before: RefsBefore; preview: LocalPreview }> {
     if (repo.descriptor.shallow || repo.descriptor.partial || repo.descriptor.sparse)
         throw new Error("Composition requires a complete, non-sparse repository.")
 
@@ -39,7 +39,7 @@ export async function prepareComposition(
         throw new Error("Choose an available Registered Worktree as the source.")
 
     let affected = worktrees.filter(w => !w.missing).map(w => w.path)
-    let before = await captureGitCheckpoint(repo, affected, undefined, worktrees)
+    let before: RefsBefore = { refs: await readRecordedRefs(repo) }
     for (let w of worktrees.filter(w => !w.missing)) {
         for (let marker of ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply"]) {
             if (await pathExists(join(w.gitDirectory, marker)))
@@ -59,7 +59,7 @@ export async function prepareComposition(
         }),
     ])
     let token = id(
-        checkpointIdentity(before),
+        JSON.stringify([before.refs, worktrees.map(w => [w.id, w.path, w.head, w.branchRef ?? null, w.missing])]),
         remoteRefs,
         configuration,
         attributes,
@@ -68,6 +68,12 @@ export async function prepareComposition(
 
     let cached = expectedToken == token ? await readPlan(repo, token) : undefined
     if (cached) {
+        // A plan from another invocation rewrites worktrees from the trees it read then; its ref transaction guards the refs.
+        for (let working of cached.plan.working) {
+            let current = await worktreeTrees(repo, working.path)
+            if (current.files != working.beforeTree || current.index != working.beforeIndex)
+                throw new Error("Working Changes changed while preparing the transfer. Select and review it again.")
+        }
         cached.plan.before = before
         plans.set(cached.preview, cached.plan)
         return { before, preview: cached.preview }
@@ -463,13 +469,8 @@ export async function prepareComposition(
             sessions.push({ ref: edit.ref, before: edit.value, session: HistoricalEditSessionSchema.parse({ ...edit.edit, commit: newHead }) })
     }
 
-    // A plan applied in this same invocation is verified again right before its refs change, so it can skip this check.
-    if (verify) {
-        if (!await checkpointMatches(repo, before))
-            throw new Error("Repository content changed while preparing the transfer. Select and review it again.")
-        if (remoteRefs != await gitText(repo, ["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes", "refs/laneway/conflict-candidates"]))
-            throw new Error("Remote refs changed while preparing the transfer. Review it again.")
-    }
+    if (remoteRefs != await gitText(repo, ["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes", "refs/laneway/conflict-candidates"]))
+        throw new Error("Remote refs changed while preparing the transfer. Review it again.")
 
     let local: LocalPreview = {
         token,
@@ -757,7 +758,7 @@ export async function mutateComposition(
     repo: RepositoryGit,
     request: RewriteRequest,
     preview: LocalPreview,
-    changes: Map<string, string | null>,
+    changes: ChangeRecorder,
     cancelled = () => false,
 ): Promise<LocalResult> {
     if (isFileExtraction(preview))
@@ -805,8 +806,8 @@ export async function mutateComposition(
         working.head = final.get(working.head) ?? working.head
     for (let working of plan.state.working)
         working.head = final.get(working.head) ?? working.head
-    if (cancelled() || !await checkpointMatches(repo, plan.before))
-        throw new Error("Repository content changed or the transfer was cancelled during commit preparation. No transfer was applied.")
+    if (cancelled())
+        throw new Error("Transfer cancelled during commit preparation. No transfer was applied.")
     // All trees and conflict inputs are prepared before this single ref transaction.
     let updates = [...plan.refs]
     for (let candidate of plan.candidates) {
@@ -858,6 +859,7 @@ export async function mutateComposition(
             await repo.command(working.path, ["read-tree", working.beforeTree])
             await repo.command(working.path, ["read-tree", "--reset", "-u", working.tree])
             await repo.command(working.path, ["read-tree", working.index])
+            changes.tree(working.path, { index: working.beforeIndex, files: working.beforeTree }, { index: working.index, files: working.tree })
         }
         if (working.ref && working.ref != working.beforeRef)
             await repo.command(working.path, ["symbolic-ref", "HEAD", working.ref])

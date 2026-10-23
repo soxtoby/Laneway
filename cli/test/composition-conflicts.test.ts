@@ -56,7 +56,7 @@ test("incoming Working Changes conflicts preserve staging and can be accepted or
 
 test("compiled composition recovers across journal boundaries and remains undoable after GC", async () => {
     let engine = resolve(import.meta.dir, "../bin/lane.exe")
-    for (let phase of ["intent", "worktrees-committed", "history-committed"]) {
+    for (let phase of ["intent", "recorded", "history-committed"]) {
         let { path, base } = await fixture()
         await writeFile(join(path, "a.txt"), "composed\n")
         let r = request({
@@ -68,7 +68,7 @@ test("compiled composition recovers across journal boundaries and remains undoab
         await writeFile(requestPath, JSON.stringify(r))
         await run(path, ["local", "--request-file", requestPath, "--expected", p.token, "--crash-after", phase], 86)
         await run(path, ["recover"])
-        if (phase != "history-committed")
+        if (phase == "intent")
             expect(git(path, "rev-parse", "HEAD")).toBe(base)
         else {
             expect(git(path, "rev-parse", "HEAD")).not.toBe(base)

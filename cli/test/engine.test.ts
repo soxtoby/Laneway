@@ -83,7 +83,7 @@ describe("Laneway Engine executable", () => {
         }
     })
 
-    test("an external worktree change creates an undo boundary without changing refs", async () => {
+    test("an external worktree change stays in place through undo", async () => {
         let repository = await createRepository()
         let testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
 
@@ -101,19 +101,15 @@ describe("Laneway Engine executable", () => {
             await writeFile(resolve(repository, "README.md"), "changed outside Laneway\n")
             let undo = await runEngineAt(repository, ["undo", "--json"], testEnvironment)
 
-            expect(undo.exitCode).toBe(1)
-            expect(parseNdjson(undo.stdout).at(-1)).toMatchObject({
-                type: "error",
-                code: "operation.precondition-failed",
-                details: { reason: "worktree-changed" },
-            })
-            expect(runGitAt(repository, "rev-parse", "refs/laneway/test/fixture").stdout.toString().trim()).toBe(fixtureOid)
+            expect(undo.exitCode).toBe(0)
+            expect(parseNdjson(undo.stdout).at(-1)).toMatchObject({ type: "result", command: "undo", status: "performed" })
+            expect(runGitAt(repository, "rev-parse", "--verify", "--quiet", "refs/laneway/test/fixture").exitCode).toBe(1)
+            expect(await Bun.file(resolve(repository, "README.md")).text()).toBe("changed outside Laneway\n")
 
             let history = await runEngineAt(repository, ["history", "--json"], testEnvironment)
 
-            expect(parseNdjson(history.stdout).at(-1)).toMatchObject({
-                undo: { available: false, reason: "worktree-changed" },
-            })
+            expect(parseNdjson(history.stdout).at(-1)).toMatchObject({ redo: { available: true } })
+            expect(fixtureOid).toHaveLength(40)
         } finally {
             await rm(repository, { recursive: true, force: true })
         }
@@ -261,7 +257,7 @@ describe("Laneway Engine executable", () => {
         }
     }, 90_000)
 
-    test("index and ref changes create undo boundaries", async () => {
+    test("a staged change stays staged through undo, while a moved ref makes undo unavailable", async () => {
         let testEnvironment = { LANEWAY_ENABLE_TEST_COMMANDS: "1" }
 
         let indexRepository = await createRepository()
@@ -280,10 +276,8 @@ describe("Laneway Engine executable", () => {
 
             let undo = await runEngineAt(indexRepository, ["undo", "--json"])
 
-            expect(parseNdjson(undo.stdout).at(-1)).toMatchObject({
-                code: "operation.precondition-failed",
-                details: { reason: "index-changed" },
-            })
+            expect(parseNdjson(undo.stdout).at(-1)).toMatchObject({ type: "result", command: "undo", status: "performed" })
+            expect(runGitAt(indexRepository, "diff", "--cached", "--name-only").stdout.toString().trim()).toBe("README.md")
         } finally {
             await rm(indexRepository, { recursive: true, force: true })
         }

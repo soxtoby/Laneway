@@ -44,7 +44,7 @@ test("create, dirty transfer, undo and redo preserve both worktrees and the inde
     expect(git(path, "branch", "--show-current")).toBe("feature")
 }, 60_000)
 
-test("removal restores exact discarded Git state and guards external changes", async () => {
+test("removal restores exact discarded Git state, and redo keeps edits made since for the next undo", async () => {
     let path = await fixture()
     await perform(path, { action: "create", branch: "feature", move: false })
     let linked = join(`${path}.worktrees`, "feature")
@@ -61,8 +61,12 @@ test("removal restores exact discarded Git state and guards external changes", a
     await transition(path, "redo")
     await transition(path, "undo")
     await writeFile(join(linked, "new.txt"), "external\n")
+    await transition(path, "redo")
 
-    await expect(transition(path, "redo")).rejects.toThrow("outside Laneway")
+    expect(await pathExists(linked)).toBe(false)
+
+    await transition(path, "undo")
+
     expect(await readFile(join(linked, "new.txt"), "utf8")).toBe("external\n")
 }, 60_000)
 
@@ -265,7 +269,7 @@ test("removal undo accepts an alternate basename without overwriting an occupied
     expect(git(restored, "branch", "--show-current")).toBe("feature")
 }, 60_000)
 
-test("detached unique commits are protected before switching, and an external prune blocks undo", async () => {
+test("detached unique commits are protected before switching, and undo after an external prune reverses the rest", async () => {
     let path = await fixture()
     let head = git(path, "rev-parse", "HEAD")
     await perform(path, { action: "create", commit: head, move: false })
@@ -285,25 +289,26 @@ test("detached unique commits are protected before switching, and an external pr
     await perform(path, { action: "unlock", path: linked })
     await rm(linked, { recursive: true })
     git(path, "worktree", "prune", "--expire", "now")
+    await transition(path, "undo")
 
-    await expect(transition(path, "undo")).rejects.toThrow("outside Laneway")
+    expect(git(path, "branch", "--contains", unique)).toBe("")
+    expect(git(path, "cat-file", "-t", unique)).toBe("commit")
 }, 60_000)
 
 test("compiled engine recovers worktree apply and undo at durable journal boundaries", async () => {
     let executable = resolve(import.meta.dir, "../bin/lane.exe")
-    // The runtime exits at three distinct points: recovery-retained and preconditions-verified share intent's, and
-    // refs-committed shares worktrees-committed's.
-    for (let phase of ["intent", "worktrees-committed", "history-committed"]) {
+    // An execution that stopped before writing its record is reversed; one that wrote it is completed.
+    for (let phase of ["intent", "recorded", "history-committed"]) {
         let path = await fixture()
         await engine(path, ["worktree", "--request", JSON.stringify({ action: "create", branch: "feature" }), "--crash-after", phase], 86)
         await engine(path, ["recover"])
         let linked = join(`${path}.worktrees`, "feature")
-        if (phase != "history-committed")
+        if (phase == "intent")
             expect(await Bun.file(join(linked, ".git")).exists()).toBe(false)
         else {
             expect(git(linked, "branch", "--show-current")).toBe("feature")
 
-            await engine(path, ["undo", "--crash-after", "preconditions-verified"], 86)
+            await engine(path, ["undo", "--crash-after", "intent"], 86)
             await engine(path, ["recover"])
 
             expect(git(linked, "branch", "--show-current")).toBe("feature")
@@ -379,11 +384,9 @@ test("recovery actions can retry after interruption without replacing their back
         let { path, linked, operationId } = await interruptedRemoval()
         temporary.push(`${linked}.laneway-recovery-${operationId}`)
         await interruptRecovery(path, operationId, action)
-        if (action == "remove") {
-            await expect(
-                executeOperationCommand({ command: "local-preview", noWait: false, request: { action: "stage", path, unstage: false, files: [] } }, path),
-            ).rejects.toMatchObject({ code: "operation.recovery-blocked" })
-        }
+        // A removal that wrote its record completes on the next Engine run instead of blocking it.
+        if (action == "remove")
+            await executeOperationCommand({ command: "local-preview", noWait: false, request: { action: "stage", path, unstage: false, files: [] } }, path)
         await executeOperationCommand({ command: "recover", noWait: false, request: { operationId, action } }, path)
         if (action == "restore")
             expect(await readFile(join(`${linked}.laneway-recovery-${operationId}`, "leftover.txt"), "utf8")).toBe("preserve leftover\n")
@@ -519,7 +522,7 @@ async function interruptRecovery(path: string, operationId: string, action: "res
         "--request",
         JSON.stringify({ operationId, action }),
         "--crash-after",
-        "worktrees-committed",
+        "recorded",
         "--json",
     ], {
         cwd: path,

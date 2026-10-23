@@ -4,7 +4,9 @@ import { createHash, randomUUID } from "node:crypto"
 import { constants } from "node:fs"
 import { access } from "node:fs/promises"
 import { join } from "node:path"
-import { captureGitCheckpoint, checkpointIdentity, checkpointMatches, type GitCheckpoint } from "../operations/git-checkpoint"
+import { type ChangeRecorder, worktreeTrees } from "../operations/change-recorder"
+import { readRecordedRefs } from "../operations/repository-snapshot"
+import type { RefsBefore } from "./composition-plan"
 
 interface Change {
     path: string
@@ -20,7 +22,7 @@ interface Commit {
     message: Buffer
 }
 interface Extraction {
-    before: GitCheckpoint
+    before: RefsBefore
     path: string
     ref: string
     head: string
@@ -135,10 +137,8 @@ export async function prepareFileExtraction(repo: RepositoryGit, request: Compos
     if (changes.length != paths.length || changes.length == records.length / 2)
         return undefined
 
-    let [objects, before] = await Promise.all([
-        run(["cat-file", "--batch"], rows.map(row => row[0]).join("\n") + "\n"),
-        captureGitCheckpoint(repo, [target.path], undefined, worktrees, new Map([[normalize(target.path), paths.slice().sort()]])),
-    ])
+    let [objects, recorded] = await Promise.all([run(["cat-file", "--batch"], rows.map(row => row[0]).join("\n") + "\n"), readRecordedRefs(repo)])
+    let before: RefsBefore = { refs: recorded }
     let expectedRefs = Object.fromEntries(Object.entries(refs).filter(([ref]) => !ref.startsWith("refs/remotes/")))
     if (JSON.stringify(expectedRefs) != JSON.stringify(before.refs) || before.refs[target.branchRef] != target.head)
         throw new Error("Repository refs changed while preparing the transfer. Review it again.")
@@ -168,7 +168,7 @@ export async function prepareFileExtraction(repo: RepositoryGit, request: Compos
 
     let preview: LocalPreview = {
         token: createHash("sha256").update(
-            "file-extraction-v1\0" + checkpointIdentity(before) + refOutput + configuration
+            "file-extraction-v1\0" + JSON.stringify([before.refs, await worktreeTrees(repo, target.path)]) + refOutput + configuration
                 + JSON.stringify(CompositionRequestSchema.parse({ ...request, allowConflicts: false })),
         ).digest("hex"),
         affected: [target.path],
@@ -193,7 +193,7 @@ export function isFileExtraction(preview: LocalPreview) {
 export async function extractFiles(
     repo: RepositoryGit,
     preview: LocalPreview,
-    refs: Map<string, string | null>,
+    refs: ChangeRecorder,
     cancelled: () => boolean,
 ): Promise<LocalResult> {
     let plan = extractions.get(preview)!
@@ -211,8 +211,8 @@ export async function extractFiles(
     }
 
     chunks.push(Buffer.from(`get-mark :${plan.commits.length}\nreset ${temporary}\n\ndone\n`))
-    if (cancelled() || !await checkpointMatches(repo, plan.before))
-        throw new Error("Repository content changed or the transfer was cancelled. No transfer was applied.")
+    if (cancelled())
+        throw new Error("Transfer cancelled. No transfer was applied.")
 
     let head = (await repo.command(plan.path, ["-c", "gc.auto=0", "-c", "maintenance.auto=false", "fast-import", "--quiet", "--done"], Buffer.concat(chunks)))
         .toString().trim()
@@ -221,11 +221,12 @@ export async function extractFiles(
 
     await repo.updateRefs([{ ref: plan.ref, before: plan.head, after: head }])
     refs.set(plan.ref, head)
-    await repo.command(
-        plan.path,
-        ["update-index", "-z", "--index-info"],
-        plan.changes.map(change => `${change.mode} ${change.before}\t${change.path}\0`).join(""),
-    )
+    await refs.worktree(plan.path, () =>
+        repo.command(
+            plan.path,
+            ["update-index", "-z", "--index-info"],
+            plan.changes.map(change => `${change.mode} ${change.before}\t${change.path}\0`).join(""),
+        ))
 
     return { type: "result", command: "local", status: "performed", message: "Changes transferred." }
 }

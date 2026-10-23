@@ -3,8 +3,9 @@ import { type HistoricalEditRequest, HistoricalEditSessionSchema, type Registere
 import { join } from "node:path"
 import { applyStashConflict, dropStash } from "../conflicts/conflict-operations"
 import { checkStashApplication } from "../local-mutations"
+import type { ChangeRecorder } from "../operations/change-recorder"
 
-type Changes = Map<string, string | null>
+type Changes = ChangeRecorder
 export type HistoricalEditMutation = Exclude<HistoricalEditRequest, { action: "status" }>
 type StoredEdit = Awaited<ReturnType<typeof readStoredHistoricalEdits>>[number]
 
@@ -41,10 +42,11 @@ export async function prepareHistoricalEdit(repo: RepositoryGit, request: Histor
 }
 
 export async function mutateHistoricalEdit(repo: RepositoryGit, plan: HistoricalEditPlan, changes: Changes) {
-    if (plan.request.action == "enter")
-        return enter(repo, plan.worktree, plan.request.commit)
-    if (plan.request.action == "return")
-        return returnToBranch(repo, plan, plan.request.mode, changes)
+    let request = plan.request
+    if (request.action == "enter")
+        return changes.worktree(plan.worktree.path, () => enter(repo, plan.worktree, request.commit))
+    if (request.action == "return")
+        return changes.worktree(plan.worktree.path, () => returnToBranch(repo, plan, request.mode, changes))
     return restart(repo, plan.worktree, plan.stored!)
 }
 

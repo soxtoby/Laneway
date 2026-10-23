@@ -12,7 +12,7 @@ import { readFileSync, statSync } from "node:fs"
 import { monitorCancellation } from "./command-cancellation"
 import { runCommandLine } from "./command-line"
 import { resultExitCode } from "./command-output"
-import { executeOperationCommand, type JournalPhase, OperationCancelledError, type OperationCommand, OperationRuntimeError } from "./operations/operation-runtime.ts"
+import { crashPhases, executeOperationCommand, type JournalPhase, OperationCancelledError, type OperationCommand, OperationRuntimeError } from "./operations/operation-runtime.ts"
 
 let args = process.argv.slice(2)
 
@@ -396,15 +396,7 @@ function parseOperationArguments(command: Exclude<OperationCommand["command"], "
             && process.env.LANEWAY_ENABLE_TEST_COMMANDS == "1"
         ) {
             let phase = commandArguments[index + 1]
-            let phases: JournalPhase[] = [
-                "intent",
-                "recovery-retained",
-                "preconditions-verified",
-                "worktrees-committed",
-                "refs-committed",
-                "history-committed",
-                "finalized",
-            ]
+            let phases: readonly JournalPhase[] = crashPhases
             if (!phase || !phases.includes(phase as JournalPhase))
                 return invalidOperationArgument(command, json, `Invalid journal phase "${phase ?? ""}".`, "--crash-after")
             crashAfter = phase as JournalPhase

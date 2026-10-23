@@ -3,13 +3,14 @@ import { type ConflictRequest, type ConflictState, type ConflictSubject, type Un
 import { lstat, readFile, realpath } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { followAcceptedRewrites } from "../historical-edit/accepted-rewrites"
+import type { ChangeRecorder } from "../operations/change-recorder"
 import { candidateRef, checkedCandidate, readCandidate, saveCandidate } from "./conflict-candidates"
 import { conflictResult, findSubject } from "./conflict-inspection"
 import { cleanupResolutionFiles, runMergeTool } from "./conflict-resolution-files"
 
 export { conflictResult } from "./conflict-inspection"
 
-type Changes = Map<string, string | null>
+type Changes = ChangeRecorder
 export let conflictMutation = (request: ConflictRequest) =>
     ["rewrite", "accept", "keep-stashed", "restore", "discard", "resume-working"].includes(request.action)
 
@@ -83,7 +84,7 @@ export async function executeConflict(repo: RepositoryGit, request: ConflictRequ
             }
             if (request.path) {
                 await requireWorktree(repo, request.path, true)
-                await repo.command(request.path, ["switch", stack.temporaryRef.slice(11)])
+                await changes.worktree(request.path, () => repo.command(request.path!, ["switch", stack.temporaryRef.slice(11)]))
             }
         }
         await persist()
@@ -98,7 +99,7 @@ export async function executeConflict(repo: RepositoryGit, request: ConflictRequ
         await requireWorktree(repo, request.path, true)
         if (await gitText(repo, ["rev-parse", `${found.working.suspended}^1`]) != await gitHead(repo, request.path))
             throw new Error("The restoration base changed. Apply the suspended stash as a new Working Changes Conflict.")
-        await repo.command(request.path, ["stash", "apply", "--index", found.working.suspended])
+        await changes.worktree(request.path, () => repo.command(request.path, ["stash", "apply", "--index", found.working!.suspended!]))
         await dropStash(repo, found.working.suspended, changes)
         found.working.suspended = undefined
         found.working.path = request.path
@@ -131,8 +132,10 @@ export async function executeConflict(repo: RepositoryGit, request: ConflictRequ
             let restored = await replayTree(repo, subject.tree, current, target, crypto.randomUUID())
             if (restored.conflict)
                 throw new Error("Later Working Changes overlap this result. Preserve or explicitly include them before accepting or keeping the stash.")
-            await repo.command(working.path, ["read-tree", "--reset", "-u", restored.tree])
-            await repo.command(working.path, ["read-tree", (request.action == "accept" ? working.afterIndex : working.beforeIndex) ?? working.head])
+            await changes.worktree(working.path, async () => {
+                await repo.command(working.path, ["read-tree", "--reset", "-u", restored.tree])
+                await repo.command(working.path, ["read-tree", (request.action == "accept" ? working.afterIndex : working.beforeIndex) ?? working.head])
+            })
             if (request.action == "accept")
                 await dropStash(repo, working.stash, changes)
             state.working = state.working.filter(w => w != working)
@@ -496,7 +499,10 @@ async function publishProvisional(
 
     let tip = stack.steps.at(-1)?.current ?? stack.base
 
-    let working = new Map<string, { tree: string; conflict?: ConflictSubject; index: string; oldHead: string; stash?: string }>()
+    let working = new Map<
+        string,
+        { tree: string; conflict?: ConflictSubject; index: string; oldHead: string; stash?: string; before: { index: string; files: string } }
+    >()
     let duplicateHolders = holders.filter(w => w.branchRef == stack.branches.at(-1)!.ref && holders.some(other => other.branchRef == stack.temporaryRef))
     for (let holder of holders) {
         if (duplicateHolders.includes(holder))
@@ -515,7 +521,12 @@ async function publishProvisional(
         let staged = dirty ? await replayTree(repo, oldHead, target, index, crypto.randomUUID()) : merged
         if (await gitHead(repo, holder.path) != oldHead || await workingTree(repo, holder.path) != current)
             throw new Error("Working Changes moved while preparing resolution. Refresh and retry.")
-        working.set(holder.path, { ...merged, oldHead, index: staged.conflict ? await gitText(repo, ["rev-parse", `${target}^{tree}`]) : staged.tree })
+        working.set(holder.path, {
+            ...merged,
+            oldHead,
+            index: staged.conflict ? await gitText(repo, ["rev-parse", `${target}^{tree}`]) : staged.tree,
+            before: { index, files: current },
+        })
     }
 
     for (let holder of duplicateHolders)
@@ -558,6 +569,7 @@ async function publishProvisional(
         let carry = working.get(holder.path)!
         await repo.command(holder.path, ["read-tree", "--reset", "-u", carry.tree])
         await repo.command(holder.path, ["read-tree", carry.index])
+        changes.tree(holder.path, carry.before, { index: carry.index, files: carry.tree })
         await repo.command(holder.path, ["symbolic-ref", "HEAD", ref])
         if (carry.conflict && carry.stash)
             state.working.push({ id: carry.conflict.id, path: holder.path, branch: ref, head: target, stash: carry.stash, conflict: carry.conflict })
@@ -611,6 +623,7 @@ export async function applyStashConflict(repo: RepositoryGit, path: string, stas
     await repo.command(path, ["read-tree", current])
     await repo.command(path, ["read-tree", "--reset", "-u", merged.tree])
     await repo.command(path, ["read-tree", index])
+    changes.tree(path, { index, files: current }, { index, files: merged.tree })
     if (merged.conflict)
         changes.set(conflictStateRef, await storeConflictState(repo, state, before))
     return Boolean(merged.conflict)

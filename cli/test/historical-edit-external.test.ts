@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { git } from "./composition-fixture"
-import { apply, commit, createHistoricalEditFixtures, edit, engine, externalCommit, session } from "./historical-edit-fixture"
+import { apply, commit, createHistoricalEditFixtures, edit, engine, session } from "./historical-edit-fixture"
 
 let { stack, temporaryDirectory, cleanup } = createHistoricalEditFixtures()
 afterEach(cleanup)
@@ -45,53 +45,35 @@ test("return after an external rewrite replaced the edited commit refuses only c
     expect(await readFile(join(path, "notes.txt"), "utf8")).toBe("notes\n")
 }, 90_000)
 
-test("an interrupted entry or return is rolled back by the next Engine run", async () => {
-    let { path, greeting } = await stack()
+test("an interrupted entry or return is reversed before its record and completed after it, keeping later edits", async () => {
+    let { path, greeting, tip } = await stack()
     await writeFile(join(path, "notes.txt"), "notes\n")
 
-    await engine(path, ["edit", "--request", JSON.stringify({ action: "enter", path, commit: greeting }), "--crash-after", "worktrees-committed"], 86)
+    await engine(path, ["edit", "--request", JSON.stringify({ action: "enter", path, commit: greeting }), "--crash-after", "intent"], 86)
     await engine(path, ["recover"])
 
     expect(git(path, "branch", "--show-current")).toBe("feature")
     expect(git(path, "status", "--porcelain")).toBe("?? notes.txt")
-    expect(await readFile(join(path, "notes.txt"), "utf8")).toBe("notes\n")
     expect(git(path, "stash", "list")).toBe("")
     expect((await edit(path, { action: "status" })).sessions).toEqual([])
 
-    await edit(path, { action: "enter", path, commit: greeting })
-    await writeFile(join(path, "greet.txt"), "hello, world\nthere\nfriend\n")
-    await engine(path, ["edit", "--request", JSON.stringify({ action: "return", path, mode: "bring" }), "--crash-after", "worktrees-committed"], 86)
+    await engine(path, ["edit", "--request", JSON.stringify({ action: "enter", path, commit: greeting }), "--crash-after", "recorded"], 86)
+    await writeFile(join(path, "draft.txt"), "draft\n")
     await engine(path, ["recover"])
 
-    expect(git(path, "rev-parse", "HEAD")).toBe(greeting)
-    expect(git(path, "status", "--porcelain")).toBe("M greet.txt")
-    expect(await readFile(join(path, "greet.txt"), "utf8")).toBe("hello, world\nthere\nfriend\n")
-    expect((await session(path))?.state).toBe("active")
-}, 120_000)
-
-test("recovery leaves an interrupted entry or return in place once files or refs changed after it", async () => {
-    let { path, base, greeting, tip } = await stack()
-    await writeFile(join(path, "notes.txt"), "notes\n")
-    await engine(path, ["edit", "--request", JSON.stringify({ action: "enter", path, commit: greeting }), "--crash-after", "worktrees-committed"], 86)
-    await writeFile(join(path, "draft.txt"), "draft\n")
-
-    expect(await engine(path, ["recover"], 1)).toContain("operation.recovery-blocked")
     expect(git(path, "rev-parse", "HEAD")).toBe(greeting)
     expect(await readFile(join(path, "draft.txt"), "utf8")).toBe("draft\n")
     expect(git(path, "stash", "list", "--format=%gs")).toBe("On feature: Working Changes before Historical Edit")
+    expect((await session(path))?.state).toBe("active")
 
-    // Once the repository is back to what the entry left, recovery rolls it back as usual.
     await rm(join(path, "draft.txt"))
-    await engine(path, ["recover"])
-    await edit(path, { action: "enter", path, commit: greeting })
     await writeFile(join(path, "greet.txt"), "hello, world\nthere\nfriend\n")
-    await engine(path, ["edit", "--request", JSON.stringify({ action: "return", path, mode: "bring" }), "--crash-after", "worktrees-committed"], 86)
-    let external = externalCommit(path, base)
-    git(path, "update-ref", "refs/heads/main", external)
+    await engine(path, ["edit", "--request", JSON.stringify({ action: "return", path, mode: "bring" }), "--crash-after", "recorded"], 86)
+    await engine(path, ["recover"])
 
-    expect(await engine(path, ["recover"], 1)).toContain("operation.recovery-blocked")
-    expect(git(path, "rev-parse", "main")).toBe(external)
     expect(git(path, "branch", "--show-current")).toBe("feature")
     expect(git(path, "rev-parse", "HEAD")).toBe(tip)
+    expect(await readFile(join(path, "greet.txt"), "utf8")).toBe("hello, world\nthere\npal\n")
     expect(await readFile(join(path, "notes.txt"), "utf8")).toBe("notes\n")
+    expect((await edit(path, { action: "status" })).sessions).toEqual([])
 }, 120_000)

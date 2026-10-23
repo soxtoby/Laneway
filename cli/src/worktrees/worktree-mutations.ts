@@ -2,9 +2,10 @@ import { branchSlug, hasUniqueCommits, normalize, populatedSubmodules, type Repo
 import type { RegisteredWorktree, WorktreePreview } from "@laneway/shared"
 import { mkdir } from "node:fs/promises"
 import { dirname } from "node:path"
+import type { ChangeRecorder } from "../operations/change-recorder"
 import { recoveryBackupPath, removeLinkedWorktree } from "./worktree-directory"
 
-export async function mutateWorktree(repository: RepositoryGit, preview: WorktreePreview, operationId: string, branchPrefix = "worktree/") {
+export async function mutateWorktree(repository: RepositoryGit, preview: WorktreePreview, operationId: string, branchPrefix: string, changes: ChangeRecorder) {
     let changedRefs = new Set<string>()
     let { request, worktrees, destination } = preview
     let main = repository.descriptor.mainWorktree
@@ -17,13 +18,17 @@ export async function mutateWorktree(repository: RepositoryGit, preview: Worktre
             throw new Error(`The branch is checked out in ${holder.path}. Confirm moving it first.`)
 
         if (holder) {
-            await preserveBeforeSwitch(repository, holder, branchPrefix, changedRefs)
-            await repository.command(holder.path, ["checkout", "--detach", holder.head])
+            await changes.worktree(holder.path, async () => {
+                await preserveBeforeSwitch(repository, holder, branchPrefix, changedRefs)
+                await repository.command(holder.path, ["checkout", "--detach", holder.head])
+            })
         }
 
         if (current) {
-            await preserveBeforeSwitch(repository, current, branchPrefix, changedRefs)
-            await repository.command(current.path, ["checkout", branch!])
+            await changes.worktree(current.path, async () => {
+                await preserveBeforeSwitch(repository, current, branchPrefix, changedRefs)
+                await repository.command(current.path, ["checkout", branch!])
+            })
         } else {
             await mkdir(dirname(destination!), { recursive: true })
             await repository.command(main, [
@@ -63,7 +68,7 @@ export async function mutateWorktree(repository: RepositoryGit, preview: Worktre
     return changedRefs
 }
 
-async function preserveBeforeSwitch(repository: RepositoryGit, worktree: RegisteredWorktree, branchPrefix: string, changedRefs: Set<string>) {
+export async function preserveBeforeSwitch(repository: RepositoryGit, worktree: RegisteredWorktree, branchPrefix: string, changedRefs: Set<string>) {
     let branch = worktree.branchRef?.replace(/^refs\/heads\//, "")
     let paths = [...await populatedSubmodules(repository, worktree.path)].reverse()
     let dirty = (await repository.command(worktree.path, ["status", "--porcelain", "--untracked-files=all"])).length > 0
