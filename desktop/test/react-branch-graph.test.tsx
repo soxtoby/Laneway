@@ -1,4 +1,4 @@
-import type { BranchGraph } from "@laneway/shared"
+import type { BranchGraph, WorktreeRequest } from "@laneway/shared"
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
 import type { Window as HappyWindow } from "happy-dom"
 import { button, installReactDom, press, startReactApp, stopReactApps, submit, type } from "./react-dom"
@@ -60,11 +60,16 @@ describe("React Branch Graph", () => {
         expect(names()).toContain("origin/other/remote")
         expect(button(panel()!, "Show relevant").getAttribute("aria-pressed")).toBe("true")
 
-        // Choosing a row only selects it; its Open button opens its column.
+        // Choosing a row only selects it; the menu button it shows opens its column.
         await app.act(() => press(row(feature!.id).querySelector<HTMLElement>(".graph-name")!))
         expect(row(feature!.id).hasAttribute("data-selected")).toBe(true)
         expect(columnNames()).toEqual([])
-        await app.act(() => press(button(row(feature!.id), "Open")))
+        expect([...row(feature!.id).querySelectorAll("button")].map(control => control.getAttribute("aria-label"))).toEqual([
+            "Drag feature/laneway",
+            "Actions for feature/laneway",
+        ])
+        await app.act(() => press(button(row(feature!.id), "Actions for feature/laneway")))
+        await app.act(() => press(menuItem("Open column")))
         expect(columnNames()).toEqual(["feature/laneway"])
 
         // Left folds the selected branch's stack, hiding the branches built on it; Right unfolds it.
@@ -79,33 +84,82 @@ describe("React Branch Graph", () => {
         expect(panel() == null).toBe(true)
     })
 
-    test("Enter opens the selected branch, its menu acts on it and copies its name, and F2 renames it", async () => {
+    test("a double-click or Enter checks a branch out in the Main Worktree, its menu checks it out in another, and F2 renames it", async () => {
         let repository = repositoryInfo("D:\\Source\\graph-project")
-        let graph = branchGraph(repository.id)
-        let feature = graph.branches[1]!
+        let graph: BranchGraph = branchGraph(repository.id)
+        let [main, feature, team] = graph.branches
+        main!.checkedOut = [{ id: "main", path: repository.root, name: "graph-project", head: main!.tip, branchRef: main!.preferredRef, main: true }]
+        let linked = {
+            id: "team",
+            path: "D:\\Source\\graph-project.worktrees\\team",
+            name: "team",
+            head: team!.tip,
+            branchRef: team!.preferredRef,
+            main: false,
+        }
+        team!.checkedOut = [linked]
+        let executions: { request: WorktreeRequest; token?: string }[] = []
         let app = await startReactApp(fakeLaneway({
             getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
             readBranchGraph: async () => ({ ok: true, graph }),
+            executeWorktree: async (_id, request, token) => {
+                executions.push({ request, token })
+                return { ok: true }
+            },
         }))
         await app.act(() => press(button(document.body, "Show Branch Graph")))
-        await app.act(() => press(row(feature.id).querySelector<HTMLElement>(".graph-name")!))
+        let checkedOut = (path: string) => ({ request: { action: "switch" as const, path, branch: feature!.preferredRef, move: true }, token: undefined })
 
-        await app.act(() => key(row(feature.id), "Enter"))
-        expect(columnNames()).toEqual(["feature/laneway"])
-        await app.act(() =>
-            row(feature.id).dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: 20, clientY: 20 }))
-        )
-        expect([...document.querySelectorAll("[role=menu] [role=menuitem]")].map(item => item.textContent)).toEqual([
+        // A double-click on a row's button is the button's; on the row, it checks out at once and offers Undo.
+        await app.act(() => press(row(feature!.id).querySelector<HTMLElement>(".graph-name")!))
+        await app.act(() => doubleClick(button(row(feature!.id), "Actions for feature/laneway")))
+        await app.act(() => key(document.querySelector<HTMLElement>("[role=menu]")!, "Escape"))
+        expect(executions).toEqual([])
+        await app.act(() => doubleClick(row(feature!.id).querySelector<HTMLElement>(".graph-name")!))
+        expect(executions).toEqual([checkedOut(repository.root)])
+        expect(document.querySelector("[role=alertdialog]")?.textContent).toContain("Checked out feature/laneway in graph-project.")
+        await app.act(() => key(row(feature!.id), "Enter"))
+        expect(executions).toEqual([checkedOut(repository.root), checkedOut(repository.root)])
+
+        // A branch already checked out brings its worktree's column forward instead.
+        await app.act(() => press(row(team!.id).querySelector<HTMLElement>(".graph-name")!))
+        await app.act(() => key(row(team!.id), "Enter"))
+        expect(executions).toHaveLength(2)
+        expect(app.controller.columns.snapshot().focusedId).toBe(team!.id)
+
+        await app.act(() => rightClick(row(feature!.id)))
+        expect(menuLabels()).toEqual([
+            "Check out",
+            "Check out in",
+            "Open column",
             "Rebase onto…",
             "Create branch here…",
             "Rename branch…",
             "Delete branch",
             "Copy branch name",
         ])
-        await app.act(() => press([...document.querySelectorAll<HTMLElement>("[role=menu] [role=menuitem]")].at(-1)!))
+        // Check out does as a double-click does; the chevron beside it, Check out in, chooses the worktree.
+        await app.act(() => press(menuItem("Check out")))
+        expect(executions.at(-1)).toEqual(checkedOut(repository.root))
+        expect(executions).toHaveLength(3)
+        await app.act(() => rightClick(row(feature!.id)))
+        await app.act(() => press(menuItem("Check out in")))
+        expect(menuLabels(submenu())).toEqual(["graph-project · main", "team · other/team", "New worktree"])
+        await app.act(() => press(menuItem("team · other/team", submenu())))
+        expect(executions.at(-1)).toEqual(checkedOut(linked.path))
+        expect(document.querySelector("[role=menu]") == null).toBe(true)
+
+        // A branch already checked out doesn't check out again, and the worktree holding it shows without acting.
+        await app.act(() => rightClick(row(team!.id)))
+        expect(menuItem("Check out").getAttribute("aria-disabled")).toBe("true")
+        await app.act(() => press(menuItem("Check out in")))
+        expect(menuItem("team · other/team", submenu()).getAttribute("aria-disabled")).toBe("true")
+
+        await app.act(() => rightClick(row(feature!.id)))
+        await app.act(() => press(menuItem("Copy branch name")))
         expect(await navigator.clipboard.readText()).toBe("feature/laneway")
 
-        await app.act(() => key(row(feature.id), "F2"))
+        await app.act(() => key(row(feature!.id), "F2"))
         expect(document.querySelector("[role=dialog]")?.textContent).toContain("Rename")
     })
 
@@ -324,12 +378,40 @@ function names() {
     return [...panel()!.querySelectorAll(".graph-row .graph-name")].map(name => name.textContent)
 }
 
+function doubleClick(element: HTMLElement) {
+    press(element)
+    press(element)
+    element.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true, detail: 2 }))
+}
+
 function rightClick(element: HTMLElement) {
     element.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: 20, clientY: 20 }))
 }
 
-function menuItems() {
-    return [...document.querySelectorAll<HTMLElement>("[role=menu] [role=menuitem]")]
+function menuItems(menu?: Element) {
+    return [...(menu ?? document.querySelector("[role=menu]")!).querySelectorAll<HTMLElement>("[role=menuitem]")]
+}
+
+function menuItem(label: string, menu?: Element) {
+    let item = menuItems(menu).find(item => itemName(item) == label)
+    if (!item)
+        throw new Error(`No ${label} menu item in: ${menuLabels(menu).join(", ")}`)
+    return item
+}
+
+/** Each menu item's label, without its description. */
+function menuLabels(menu?: Element) {
+    return menuItems(menu).map(itemName)
+}
+
+/** A menu item's label, or the name of one that shows only an icon. */
+function itemName(item: Element) {
+    return item.getAttribute("aria-label") ?? (item.querySelector("[slot=label]") ?? item).textContent
+}
+
+/** The open submenu, which shows after the menu it comes from. */
+function submenu() {
+    return [...document.querySelectorAll<HTMLElement>("[role=menu]")].at(-1)!
 }
 
 function columnNames() {

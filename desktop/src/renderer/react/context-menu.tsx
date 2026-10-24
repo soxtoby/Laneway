@@ -1,4 +1,6 @@
 import { createContext, type ReactNode, type RefObject, useCallback, useContext, useState } from "react"
+import { RootMenuTriggerStateContext } from "react-aria-components"
+import { useMenuTriggerState } from "react-stately"
 import { Menu } from "./ui/Menu"
 import { Popover } from "./ui/Popover"
 
@@ -26,23 +28,33 @@ export function ContextMenuHost({ children }: { children: ReactNode }) {
     return (
         <OpenContextMenu value={open}>
             {children}
-            {opened && (
-                <Popover
-                    key={opened.id}
-                    trigger="MenuTrigger"
-                    triggerRef={opened.target}
-                    getTargetRect={() => opened.point}
-                    placement="bottom start"
-                    offset={0}
-                    isOpen
-                    onOpenChange={isOpen => isOpen || close()}
-                >
-                    <Menu aria-label={opened.label} autoFocus={opened.keyboard ? "first" : true} onClose={close}>
-                        {opened.items()}
-                    </Menu>
-                </Popover>
-            )}
+            {opened && <ContextMenu key={opened.id} request={opened} onClose={close} />}
         </OpenContextMenu>
+    )
+}
+
+/**
+ * One opening of the context menu. A choice in a submenu closes every menu through the root menu's trigger state,
+ * which a menu has only inside a `MenuTrigger`, so the menu gets one of its own.
+ */
+function ContextMenu({ request, onClose }: { request: ContextMenuRequest; onClose(): void }) {
+    let state = useMenuTriggerState({ isOpen: true, onOpenChange: isOpen => isOpen || onClose() })
+    return (
+        <RootMenuTriggerStateContext value={state}>
+            <Popover
+                trigger="MenuTrigger"
+                triggerRef={request.target}
+                getTargetRect={() => request.point}
+                placement="bottom start"
+                offset={0}
+                isOpen
+                onOpenChange={isOpen => isOpen || onClose()}
+            >
+                <Menu aria-label={request.label} autoFocus={request.keyboard ? "first" : true} onClose={onClose}>
+                    {request.items()}
+                </Menu>
+            </Popover>
+        </RootMenuTriggerStateContext>
     )
 }
 

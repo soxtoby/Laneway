@@ -3,7 +3,7 @@ import type { ElementType, HTMLAttributes, PointerEvent, ReactElement, ReactNode
 import { useContext, useEffect, useRef } from "react"
 import { Button as AriaButton, type ButtonProps, TooltipContext, type TooltipProps, type TooltipTriggerState, TooltipTriggerStateContext } from "react-aria-components"
 import { MoreIcon } from "./icons"
-import { Menu, MenuTrigger } from "./ui/Menu"
+import { Menu, MenuItem, MenuTrigger, SubmenuTrigger } from "./ui/Menu"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 
 interface IconButtonProps extends Pick<ButtonProps, "onPress" | "isDisabled" | "aria-expanded"> {
@@ -35,6 +35,32 @@ export function MoreMenu({ label, children }: { label: string; children: ReactNo
             </TooltipTrigger>
             <Menu>{children}</Menu>
         </MenuTrigger>
+    )
+}
+
+interface SplitMenuItemProps {
+    label: string
+    /** The submenu's name, which its chevron takes. */
+    moreLabel: string
+    isDisabled?: boolean
+    onAction(): void
+    /** The submenu, a `Menu` of other ways to do the action. */
+    children: ReactElement
+}
+
+/**
+ * A menu item that acts from its label and opens a submenu from the chevron beside it, as a split button does.
+ * React Aria's submenu triggers can't act, so the two are items sharing a row, and the chevron is the next item down.
+ */
+export function SplitMenuItem({ label, moreLabel, isDisabled, onAction, children }: SplitMenuItemProps) {
+    return (
+        <>
+            <MenuItem className="react-aria-MenuItem split-action" isDisabled={isDisabled} onAction={onAction}>{label}</MenuItem>
+            <SubmenuTrigger>
+                <MenuItem className="react-aria-MenuItem split-more" aria-label={moreLabel} textValue={moreLabel} />
+                {children}
+            </SubmenuTrigger>
+        </>
     )
 }
 

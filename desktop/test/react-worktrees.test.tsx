@@ -119,45 +119,43 @@ describe("React worktree actions", () => {
         expect(column().querySelector("[aria-label='Working Changes']") == null).toBe(true)
     })
 
-    test("checking a branch out in a new worktree previews the destination and runs only once confirmed", async () => {
+    test("a branch column checks its branch out in a new worktree at once, with Undo in the notice", async () => {
         let scenario = inspectionScenario()
         let main = scenario.graph.branches[0]!
         let saved = scenario.saved()
         saved.repositories[0]!.columns.push({ kind: "branch", id: main.id, ref: main.preferredRef, lastSeenObjectId: main.tip, width: 380 })
         await scenario.api.updateWorkspace(saved)
-        let executions: { request: WorktreeRequest; token: string }[] = []
+        let executions: { request: WorktreeRequest; token?: string }[] = []
         let previews = 0
+        let transitions: string[] = []
         let app = await startReactApp({
             ...scenario.api,
             previewWorktree: async (_id, request) => {
                 previews++
-                return {
-                    ok: true,
-                    preview: worktreePreview(request, { destination: "D:/project.worktrees/main", affected: ["D:/project.worktrees/main"], token: "current" }),
-                }
+                return { ok: true, preview: worktreePreview(request) }
             },
             executeWorktree: async (_id, request, token) => {
                 executions.push({ request, token })
                 return { ok: true }
             },
+            transitionOperation: async (_id, action) => {
+                transitions.push(action)
+                return { ok: true }
+            },
         })
-        let checkOut = async () => {
-            await app.act(() => press(button(columnElement(main.id), "Check out branch")))
-            expect(menuLabels()).toEqual(["inspection · feature/laneway", "New worktree", "Copy branch name"])
-            await app.act(() => press(menuItem("New worktree")))
-        }
 
-        await checkOut()
-        expect(dialog().textContent).toContain("D:/project.worktrees/main")
-        await app.act(() => press(button(dialog(), "Cancel")))
-        expect(executions).toEqual([])
-        await checkOut()
-        await app.act(() => press(button(dialog(), "Confirm")))
+        await app.act(() => press(button(columnElement(main.id), "Check out branch")))
+        expect(menuLabels()).toEqual(["inspection · feature/laneway", "New worktree", "Copy branch name"])
+        await app.act(() => press(menuItem("New worktree")))
 
-        expect(executions).toEqual([{ request: { action: "create", branch: "refs/heads/main", move: true }, token: "current" }])
-        // Each review is one preview; confirming hands its token straight to the engine.
-        expect(previews).toBe(2)
+        // The engine reviews a checkout as it runs it, so nothing is previewed or confirmed first.
+        expect(executions).toEqual([{ request: { action: "create", branch: "refs/heads/main", move: true }, token: undefined }])
+        expect(previews).toBe(0)
         expect(document.querySelector("[role=dialog]") == null).toBe(true)
+        let toast = document.querySelector<HTMLElement>("[role=alertdialog]")!
+        expect(toast.textContent).toContain("Checked out main in a new worktree.")
+        await app.act(() => press(button(toast, "Undo")))
+        expect(transitions).toEqual(["undo"])
     })
 
     test("a worktree column's actions copy its branch name and its worktree's path", async () => {
@@ -177,7 +175,7 @@ describe("React worktree actions", () => {
     test("a worktree without Working Changes is removed at once, keeping commits only it holds, with Undo in the notice", async () => {
         let scenario = inspectionScenario()
         scenario.graph.branches[1]!.checkedOut[0]!.main = false
-        let executions: { request: WorktreeRequest; token: string }[] = []
+        let executions: { request: WorktreeRequest; token?: string }[] = []
         let transitions: string[] = []
         let app = await startReactApp({
             ...scenario.api,
@@ -207,12 +205,12 @@ describe("React worktree actions", () => {
         expect(transitions).toEqual(["undo"])
     })
 
-    test("a worktree renames in place, switches branch by search, and asks before removing its Working Changes", async () => {
+    test("a worktree renames in place, switches branch by search at once, and asks before removing its Working Changes", async () => {
         let scenario = inspectionScenario()
         scenario.graph.branches[1]!.checkedOut[0]!.main = false
         let requests: WorktreeRequest[] = []
         let preview: (request: WorktreeRequest) => WorktreePreview | undefined = () => undefined
-        let executed: WorktreeRequest | undefined
+        let executed: WorktreeRequest[] = []
         let app = await startReactApp({
             ...scenario.api,
             previewWorktree: async (_id, request) => {
@@ -221,7 +219,7 @@ describe("React worktree actions", () => {
                 return reviewed ? { ok: true, preview: reviewed } : { ok: false, error: { message: "Preview requested" } }
             },
             executeWorktree: async (_id, request) => {
-                executed = request
+                executed.push(request)
                 return { ok: true }
             },
         })
@@ -250,19 +248,20 @@ describe("React worktree actions", () => {
         await app.act(() => type(chooser.querySelector<HTMLInputElement>("input")!, "mai"))
         expect(menuItems()).toEqual(["main"])
         await app.act(() => press(menuItem("main")))
-        expect(requests[1]).toEqual({ action: "switch", path: "D:\\Source\\inspection", branch: "refs/heads/main", move: true })
-        await app.act(() => press(button(dialog(), "Cancel")))
+        expect(executed).toEqual([{ action: "switch", path: "D:\\Source\\inspection", branch: "refs/heads/main", move: true }])
+        expect(requests).toHaveLength(1)
+        expect(document.querySelector("[role=dialog]") == null).toBe(true)
 
         preview = request => worktreePreview(request, { affected: ["D:\\Source\\inspection"], ignored: ["generated.bin"], ignoredCount: 1, dirty: true })
         await app.act(() => press(button(header(), "Worktree actions")))
         expect(menuItems()).not.toContain("New worktree")
         await app.act(() => press(menuItem("Remove worktree")))
-        expect(requests[2]).toEqual({ action: "remove", path: "D:\\Source\\inspection", preserve: true })
+        expect(requests[1]).toEqual({ action: "remove", path: "D:\\Source\\inspection", preserve: true })
         expect(dialog().textContent).toContain("Working Changes detected")
         expect(dialog().textContent).toContain("outside undo: generated.bin.")
         await app.act(() => press(button(dialog(), "Remove worktree")))
 
-        expect(executed).toEqual({ action: "remove", path: "D:\\Source\\inspection", preserve: true })
+        expect(executed.at(-1)).toEqual({ action: "remove", path: "D:\\Source\\inspection", preserve: true })
     })
 
     test("undo and redo run from the header and the keyboard, and an undo into a taken directory asks for another name", async () => {

@@ -36,7 +36,7 @@ contextBridge.exposeInMainWorld("laneway", {
     settleDiscard: (repositoryId: string, id: string) => ipcRenderer.invoke("discard:settle", repositoryId, id),
     readCommitDraft: (repositoryId: string, path: string) => ipcRenderer.invoke("commit:draft", repositoryId, path),
     saveCommitDraft: (repositoryId: string, path: string, draft: CommitDraft) => ipcRenderer.invoke("commit:draft", repositoryId, path, draft),
-    executeWorktree: (repositoryId: string, request: WorktreeRequest, token: string) => ipcRenderer.invoke("worktree:execute", repositoryId, request, token),
+    executeWorktree: (repositoryId: string, request: WorktreeRequest, token?: string) => ipcRenderer.invoke("worktree:execute", repositoryId, request, token),
     transitionOperation: (repositoryId: string, action: "undo" | "redo", basename?: string) =>
         ipcRenderer.invoke("worktree:history", repositoryId, action, basename),
     readChanges: (repositoryId: string, requestId: string, request: ChangesRequest) => ipcRenderer.invoke("changes:read", repositoryId, requestId, request),

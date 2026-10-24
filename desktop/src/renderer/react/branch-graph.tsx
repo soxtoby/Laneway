@@ -1,22 +1,23 @@
-import type { BranchGraph, BranchGraphBranchNode, BranchGraphMarker } from "@laneway/shared"
-import { type KeyboardEvent, useEffect, useEffectEvent, useMemo, useRef } from "react"
+import type { BranchGraph, BranchGraphBranchNode, BranchGraphMarker, WorktreeRequest } from "@laneway/shared"
+import { type KeyboardEvent, type SyntheticEvent, useEffect, useEffectEvent, useMemo, useRef } from "react"
 import { Button as AriaButton, GridList, GridListItem, ListLayout, useDragAndDrop, Virtualizer } from "react-aria-components"
 import type { AppController } from "./app-controller"
 import { graphRowHeight, type GraphRowLayout, layoutBranchGraph } from "./branch-graph-layout"
 import { canRebaseOnto, rebaseable } from "./branch-rebase"
 import type { GraphView } from "./branch-workspace"
-import { Hint, IconButton } from "./controls"
+import { Hint, IconButton, SplitMenuItem } from "./controls"
 import { useRowMenu } from "./dense-row"
 import { copyText } from "./file-paths"
 import { GraphSettings } from "./graph-settings"
 import { ArchiveIcon, CloseIcon, FolderIcon, TagIcon } from "./icons"
 import { Button } from "./ui/Button"
 import { GripVertical } from "./ui/icons"
-import { MenuItem, Separator } from "./ui/Menu"
+import { Menu, MenuItem, Separator } from "./ui/Menu"
 import { ToggleButton } from "./ui/ToggleButton"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 import { useSnapshot } from "./use-snapshot"
 import { branchNodeFor, localIdentities, workspaceGraph } from "./worktree-columns"
+import { CheckoutItems, checkoutWorktrees } from "./worktree-controls"
 
 /** What a Branch Graph row carries when dragged: the branch's ref. */
 export let branchDragType = "application/x-laneway-branch"
@@ -30,7 +31,8 @@ interface GraphPanelProps {
 
 /**
  * The active repository's Branch Graph: its branches, tags, and detached worktrees on the rails of their verified
- * history. Choosing a row only selects it; Open, Enter, or a double-click opens its column.
+ * history. Choosing a row only selects it; a double-click or Enter checks its branch out, and its menu, from a
+ * right-click or the button showing on hover and focus, checks it out there or elsewhere, or opens its column.
  */
 export function BranchGraphPanel({ controller, repositoryId, mainWorktree }: GraphPanelProps) {
     let { columns } = controller
@@ -98,7 +100,7 @@ export function BranchGraphPanel({ controller, repositoryId, mainWorktree }: Gra
 function GraphRows(
     { controller, repositoryId, mainWorktree, graph, rows, view }: GraphPanelProps & { graph: BranchGraph; rows: GraphRowLayout[]; view: GraphView },
 ) {
-    let { columns, branches, rebase } = controller
+    let { columns, branches, rebase, worktrees } = controller
     let identities = useMemo(() => workspaceGraph(graph), [graph])
     let items = useMemo(() => rows.map(row => ({ id: row.node.id, row })), [rows])
     let selected = identities.branches.find(branch => branch.id == view.selectedId)
@@ -106,6 +108,9 @@ function GraphRows(
     let choosing = rebasing.choosing?.repositoryId == repositoryId ? identities.branches.find(branch => branch.id == rebasing.choosing?.sourceId) : undefined
     // While a rebase chooses its destination, a row chosen with the pointer is the destination; arrows only select.
     let pointer = useRef(false)
+    // The rows the last two presses began on. React Aria takes a double-click anywhere in a row, its buttons and open
+    // menu included, as the row's; a checkout waits for both clicks to land on the row itself.
+    let presses = useRef<(Element | null)[]>([])
     let list = useRef<HTMLDivElement>(null)
     // A revealed node scrolls to the top of the rows when it is out of view, and its row takes focus once it shows.
     let rowIndex = useEffectEvent((id: string) => rows.findIndex(row => row.node.id == id))
@@ -167,8 +172,24 @@ function GraphRows(
                 void rebase.start(repositoryId, identities, dragged.current, String(event.target.key))
         },
     })
+    let checkOut = (request: WorktreeRequest) => void worktrees.prepare(repositoryId, request)
+    // A branch checks out in the Main Worktree, unless it is checked out already or only on a remote, or the Main
+    // Worktree can't take it while it is missing or in a Historical Edit.
+    let checkoutTarget = (branch: BranchGraphBranchNode) =>
+        branch.checkedOut.length == 0 && !branch.remoteOnly ? checkoutWorktrees(graph).find(worktree => worktree.main && !worktree.missing) : undefined
+    // A double-click, Enter, or the menu's Check out checks the branch out; one that can't check out opens its column.
+    let activate = (branch: BranchGraphBranchNode) => {
+        let main = checkoutTarget(branch)
+        if (main)
+            checkOut({ action: "switch", path: main.path, branch: branch.preferredRef, move: true })
+        else
+            columns.open(branch.id)
+    }
     // Left folds the selected branch's stack and Right unfolds it; F2 renames, Delete deletes, and M rebases it.
+    // Keys pressed in a row's open menu reach here through React's portal bubbling, and are the menu's.
     let keyDown = (event: KeyboardEvent) => {
+        if (!event.currentTarget.contains(event.target as Node))
+            return
         pointer.current = false
         if (!selected || event.altKey || event.ctrlKey || event.metaKey || event.target instanceof HTMLElement && event.target.closest("button"))
             return
@@ -196,8 +217,14 @@ function GraphRows(
         <div
             className="graph-rows-area"
             onKeyDownCapture={keyDown}
-            onPointerDownCapture={() => {
-                pointer.current = true
+            onPointerDownCapture={event => {
+                pointer.current = event.currentTarget.contains(event.target as Node)
+                presses.current = [presses.current.at(-1) ?? null, pressedRow(event)]
+            }}
+            onDoubleClickCapture={event => {
+                let row = pressedRow(event)
+                if (!row || presses.current.some(pressed => pressed != row))
+                    event.stopPropagation()
             }}
         >
             <Virtualizer layout={ListLayout} layoutOptions={{ rowHeight: graphRowHeight }}>
@@ -222,12 +249,13 @@ function GraphRows(
                             rebase.chooseDestination(repositoryId, identities, key)
                         pointer.current = false
                     }}
-                    // Enter opens the selected branch, or rebases onto it while a rebase chooses its destination.
+                    // A double-click or Enter checks the branch out, or rebases onto it while a rebase chooses its destination.
                     onAction={key => {
+                        let branch = identities.branches.find(candidate => candidate.id == key)
                         if (choosing)
                             rebase.chooseDestination(repositoryId, identities, String(key))
-                        else if (identities.branches.some(branch => branch.id == key))
-                            columns.open(String(key))
+                        else if (branch)
+                            activate(branch)
                     }}
                     dependencies={[identities, choosing, view.selectedId]}
                 >
@@ -243,13 +271,26 @@ function GraphRows(
                                         : choosing && view.selectedId == branch.id && canRebaseOnto(identities, choosing, branch)
                                         ? "target"
                                         : undefined}
-                                    onOpen={() => columns.open(branch.id)}
                                     onMarker={marker => {
                                         columns.showMarker(marker, branch.id)
                                         void controller.stashes.open(repositoryId, mainWorktree, marker.objectId)
                                     }}
                                     menu={() => (
                                         <>
+                                            {!branch.remoteOnly && (
+                                                <SplitMenuItem
+                                                    label="Check out"
+                                                    moreLabel="Check out in"
+                                                    isDisabled={!checkoutTarget(branch)}
+                                                    onAction={() => activate(branch)}
+                                                >
+                                                    <Menu aria-label={`Check out ${branch.name} in`}>
+                                                        <CheckoutItems graph={graph} branch={branch} onPrepare={checkOut} />
+                                                    </Menu>
+                                                </SplitMenuItem>
+                                            )}
+                                            <MenuItem onAction={() => columns.open(branch.id)}>Open column</MenuItem>
+                                            <Separator />
                                             {rebaseable(branch) && (
                                                 <MenuItem
                                                     onAction={() => {
@@ -260,7 +301,9 @@ function GraphRows(
                                                     Rebase onto…
                                                 </MenuItem>
                                             )}
-                                            <MenuItem onAction={() => branches.createAt(repositoryId, branch.tip)}>Create branch here…</MenuItem>
+                                            <MenuItem onAction={() => branches.createAt(repositoryId, branch.tip)}>
+                                                Create branch here…
+                                            </MenuItem>
                                             {branch.localRefs.length > 0 && (
                                                 <MenuItem onAction={() => branches.rename(repositoryId, branch)}>Rename branch…</MenuItem>
                                             )}
@@ -268,7 +311,9 @@ function GraphRows(
                                                 <MenuItem onAction={() => void branches.delete(repositoryId, branch)}>Delete branch</MenuItem>
                                             )}
                                             <Separator />
-                                            <MenuItem onAction={() => void copyText(branch.name)}>Copy branch name</MenuItem>
+                                            <MenuItem onAction={() => void copyText(branch.name)}>
+                                                Copy branch name
+                                            </MenuItem>
                                             {branch.tags.map(tag => (
                                                 <MenuItem
                                                     key={tag}
@@ -289,16 +334,15 @@ function GraphRows(
     )
 }
 
-function BranchRow({ row, branch, rebase, onOpen, onMarker, menu }: {
+function BranchRow({ row, branch, rebase, onMarker, menu }: {
     row: GraphRowLayout
     branch: BranchGraphBranchNode
     /** Its part in a rebase whose destination is being chosen. */
     rebase?: "source" | "target"
-    onOpen(): void
     onMarker(marker: BranchGraphMarker): void
     menu(): React.ReactNode
 }) {
-    let { row: rowRef, openMenu } = useRowMenu({ label: `Actions for ${branch.name}`, items: menu })
+    let { row: rowRef, openMenu, actions } = useRowMenu({ label: `Actions for ${branch.name}`, items: menu })
     return (
         <GridListItem
             ref={rowRef}
@@ -309,7 +353,7 @@ function BranchRow({ row, branch, rebase, onOpen, onMarker, menu }: {
             data-rebase={rebase}
             onContextMenu={openMenu}
         >
-            {({ isFocusVisibleWithin }) => (
+            {state => (
                 <>
                     <GraphRail row={row} />
                     <span className="graph-copy">
@@ -349,10 +393,10 @@ function BranchRow({ row, branch, rebase, onOpen, onMarker, menu }: {
                         </span>
                     </span>
                     {/* Drags the branch by keyboard too: onto another row to rebase, or a worktree column's header to switch it. */}
-                    <AriaButton slot="drag" className="drag-handle" aria-label={`Drag ${branch.name}`} data-visible={isFocusVisibleWithin || undefined}>
+                    <AriaButton slot="drag" className="drag-handle" aria-label={`Drag ${branch.name}`} data-visible={state.isFocusVisibleWithin || undefined}>
                         <GripVertical />
                     </AriaButton>
-                    <AriaButton className="graph-open" onPress={onOpen}>Open</AriaButton>
+                    {actions(state)}
                 </>
             )}
         </GridListItem>
@@ -362,20 +406,14 @@ function BranchRow({ row, branch, rebase, onOpen, onMarker, menu }: {
 /** A tag or a detached worktree: it only selects, and a tag's menu copies its name. */
 function SimpleRow({ row }: { row: GraphRowLayout }) {
     let node = row.node as Extract<GraphRowLayout["node"], { kind: "tag" | "worktree" }>
-    let { row: rowRef, openMenu } = useRowMenu({
-        label: `Actions for ${node.name}`,
-        items: () => <MenuItem onAction={() => void copyText(node.name)}>Copy tag name</MenuItem>,
-    })
+    let { row: rowRef, openMenu, actions } = useRowMenu(
+        node.kind == "tag"
+            ? { label: `Actions for ${node.name}`, items: () => <MenuItem onAction={() => void copyText(node.name)}>Copy tag name</MenuItem> }
+            : undefined,
+    )
     return (
-        <GridListItem
-            ref={rowRef}
-            id={node.id}
-            textValue={node.name}
-            className="graph-row simple"
-            data-node-id={node.id}
-            onContextMenu={node.kind == "tag" ? openMenu : undefined}
-        >
-            {({ isFocusVisibleWithin }) => (
+        <GridListItem ref={rowRef} id={node.id} textValue={node.name} className="graph-row simple" data-node-id={node.id} onContextMenu={openMenu}>
+            {state => (
                 <>
                     <GraphRail row={row} />
                     <Hint text={node.title}>
@@ -385,9 +423,10 @@ function SimpleRow({ row }: { row: GraphRowLayout }) {
                         </span>
                     </Hint>
                     {/* Every row drags in a draggable list, but only a branch's drag lands anywhere. */}
-                    <AriaButton slot="drag" className="drag-handle" aria-label={`Drag ${node.name}`} data-visible={isFocusVisibleWithin || undefined}>
+                    <AriaButton slot="drag" className="drag-handle" aria-label={`Drag ${node.name}`} data-visible={state.isFocusVisibleWithin || undefined}>
                         <GripVertical />
                     </AriaButton>
+                    {actions(state)}
                 </>
             )}
         </GridListItem>
@@ -431,6 +470,12 @@ function MarkerDetails({ marker, onClose }: { marker: BranchGraphMarker; onClose
             <p>{marker.tooltip}</p>
         </aside>
     )
+}
+
+/** The row an event in the rows happened on, unless it was on one of the row's buttons. */
+function pressedRow(event: SyntheticEvent) {
+    let target = event.target as Element
+    return event.currentTarget.contains(target) && !target.closest("button") ? target.closest(".graph-row") : null
 }
 
 /** The rows the graph shows: every branch but those stacked on a folded Branch Node, one row per local identity. */

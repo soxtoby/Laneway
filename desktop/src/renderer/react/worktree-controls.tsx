@@ -1,4 +1,4 @@
-import type { BranchGraph, BranchGraphWorktree, WorktreeRequest } from "@laneway/shared"
+import type { BranchGraph, BranchGraphBranchNode, BranchGraphWorktree, WorktreeRequest } from "@laneway/shared"
 import { useContext, useState } from "react"
 import { Autocomplete, Button as AriaButton, useFilter } from "react-aria-components"
 import type { ColumnView } from "./branch-workspace"
@@ -67,8 +67,6 @@ export function WorktreeMenu({ column, graph, busy, onPrepare, chooseDirectory, 
     let showCommitAges = useContext(CommitAgesShown)
     let worktree = column.worktree
     let editing = worktree?.historicalEdit != undefined
-    let worktrees = allWorktrees(graph).filter(item => !item.historicalEdit)
-    let branchRef = column.kind == "branch" ? column.branch.preferredRef : undefined
     let repair = async (path: string) => {
         let destination = await chooseDirectory(path)
         if (destination)
@@ -89,22 +87,7 @@ export function WorktreeMenu({ column, graph, busy, onPrepare, chooseDirectory, 
                             Switch branch…
                         </MenuItem>
                     )}
-                    {!worktree && branchRef && worktrees.map(item => (
-                        <MenuItem
-                            key={item.path}
-                            textValue={item.name}
-                            isDisabled={item.missing}
-                            onAction={() => onPrepare({ action: "switch", path: item.path, branch: branchRef, move: true })}
-                        >
-                            <Text slot="label">{`${item.name} · ${worktreeBranch(graph, item)}`}</Text>
-                            <Text slot="description">{item.path}</Text>
-                        </MenuItem>
-                    ))}
-                    {!worktree && branchRef && (
-                        <MenuItem onAction={() => onPrepare({ action: "create", branch: branchRef, move: true })}>
-                            New worktree
-                        </MenuItem>
-                    )}
+                    {!worktree && column.kind == "branch" && <CheckoutItems graph={graph} branch={column.branch} onPrepare={onPrepare} />}
                     {worktree && !worktree.main && worktree.locked && (
                         <MenuItem onAction={() => onPrepare({ action: "unlock", path: worktree.path })}>Unlock worktree</MenuItem>
                     )}
@@ -144,6 +127,36 @@ export function WorktreeMenu({ column, graph, busy, onPrepare, chooseDirectory, 
             )}
         </>
     )
+}
+
+/**
+ * Where a local branch checks out: in each worktree, the Main Worktree first, or in a new one. The worktree already
+ * holding it shows without acting, and one in a Historical Edit isn't offered, as it can't switch branch.
+ */
+export function CheckoutItems({ graph, branch, onPrepare }: { graph: BranchGraph; branch: BranchGraphBranchNode; onPrepare(request: WorktreeRequest): void }) {
+    let ref = branch.preferredRef
+    return (
+        <>
+            {checkoutWorktrees(graph).map(item => (
+                <MenuItem
+                    key={item.path}
+                    textValue={item.name}
+                    isDisabled={item.missing || branch.checkedOut.some(holder => holder.path == item.path)}
+                    onAction={() => onPrepare({ action: "switch", path: item.path, branch: ref, move: true })}
+                >
+                    <Text slot="label">{`${item.name} · ${worktreeBranch(graph, item)}`}</Text>
+                    <Text slot="description">{item.path}</Text>
+                </MenuItem>
+            ))}
+            <Separator />
+            <MenuItem onAction={() => onPrepare({ action: "create", branch: ref, move: true })}>New worktree</MenuItem>
+        </>
+    )
+}
+
+/** The worktrees a branch can check out in, the Main Worktree first. */
+export function checkoutWorktrees(graph: BranchGraph) {
+    return allWorktrees(graph).filter(item => !item.historicalEdit).sort((a, b) => Number(b.main) - Number(a.main))
 }
 
 /** Finds a local branch to switch a worktree to, by typing part of its name. */

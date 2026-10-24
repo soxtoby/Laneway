@@ -163,7 +163,8 @@ describe("React Branch Graph rebase", () => {
         expect(canRebaseOnto(identities, branch("feature/sibling"), branch("child"))).toBe(false)
         expect(canRebaseOnto(identities, branch("other/team"), branch("feature/sibling"))).toBe(true)
 
-        await app.act(() => press(button(row("feature/sibling"), "Open")))
+        await app.act(() => press(button(row("feature/sibling"), "Actions for feature/sibling")))
+        await app.act(() => press(menuItem("Open column")))
         expect([...document.querySelectorAll(".column-row > .column")].map(column => column.getAttribute("aria-label"))).toEqual(["feature/sibling"])
         // Keyboard actions on the selected row act on that identity, not the one leading its tip.
         await app.act(() => press(name("feature/sibling")))

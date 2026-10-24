@@ -334,15 +334,24 @@ export function registerOperationHandlers(repositories: OpenRepositories, engine
 
         ipcMain.handle("worktree:execute", async (_event, repositoryId: unknown, value: unknown, token: unknown): Promise<WorktreeActionResult> => {
             try {
-                if (typeof repositoryId != "string" || typeof token != "string")
+                let request = WorktreeRequestSchema.parse(value)
+                // A checkout runs without asking, so the engine reviews it as it starts; anything else runs as reviewed.
+                let unreviewed = token == undefined && (request.action == "switch" || request.action == "create")
+                if (typeof repositoryId != "string" || typeof token != "string" && !unreviewed)
                     throw new Error("Review this worktree operation first.")
 
-                let request = WorktreeRequestSchema.parse(value)
                 let repository = repositories.worktreeRepository(repositoryId)
                 let result = await runEngineCommand({
                     enginePath,
                     cwd: repository.descriptor.mainWorktree,
-                    args: ["worktree", "--request", JSON.stringify(request), "--expected", token, "--git-path", repository.descriptor.git.path],
+                    args: [
+                        "worktree",
+                        "--request",
+                        JSON.stringify(request),
+                        ...typeof token == "string" ? ["--expected", token] : [],
+                        "--git-path",
+                        repository.descriptor.git.path,
+                    ],
                 }).result
                 if (result.exitCode)
                     throw new Error(result.messages.find(message => message.type == "error")?.message ?? result.diagnostics)

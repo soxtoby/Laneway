@@ -164,6 +164,54 @@
     }
 }
 
+/* A split menu item's action and the chevron opening its submenu share a row, as a split button's halves do: the
+   action takes the menu's columns up to the end one, where submenu chevrons sit, and the chevron the rest. */
+.react-aria-MenuItem.split-action {
+    grid-column: 1 / 5;
+    grid-template-areas:
+        ". check icon label"
+        ". . . desc";
+    margin-inline-end: 0;
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
+
+    &:has(+ .split-more:last-of-type) {
+        margin-bottom: var(--spacing);
+    }
+}
+
+.react-aria-MenuItem.split-more {
+    grid-column: 5 / -1;
+    display: flex;
+    justify-content: center;
+    padding-inline: var(--spacing-2);
+    margin-inline-start: 0;
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+
+    .split-action:first-of-type + & {
+        margin-top: var(--spacing);
+    }
+
+    .tabler-icon-chevron-right {
+        margin: 0;
+    }
+
+    /* The divider gives way to either half's highlight. */
+    &::before {
+        content: "";
+        position: absolute;
+        inset-block: var(--spacing-2);
+        inset-inline-start: 0;
+        border-inline-start: 0.5px solid var(--border-color);
+    }
+
+    &:is([data-focused], [data-open])::before,
+    .split-action[data-focused] + &::before {
+        visibility: hidden;
+    }
+}
+
 /* Hints can run to a path or a commit message, so they wrap wider and keep their line breaks. */
 .react-aria-Tooltip.hint {
     max-width: min(480px, 90vw);
@@ -1166,7 +1214,9 @@
     display: flex;
     opacity: 0;
 
-    &[data-visible] {
+    /* An open menu keeps its button showing after the pointer leaves the row for the menu. */
+    &[data-visible],
+    &:has([aria-expanded="true"]) {
         opacity: 1;
     }
 }
@@ -3582,28 +3632,6 @@
 
     &[data-hovered] {
         background: var(--stash-background-hover);
-    }
-
-    &[data-focus-visible] {
-        outline: 2px solid var(--focus-ring-color);
-    }
-}
-
-.graph-open {
-    flex: 0 0 auto;
-    height: 24px;
-    padding: 0 var(--spacing-3);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    background: var(--gray-50);
-    color: var(--text-color);
-    font: 600 12px var(--font-family);
-    outline: none;
-
-    &[data-hovered] {
-        border-color: var(--highlight-background);
-        background: var(--highlight-background);
-        color: var(--highlight-foreground);
     }
 
     &[data-focus-visible] {

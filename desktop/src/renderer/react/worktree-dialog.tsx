@@ -49,7 +49,7 @@ export function WorktreeDialog({ worktrees }: { worktrees: WorktreeActions }) {
     )
 }
 
-// A removal reaches the dialog only when the worktree has Working Changes; any other goes at once.
+// A removal reaches the dialog only when the worktree has Working Changes, and a checkout never does; either goes at once.
 function PreviewDetails({ preview, preserve, busy, worktrees }: { preview: WorktreePreview; preserve: boolean; busy: boolean; worktrees: WorktreeActions }) {
     let request = preview.request
     return (
@@ -67,11 +67,6 @@ function PreviewDetails({ preview, preserve, busy, worktrees }: { preview: Workt
                     </li>
                 ))}
             </ul>
-            {(request.action == "switch" || request.action == "create") && (
-                <p>
-                    Working Changes are stashed before switching. A previous holder stays detached. Existing stashes remain available for explicit application.
-                </p>
-            )}
             {request.action == "remove" && (
                 <>
                     <div className="worktree-keep">

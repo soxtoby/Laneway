@@ -235,6 +235,15 @@ export function createAppController(api: Api): AppController {
             inspection.refreshWorking()
             if (request.action == "remove")
                 offerUndo(repositoryId, "worktree.removed", `Removed worktree ${request.path.split(/[\\/]/).pop()}.`)
+            // A checkout brings the column of the worktree it went into forward.
+            if ((request.action == "switch" || request.action == "create") && request.branch) {
+                let ref = request.branch.startsWith("refs/heads/") ? request.branch : `refs/heads/${request.branch}`
+                let graph = columns.snapshot().graph
+                if (graph && workspaceGraph(graph).branches.some(branch => branch.id == `branch:${ref}`))
+                    columns.open(`branch:${ref}`)
+                let into = request.action == "switch" ? request.path.split(/[\\/]/).pop() : "a new worktree"
+                offerUndo(repositoryId, "worktree.checked-out", `Checked out ${ref.slice(11)} in ${into}.`)
+            }
         },
         transitioned: rewritten,
     })

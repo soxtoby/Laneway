@@ -59,7 +59,8 @@ declare global {
             settleDiscard(repositoryId: string, id: string): Promise<void>
             readCommitDraft(repositoryId: string, path: string): Promise<CommitDraft>
             saveCommitDraft(repositoryId: string, path: string, draft: CommitDraft): Promise<void>
-            executeWorktree(repositoryId: string, request: WorktreeRequest, token: string): Promise<WorktreeActionResult>
+            /** A checkout may go without a review's token, as the engine reviews it as it starts. */
+            executeWorktree(repositoryId: string, request: WorktreeRequest, token?: string): Promise<WorktreeActionResult>
             transitionOperation(repositoryId: string, action: "undo" | "redo", basename?: string): Promise<WorktreeActionResult>
             readChanges(repositoryId: string, requestId: string, request: ChangesRequest): Promise<ChangesResult>
             readFileHistory(repositoryId: string, requestId: string, request: FileHistoryRequest): Promise<FileHistoryResult>

@@ -18,14 +18,14 @@ export interface WorktreeActionsSnapshot {
 }
 
 /**
- * Creating, switching, renaming, repairing, unlocking, and removing worktrees, each reviewed by the engine
- * first and confirmed in a dialog, except a removal without Working Changes, which runs at once; and undoing
- * or redoing the Operation History.
+ * Creating, switching, renaming, repairing, unlocking, and removing worktrees; and undoing or redoing the Operation
+ * History. Checking a branch out, in a worktree or a new one, and removing a worktree without Working Changes run at
+ * once; any other operation is reviewed by the engine first and confirmed in a dialog.
  */
 export interface WorktreeActions extends Store<WorktreeActionsSnapshot> {
     /**
-     * Reviews an operation; the dialog then shows what it would do, unless it removes a worktree without Working
-     * Changes. `columnId` is the column it was asked from.
+     * Starts an operation: a checkout, or a removal without Working Changes, runs at once, and any other shows in the
+     * dialog once reviewed. `columnId` is the column it was asked from.
      */
     prepare(repositoryId: string, request: WorktreeRequest, columnId?: string): Promise<void>
     setPreserve(preserve: boolean): void
@@ -56,8 +56,12 @@ export function createWorktreeActions({ api, completed, transitioned, mutating }
     // Choosing what a removal keeps leaves the token valid; the engine re-reads the worktree under
     // its lock and refuses if anything reviewed has changed since.
     async function run(repositoryId: string, preview: WorktreePreview, preserve: boolean) {
-        let request = preview.request.action == "remove" ? { ...preview.request, preserve } : preview.request
-        let result = await api.executeWorktree(repositoryId, request, preview.token)
+        await perform(repositoryId, preview.request.action == "remove" ? { ...preview.request, preserve } : preview.request, preview.token)
+    }
+
+    // Without a token, the engine reviews the operation itself as it starts.
+    async function perform(repositoryId: string, request: WorktreeRequest, token?: string) {
+        let result = await api.executeWorktree(repositoryId, request, token)
         if (!result.ok)
             throw new Error(result.error.message)
         set({ preview: undefined })
@@ -87,6 +91,10 @@ export function createWorktreeActions({ api, completed, transitioned, mutating }
             act(async () => {
                 columnId = sourceColumn
                 store.publish({ repositoryId, busy: true, preserve: true })
+                // A checkout stashes the Working Changes it leaves behind and detaches any worktree it takes the
+                // branch from, all of which Undo restores, so it has nothing to ask.
+                if (request.action == "switch" || request.action == "create")
+                    return perform(repositoryId, request)
                 let result = await api.previewWorktree(repositoryId, request)
                 if (!result.ok)
                     throw new Error(result.error.message)

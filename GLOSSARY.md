@@ -78,7 +78,7 @@ A graph of visible lines of work whose edges place branches relative to their Ba
 _Avoid_: Commit graph
 
 **Graph Selection**:
-The one Branch Node, Tag Node, or Virtual Branch highlighted in a repository's Branch Graph. Selecting only highlights the node and exposes its controls; it never opens a Workspace Column, and hiding the node clears the selection.
+The one Branch Node, Tag Node, or Virtual Branch highlighted in a repository's Branch Graph. Selecting only highlights the node and exposes its controls; it never opens a Workspace Column, and hiding the node clears the selection. Double-clicking a branch, or Enter, checks it out in the Main Worktree at once, with Undo; a branch already checked out, only on a remote, or that the Main Worktree can't take opens its column instead. Its menu's Check out does the same where it can check out, and the chevron beside it, Check out in, chooses any worktree or a new one.
 _Avoid_: Open branch, active branch
 
 **Open Branch**:
