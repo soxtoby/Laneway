@@ -49,9 +49,25 @@ describe("React repository panel", () => {
         expect(monogramLetters(editor).value).toBe("ID")
         await app.act(() => press(option(editor, "Violet")))
         expect(tile()).toEqual({ kind: "monogram", text: "ID", tone: "violet" })
-        // Letters that aren't valid keep the previous tile.
-        await app.act(() => type(monogramLetters(editor), "too long"))
-        expect(tile()).toEqual({ kind: "monogram", text: "ID", tone: "violet" })
+        // The field holds two letters as a maximum length would: a letter typed into it when full is
+        // refused, and pasted text is cut to the room left.
+        await app.act(() => type(monogramLetters(editor), "IDs"))
+        expect(monogramLetters(editor).value).toBe("ID")
+        await app.act(() => type(monogramLetters(editor), "sID"))
+        expect(monogramLetters(editor).value).toBe("ID")
+        await app.act(() => type(monogramLetters(editor), "yt desk"))
+        expect(monogramLetters(editor).value).toBe("yt")
+        expect(tile()).toEqual({ kind: "monogram", text: "YT", tone: "violet" })
+        await app.act(() => type(monogramLetters(editor), "y"))
+        await app.act(() => type(monogramLetters(editor), "yak"))
+        expect(monogramLetters(editor).value).toBe("ya")
+        // An input method's text stays whole while it is composed, so it can become two letters.
+        await app.act(() => monogramLetters(editor).dispatchEvent(new Event("compositionstart", { bubbles: true })))
+        await app.act(() => type(monogramLetters(editor), "にほん"))
+        expect(monogramLetters(editor).value).toBe("にほん")
+        await app.act(() => type(monogramLetters(editor), "日本語"))
+        await app.act(() => monogramLetters(editor).dispatchEvent(new Event("compositionend", { bubbles: true })))
+        expect(monogramLetters(editor).value).toBe("日本")
         await app.act(() => type(monogramLetters(editor), "t3"))
         await app.act(() => pause(250))
         expect(saves.at(-1)?.repositories[0]).toMatchObject({ label: "Inspection desk", icon: { kind: "monogram", text: "T3", color: "violet" } })

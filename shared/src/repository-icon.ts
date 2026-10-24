@@ -66,9 +66,13 @@ export let RepositoryLabelSchema = z.string().trim().min(1).max(120)
 
 let segmenter = typeof Intl.Segmenter == "function" ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : undefined
 
-/** Counts user-perceived characters, so "é" or an emoji with modifiers is one. */
+/** Splits text into user-perceived characters, so "é" or an emoji with modifiers is one. */
+export function graphemes(text: string) {
+    return segmenter ? [...segmenter.segment(text)].map(part => part.segment) : [...text]
+}
+
 export function graphemeCount(text: string) {
-    return segmenter ? [...segmenter.segment(text)].length : [...text].length
+    return graphemes(text).length
 }
 
 /** The normalized monogram text, or nothing when it is not one or two letters or numbers. */

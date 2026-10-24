@@ -1,6 +1,6 @@
-import type { RepositoryIcon } from "@laneway/shared"
+import type { RepositoryIcon, RepositoryIconColor } from "@laneway/shared"
 import { graphemeCount, repositoryInitials } from "@laneway/shared"
-import { createElement, type ReactNode, useReducer } from "react"
+import { createElement, type ReactNode, useLayoutEffect, useReducer, useRef, useState } from "react"
 import { catalogNode } from "./icon-catalog"
 import { type IconImageApi, iconImageUrl } from "./repository-icon-images"
 
@@ -27,21 +27,10 @@ export function RepositoryTile({ icon, name, api, isActive = false, isMissing = 
         if (url)
             content = <image href={url} x={2} y={2} width={16} height={16} preserveAspectRatio="xMidYMid meet" />
     } else if (icon?.kind == "emoji")
-        content = <text {...centredText} y={14.6} fontSize={12}>{icon.emoji}</text>
-    else if (icon?.kind == "monogram") {
-        // Fitted to the tile, so wide glyphs never overflow.
-        content = (
-            <text
-                {...centredText}
-                className="tile-text"
-                data-tone={icon.color}
-                textLength={graphemeCount(icon.text) == 1 ? 7.5 : 14}
-                lengthAdjust="spacingAndGlyphs"
-            >
-                {icon.text}
-            </text>
-        )
-    } else if (icon?.kind == "icon") {
+        content = <text x={10} y={14.6} textAnchor="middle" fontSize={12}>{icon.emoji}</text>
+    else if (icon?.kind == "monogram")
+        content = <TileLetters text={icon.text} tone={icon.color} />
+    else if (icon?.kind == "icon") {
         let node = catalogNode(icon.name, loaded)
         if (node) {
             content = (
@@ -73,9 +62,43 @@ export function RepositoryTile({ icon, name, api, isActive = false, isMissing = 
                 data-filled={(isActive && isInitials) || undefined}
                 data-missing={isMissing || undefined}
             />
-            {isInitials ? <text {...centredText} className="tile-text" data-inverse={isActive || undefined}>{repositoryInitials(name)}</text> : content}
+            {isInitials ? <TileLetters text={repositoryInitials(name)} isInverse={isActive} /> : content}
         </svg>
     )
 }
 
-let centredText = { x: 10, y: 13.4, textAnchor: "middle", fontSize: 8, fontWeight: 700 } as const
+// Segoe UI's capital height as a share of its size, to centre capitals on the tile.
+let capHeight = 0.7
+let lettersWidth = 14
+
+/**
+ * Initials or a monogram at their natural proportions, with their capitals centred and a lone letter
+ * drawn larger. Letters too wide for the tile shrink to fit around its centre rather than overflow.
+ */
+function TileLetters({ text, tone, isInverse = false }: { text: string; tone?: RepositoryIconColor; isInverse?: boolean }) {
+    let ref = useRef<SVGTextElement>(null)
+    let [scale, setScale] = useState(1)
+    // Only the drawn glyphs know their width; the element's own transform doesn't change it.
+    useLayoutEffect(() => {
+        let width = ref.current?.getComputedTextLength() ?? 0
+        setScale(width > lettersWidth ? lettersWidth / width : 1)
+    }, [text])
+    let fontSize = graphemeCount(text) == 1 ? 11 : 9
+    let offset = 10 - 10 * scale
+    return (
+        <text
+            ref={ref}
+            className="tile-text"
+            data-tone={tone}
+            data-inverse={isInverse || undefined}
+            x={10}
+            y={10 + capHeight * fontSize / 2}
+            textAnchor="middle"
+            fontSize={fontSize}
+            fontWeight={600}
+            transform={scale < 1 ? `matrix(${scale} 0 0 ${scale} ${offset} ${offset})` : undefined}
+        >
+            {text}
+        </text>
+    )
+}

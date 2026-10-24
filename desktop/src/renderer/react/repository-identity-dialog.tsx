@@ -1,7 +1,7 @@
 import type { OpenRepository, RepositoryIconColor } from "@laneway/shared"
-import { monogramText, repositoryIconColors, repositoryInitials } from "@laneway/shared"
+import { graphemes, monogramText, repositoryIconColors, repositoryInitials } from "@laneway/shared"
 import type { ReactNode } from "react"
-import { useReducer } from "react"
+import { useReducer, useRef } from "react"
 import { Autocomplete, type Key, ListBox, ListBoxItem, type Selection } from "react-aria-components"
 import { Hint } from "./controls"
 import { iconCatalog, iconLabel, searchIcons } from "./icon-catalog"
@@ -176,6 +176,13 @@ function EmojiPicker({ editor, state }: { editor: RepositoryIdentityEditor; stat
 
 function MonogramField({ editor, state, folder, api }: { editor: RepositoryIdentityEditor; state: IdentitySnapshot; folder: string; api: IconImageApi }) {
     let text = monogramText(state.monogram)
+    // An input method's text is left whole while it is composed, since changing it would end the
+    // composition, and is held to two letters once committed.
+    let composedFrom = useRef<string>(undefined)
+    let change = (kept: string) => {
+        if (kept != state.monogram)
+            editor.setMonogram(kept)
+    }
     return (
         <div className="monogram-row">
             <RepositoryTile
@@ -187,9 +194,16 @@ function MonogramField({ editor, state, folder, api }: { editor: RepositoryIdent
             <TextField
                 aria-label="Monogram letters"
                 value={state.monogram}
-                onChange={editor.setMonogram}
-                maxLength={8}
+                onChange={typed => change(composedFrom.current == undefined ? twoLetters(state.monogram, typed) : typed)}
+                onCompositionStart={() => {
+                    composedFrom.current = state.monogram
+                }}
+                onCompositionEnd={event => {
+                    change(twoLetters(composedFrom.current ?? state.monogram, event.currentTarget.value))
+                    composedFrom.current = undefined
+                }}
                 autoComplete="off"
+                spellCheck="false"
                 isInvalid={!text}
                 description={state.iconTouched ? "One or two letters or numbers." : "The repository's initials until you choose something else."}
             />
@@ -260,6 +274,23 @@ function onlyKey(keys: Selection, choose: (key: Key) => void) {
         if (key != undefined)
             choose(key)
     }
+}
+
+// A maximum length of two counted in letters rather than code units, so an accented or combined
+// letter counts once. As with maxLength, what was typed or pasted is cut to the room left around it.
+function twoLetters(previous: string, typed: string) {
+    let after = graphemes(typed)
+    if (after.length <= 2)
+        return typed
+    let before = graphemes(previous)
+    let start = 0
+    while (start < before.length && before[start] == after[start])
+        start++
+    let end = 0
+    while (end < before.length - start && before.at(-1 - end) == after.at(-1 - end))
+        end++
+    let inserted = after.slice(start, after.length - end).slice(0, Math.max(0, 2 - start - end))
+    return [...before.slice(0, start), ...inserted, ...before.slice(before.length - end)].join("")
 }
 
 function colorLabel(color: RepositoryIconColor) {
