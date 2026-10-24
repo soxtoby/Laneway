@@ -78,11 +78,13 @@ function IdentityFields(
                     </SegmentedControlItem>
                 ))}
             </SegmentedControl>
-            {(state.mode == "icon" || state.mode == "monogram") && <ColorPicker editor={editor} state={state} />}
-            {state.mode == "icon" && <IconPicker editor={editor} state={state} />}
-            {state.mode == "emoji" && <EmojiPicker editor={editor} state={state} />}
-            {state.mode == "monogram" && <MonogramField editor={editor} state={state} folder={folder} api={api} />}
-            {state.mode == "image" && <ImagePicker editor={editor} state={state} repository={repository} api={api} />}
+            <div className="identity-mode">
+                {(state.mode == "icon" || state.mode == "monogram") && <ColorPicker editor={editor} state={state} />}
+                {state.mode == "icon" && <IconPicker editor={editor} state={state} />}
+                {state.mode == "emoji" && <EmojiPicker editor={editor} state={state} />}
+                {state.mode == "monogram" && <MonogramField editor={editor} state={state} folder={folder} api={api} />}
+                {state.mode == "image" && <ImagePicker editor={editor} state={state} repository={repository} api={api} />}
+            </div>
             <div className="dialog-actions">
                 <Button variant="secondary" onPress={editor.reset}>Reset</Button>
                 <Button variant="accent" onPress={editor.close}>Done</Button>
@@ -125,7 +127,7 @@ function IconPicker({ editor, state }: { editor: RepositoryIdentityEditor; state
                 : (
                     <ListBox
                         aria-label="Icons"
-                        className="picker-grid"
+                        className="picker-grid icons"
                         layout="grid"
                         selectionMode="single"
                         selectedKeys={[state.iconName]}

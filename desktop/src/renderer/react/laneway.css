@@ -2579,18 +2579,33 @@
     white-space: nowrap;
 }
 
+/* Every icon type gets the icon picker's height, and its lists scroll within it, so changing type
+   or searching never moves the dialog. React Aria slides the type's indicator from where the last
+   one was on screen, so a moving dialog would send it in from above or below. */
+.identity-mode {
+    height: 308px;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-4);
+}
+
 /* Icon, emoji, and colour pickers: grids of options with one chosen. */
 .picker-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(32px, 1fr));
+    align-content: start;
     gap: var(--spacing-1);
-    max-height: 176px;
     overflow-y: auto;
     outline: none;
 
     &.swatches {
+        flex: none;
         grid-template-columns: repeat(9, 1fr);
-        max-height: none;
+    }
+
+    &.icons {
+        flex: 1;
     }
 }
 
@@ -2659,7 +2674,6 @@
 
 .image-list {
     display: grid;
-    max-height: 240px;
     overflow-y: auto;
     border: 1px solid var(--border-color);
     border-radius: var(--radius);

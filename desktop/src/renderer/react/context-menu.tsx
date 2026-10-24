@@ -1,4 +1,4 @@
-import { createContext, type ReactNode, type RefObject, useContext, useState } from "react"
+import { createContext, type ReactNode, type RefObject, useCallback, useContext, useState } from "react"
 import { Menu } from "./ui/Menu"
 import { Popover } from "./ui/Popover"
 
@@ -21,7 +21,8 @@ let OpenContextMenu = createContext<(request: ContextMenuRequest) => void>(() =>
 export function ContextMenuHost({ children }: { children: ReactNode }) {
     let [opened, setOpened] = useState<ContextMenuRequest & { id: number }>()
     let close = () => setOpened(undefined)
-    let open = (request: ContextMenuRequest) => setOpened(current => ({ ...request, id: (current?.id ?? 0) + 1 }))
+    // Every row reads this, so it stays the same function whenever the app re-renders.
+    let open = useCallback((request: ContextMenuRequest) => setOpened(current => ({ ...request, id: (current?.id ?? 0) + 1 })), [])
     return (
         <OpenContextMenu value={open}>
             {children}

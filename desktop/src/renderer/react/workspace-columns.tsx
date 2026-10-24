@@ -1,6 +1,6 @@
 import type { BranchGraph, FileListView, WorktreeRecovery, WorktreeRequest } from "@laneway/shared"
 import clsx from "clsx"
-import { type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, useEffect, useMemo, useRef } from "react"
+import { type DragEvent, type KeyboardEvent, memo, type MouseEvent, type PointerEvent, useEffect, useMemo, useRef } from "react"
 import { Button as AriaButton, ToggleButton, useDrop } from "react-aria-components"
 import type { AppController } from "./app-controller"
 import { defaultAuxiliaryColumnWidth } from "./auxiliary-columns"
@@ -26,8 +26,12 @@ import { MissingWorktree, WorktreeMenu, WorktreeTitle } from "./worktree-control
 // Polls together with window focus: a hidden or unfocused window waits.
 let pollInterval = 5_000
 
-/** The active repository's Workspace Columns, side by side, each resizable, collapsible, and movable. */
-export function WorkspaceColumns({ controller, fileListView }: { controller: AppController; fileListView: FileListView }) {
+/**
+ * The active repository's Workspace Columns, side by side, each resizable, collapsible, and movable.
+ * They follow their own controllers, so the app's snapshot, which changes with each Workspace State
+ * update such as a repository's new icon, doesn't re-render every row.
+ */
+export const WorkspaceColumns = memo(function WorkspaceColumns({ controller, fileListView }: { controller: AppController; fileListView: FileListView }) {
     let { columns, inspection } = controller
     let snapshot = useSnapshot(columns)
     let inspected = useSnapshot(inspection)
@@ -171,7 +175,7 @@ export function WorkspaceColumns({ controller, fileListView }: { controller: App
             })}
         </section>
     )
-}
+})
 
 interface HeaderDrag {
     start(column: ColumnView, event: DragEvent): void
