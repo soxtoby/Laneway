@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-/** The palette shared by icon and monogram overrides; each name maps to light, dark, and rail tones in the renderer. */
+/** The palette shared by icon and monogram overrides; each name maps to a light and a dark tone in the renderer. */
 export const repositoryIconColors = [
     "gray",
     "red",
