@@ -10,6 +10,12 @@ export let expandAllNode: CatalogNode = [["path", { d: "M8 9l4 -4l4 4" }], ["pat
 /** The selector's chevrons turned to face each other, as Tabler draws no collapse-all. */
 export let collapseAllNode: IconNode = [["path", { d: "M8 5l4 4l4 -4", key: "svg-0" }], ["path", { d: "M16 19l-4 -4l-4 4", key: "svg-1" }]]
 
+/** Publish's arrow with a second head, for a force publish, as Tabler draws none. */
+export let forcePublishNode: IconNode = [["path", { d: "M12 10v10", key: "svg-0" }], ["path", { d: "M8 14l4 -4l4 4", key: "svg-1" }], ["path", {
+    d: "M8 18l4 -4l4 4",
+    key: "svg-2",
+}], ["path", { d: "M4 4h16", key: "svg-3" }]]
+
 /** Hand-drawn 16-unit strokes for concepts Tabler has no icon for. */
 export let customIconPaths = {
     // A head with no branch line above it: the node and its history, cut off from any ref.

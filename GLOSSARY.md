@@ -110,7 +110,7 @@ A repository-scoped fetch and local synchronization of every open Active Stack, 
 _Avoid_: Git pull
 
 **Publish**:
-An explicit remote update for the focused Active Stack, excluding its Base Branch and unrelated stacks. Branches without upstream publish to same-named branches on the selected remote; the control identifies every destination and force-with-lease update before activation.
+An explicit remote update for a branch's Active Stack, up to and including that branch, excluding its Base Branch and unrelated stacks. Branches without upstream publish to same-named branches on the selected remote; the control identifies every destination and force-with-lease update before activation.
 _Avoid_: Push, push stack
 
 **Publish Receipt**:

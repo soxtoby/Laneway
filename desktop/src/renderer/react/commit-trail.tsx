@@ -13,6 +13,8 @@ import { EditableName } from "./editable-name"
 import { copyText } from "./file-paths"
 import { BranchIcon, DiffIcon, MoreIcon, WarningIcon } from "./icons"
 import { branchStack, type ColumnInspection, type Inspection } from "./inspection"
+import { offersPublish, type Publish } from "./publish"
+import { PublishButton } from "./publish-control"
 import type { Reword } from "./reword"
 import { TransferGrip, TransferReview, TransferSeam, useTransferScope, useTransferTarget } from "./transfer"
 import { Button } from "./ui/Button"
@@ -42,6 +44,10 @@ export interface CommitTrailProps {
     compare(from: ComparisonRef, to: ComparisonRef): void
     /** Resolves the conflicts that rewrites deferred in the column's commits. */
     conflicts: Conflicts
+    /** Publishes a branch's Active Stack from its header. */
+    publish: Publish
+    /** Another operation is running, which can move the stacks. */
+    busy: boolean
     repositoryId: string
 }
 
@@ -132,6 +138,15 @@ function StackBranch(props: StackBranchProps) {
                             {unresolved}
                         </AriaButton>
                     )}
+                {branch.localRefs.length > 0 && (
+                    <PublishButton
+                        publish={props.publish}
+                        repositoryId={props.repositoryId}
+                        branch={branch.localRefs[0]!}
+                        offered={offersPublish(props.graph, branch, below)}
+                        busy={props.busy}
+                    />
+                )}
                 {/* The branch at the bottom of the stack has no base in the column, so only those above it compare. */}
                 {below && (
                     <IconButton

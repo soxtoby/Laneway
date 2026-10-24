@@ -4091,64 +4091,47 @@
     }
 }
 
-/* Publish at the focused column's foot: the button, every destination, and the stack's latest receipt. */
-.publish-control {
-    flex: 0 0 auto;
-    margin-top: auto;
-    display: grid;
-    gap: var(--spacing-1);
-    padding: var(--spacing-2);
-    border-top: 1px solid var(--border-color);
-    background: var(--tray-background);
-    font-size: var(--font-size-sm);
-}
-
-.publish-row {
+/* Publish on a branch header: the Engine's progress while it runs, then the icon. */
+.publish-slot {
+    flex: 0 1 auto;
+    min-width: 0;
     display: flex;
     align-items: center;
-    gap: var(--spacing-2);
-    min-width: 0;
+    gap: var(--spacing-1);
 }
 
 .publish-button {
-    flex: 0 0 auto;
-    display: inline-flex;
-}
+    &[data-kind="force"]:not([data-disabled]) {
+        color: var(--invalid-color);
+    }
 
-.publish-button .button-base[data-force]:not([data-disabled]) {
-    --highlight-background: var(--force-background);
-    --highlight-background-pressed: var(--force-background-pressed);
-    --highlight-foreground: var(--force-foreground);
-}
-
-.publish-stack {
-    min-width: 0;
-    color: var(--text-color-placeholder);
-    overflow-wrap: anywhere;
+    &[data-disabled] {
+        color: var(--text-color-disabled);
+    }
 }
 
 .publish-progress {
     min-width: 0;
     overflow: hidden;
     color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+    font-weight: 400;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-/* Each of the receipt's actions: what it does, the destinations it changes, and its button. */
-.publish-receipt {
+/* What the icon publishes: its name, then every destination, with kinds lined up in a column of their own. */
+.react-aria-Tooltip.publish-tooltip {
+    max-width: min(480px, 90vw);
     display: grid;
-    justify-items: start;
     gap: var(--spacing-1);
-    margin-top: var(--spacing-1);
-
-    .publish-receipt-summary {
-        color: var(--text-color-placeholder);
-        overflow-wrap: anywhere;
-    }
 }
 
-/* Kinds line up in a column of their own. */
+.publish-tooltip-label {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
 .publish-destinations {
     display: grid;
     grid-template-columns: max-content minmax(0, 1fr);
@@ -4159,10 +4142,6 @@
 
     li {
         display: contents;
-    }
-
-    small {
-        color: var(--text-color-placeholder);
     }
 }
 
@@ -4191,13 +4170,9 @@
     font-weight: 600;
 }
 
-.publish-kind {
-    color: var(--text-color-placeholder);
-
-    :is([data-kind="force"], [data-kind="delete"]) > & {
-        color: var(--invalid-color);
-        font-weight: 600;
-    }
+/* A force or deletion rewrites remote history. */
+:is([data-kind="force"], [data-kind="delete"]) > .publish-kind {
+    font-weight: 600;
 }
 
 /* A publish that stopped short: each update's outcome, what stayed as it was, and the way forward. */

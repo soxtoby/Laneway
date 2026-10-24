@@ -1,5 +1,5 @@
 import { gitText, redactGitText, type RepositoryGit } from "@laneway/git"
-import { type BranchGraphReadOptions, type PublishPlan, type PublishReceipt, publishReceiptStatus, type PublishRequest, type PublishResult, type PublishUpdate } from "@laneway/shared"
+import { type BranchGraph, type BranchGraphReadOptions, type PublishBranchPlan, type PublishPlan, type PublishReceipt, publishReceiptStatus, type PublishRequest, type PublishResult, type PublishUpdate } from "@laneway/shared"
 import { isAncestor, readActiveStack } from "./active-stack"
 import { executeConflict } from "./conflicts/conflict-operations"
 import { ChangeRecorder } from "./operations/change-recorder"
@@ -32,6 +32,8 @@ export async function executePublish(
 ): Promise<PublishResult> {
     if (request.action == "plan" || request.action == "publish")
         return publishStack(repo, request, graphOptions, context)
+    if (request.action == "plans")
+        return planBranches(repo, request, graphOptions)
 
     let receipt = await readReceipt(repo, request.receipt)
     if (!receipt)
@@ -45,7 +47,8 @@ async function publishStack(
     graphOptions: BranchGraphReadOptions,
     context: PublishContext,
 ) {
-    let plan = await planPublish(repo, request.branch, request.remote, graphOptions)
+    let { plan, refs } = await planStack(await readPublishing(repo, graphOptions, request.remote), request.branch)
+    plan.receipt = await latestReceipt(repo, refs.map(shortName))
     if (request.action == "publish" && request.token && request.token != plan.token)
         throw new OperationRuntimeError("operation.precondition-failed", "The stack changed after it was reviewed. Review the publish again.")
     return request.action == "plan" || plan.blocked || !plan.updates.length
@@ -78,9 +81,46 @@ async function restore(repo: RepositoryGit, receipt: PublishReceipt, context: Pu
         : { type: "result", command: "publish", status: "nothing", message: "Nothing from this publish reached the remote.", receipt }
 }
 
-async function planPublish(repo: RepositoryGit, branch: string, remote: string | undefined, graphOptions: BranchGraphReadOptions): Promise<PublishPlan> {
+// Several branches' plans share one reading of the repository, so planning every branch the desktop's columns
+// show costs little more than planning one.
+async function planBranches(
+    repo: RepositoryGit,
+    request: Extract<PublishRequest, { action: "plans" }>,
+    graphOptions: BranchGraphReadOptions,
+): Promise<PublishResult> {
+    let reading = await readPublishing(repo, graphOptions, request.remote)
+    let plans: PublishBranchPlan[] = []
+    for (let branch of request.branches) {
+        try {
+            let { plan } = await planStack(reading, branch)
+            plans.push({ branch, message: planResult(plan).message, plan })
+        } catch (error) {
+            plans.push({ branch, message: error instanceof Error ? error.message : String(error) })
+        }
+    }
+    return { type: "result", command: "publish", status: "planned", message: `Planned ${list(request.branches.map(shortName))}.`, plans }
+}
+
+// What every plan for one request reads once.
+interface PublishReading {
+    repo: RepositoryGit
+    remotes: string[]
+    graph: BranchGraph
+    locals: Map<string, LocalBranch>
+    /** The remote the request named, if any. */
+    remote?: string
+    /** Each branch's update, by ref, shared by every stack it belongs to. */
+    updates: Map<string, Promise<PublishUpdate | undefined>>
+}
+
+async function readPublishing(repo: RepositoryGit, graphOptions: BranchGraphReadOptions, remote?: string): Promise<PublishReading> {
     let remotes = (await gitText(repo, ["remote"])).split("\n").filter(Boolean)
     let graph = await repo.startReadBranchGraph({ ...graphOptions, refreshRemote: false }).result
+    return { repo, remotes, graph, locals: await readLocalBranches(repo, remotes), remote, updates: new Map() }
+}
+
+async function planStack(reading: PublishReading, branch: string): Promise<{ plan: PublishPlan; refs: string[] }> {
+    let { repo, remotes, graph, locals, remote } = reading
     let stack = await readActiveStack(repo, graph, branch)
     if (!stack)
         throw new OperationRuntimeError("operation.precondition-failed", `${shortName(branch)} is not a local branch.`)
@@ -88,7 +128,6 @@ async function planPublish(repo: RepositoryGit, branch: string, remote: string |
     let names = stack.branches.map(item => shortName(item.ref))
     // The first member is the Base Branch, which Publish never updates.
     let refs = stack.branches.slice(1).map(item => item.ref).filter(ref => ref.startsWith("refs/heads/"))
-    let locals = await readLocalBranches(repo, remotes)
     let selected = remote ?? graph.selectedRemote
     let unplaced = refs.find(ref => !locals.get(ref)?.upstream)
     let blocked = !remotes.length
@@ -107,11 +146,13 @@ async function planPublish(repo: RepositoryGit, branch: string, remote: string |
 
     let updates: PublishUpdate[] = []
     for (let ref of blocked ? [] : refs) {
-        let update = await planUpdate(repo, ref, locals.get(ref)!, selected!)
+        if (!reading.updates.has(ref))
+            reading.updates.set(ref, planUpdate(repo, ref, locals.get(ref)!, selected!))
+        let update = await reading.updates.get(ref)
         if (update)
             updates.push(update)
     }
-    return { stack: names, updates, token: digest(updates), blocked, receipt: await latestReceipt(repo, refs.map(shortName)) }
+    return { plan: { stack: names, updates, token: digest(updates), blocked }, refs }
 }
 
 async function readLocalBranches(repo: RepositoryGit, remotes: string[]) {
@@ -356,13 +397,15 @@ function receiptResult(receipt: PublishReceipt): PublishResult {
     let stale = receipt.updates.filter(update => update.status == "stale").map(update => `${update.remote}/${update.branch}`)
     let stopped = receipt.updates.find(update => update.status != "published")
     let outcome = published.length ? `${receipt.kind == "restore" ? "Restored" : "Published"} ${list(published)}.` : "Nothing was published."
+    // Publishing again plans what a publish left; a restoration has no plan, so only resuming its receipt finishes it.
+    let retry = receipt.kind == "restore" ? "Resume" : "Publish again"
     let message = status == "published"
         ? receipt.kind == "restore" ? `Restored the earlier remote tips of ${list(published)}.` : `Published ${list(published)}.`
         : status == "stale"
         ? `${outcome} ${list(stale)} changed since the last pull. Pull latest, then publish again.`
         : stopped?.status == "pending"
-        ? `${outcome} Publishing stopped before ${stopped.branch}. Resume to publish the rest.`
-        : `${outcome} ${stopped!.remote}/${stopped!.branch} was not published. Resume once the cause is fixed.`
+        ? `${outcome} Publishing stopped before ${stopped.branch}. ${retry} to publish the rest.`
+        : `${outcome} ${stopped!.remote}/${stopped!.branch} was not published. ${retry} once the cause is fixed.`
     return { type: "result", command: "publish", status, message, receipt }
 }
 

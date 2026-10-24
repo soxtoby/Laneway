@@ -1,54 +1,101 @@
-import type { PublishActionResult, PublishPlan, PublishProgress, PublishReceipt, PublishRequest, PublishUpdate } from "@laneway/shared"
+import type { PublishActionResult, PublishBranchPlan, PublishPlan, PublishProgress, PublishReceipt, PublishRequest, PublishUpdate } from "@laneway/shared"
 import { describe, expect, test } from "bun:test"
 import type { Notice } from "../src/renderer/react/notice"
 import { createPublish } from "../src/renderer/react/publish"
 
 let repositoryId = "repository"
-let branch = "refs/heads/two"
+let one = "refs/heads/one"
+let two = "refs/heads/two"
 
 describe("publish controller", () => {
-    test("publishes the reviewed plan with its token, confirms in passing without Undo, and shows the new receipt", async () => {
-        let receipt = publishReceipt("published")
+    test("reviewing several branches plans them in one Engine call, and each publishes its own plan", async () => {
         let fake = fakeApi(request =>
-            request.action == "plan"
-                ? planned(fake.requests.length > 1 ? { ...plan(), updates: [], receipt } : plan())
-                : { ok: true, result: { type: "result", command: "publish", status: "published", message: "Published one, two.", receipt } }
+            request.action == "plans"
+                ? planned([{ branch: one, message: "Publish one to origin.", plan: plan(updates().slice(0, 1), "one") }, {
+                    branch: two,
+                    message: "Publish one, two to origin.",
+                    plan: plan(updates(), "two"),
+                }])
+                : published("Published one, two.")
+        )
+        let { sut } = publisher(fake)
+
+        await sut.review(repositoryId, [one, two])
+        await sut.publish(repositoryId, two)
+
+        expect(fake.requests).toEqual([{ action: "plans", branches: [one, two], remote: "origin" }, {
+            action: "publish",
+            branch: two,
+            remote: "origin",
+            token: "two",
+        }])
+    })
+
+    test("a successful publish confirms in passing without Undo and reads the repository again", async () => {
+        let fake = fakeApi(request =>
+            request.action == "plans" ? planned([{ branch: two, message: "Publish one, two to origin.", plan: plan() }]) : published("Published one, two.")
         )
         let { sut, notices, completed } = publisher(fake)
+        await sut.review(repositoryId, [two])
 
-        await sut.review(repositoryId, branch)
-        await sut.publish()
+        await sut.publish(repositoryId, two)
 
-        expect(fake.requests).toEqual([{ action: "plan", branch, remote: "origin" }, { action: "publish", branch, remote: "origin", token: "reviewed" }, {
-            action: "plan",
-            branch,
-            remote: "origin",
-        }])
         expect(notices).toEqual([{ code: "publish.completed", message: "Published one, two.", transient: true }])
         expect(completed).toEqual([repositoryId])
         expect(sut.snapshot().outcomes).toEqual({})
-        expect(sut.snapshot().review?.plan?.receipt).toEqual(receipt)
     })
 
-    test("shows the Engine's progress while publishing", async () => {
-        let finish: (result: PublishActionResult) => void = () => {}
-        let fake = fakeApi(request => request.action == "plan" ? planned(plan()) : new Promise(resolve => finish = resolve))
+    test("a branch the Engine couldn't plan gives the Engine's reason", async () => {
+        let fake = fakeApi(() => planned([{ branch: two, message: "two is not a local branch." }]))
         let { sut } = publisher(fake)
-        await sut.review(repositoryId, branch)
 
-        let publishing = sut.publish()
+        await sut.review(repositoryId, [two])
+
+        expect(sut.snapshot().review).toEqual({ repositoryId, branches: { [two]: { error: "two is not a local branch." } } })
+    })
+
+    test("reviewing again keeps each branch's plan until the new one arrives, and drops branches no longer asked for", async () => {
+        let answers: Array<() => void> = []
+        let fake = fakeApi(request =>
+            new Promise(resolve =>
+                answers.push(() =>
+                    resolve(planned((request as { branches: string[] }).branches.map(branch => ({ branch, message: "Publish.", plan: plan() }))))
+                )
+            )
+        )
+        let { sut } = publisher(fake)
+        let first = sut.review(repositoryId, [one, two])
+        answers[0]!()
+        await first
+
+        let second = sut.review(repositoryId, [two])
+
+        expect(sut.snapshot().review).toEqual({ repositoryId, branches: { [two]: { plan: plan() } } })
+        answers[1]!()
+        await second
+    })
+
+    test("shows the Engine's progress for the publishing branch", async () => {
+        let finish: (result: PublishActionResult) => void = () => {}
+        let fake = fakeApi(request =>
+            request.action == "plans" ? planned([{ branch: two, message: "Publish.", plan: plan() }]) : new Promise(resolve => finish = resolve)
+        )
+        let { sut } = publisher(fake)
+        await sut.review(repositoryId, [two])
+
+        let publishing = sut.publish(repositoryId, two)
         fake.progress({ repositoryId, message: "Publishing one…", completed: 1, total: 3 })
-        expect(sut.snapshot().running).toEqual({ [repositoryId]: "Publishing one…" })
+        expect(sut.snapshot().running).toEqual({ [repositoryId]: { branch: two, message: "Publishing one…" } })
 
-        finish({ ok: true, result: { type: "result", command: "publish", status: "published", message: "Published one, two." } })
+        finish(published("Published one, two."))
         await publishing
         expect(sut.snapshot().running).toEqual({})
     })
 
     test("a stale lease opens an outcome whose way forward is Pull latest", async () => {
         let fake = fakeApi(request =>
-            request.action == "plan"
-                ? planned(plan())
+            request.action == "plans"
+                ? planned([{ branch: two, message: "Publish.", plan: plan() }])
                 : {
                     ok: true,
                     result: {
@@ -56,14 +103,14 @@ describe("publish controller", () => {
                         command: "publish",
                         status: "stale",
                         message: "Nothing was published. origin/one changed since the last pull. Pull latest, then publish again.",
-                        receipt: publishReceipt("stale"),
+                        receipt: staleReceipt(),
                     },
                 }
         )
         let { sut, notices, pulled } = publisher(fake)
-        await sut.review(repositoryId, branch)
+        await sut.review(repositoryId, [two])
 
-        await sut.publish()
+        await sut.publish(repositoryId, two)
         expect(notices).toEqual([])
         expect(sut.snapshot().outcomes[repositoryId]?.result?.status).toBe("stale")
 
@@ -76,26 +123,35 @@ describe("publish controller", () => {
         "publishes in two repositories each keep their outcome until it is closed, finishing in the order %p",
         async order => {
             let answers = new Map<string, (result: PublishActionResult) => void>()
-            let fake = fakeApi((_request, id) => new Promise(resolve => answers.set(id, resolve)))
+            let fake = fakeApi((request, id) =>
+                request.action == "plans"
+                    ? planned([{ branch: two, message: "Publish.", plan: plan() }])
+                    : new Promise(resolve => answers.set(id, resolve))
+            )
             let { sut } = publisher(fake)
-            let runs = new Map(["first", "second"].map(id => [id, sut.resume(id, "receipt")]))
+            let runs = new Map<string, Promise<void>>()
+            for (let id of ["first", "second"]) {
+                await sut.review(id, [two])
+                runs.set(id, sut.publish(id, two))
+            }
 
             for (let id of order) {
-                answers.get(id)!({ ok: true, result: { type: "result", command: "publish", status: "failed", message: `${id} was not published.` } })
+                answers.get(id)!(failed(`${id} was not published.`))
                 await runs.get(id)
             }
             sut.close("first")
 
-            expect(sut.snapshot().outcomes).toEqual({
-                second: { result: { type: "result", command: "publish", status: "failed", message: "second was not published." } },
-            })
+            expect(sut.snapshot().outcomes).toEqual({ second: { result: failed("second was not published.").result } })
         },
     )
 
     test("closing a repository forgets its outcome, so reopening it shows none", async () => {
-        let fake = fakeApi(() => ({ ok: true, result: { type: "result", command: "publish", status: "failed", message: "Nothing was published." } }))
+        let fake = fakeApi(request =>
+            request.action == "plans" ? planned([{ branch: two, message: "Publish.", plan: plan() }]) : failed("Nothing was published.")
+        )
         let { sut } = publisher(fake)
-        await sut.resume(repositoryId, "receipt")
+        await sut.review(repositoryId, [two])
+        await sut.publish(repositoryId, two)
 
         sut.retain([])
         sut.retain([repositoryId])
@@ -106,18 +162,21 @@ describe("publish controller", () => {
     test("an earlier review answering after a later one is dropped", async () => {
         let answers: Array<() => void> = []
         let fake = fakeApi(request =>
-            new Promise(resolve => answers.push(() => resolve(planned({ ...plan(), stack: ["main", (request as { branch: string }).branch] }))))
+            new Promise(resolve => {
+                let [branch] = (request as { branches: string[] }).branches
+                answers.push(() => resolve(planned([{ branch: branch!, message: "Publish.", plan: plan(updates(), branch) }])))
+            })
         )
         let { sut } = publisher(fake)
 
-        let first = sut.review(repositoryId, "refs/heads/one")
-        let second = sut.review(repositoryId, branch)
+        let first = sut.review(repositoryId, [one])
+        let second = sut.review(repositoryId, [two])
         answers[1]!()
         await second
         answers[0]!()
         await first
 
-        expect(sut.snapshot().review).toMatchObject({ branch, plan: { stack: ["main", branch] } })
+        expect(sut.snapshot().review).toEqual({ repositoryId, branches: { [two]: { plan: plan(updates(), two) } } })
     })
 })
 
@@ -156,22 +215,30 @@ function fakeApi(respond: (request: PublishRequest, repositoryId: string) => Pub
     }
 }
 
-function planned(value: PublishPlan): PublishActionResult {
-    return { ok: true, result: { type: "result", command: "publish", status: "planned", message: "Publish one, two to origin.", plan: value } }
+function planned(plans: PublishBranchPlan[]): PublishActionResult {
+    return { ok: true, result: { type: "result", command: "publish", status: "planned", message: "Planned.", plans } }
 }
 
-function plan(): PublishPlan {
-    return { stack: ["main", "one", "two"], updates: updates(), token: "reviewed" }
+function published(message: string): PublishActionResult {
+    return { ok: true, result: { type: "result", command: "publish", status: "published", message } }
 }
 
-function publishReceipt(outcome: "published" | "stale"): PublishReceipt {
+function failed(message: string) {
+    return { ok: true, result: { type: "result", command: "publish", status: "failed", message } } satisfies PublishActionResult
+}
+
+function plan(planned = updates(), token = "reviewed"): PublishPlan {
+    return { stack: ["main", "one", "two"], updates: planned, token }
+}
+
+function staleReceipt(): PublishReceipt {
     return {
         version: 1,
         id: "20261022T000000000-abcd",
         timestamp: "2026-10-22T00:00:00.000Z",
         kind: "publish",
         stack: ["main", "one", "two"],
-        updates: updates().map(update => ({ ...update, status: outcome == "published" ? "published" : update.branch == "one" ? "stale" : "pending" })),
+        updates: updates().map(update => ({ ...update, status: update.branch == "one" ? "stale" : "pending" })),
     }
 }
 

@@ -184,7 +184,7 @@ export function registerOperationHandlers(repositories: OpenRepositories, engine
                 if (typeof repositoryId != "string")
                     throw new Error("Choose a repository.")
                 let request = PublishRequestSchema.parse(value)
-                if (request.action == "plan")
+                if (request.action == "plan" || request.action == "plans")
                     return await publish(event.sender, repositoryId, request)
                 if (activePublishes.has(repositoryId))
                     throw new Error("A publish is already running for this repository.")

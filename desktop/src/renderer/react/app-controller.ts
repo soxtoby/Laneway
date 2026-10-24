@@ -63,7 +63,7 @@ export interface AppController extends Store<AppSnapshot> {
     /** Resolving conflicts that rewrites deferred. */
     readonly conflicts: Conflicts
     readonly pull: PullLatest
-    /** Publishing the focused column's stack, which stays outside Operation History. */
+    /** Publishing a branch's stack from its header, which stays outside Operation History. */
     readonly publish: Publish
     /** Moving and copying files, commits, and branches between columns. */
     readonly composition: Composition

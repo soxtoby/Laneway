@@ -4,8 +4,10 @@ let oid = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)
 let branchRef = z.string().regex(/^refs\/heads\/.+/)
 
 export let PublishRequestSchema = z.discriminatedUnion("action", [
-    // The focused column's branch; its Active Stack is planned without fetching.
+    // A branch's Active Stack, planned without fetching.
     z.object({ action: z.literal("plan"), branch: branchRef, remote: z.string().min(1).optional() }),
+    // Each branch's Active Stack, as `plan` would plan it, from one reading of the repository and without the latest receipt.
+    z.object({ action: z.literal("plans"), branches: z.array(branchRef).min(1), remote: z.string().min(1).optional() }),
     // The token of a reviewed plan; publication is refused if planning now gives a different result.
     z.object({ action: z.literal("publish"), branch: branchRef, remote: z.string().min(1).optional(), token: z.string().optional() }),
     z.object({ action: z.literal("resume"), receipt: z.string().min(1) }),
@@ -57,6 +59,14 @@ export let PublishPlanSchema = z.object({
 })
 export type PublishPlan = z.infer<typeof PublishPlanSchema>
 
+export let PublishBranchPlanSchema = z.object({
+    branch: branchRef,
+    // The plan's summary, as a `plan` result's message, or why the branch couldn't be planned.
+    message: z.string(),
+    plan: PublishPlanSchema.optional(),
+})
+export type PublishBranchPlan = z.infer<typeof PublishBranchPlanSchema>
+
 export let PublishResultSchema = z.object({
     type: z.literal("result"),
     command: z.literal("publish"),
@@ -64,6 +74,8 @@ export let PublishResultSchema = z.object({
     status: z.enum(["planned", "nothing", "blocked", "published", "partial", "stale", "failed"]),
     message: z.string(),
     plan: PublishPlanSchema.optional(),
+    // A `plans` request's plans, in request order.
+    plans: z.array(PublishBranchPlanSchema).optional(),
     receipt: PublishReceiptSchema.optional(),
 })
 export type PublishResult = z.infer<typeof PublishResultSchema>

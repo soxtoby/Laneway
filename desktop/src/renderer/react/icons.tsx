@@ -1,13 +1,15 @@
-import { createReactComponent, IconAdjustmentsHorizontal, IconAlertTriangle, IconArchive, IconArrowBackUp, IconArrowBarToDown, IconArrowBarToUp, IconArrowForwardUp, IconArrowRight, IconArrowsDiagonal, IconArrowsDiagonalMinimize2, IconCheck, IconChevronDown, IconChevronsLeft, IconChevronsRight, IconCopy, IconDots, IconExternalLink, IconFileDiff, IconFolder, IconGitBranch, IconGitCompare, IconGitMerge, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconLetterT, IconListTree, IconMinus, IconMoodSmile, IconMoon, IconPencil, IconPhoto, IconPhotoPlus, IconPlus, IconSearch, IconSelector, IconSun, IconTag, IconTextWrap, IconX } from "@tabler/icons-react"
+import { createReactComponent, IconAdjustmentsHorizontal, IconAlertTriangle, IconArchive, IconArrowBackUp, IconArrowBarToDown, IconArrowBarToUp, IconArrowBarToUpDashed, IconArrowForwardUp, IconArrowRight, IconArrowsDiagonal, IconArrowsDiagonalMinimize2, IconCheck, IconChevronDown, IconChevronsLeft, IconChevronsRight, IconCopy, IconDots, IconExternalLink, IconFileDiff, IconFolder, IconGitBranch, IconGitCompare, IconGitMerge, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconLetterT, IconListTree, IconMinus, IconMoodSmile, IconMoon, IconPencil, IconPhoto, IconPhotoPlus, IconPlus, IconSearch, IconSelector, IconSun, IconTag, IconTextWrap, IconX } from "@tabler/icons-react"
 import { createElement, type ReactNode } from "react"
 import type { CatalogNode } from "./icon-catalog"
-import { collapseAllNode, customIconPaths } from "./icon-nodes"
+import { collapseAllNode, customIconPaths, forcePublishNode } from "./icon-nodes"
 import { tablerIcon } from "./ui/icons"
 
 // Application icons, from Tabler (ADR 0024).
 export let ArchiveIcon = tablerIcon(IconArchive)
 export let PullIcon = tablerIcon(IconArrowBarToDown)
 export let PublishIcon = tablerIcon(IconArrowBarToUp)
+export let PublishNewIcon = tablerIcon(IconArrowBarToUpDashed)
+export let ForcePublishIcon = tablerIcon(createReactComponent("outline", "arrow-bar-to-up-double", "ArrowBarToUpDouble", forcePublishNode))
 export let MoreIcon = tablerIcon(IconDots)
 export let OpenColumnIcon = tablerIcon(IconExternalLink)
 export let FolderIcon = tablerIcon(IconFolder)

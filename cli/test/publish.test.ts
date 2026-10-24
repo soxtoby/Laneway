@@ -64,6 +64,24 @@ test(
     120_000,
 )
 
+test("planning several branches plans each as planning it alone would, and gives the reason a branch can't be planned", async () => {
+    let { local } = await fixture()
+    await advance(local, "one", "two")
+    let alone = {
+        one: await publish(local, { action: "plan", branch: "refs/heads/one" }),
+        two: await publish(local, { action: "plan", branch: "refs/heads/two" }),
+    }
+
+    let result = await publish(local, { action: "plans", branches: ["refs/heads/two", "refs/heads/one", "refs/heads/gone"] })
+
+    expect(result.status).toBe("planned")
+    expect(result.plans).toEqual([{ branch: "refs/heads/two", message: alone.two.message, plan: alone.two.plan }, {
+        branch: "refs/heads/one",
+        message: alone.one.message,
+        plan: alone.one.plan,
+    }, { branch: "refs/heads/gone", message: "gone is not a local branch." }])
+}, 120_000)
+
 test("a local operation stays undoable after Publish replaces an upstream, and undo keeps the replacement", async () => {
     let { origin, other, local } = await fixture()
     git(other, "push", "-q", "origin", "main:refs/heads/feature")

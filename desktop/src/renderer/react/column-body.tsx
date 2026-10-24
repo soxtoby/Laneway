@@ -20,12 +20,14 @@ interface ColumnBodyProps {
     inspected?: ColumnInspection
     /** Local operations wait for an interrupted worktree removal. */
     blocked: boolean
+    /** Another operation is running. */
+    busy: boolean
     view: FileListView
     onViewChange(view: FileListView): void
 }
 
 /** A column's Working Changes and stashes, then its branch's Commit Trail. A missing worktree has no Working Changes. */
-export function ColumnBody({ controller, repositoryId, graph, column, inspected, blocked, view, onViewChange }: ColumnBodyProps) {
+export function ColumnBody({ controller, repositoryId, graph, column, inspected, blocked, busy, view, onViewChange }: ColumnBodyProps) {
     if (column.kind == "recovery")
         return null
     let { inspection, branches, conflicts } = controller
@@ -97,6 +99,8 @@ export function ColumnBody({ controller, repositoryId, graph, column, inspected,
                             : undefined}
                         compare={(from, to) => controller.columns.openComparison(column.id, from, to)}
                         conflicts={conflicts}
+                        publish={controller.publish}
+                        busy={busy}
                         repositoryId={repositoryId}
                     />
                 )}

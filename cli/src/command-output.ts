@@ -90,7 +90,17 @@ export function resultExitCode(result: EngineMessage) {
 
 function writePublish(result: PublishResult) {
     console.log(result.message)
-    let updates: Array<PublishUpdate & { status?: string; message?: string }> = result.receipt?.updates ?? result.plan?.updates ?? []
+    writeUpdates(result.receipt?.updates ?? result.plan?.updates ?? [])
+    for (let planned of result.plans ?? []) {
+        console.log(`${planned.branch.slice("refs/heads/".length)}: ${planned.message}`)
+        writeUpdates(planned.plan?.updates ?? [])
+    }
+    let receipt = result.receipt ?? result.plan?.receipt
+    if (receipt)
+        console.log(`${result.receipt ? "Receipt" : "Last receipt"} ${receipt.id}${result.receipt ? "" : ` (${publishReceiptStatus(receipt)})`}`)
+}
+
+function writeUpdates(updates: Array<PublishUpdate & { status?: string; message?: string }>) {
     for (let update of updates) {
         let status = update.status ? `${update.status} ` : ""
         let range = `${update.expected?.slice(0, 7) ?? "(none)"} -> ${update.target?.slice(0, 7) ?? "(deleted)"}`
@@ -99,9 +109,6 @@ function writePublish(result: PublishResult) {
         if (update.message)
             console.log(update.message.replace(/^/gm, "    "))
     }
-    let receipt = result.receipt ?? result.plan?.receipt
-    if (receipt)
-        console.log(`${result.receipt ? "Receipt" : "Last receipt"} ${receipt.id}${result.receipt ? "" : ` (${publishReceiptStatus(receipt)})`}`)
 }
 
 function writePreview(preview: LocalPreview) {
