@@ -29,6 +29,8 @@ interface AppState {
     appearance: Appearance
     fileListView: FileListView
     showCommitAges: boolean
+    /** The Branch Graph's width, once resized. */
+    graphWidth?: number
 }
 
 declare global {
@@ -92,6 +94,7 @@ declare global {
             setAppearance(appearance: Appearance): Promise<Appearance>
             setFileListView(view: FileListView): Promise<FileListView>
             setShowCommitAges(shown: boolean): Promise<boolean>
+            setGraphWidth(width: number): Promise<number>
             readBranchGraph(repositoryId: string, refreshRemote?: boolean, allBranches?: boolean): Promise<BranchGraphResult>
             cancelBranchGraph(repositoryId: string): Promise<boolean>
             readBranchHistory(repositoryId: string, history: BranchHistoryRequest): Promise<BranchHistoryResult>

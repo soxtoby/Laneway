@@ -186,6 +186,17 @@ describe("Laneway settings", () => {
         await expect(readSettings(path)).rejects.toMatchObject({ code: "settings.corrupt", path })
     })
 
+    test("round-trips the Branch Graph's width and rejects anything but a positive number", async () => {
+        let path = await temporarySettingsPath()
+        await writeSettings({ version: 1, graphWidth: 460 }, path)
+
+        expect(await readSettings(path)).toEqual({ version: 1, graphWidth: 460 })
+
+        await writeFile(path, JSON.stringify({ version: 1, graphWidth: 0 }))
+
+        await expect(readSettings(path)).rejects.toMatchObject({ code: "settings.corrupt", path })
+    })
+
     test("reports corrupt settings without falling back", async () => {
         let path = await temporarySettingsPath()
         await mkdir(resolve(path, ".."), { recursive: true })

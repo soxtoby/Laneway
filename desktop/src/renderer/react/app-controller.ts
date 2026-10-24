@@ -38,6 +38,8 @@ export type AppSnapshot =
         fileListView: FileListView
         /** Whether commit rows show when each commit was authored. */
         showCommitAges: boolean
+        /** The Branch Graph's width, once resized; its default otherwise. */
+        graphWidth?: number
         notice?: Notice
     }
 
@@ -76,6 +78,8 @@ export interface AppController extends Store<AppSnapshot> {
     setFileListView(view: FileListView): Promise<void>
     /** Shows or hides every commit row's age at once; a failed save only loses it for the next start. */
     setShowCommitAges(shown: boolean): Promise<void>
+    /** Sizes the Branch Graph in every repository at once; a failed save only loses it for the next start. */
+    setGraphWidth(width: number): Promise<void>
     /** Commits and stashes a column's worktree; an operation refreshes the column, and the Branch Graph when it changed. */
     composer(repositoryId: string, columnId: string, path: string, blocked: boolean): CommitComposer
     /** Rewords a commit on a local branch; `close` runs once it is rewritten. */
@@ -394,6 +398,7 @@ export function createAppController(api: Api): AppController {
                     opening: false,
                     fileListView: state.fileListView,
                     showCommitAges: state.showCommitAges,
+                    graphWidth: state.graphWidth,
                 })
                 if (state.workspace.persistenceError?.code == "workspace.partial")
                     notify({ code: state.workspace.persistenceError.code, message: state.workspace.persistenceError.message })
@@ -431,6 +436,15 @@ export function createAppController(api: Api): AppController {
                 await api.setShowCommitAges(shown)
             } catch (error) {
                 notify({ code: "settings.commit-ages.failed", message: errorMessage(error) })
+            }
+        },
+
+        async setGraphWidth(width) {
+            update({ graphWidth: width })
+            try {
+                await api.setGraphWidth(width)
+            } catch (error) {
+                notify({ code: "settings.graph-width.failed", message: errorMessage(error) })
             }
         },
 

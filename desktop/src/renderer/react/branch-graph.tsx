@@ -5,6 +5,7 @@ import type { AppController } from "./app-controller"
 import { graphRowHeight, type GraphRowLayout, layoutBranchGraph } from "./branch-graph-layout"
 import { canRebaseOnto, rebaseable } from "./branch-rebase"
 import type { GraphView } from "./branch-workspace"
+import { ColumnDivider } from "./column-divider"
 import { Hint, IconButton, SplitMenuItem } from "./controls"
 import { useRowMenu } from "./dense-row"
 import { copyText } from "./file-paths"
@@ -22,6 +23,9 @@ import { CheckoutItems, checkoutWorktrees } from "./worktree-controls"
 /** What a Branch Graph row carries when dragged: the branch's ref. */
 export let branchDragType = "application/x-laneway-branch"
 
+export let defaultGraphWidth = 380
+let minimumGraphWidth = 260
+
 interface GraphPanelProps {
     controller: AppController
     repositoryId: string
@@ -33,14 +37,32 @@ interface GraphPanelProps {
  * The active repository's Branch Graph: its branches, tags, and detached worktrees on the rails of their verified
  * history. Choosing a row only selects it; a double-click or Enter checks its branch out, and its menu, from a
  * right-click or the button showing on hover and focus, checks it out there or elsewhere, or opens its column.
+ * The divider after it resizes it, up to half the work area, so the columns always keep room beside it.
  */
-export function BranchGraphPanel({ controller, repositoryId, mainWorktree }: GraphPanelProps) {
+export function BranchGraphPanel({ width, onResize, ...props }: GraphPanelProps & { width: number; onResize(width: number): void }) {
+    return (
+        <>
+            <GraphPanel {...props} width={width} />
+            <ColumnDivider
+                className="graph-divider"
+                label="Resize Branch Graph"
+                width={width}
+                minimum={minimumGraphWidth}
+                maximum={row => row.clientWidth / 2}
+                defaultWidth={defaultGraphWidth}
+                onResize={onResize}
+            />
+        </>
+    )
+}
+
+function GraphPanel({ controller, repositoryId, mainWorktree, width }: GraphPanelProps & { width: number }) {
     let { columns } = controller
     let snapshot = useSnapshot(columns)
     let { graph, graphView: view } = snapshot
     let rows = useMemo(() => graph && graphRows(graph, view.foldedIds), [graph, view.foldedIds])
     return (
-        <aside className="graph-panel" aria-label="Branch Graph">
+        <aside className="graph-panel" aria-label="Branch Graph" style={{ width }}>
             <header className="graph-toolbar">
                 {/* The repository is named by the panel and its main worktree column, so the title stays generic. */}
                 <h1 className="graph-title">Branch Graph</h1>

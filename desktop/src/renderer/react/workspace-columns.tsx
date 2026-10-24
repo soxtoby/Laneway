@@ -1,12 +1,13 @@
 import type { BranchGraph, FileListView, WorktreeRecovery, WorktreeRequest } from "@laneway/shared"
 import clsx from "clsx"
-import { type DragEvent, type KeyboardEvent, memo, type MouseEvent, type PointerEvent, useEffect, useMemo, useRef } from "react"
+import { type DragEvent, type KeyboardEvent, memo, type MouseEvent, useEffect, useMemo, useRef } from "react"
 import { Button as AriaButton, ToggleButton, useDrop } from "react-aria-components"
 import type { AppController } from "./app-controller"
 import { defaultAuxiliaryColumnWidth } from "./auxiliary-columns"
 import { branchDragType } from "./branch-graph"
 import { type BranchWorkspace, type ColumnsSnapshot, type ColumnView, defaultColumnWidth, minimumColumnWidth, workingSummary } from "./branch-workspace"
 import { ColumnBody, columnRoot, ColumnScopes } from "./column-body"
+import { ColumnDivider } from "./column-divider"
 import { columnDropTarget, columnSpans } from "./column-drag"
 import { ColumnFilter } from "./column-filter"
 import { navigationKeyDown } from "./column-navigation"
@@ -515,68 +516,6 @@ function AuxiliaryFrame({ view, column, inspected, graph, controller, fileListVi
                 )
                 : <CommitDiffColumn commit={view} inspection={inspection} view={fileListView} root={root} stacked={stacked} onClose={returnFocus} />}
         </ColumnScopes>
-    )
-}
-
-/** Resizes the column before it by dragging or the keyboard, and back to its default width on a double-click. */
-function ColumnDivider({ label, width, minimum, defaultWidth, attached, onResize }: {
-    label: string
-    width: number
-    minimum: number
-    defaultWidth: number
-    /** Whether it is the seam between a column and an auxiliary column joined onto its card. */
-    attached: boolean
-    onResize(width: number): void
-}) {
-    let divider = useRef<HTMLDivElement>(null)
-    // A drag sizes the column directly as it goes; the width saves once it ends.
-    let size = (next: number) => {
-        let clamped = Math.max(minimum, Math.round(next))
-        let element = divider.current?.previousElementSibling
-        if (element instanceof HTMLElement)
-            element.style.width = `${clamped}px`
-        return clamped
-    }
-    let keyDown = (event: KeyboardEvent) => {
-        let step = event.shiftKey ? 50 : 10
-        let next = event.key == "ArrowLeft" || event.key == "ArrowRight"
-            ? width + (event.key == "ArrowLeft" ? -step : step)
-            : event.key == "Home"
-            ? minimum
-            : event.key == "End"
-            ? divider.current?.parentElement?.clientWidth ?? defaultWidth
-            : undefined
-        if (next != undefined) {
-            event.preventDefault()
-            onResize(size(next))
-        }
-    }
-    let pointerDown = (event: PointerEvent) => {
-        event.preventDefault()
-        let startX = event.clientX
-        let move = (next: globalThis.PointerEvent) => size(width + next.clientX - startX)
-        let end = (next: globalThis.PointerEvent) => {
-            window.removeEventListener("pointermove", move)
-            onResize(size(width + next.clientX - startX))
-        }
-        window.addEventListener("pointermove", move)
-        window.addEventListener("pointerup", end, { once: true })
-    }
-    return (
-        <div
-            ref={divider}
-            className={clsx("column-divider", attached && "attached")}
-            role="separator"
-            tabIndex={0}
-            aria-label={label}
-            aria-orientation="vertical"
-            aria-valuemin={minimum}
-            aria-valuemax={2000}
-            aria-valuenow={width}
-            onKeyDown={keyDown}
-            onPointerDown={pointerDown}
-            onDoubleClick={() => onResize(size(defaultWidth))}
-        />
     )
 }
 

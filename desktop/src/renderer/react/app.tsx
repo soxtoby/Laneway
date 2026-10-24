@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect } from "react"
 import type { AppController, AppSnapshot } from "./app-controller"
-import { BranchGraphPanel } from "./branch-graph"
+import { BranchGraphPanel, defaultGraphWidth } from "./branch-graph"
 import { CommandLensDialog } from "./command-lens-dialog"
 import { CommitAgesShown } from "./commit-age"
 import { ContextMenuHost } from "./context-menu"
@@ -101,7 +101,13 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
                             onAdd={entry.openAdd}
                         />
                         {active.status == "available" && graphView.shown && (
-                            <BranchGraphPanel controller={controller} repositoryId={active.id} mainWorktree={active.info.mainWorktree} />
+                            <BranchGraphPanel
+                                controller={controller}
+                                repositoryId={active.id}
+                                mainWorktree={active.info.mainWorktree}
+                                width={snapshot.graphWidth ?? defaultGraphWidth}
+                                onResize={width => void controller.setGraphWidth(width)}
+                            />
                         )}
                         <main className="columns">
                             {active.status == "missing"

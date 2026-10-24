@@ -220,6 +220,7 @@ export function fakeLaneway(overrides: Partial<Window["laneway"]> = {}): Window[
         getState: async () => appState(),
         setFileListView: async view => view,
         setShowCommitAges: async shown => shown,
+        setGraphWidth: async width => width,
         previewWorktree: async () => ({ ok: false, error: { message: "Worktree operations unavailable" } }),
         executeWorktree: async () => ({ ok: false, error: { message: "Worktree operations unavailable" } }),
         transitionOperation: async () => ({ ok: true }),

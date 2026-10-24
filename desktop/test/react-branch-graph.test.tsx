@@ -326,6 +326,39 @@ describe("React Branch Graph", () => {
         expect(names()).toContain("feature/45")
         expect(panel()!.querySelector(".graph-row svg path[d='M 13 0 V 40']")).not.toBeNull()
     })
+
+    test("resizes by keyboard up to half the work area, and keeps its width for the next start", async () => {
+        let repository = repositoryInfo("D:\\Source\\graph-project")
+        let saved: number | undefined
+        let api = fakeLaneway({
+            getState: async () => ({ ...appState(), workspace: openedWorkspace(repository), graphWidth: saved }),
+            readBranchGraph: async () => ({ ok: true, graph: branchGraph(repository.id) }),
+            setGraphWidth: async width => saved = width,
+        })
+        let app = await startReactApp(api)
+        await app.act(() => press(button(document.body, "Show Branch Graph")))
+        layOutWorkArea(1001)
+        expect(panel()!.style.width).toBe("380px")
+
+        await app.act(() => key(graphDivider(), "ArrowRight"))
+        expect(panel()!.style.width).toBe("390px")
+        await app.act(() => key(graphDivider(), "End"))
+        expect(panel()!.style.width).toBe("500px")
+        expect(saved).toBe(500)
+
+        // In a narrower window it shows at half the work area, and resizes from there.
+        await stopReactApps()
+        app = await startReactApp(api)
+        await app.act(() => press(button(document.body, "Show Branch Graph")))
+        layOutWorkArea(800)
+        expect(panel()!.style.width).toBe("500px")
+        await app.act(() => key(graphDivider(), "ArrowLeft"))
+        expect(panel()!.style.width).toBe("390px")
+
+        await app.act(() => graphDivider().dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true })))
+        expect(panel()!.style.width).toBe("380px")
+        expect(saved).toBe(380)
+    })
 })
 
 // Happy DOM lays nothing out, so the graph's scroller is given a size for the virtualizer to fill.
@@ -365,6 +398,15 @@ function panel() {
 
 function rows() {
     return panel()!.querySelector<HTMLElement>(".graph-rows")!
+}
+
+function graphDivider() {
+    return panel()!.nextElementSibling as HTMLElement
+}
+
+// Happy DOM lays nothing out, so the work area the graph's divider measures is given a width.
+function layOutWorkArea(width: number) {
+    Object.defineProperty(panel()!.parentElement, "clientWidth", { configurable: true, value: width })
 }
 
 function row(id: string) {

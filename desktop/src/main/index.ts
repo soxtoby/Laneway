@@ -106,6 +106,7 @@ function registerHandlers() {
         appearance: await repositories.appearance(),
         fileListView: await repositories.fileListView(),
         showCommitAges: await repositories.showCommitAges(),
+        graphWidth: await repositories.graphWidth(),
         engine: engineStatus,
     }))
 

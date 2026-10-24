@@ -12,6 +12,8 @@ export interface LanewaySettings {
     appearance?: Appearance
     fileListView?: FileListView
     showCommitAges?: boolean
+    /** The Branch Graph's width in pixels, once resized. */
+    graphWidth?: number
     authorIdentities?: AuthorIdentitySettings
     repositories?: Record<string, RepositoryGraphSettings>
 }
@@ -62,6 +64,8 @@ export async function readSettings(path = defaultSettingsPath()): Promise<Lanewa
             throw new Error("virtualBranchPrefix must be a non-empty string.")
         if (record.showCommitAges != undefined && typeof record.showCommitAges != "boolean")
             throw new Error("showCommitAges must be true or false.")
+        if (record.graphWidth != undefined && !(typeof record.graphWidth == "number" && Number.isFinite(record.graphWidth) && record.graphWidth > 0))
+            throw new Error("graphWidth must be a positive number.")
 
         let authorIdentities = parseAuthorIdentities(record.authorIdentities)
         let appearance = parseAppearance(record.appearance)
@@ -75,6 +79,7 @@ export async function readSettings(path = defaultSettingsPath()): Promise<Lanewa
             ...(appearance ? { appearance } : {}),
             ...(fileListView ? { fileListView } : {}),
             ...(record.showCommitAges != undefined ? { showCommitAges: record.showCommitAges as boolean } : {}),
+            ...(record.graphWidth != undefined ? { graphWidth: record.graphWidth as number } : {}),
             ...(authorIdentities ? { authorIdentities } : {}),
             ...(repositories ? { repositories } : {}),
         }

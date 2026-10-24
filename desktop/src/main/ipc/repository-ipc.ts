@@ -204,6 +204,12 @@ export function registerRepositoryHandlers(repositories: OpenRepositories, works
             return repositories.setFileListView(view.data)
         })
         ipcMain.handle("settings:show-commit-ages", (_event, request: { shown?: unknown }) => repositories.setShowCommitAges(request?.shown != false))
+        ipcMain.handle("settings:graph-width", (_event, request: { width?: unknown }) => {
+            let width = request?.width
+            if (typeof width != "number" || !Number.isFinite(width) || width <= 0)
+                throw new Error("Invalid Branch Graph width.")
+            return repositories.setGraphWidth(width)
+        })
         ipcMain.handle("settings:open-file", async () => {
             let state = await repositories.gitSettings()
             return shell.openPath(state.path)

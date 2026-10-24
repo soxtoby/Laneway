@@ -108,6 +108,19 @@ export class OpenRepositories {
         return showCommitAges
     }
 
+    async graphWidth() {
+        try {
+            return (await readSettings(this.settingsPath)).graphWidth
+        } catch {
+            return undefined
+        }
+    }
+
+    async setGraphWidth(graphWidth: number) {
+        await this.updateSettings(current => ({ ...current, graphWidth }))
+        return graphWidth
+    }
+
     async setRepositoryGraphSettings(repositoryId: string, graphSettings: RepositoryGraphSettings) {
         await this.requireRepository(repositoryId)
 

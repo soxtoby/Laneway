@@ -302,6 +302,16 @@
         background: var(--focus-ring-color);
     }
 
+    /* The Branch Graph's divider is the gap before the columns, standing in for their row's padding. */
+    &.graph-divider {
+        margin-block: var(--spacing-2);
+        margin-inline: 0;
+
+        & + .columns .column-row {
+            padding-inline-start: 0;
+        }
+    }
+
     /* Between a column and its auxiliary columns, the divider is the seam of their shared card. */
     &.attached {
         margin-inline: 0;
@@ -3366,10 +3376,13 @@
     color: inherit;
 }
 
-/* The Branch Graph: a card between the repositories and the columns, its rows on the rails of their history. */
+/*
+ * The Branch Graph: a card between the repositories and the columns, its rows on the rails of their history.
+ * Its width is set as it resizes, and never takes more than half the work area, which its divider also keeps to.
+ */
 .graph-panel {
     flex: 0 0 auto;
-    width: clamp(260px, 26vw, 380px);
+    max-width: 50%;
     min-height: 0;
     display: flex;
     flex-direction: column;
