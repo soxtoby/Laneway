@@ -106,6 +106,7 @@ export function EditableName({ name, label, isDisabled, onCommit, saveOnBlur }: 
                 <AriaButton
                     className="editable-name-button"
                     aria-label={`Rename ${label}`}
+                    data-drags-row
                     isDisabled={isDisabled}
                     onPress={start}
                     onKeyDown={event => {

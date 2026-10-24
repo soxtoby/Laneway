@@ -35,6 +35,7 @@ test("React composition drags, approves conflicts, and transfers by keyboard und
 
         expect(code, result).toBe(0)
         expect(JSON.parse(result), errors).toEqual({
+            dragStarts: true,
             cancellation: true,
             dragBindingsRefresh: true,
             branchRejectsFiles: true,

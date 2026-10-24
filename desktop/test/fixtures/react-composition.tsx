@@ -98,6 +98,9 @@ function Fixture() {
         <main style={{ width: 680, margin: "40px auto", display: "grid", gap: 12 }}>
             <div className="commit-row" id="source">
                 <TransferGrip composition={composition} selection={selection} />Source change
+                <button type="button" id="source-name" data-drags-row>Name</button>
+                <button type="button" id="source-control">Control</button>
+                <div className="file-diff" id="source-diff">Diff</div>
             </div>
             <TransferSeam composition={composition} repositoryId="fixture" target={{ kind: "seam", branch: "feature", parentId: tip }} />
             <div ref={branchRef} {...branchProps} className="commit-row" id="branch">feature</div>
@@ -121,6 +124,15 @@ let dropEdges = () => document.querySelector("[data-drop-edge]")
 
 async function checks() {
     await flush()
+    // A row drags from anywhere but its controls and a diff open in it; a control that names the row drags it too.
+    // The row itself goes last, as the drags below start without a press.
+    let starts = []
+    for (let pressed of ["#source-control", "#source-diff", "#source-name", "#source"])
+        starts.push(await startsDrag(pressed))
+    if (starts.join() != "false,false,true,true")
+        throw new Error(`Drags started from the control, the diff, the name, and the row: ${starts.join()}`)
+    if (shownToast() || requests.length)
+        throw new Error("Started drags left transfer state behind")
     await drag("#commit", false, true)
     if (dropEdges() || document.querySelector(".transfer-review") || shownToast() || requests.length)
         throw new Error("Cancelled drag left transfer placeholders or state behind")
@@ -199,6 +211,7 @@ async function checks() {
     if (requests.length != 1 || requests[0]?.token || shownToast()?.code != "composition.transferred" || document.querySelector(".transfer-review"))
         throw new Error("Immediate transfer did not finish with one request")
     return {
+        dragStarts: true,
         cancellation: true,
         dragBindingsRefresh: true,
         branchRejectsFiles: true,
@@ -210,6 +223,19 @@ async function checks() {
         keyboardCopy: true,
         immediateTransfer: true,
     }
+}
+
+// Whether a drag of the source starts once the pointer has gone down on `pressed`; it ends without a drop.
+async function startsDrag(pressed: string) {
+    let source = document.querySelector("#source")!
+    document.querySelector(pressed)!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }))
+    let dataTransfer = new DataTransfer()
+    let start = new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer })
+    source.dispatchEvent(start)
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    source.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer }))
+    await flush()
+    return !start.defaultPrevented
 }
 
 // The pointer's place within the destination decides between landing on it and inserting at its top edge.

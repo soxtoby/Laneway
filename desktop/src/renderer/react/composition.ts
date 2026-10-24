@@ -64,7 +64,11 @@ export interface Composition extends Store<CompositionSnapshot> {
     setDescendants(descendants: boolean): void
     prepare(): Promise<void>
     execute(resolveNow: boolean): Promise<void>
-    /** Makes `element` drag the selection; it starts as a move, or a copy with Ctrl held. Returns the cleanup. */
+    /**
+     * Makes `element` drag the selection; it starts as a move, or a copy with Ctrl held. A drag starts anywhere in it
+     * but its controls and a diff open in it, though a control marked `data-drags-row`, such as its grip, drags it too.
+     * Returns the cleanup.
+     */
     bindSource(element: HTMLElement, selection: () => TransferSelection): () => void
     /** Makes `element` take drops of the landing, or of the seams at its edges. Returns the cleanup. */
     bindTarget(element: HTMLElement, landing: () => Landing, edges: () => Edges): () => void
@@ -83,6 +87,8 @@ interface CompositionOptions {
 
 let token = `composition-${crypto.randomUUID()}`
 let overEdges = { above: "above", on: "on", below: "below" } as const
+// What a drag can't start from inside its source.
+let controls = "button, a[href], input, select, textarea, [contenteditable], [role=button], .file-diff"
 
 export function createComposition({ api, notify, changed, mutating, resolve }: CompositionOptions): Composition {
     let store = createStore<CompositionSnapshot>({ mode: "move", busy: false })
@@ -320,17 +326,23 @@ export function createComposition({ api, notify, changed, mutating, resolve }: C
 
         bindSource(element, selection) {
             listen()
-            return draggable({
+            // Where the pointer went down, since a drag starts some way from there and reports only its source.
+            let pressed: Element | undefined
+            let press = (event: PointerEvent) => pressed = event.target instanceof Element ? event.target : undefined
+            element.addEventListener("pointerdown", press, true)
+            let unbind = draggable({
                 element,
                 getInitialData: () => ({ [token]: selection() }),
-                canDrag: ({ input }) => {
-                    if (state().busy)
-                        return false
-                    let target = document.elementFromPoint(input.clientX, input.clientY)
-                    return !target?.closest("input, textarea, select, [contenteditable], a[href]")
+                canDrag: () => {
+                    let control = pressed?.closest(controls)
+                    return !state().busy && (!control || !element.contains(control) || control.matches("[data-drags-row]"))
                 },
                 onDragStart: ({ location }) => choose(selection(), location.current.input.ctrlKey ? "copy" : "move"),
             })
+            return () => {
+                element.removeEventListener("pointerdown", press, true)
+                unbind()
+            }
         },
 
         bindTarget(element, landing, edges) {

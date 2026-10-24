@@ -1659,6 +1659,16 @@
     &[data-chosen] .file-content {
         background: var(--selection-background);
     }
+
+    /* Focus too marks only the row's own line. */
+    &[data-focus-visible] {
+        outline: none;
+
+        .file-content {
+            outline: 2px solid var(--focus-ring-color);
+            outline-offset: -2px;
+        }
+    }
 }
 
 .file-diff {
@@ -2124,11 +2134,13 @@
 }
 
 /* Chosen files moving together are marked by one outline around each run of them, drawn over each row with the
-   edges it shares with its neighbours left out. */
-.dense-row:has(.grip[data-chosen]) {
+   edges it shares with its neighbours left out. An open file's outline marks only its own line, and its diff sits
+   between it and the row below, so the run ends there. Lines chosen in the diff have only their own grip marked. */
+.dense-row:has(> * > .row-content .grip[data-chosen]) {
     position: relative;
 
-    &::after {
+    &::after,
+    &.inspected .file-content::after {
         content: "";
         position: absolute;
         z-index: 4;
@@ -2138,12 +2150,19 @@
         pointer-events: none;
     }
 
-    &:has(+ .dense-row .grip[data-chosen])::after {
+    &.inspected::after {
+        content: none;
+    }
+
+    &:not(.inspected):has(+ .dense-row > * > .row-content .grip[data-chosen])::after {
         border-bottom: 0;
     }
 
-    & + &::after {
-        border-top: 0;
+    &:not(.inspected) + & {
+        &::after,
+        &.inspected .file-content::after {
+            border-top: 0;
+        }
     }
 }
 

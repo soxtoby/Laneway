@@ -40,7 +40,8 @@ let noChanges = () => () => {}
 let rowSelector = ".dense-row, .commit-row, .stack-heading"
 
 /**
- * The grip that moves or copies a selection. Its whole row drags, Ctrl-dragging copies; pressing the grip,
+ * The grip that moves or copies a selection. Its row drags from the grip or anywhere but its other controls, or
+ * a diff open in it, and Ctrl-dragging copies; pressing the grip,
  * or M or C anywhere in its row, chooses the selection so the arrow keys and Enter can place it. The grip
  * and its row stay marked while the selection is chosen.
  */
@@ -83,6 +84,7 @@ export function TransferGrip({ composition, selection, alone }: {
                     ref={grip}
                     className="grip"
                     aria-label={`Move or copy ${selection.label}`}
+                    data-drags-row
                     data-chosen={active != undefined && sameSelection(active, selection) || undefined}
                     isDisabled={busy}
                     onPress={() => composition.choose(selection, "move")}

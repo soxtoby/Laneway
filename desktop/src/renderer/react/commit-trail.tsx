@@ -131,7 +131,7 @@ function StackBranch(props: StackBranchProps) {
                         </span>
                     )
                     : (
-                        <AriaButton className="stack-toggle" aria-expanded={open} onPress={() => inspection.toggleHistory(column.id, branch.id)}>
+                        <AriaButton className="stack-toggle" aria-expanded={open} data-drags-row onPress={() => inspection.toggleHistory(column.id, branch.id)}>
                             <ChevronRight className="toggle-chevron" />
                             <BranchIcon className="stack-icon" />
                             <span className="stack-name">{branch.name}</span>
@@ -293,7 +293,7 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
                         <WarningIcon className="commit-conflict" />
                     </IconButton>
                 )}
-                <AriaButton className="commit-toggle" aria-expanded={open} onPress={() => inspection.toggleCommit(column.id, commit.objectId)}>
+                <AriaButton className="commit-toggle" aria-expanded={open} data-drags-row onPress={() => inspection.toggleCommit(column.id, commit.objectId)}>
                     <Hint text={commitMessage(commit)}>
                         <span className="commit-subject">{commit.subject}</span>
                     </Hint>
