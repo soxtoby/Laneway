@@ -32,14 +32,15 @@ export function RepositoryTile({ icon, name, api, isActive = false, isMissing = 
         content = <TileLetters text={icon.text} tone={icon.color} />
     else if (icon?.kind == "icon") {
         let node = catalogNode(icon.name, loaded)
+        // Tabler draws inside a 2-unit margin of its 24-unit grid; that live area fills the box images use.
         if (node) {
             content = (
                 <g
                     data-tone={icon.color}
-                    transform="translate(4 4) scale(0.5)"
+                    transform="translate(0.4 0.4) scale(0.8)"
                     fill="none"
                     stroke="currentColor"
-                    strokeWidth={2}
+                    strokeWidth={1.5}
                     strokeLinecap="round"
                     strokeLinejoin="round"
                 >
