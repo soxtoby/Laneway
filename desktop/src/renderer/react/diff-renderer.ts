@@ -2,7 +2,7 @@ import type { DiffLayout, DiffLine, FileDiffPage } from "@laneway/shared"
 import { DiffHunksRenderer, type FileDiffLoadedChangedFiles, wrapCoreCSS, wrapThemeCSS } from "@pierre/diffs"
 import { contextDiff, visibleDiffLines } from "./diff-context"
 import type { pierrePatch } from "./diff-patch"
-import { iconNodes } from "./icon-nodes"
+import { expandAllNode } from "./icon-nodes"
 
 export interface DiffLinesProps {
     page: FileDiffPage
@@ -439,7 +439,7 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
     }
 }
 
-// Built imperatively because Pierre owns this part of the page; it draws Lucide's expand-all icon.
+// Built imperatively because Pierre owns this part of the page; it draws the expand-all icon.
 function expandContextIcon() {
     let namespace = "http://www.w3.org/2000/svg"
     let icon = document.createElementNS(namespace, "svg")
@@ -456,7 +456,7 @@ function expandContextIcon() {
     }
     for (let [name, value] of Object.entries(attributes))
         icon.setAttribute(name, value)
-    for (let [tag, shapeAttributes] of iconNodes["expand-all"]) {
+    for (let [tag, shapeAttributes] of expandAllNode) {
         let shape = document.createElementNS(namespace, tag)
         for (let [name, value] of Object.entries(shapeAttributes))
             shape.setAttribute(name, String(value))

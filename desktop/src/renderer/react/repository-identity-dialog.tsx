@@ -4,8 +4,8 @@ import type { ReactNode } from "react"
 import { useReducer } from "react"
 import { Autocomplete, type Key, ListBox, ListBoxItem, type Selection } from "react-aria-components"
 import { Hint } from "./controls"
-import { EmojiTypeIcon, IconTypeIcon, ImageTypeIcon, LucideGlyph, MonogramTypeIcon } from "./icons"
-import { iconLabel, lucideCatalog, searchLucide } from "./lucide-catalog"
+import { iconCatalog, iconLabel, searchIcons } from "./icon-catalog"
+import { CatalogGlyph, EmojiTypeIcon, IconTypeIcon, ImageTypeIcon, MonogramTypeIcon } from "./icons"
 import { automaticIcon, baseName, repositoryFolderName } from "./repositories"
 import type { IconImageApi } from "./repository-icon-images"
 import { emojiOptions, type IconMode, type IdentitySnapshot, type RepositoryIdentityEditor, searchImages } from "./repository-identity"
@@ -113,8 +113,8 @@ function ColorPicker({ editor, state }: { editor: RepositoryIdentityEditor; stat
 
 function IconPicker({ editor, state }: { editor: RepositoryIdentityEditor; state: IdentitySnapshot }) {
     let [, loaded] = useReducer((count: number) => count + 1, 0)
-    let catalog = lucideCatalog(loaded)
-    let results = catalog ? searchLucide(catalog, state.iconQuery) : []
+    let catalog = iconCatalog(loaded)
+    let results = catalog ? searchIcons(catalog, state.iconQuery) : []
     return (
         <>
             <SearchField aria-label="Search icons" placeholder="Search icons" value={state.iconQuery} onChange={editor.setIconQuery} />
@@ -140,7 +140,7 @@ function IconPicker({ editor, state }: { editor: RepositoryIdentityEditor; state
                                 className="picker-option"
                             >
                                 <span className="picker-glyph" data-tone={state.color}>
-                                    <LucideGlyph node={catalog.nodes[iconName]!} />
+                                    <CatalogGlyph node={catalog.nodes[iconName]!} />
                                 </span>
                             </ListBoxItem>
                         ))}

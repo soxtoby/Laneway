@@ -1,38 +1,36 @@
 import { firstEmoji, monogramText, RepositoryIconSchema, repositoryInitials } from "@laneway/shared"
 import { describe, expect, test } from "bun:test"
-import { customIconPaths, iconNodes } from "../src/renderer/react/icon-nodes"
-import { iconLabel, lucideCatalog, popularIcons, searchLucide } from "../src/renderer/react/lucide-catalog"
+import { type IconCatalog, iconCatalog, iconLabel, popularIcons, searchIcons } from "../src/renderer/react/icon-catalog"
+import { expandAllNode } from "../src/renderer/react/icon-nodes"
+
+async function loadCatalog(): Promise<IconCatalog> {
+    // Another test in the same process may already have loaded the catalogue.
+    let loaded = Promise.withResolvers<void>()
+    let catalog = iconCatalog(() => loaded.resolve())
+    if (catalog)
+        return catalog
+    await loaded.promise
+    return iconCatalog()!
+}
 
 describe("Application icons", () => {
-    test("every name draws from Lucide node data or a hand-drawn stroke", () => {
-        for (let [name, node] of Object.entries(iconNodes)) {
-            expect(node.length, name).toBeGreaterThan(0)
-            for (let [tag, attributes] of node) {
-                expect(["path", "circle", "rect", "line", "polyline", "polygon", "ellipse"], `${name} uses <${tag}>`).toContain(tag)
-                expect(Object.keys(attributes).length, name).toBeGreaterThan(0)
-            }
-        }
-        expect(customIconPaths.detached).toMatch(/^M/)
+    test("the diff's expand control draws Tabler's selector, as the column's Expand all does", async () => {
+        let catalog = await loadCatalog()
+        expect(expandAllNode).toEqual(catalog.nodes.selector!)
     })
 
     test("the icon catalogue loads once and searches names and tags", async () => {
-        // Another test in the same process may already have loaded the catalogue.
-        let loaded = Promise.withResolvers<void>()
-        let catalog = lucideCatalog(() => loaded.resolve())
-        if (!catalog) {
-            await loaded.promise
-            catalog = lucideCatalog()!
-        }
-        expect(lucideCatalog()).toBe(catalog)
-        expect(Object.keys(catalog.nodes).length).toBeGreaterThan(1500)
+        let catalog = await loadCatalog()
+        expect(iconCatalog()).toBe(catalog)
+        expect(Object.keys(catalog.nodes).length).toBeGreaterThan(4000)
         // Every popular icon exists, so the empty query never shows gaps.
         expect(popularIcons.filter(name => !(name in catalog.nodes))).toEqual([])
-        expect(searchLucide(catalog, "")).toEqual(popularIcons)
-        expect(searchLucide(catalog, "git bra")[0]).toBe("git-branch")
+        expect(searchIcons(catalog, "")).toEqual(popularIcons)
+        expect(searchIcons(catalog, "git bra")[0]).toBe("git-branch")
         // "feline" is a tag on the cat icon rather than part of its name.
-        expect(searchLucide(catalog, "feline")).toContain("cat")
-        expect(searchLucide(catalog, "no such icon anywhere")).toEqual([])
-        expect(iconLabel("folder-git-2")).toBe("Folder git 2")
+        expect(searchIcons(catalog, "feline")).toContain("cat")
+        expect(searchIcons(catalog, "no such icon anywhere")).toEqual([])
+        expect(iconLabel("device-gamepad-2")).toBe("Device gamepad 2")
     })
 })
 

@@ -4,7 +4,7 @@ Copied from React Aria's vanilla CSS starter kit, `starters/docs/src` in [adobe/
 
 Local changes:
 
-- Icons come from `./icons`, which draws Lucide's node data (ADR 0020) in place of `lucide-react`.
+- Icons come from `./icons`, which supplies Tabler's (ADR 0024) under the `lucide-react` names the components import, hidden from assistive technology as `lucide-react`'s are. The CSS targets Tabler's `tabler-icon-<name>` classes for `lucide-<name>`, and the menu's radio dot is Tabler's `point-filled`, scaled to the size of Lucide's.
 - The per-file `@import` of `theme.css` and `utilities.css` is gone; the page imports each once, before these files.
 - `Toast.tsx` takes an optional action, such as Undo, and ignores the rejection when a new toast interrupts a view transition.
 - `Button.tsx` accepts an `accent` variant, keeps a `className` passed to it beside its own, and wraps text children in a `<span>` so an icon with a label is not styled as an icon-only button. Its `pendingLabel` names the progress shown while pending, which upstream hard-codes as "Saving...".

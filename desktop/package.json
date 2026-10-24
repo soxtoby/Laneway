@@ -15,9 +15,9 @@
         "@laneway/settings": "workspace:*",
         "@laneway/shared": "workspace:*",
         "@pierre/diffs": "^1.4.1",
+        "@tabler/icons": "^3.49.0",
+        "@tabler/icons-react": "^3.49.0",
         "clsx": "^2.1.1",
-        "lucide": "^1.58.0",
-        "lucide-static": "^1.58.0",
         "react": "^19.3.1",
         "react-aria-components": "1.22.1",
         "react-dom": "^19.3.1"

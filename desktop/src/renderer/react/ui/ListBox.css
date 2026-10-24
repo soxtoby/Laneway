@@ -310,7 +310,7 @@
         font-weight: 500;
         color: var(--text-color);
 
-        .lucide-check {
+        .tabler-icon-check {
             position: absolute;
             top: 50%;
             left: var(--spacing-1);

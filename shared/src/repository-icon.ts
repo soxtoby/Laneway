@@ -25,7 +25,7 @@ export const repositoryIconColors = [
 export type RepositoryIconColor = typeof repositoryIconColors[number]
 
 /**
- * A user's Repository Icon override. Icons are Lucide names in kebab case; an image is an absolute
+ * A user's Repository Icon override. Icons are Tabler names in kebab case; an image is an absolute
  * path read on demand so the file never has to be copied into application data.
  */
 export type RepositoryIcon =

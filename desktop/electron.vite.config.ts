@@ -18,6 +18,12 @@ let devNonceCsp: Plugin = {
             .replace("script-src 'self'", `script-src 'self' 'nonce-${devNonce}'`),
 }
 
+// The Repository Icon catalogue reads Tabler's node data and tags, which `@tabler/icons` leaves out of
+// its exports; `tsconfig.json` maps the same names for Bun.
+let tablerCatalogFiles = Object.fromEntries(
+    ["tabler-nodes-outline.json", "icons.json"].map(file => [`@tabler/icons/${file}`, resolve(import.meta.dirname, "node_modules/@tabler/icons", file)]),
+)
+
 export default defineConfig(({ command }) => ({
     main: {
         build: {
@@ -37,6 +43,7 @@ export default defineConfig(({ command }) => ({
     renderer: {
         plugins: [react(), devNonceCsp],
         html: command == "serve" ? { cspNonce: devNonce } : {},
+        resolve: { alias: tablerCatalogFiles },
         build: {
             rollupOptions: {
                 input: { index: resolve(import.meta.dirname, "src/renderer/index.html") },

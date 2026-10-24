@@ -1,48 +1,49 @@
-import { Archive, ArrowDownToLine, ArrowRight, ArrowUpToLine, Check, ChevronDown, ChevronsDownUp, ChevronsLeft, ChevronsRight, ChevronsUpDown, Copy, Diff, Ellipsis, ExternalLink, FaceSlightlySmiling, Folder, GitBranch, GitCompareArrows, GitGraph, type IconNode, Image, ImagePlus, ListTree, Maximize2, Minimize2, Minus, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Redo2, Search, SlidersHorizontal, Sun, Tag, TextWrap, TriangleAlert, Type, Undo2, X } from "lucide"
+import { createReactComponent, IconAdjustmentsHorizontal, IconAlertTriangle, IconArchive, IconArrowBackUp, IconArrowBarToDown, IconArrowBarToUp, IconArrowForwardUp, IconArrowRight, IconArrowsDiagonal, IconArrowsDiagonalMinimize2, IconCheck, IconChevronDown, IconChevronsLeft, IconChevronsRight, IconCopy, IconDots, IconExternalLink, IconFileDiff, IconFolder, IconGitBranch, IconGitCompare, IconGitMerge, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconLetterT, IconListTree, IconMinus, IconMoodSmile, IconMoon, IconPencil, IconPhoto, IconPhotoPlus, IconPlus, IconSearch, IconSelector, IconSun, IconTag, IconTextWrap, IconX } from "@tabler/icons-react"
 import { createElement, type ReactNode } from "react"
-import { customIconPaths } from "./icon-nodes"
-import { lucideIcon } from "./ui/icons"
+import type { CatalogNode } from "./icon-catalog"
+import { collapseAllNode, customIconPaths } from "./icon-nodes"
+import { tablerIcon } from "./ui/icons"
 
-// Application icons, drawn from Lucide's nodes (ADR 0020).
-export let ArchiveIcon = lucideIcon(Archive, "archive")
-export let PullIcon = lucideIcon(ArrowDownToLine, "arrow-down-to-line")
-export let PublishIcon = lucideIcon(ArrowUpToLine, "arrow-up-to-line")
-export let MoreIcon = lucideIcon(Ellipsis, "ellipsis")
-export let OpenColumnIcon = lucideIcon(ExternalLink, "external-link")
-export let FolderIcon = lucideIcon(Folder, "folder")
-export let BranchIcon = lucideIcon(GitBranch, "git-branch")
-export let TreeIcon = lucideIcon(ListTree, "list-tree")
-export let MaximizeIcon = lucideIcon(Maximize2, "maximize-2")
-export let DeletedIcon = lucideIcon(Minus, "minus")
-export let MoonIcon = lucideIcon(Moon, "moon")
-export let CollapsePanelIcon = lucideIcon(PanelLeftClose, "panel-left-close")
-export let ExpandPanelIcon = lucideIcon(PanelLeftOpen, "panel-left-open")
-export let ModifiedIcon = lucideIcon(Pencil, "pencil")
-export let AddIcon = lucideIcon(Plus, "plus")
-export let RedoIcon = lucideIcon(Redo2, "redo-2")
-export let SearchIcon = lucideIcon(Search, "search")
-export let SettingsIcon = lucideIcon(SlidersHorizontal, "sliders-horizontal")
-export let SunIcon = lucideIcon(Sun, "sun")
-export let UndoIcon = lucideIcon(Undo2, "undo-2")
-export let CloseIcon = lucideIcon(X, "x")
-export let CollapseColumnIcon = lucideIcon(ChevronsLeft, "chevrons-left")
-export let ExpandColumnIcon = lucideIcon(ChevronsRight, "chevrons-right")
-export let RestoreIcon = lucideIcon(Minimize2, "minimize-2")
-export let WarningIcon = lucideIcon(TriangleAlert, "triangle-alert")
-export let CompareIcon = lucideIcon(GitCompareArrows, "git-compare-arrows")
-export let CheckIcon = lucideIcon(Check, "check")
-export let CopyIcon = lucideIcon(Copy, "copy")
-export let ChevronDownIcon = lucideIcon(ChevronDown, "chevron-down")
-export let IconTypeIcon = lucideIcon(Image, "image")
-export let EmojiTypeIcon = lucideIcon(FaceSlightlySmiling, "face-slightly-smiling")
-export let MonogramTypeIcon = lucideIcon(Type, "type")
-export let ImageTypeIcon = lucideIcon(ImagePlus, "image-plus")
-export let DiffIcon = lucideIcon(Diff, "diff")
-export let ExpandAllIcon = lucideIcon(ChevronsUpDown, "chevrons-up-down")
-export let CollapseAllIcon = lucideIcon(ChevronsDownUp, "chevrons-down-up")
-export let GraphIcon = lucideIcon(GitGraph, "git-graph")
-export let TagIcon = lucideIcon(Tag, "tag")
-export let WrapLinesIcon = lucideIcon(TextWrap, "text-wrap")
+// Application icons, from Tabler (ADR 0024).
+export let ArchiveIcon = tablerIcon(IconArchive)
+export let PullIcon = tablerIcon(IconArrowBarToDown)
+export let PublishIcon = tablerIcon(IconArrowBarToUp)
+export let MoreIcon = tablerIcon(IconDots)
+export let OpenColumnIcon = tablerIcon(IconExternalLink)
+export let FolderIcon = tablerIcon(IconFolder)
+export let BranchIcon = tablerIcon(IconGitBranch)
+export let TreeIcon = tablerIcon(IconListTree)
+export let MaximizeIcon = tablerIcon(IconArrowsDiagonal)
+export let DeletedIcon = tablerIcon(IconMinus)
+export let MoonIcon = tablerIcon(IconMoon)
+export let CollapsePanelIcon = tablerIcon(IconLayoutSidebarLeftCollapse)
+export let ExpandPanelIcon = tablerIcon(IconLayoutSidebarLeftExpand)
+export let ModifiedIcon = tablerIcon(IconPencil)
+export let AddIcon = tablerIcon(IconPlus)
+export let RedoIcon = tablerIcon(IconArrowForwardUp)
+export let SearchIcon = tablerIcon(IconSearch)
+export let SettingsIcon = tablerIcon(IconAdjustmentsHorizontal)
+export let SunIcon = tablerIcon(IconSun)
+export let UndoIcon = tablerIcon(IconArrowBackUp)
+export let CloseIcon = tablerIcon(IconX)
+export let CollapseColumnIcon = tablerIcon(IconChevronsLeft)
+export let ExpandColumnIcon = tablerIcon(IconChevronsRight)
+export let RestoreIcon = tablerIcon(IconArrowsDiagonalMinimize2)
+export let WarningIcon = tablerIcon(IconAlertTriangle)
+export let CompareIcon = tablerIcon(IconGitCompare)
+export let CheckIcon = tablerIcon(IconCheck)
+export let CopyIcon = tablerIcon(IconCopy)
+export let ChevronDownIcon = tablerIcon(IconChevronDown)
+export let IconTypeIcon = tablerIcon(IconPhoto)
+export let EmojiTypeIcon = tablerIcon(IconMoodSmile)
+export let MonogramTypeIcon = tablerIcon(IconLetterT)
+export let ImageTypeIcon = tablerIcon(IconPhotoPlus)
+export let DiffIcon = tablerIcon(IconFileDiff)
+export let ExpandAllIcon = tablerIcon(IconSelector)
+export let CollapseAllIcon = tablerIcon(createReactComponent("outline", "chevrons-down-up", "ChevronsDownUp", collapseAllNode))
+export let GraphIcon = tablerIcon(IconGitMerge)
+export let TagIcon = tablerIcon(IconTag)
+export let WrapLinesIcon = tablerIcon(IconTextWrap)
 
 /** Laneway's Hidden L mark, from assets/brand/laneway-icon.svg, fitted to its 48-unit canvas. */
 export function BrandMark() {
@@ -53,8 +54,8 @@ export function BrandMark() {
     )
 }
 
-/** Any Lucide icon by its node data, such as one chosen from the catalog for a Repository Icon. */
-export function LucideGlyph({ node }: { node: IconNode }) {
+/** Any Tabler icon by its node data, such as one chosen from the catalog for a Repository Icon. */
+export function CatalogGlyph({ node }: { node: CatalogNode }) {
     return (
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             {node.map(([tag, attributes], index) => createElement(tag, { key: index, ...attributes }))}
@@ -64,11 +65,11 @@ export function LucideGlyph({ node }: { node: IconNode }) {
 
 let statusIcons: Record<string, typeof AddIcon> = {
     added: AddIcon,
-    deleted: lucideIcon(Minus, "minus"),
-    modified: lucideIcon(Pencil, "pencil"),
-    renamed: lucideIcon(ArrowRight, "arrow-right"),
-    copied: lucideIcon(Copy, "copy"),
-    conflicted: lucideIcon(TriangleAlert, "triangle-alert"),
+    deleted: DeletedIcon,
+    modified: ModifiedIcon,
+    renamed: tablerIcon(IconArrowRight),
+    copied: CopyIcon,
+    conflicted: WarningIcon,
 }
 
 /** How a file changed, as an icon named for its Git status. */
@@ -77,7 +78,7 @@ export function FileStatusIcon({ status }: { status: string }) {
     return <Icon className="file-status" data-status={status} role="img" aria-label={status} aria-hidden={false} />
 }
 
-/** A head cut off from any branch: Laneway's own stroke, as Lucide has none (ADR 0020). */
+/** A head cut off from any branch: Laneway's own stroke, as Tabler has none (ADR 0024). */
 export function DetachedIcon({ className }: { className?: string }) {
     return (
         <svg

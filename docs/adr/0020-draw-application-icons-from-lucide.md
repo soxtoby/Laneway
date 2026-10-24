@@ -1,3 +1,5 @@
 # Draw application icons from Lucide
 
+Status: superseded by ADR-0024, which draws icons from Tabler.
+
 Render the application's icons and user-chosen Repository Icons from Lucide's SVG node data (`lucide` for the icons the application itself uses, `lucide-static` for the complete catalogue and search tags) instead of maintaining hand-drawn paths. Icons stay inline SVG built by the renderer, so the strict CSP needs no font, stylesheet, or remote source; `Icon` keeps its name-based API and the few concepts Lucide does not draw remain hand-drawn strokes behind the same component. The full catalogue loads lazily when a Repository Icon is chosen by name, keeping it out of the startup bundle. Saved icons are Lucide's kebab-case names, matching the convention other tools use so a name chosen elsewhere means the same picture here.

@@ -1,41 +1,24 @@
-import { Check as CheckNode, ChevronDown as ChevronDownNode, ChevronRight as ChevronRightNode, Dot as DotNode, GripVertical as GripVerticalNode, type IconNode, Search as SearchNode, X as XNode } from "lucide"
-import { createElement, type SVGProps } from "react"
+import { IconCheck, IconChevronDown, IconChevronRight, IconGripVertical, IconPointFilled, type IconProps, IconSearch, IconX, type TablerIcon } from "@tabler/icons-react"
 
-export type IconProps = SVGProps<SVGSVGElement> & { size?: number | string }
+export type { IconProps }
 
 /**
- * Draws Lucide's node data the way `lucide-react` does, including its `lucide-<name>` classes that
- * the starter CSS targets, so the kit keeps its icon props without a second copy of the icon set.
+ * A Tabler icon hidden from assistive technology, as `lucide-react`'s are in the upstream kit, since
+ * the control around it carries the name; pass `aria-hidden={false}` with a role and label to show
+ * it. Tabler's `tabler-icon-<name>` classes are what the kit's CSS targets.
  */
-export function lucideIcon(node: IconNode, name: string) {
-    function Icon({ size = 24, strokeWidth = 2, className, ...props }: IconProps) {
-        return (
-            <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width={size}
-                height={size}
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={strokeWidth}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-                className={["lucide", `lucide-${name}`, className].filter(Boolean).join(" ")}
-                {...props}
-            >
-                {node.map(([tag, attributes], index) => createElement(tag, { key: index, ...attributes }))}
-            </svg>
-        )
+export function tablerIcon(Icon: TablerIcon) {
+    function HiddenIcon(props: IconProps) {
+        return <Icon aria-hidden="true" {...props} />
     }
-    Icon.displayName = name
-    return Icon
+    HiddenIcon.displayName = Icon.displayName
+    return HiddenIcon
 }
 
-export let Check = lucideIcon(CheckNode, "check")
-export let ChevronDown = lucideIcon(ChevronDownNode, "chevron-down")
-export let ChevronRight = lucideIcon(ChevronRightNode, "chevron-right")
-export let Dot = lucideIcon(DotNode, "dot")
-export let GripVertical = lucideIcon(GripVerticalNode, "grip-vertical")
-export let Search = lucideIcon(SearchNode, "search")
-export let X = lucideIcon(XNode, "x")
+export let Check = tablerIcon(IconCheck)
+export let ChevronDown = tablerIcon(IconChevronDown)
+export let ChevronRight = tablerIcon(IconChevronRight)
+export let Dot = tablerIcon(IconPointFilled)
+export let GripVertical = tablerIcon(IconGripVertical)
+export let Search = tablerIcon(IconSearch)
+export let X = tablerIcon(IconX)

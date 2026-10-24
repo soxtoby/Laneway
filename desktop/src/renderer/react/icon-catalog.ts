@@ -1,23 +1,26 @@
-import type { IconNode } from "./icon-nodes"
+/** A Tabler icon's shapes, drawn on its 24-unit grid. */
+export type CatalogNode = [tag: string, attributes: Record<string, string>][]
 
-/** Every Lucide icon by its kebab-case name, with the search tags Lucide publishes for each. */
-export interface LucideCatalog {
-    nodes: Record<string, IconNode>
+/** Every Tabler outline icon by its kebab-case name, with the search tags Tabler publishes for each. */
+export interface IconCatalog {
+    nodes: Record<string, CatalogNode>
     tags: Record<string, string[]>
 }
 
-let catalog: LucideCatalog | undefined
-let loading: Promise<LucideCatalog> | undefined
+let catalog: IconCatalog | undefined
+let loading: Promise<IconCatalog> | undefined
 
 /**
  * The whole icon set, loaded once on first use so the application bundle stays small. `loaded` fires
  * after a pending load finishes, so a caller rendering before then can re-render with the result.
  */
-export function lucideCatalog(loaded?: () => void): LucideCatalog | undefined {
+export function iconCatalog(loaded?: () => void): IconCatalog | undefined {
     if (catalog)
         return catalog
-    loading ??= Promise.all([import("lucide-static/icon-nodes.json"), import("lucide-static/tags.json")]).then(([nodes, tags]) => {
-        catalog = { nodes: nodes.default, tags: tags.default }
+    loading ??= Promise.all([import("@tabler/icons/tabler-nodes-outline.json"), import("@tabler/icons/icons.json")]).then(([nodes, icons]) => {
+        // A few of Tabler's tags are numbers.
+        let tags = Object.fromEntries(Object.entries(icons.default).map(([name, icon]) => [name, icon.tags.map(String)]))
+        catalog = { nodes: nodes.default, tags }
         return catalog
     })
     if (loaded)
@@ -26,112 +29,112 @@ export function lucideCatalog(loaded?: () => void): LucideCatalog | undefined {
 }
 
 /** The node for a saved icon name, or nothing while the catalog loads or when the name is unknown. */
-export function lucideNode(name: string, loaded?: () => void) {
-    return lucideCatalog(loaded)?.nodes[name]
+export function catalogNode(name: string, loaded?: () => void) {
+    return iconCatalog(loaded)?.nodes[name]
 }
 
 // Shown before any search, in rough order of how often a repository is one of these things.
 export let popularIcons = [
     "folder-code",
-    "folder-git-2",
-    "code-xml",
+    "git-fork",
+    "code",
     "terminal",
-    "globe",
+    "world",
     "server",
     "database",
-    "bot",
+    "robot",
     "sparkles",
-    "smartphone",
-    "monitor",
+    "device-mobile",
+    "device-desktop",
     "cloud-cog",
     "package",
-    "book-open",
-    "flask-conical",
+    "book",
+    "flask",
     "shield-check",
     "rocket",
-    "gamepad-2",
-    "image",
+    "device-gamepad-2",
+    "photo",
     "shopping-bag",
     "git-branch",
-    "workflow",
-    "wrench",
-    "layers",
+    "sitemap",
+    "tool",
+    "stack-2",
     "cpu",
     "braces",
     "brain",
     "chart-line",
-    "component",
+    "components",
     "puzzle",
     "palette",
-    "pen-tool",
-    "blocks",
+    "vector-bezier",
+    "box-multiple",
     "atom",
-    "zap",
+    "bolt",
     "flame",
     "leaf",
     "heart",
     "star",
     "bug",
-    "test-tube",
+    "test-pipe",
     "lock",
     "key",
     "mail",
-    "message-square",
+    "message",
     "calendar",
     "map",
     "camera",
     "headphones",
     "radio",
-    "lightbulb",
+    "bulb",
     "compass",
     "plane",
     "car",
     "coffee",
     "cat",
     "dog",
-    "bird",
+    "feather",
     "fish",
-    "tree-pine",
+    "tree",
     "mountain",
     "briefcase",
-    "store",
-    "landmark",
-    "graduation-cap",
-    "newspaper",
+    "building-store",
+    "building-bank",
+    "school",
+    "news",
     "notebook",
-    "library",
+    "books",
     "trophy",
     "gift",
     "ghost",
     "swords",
     "crown",
-    "gem",
+    "diamond",
     "coins",
     "wallet",
     "chart-pie",
     "table",
     "layout-dashboard",
-    "kanban",
+    "layout-kanban",
     "hexagon",
     "infinity",
     "hash",
     "binary",
     "network",
     "rss",
-    "film",
-    "tv",
-    "dumbbell",
+    "movie",
+    "device-tv",
+    "barbell",
     "telescope",
     "microscope",
     "dna",
-    "orbit",
+    "planet",
     "satellite",
 ]
 
 export let iconSearchLimit = 96
 
-/** Icon names matching a query by name or Lucide tag; the popular set when the query is empty. */
-export function searchLucide(catalog: LucideCatalog, query: string): string[] {
+/** Icon names matching a query by name or Tabler tag; the popular set when the query is empty. */
+export function searchIcons(catalog: IconCatalog, query: string): string[] {
     let needle = query.trim().toLocaleLowerCase().replace(/\s+/g, "-")
     if (!needle)
         return popularIcons.filter(name => name in catalog.nodes)

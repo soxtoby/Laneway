@@ -1,7 +1,7 @@
 import type { RepositoryIcon } from "@laneway/shared"
 import { graphemeCount, repositoryInitials } from "@laneway/shared"
 import { createElement, type ReactNode, useReducer } from "react"
-import { lucideNode } from "./lucide-catalog"
+import { catalogNode } from "./icon-catalog"
 import { type IconImageApi, iconImageUrl } from "./repository-icon-images"
 
 interface TileProps {
@@ -15,8 +15,8 @@ interface TileProps {
 }
 
 /**
- * A Repository Icon on a 20-unit tile, sized by its class. Initials, monograms, emoji, Lucide icons,
- * and images all fit the same tile; images and the Lucide catalog show initials until they load.
+ * A Repository Icon on a 20-unit tile, sized by its class. Initials, monograms, emoji, Tabler icons,
+ * and images all fit the same tile; images and the icon catalog show initials until they load.
  * `data-kind` names what it shows.
  */
 export function RepositoryTile({ icon, name, api, isActive = false, isMissing = false, className = "tile" }: TileProps) {
@@ -42,7 +42,7 @@ export function RepositoryTile({ icon, name, api, isActive = false, isMissing = 
             </text>
         )
     } else if (icon?.kind == "icon") {
-        let node = lucideNode(icon.name, loaded)
+        let node = catalogNode(icon.name, loaded)
         if (node) {
             content = (
                 <g

@@ -11,7 +11,11 @@
         "strict": true,
         "target": "ES2023",
         "types": ["bun", "node"],
-        "verbatimModuleSyntax": true
+        "verbatimModuleSyntax": true,
+        "paths": {
+            "@tabler/icons/tabler-nodes-outline.json": ["./desktop/node_modules/@tabler/icons/tabler-nodes-outline.json"],
+            "@tabler/icons/icons.json": ["./desktop/node_modules/@tabler/icons/icons.json"]
+        }
     },
     "include": [
         "shared/**/*.ts",
