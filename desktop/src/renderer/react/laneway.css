@@ -1084,15 +1084,20 @@
 }
 
 .file-content {
+    /* The path takes its own width, its copy button just after it, and what follows sits at the row's end. */
     .file-path {
-        flex: 1 1 auto;
+        flex: 0 1 auto;
         min-width: 0;
     }
 
+    .copy-path + * {
+        margin-inline-start: auto;
+    }
+
     /* Its copy and menu buttons take room only while they show, leaving the path the row's width otherwise;
-       an open menu keeps its button where the menu is anchored. */
-    .dense-row:not([data-hovered], [data-focus-visible-within]) & .copy-path:not([data-copied], [data-focus-visible]),
-    .row-actions:not([data-visible], :has([aria-expanded="true"])) {
+       an open menu keeps its button where the menu is anchored. An open file always shows them. */
+    .dense-row:not([data-hovered], [data-focus-visible-within], .inspected) & .copy-path:not([data-copied], [data-focus-visible]),
+    .dense-row:not(.inspected) & .row-actions:not([data-visible], :has([aria-expanded="true"])) {
         display: none;
     }
 }
@@ -1108,12 +1113,12 @@
     line-height: 18px;
 }
 
-/* Copying the path shows on the hovered or focused row, and confirms the copy. */
+/* Copying the path shows on the hovered, focused, or open row, and confirms the copy. */
 .copy-path {
     flex: 0 0 auto;
     opacity: 0;
 
-    .dense-row:is([data-hovered], [data-focus-visible-within]) &,
+    .dense-row:is([data-hovered], [data-focus-visible-within], .inspected) &,
     &[data-focus-visible],
     &[data-copied] {
         opacity: 1;
@@ -1224,9 +1229,11 @@
     display: flex;
     opacity: 0;
 
-    /* An open menu keeps its button showing after the pointer leaves the row for the menu. */
+    /* An open menu keeps its button showing after the pointer leaves the row for the menu; an open file's
+       row always shows it. */
     &[data-visible],
-    &:has([aria-expanded="true"]) {
+    &:has([aria-expanded="true"]),
+    .file-row.inspected & {
         opacity: 1;
     }
 }
@@ -2120,8 +2127,8 @@
     }
 }
 
-/* A row's grip shows while the pointer or keyboard focus is on the row, or while it is chosen. Hidden, it keeps
-   its room, so the row doesn't shift. */
+/* A row's grip shows while the pointer or keyboard focus is on the row, or while it is chosen, even on an open file
+   that keeps its other controls showing. Hidden, it keeps its room, so the row doesn't shift. */
 :is(.dense-row:not([data-hovered], [data-focus-visible], [data-focus-visible-within]), :is(.commit-row, .stack-heading, .history-row):not(:hover, :has([data-focus-visible])))
     .grip:not([data-chosen], [data-focus-visible]) {
     visibility: hidden;
