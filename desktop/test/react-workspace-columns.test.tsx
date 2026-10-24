@@ -92,6 +92,32 @@ describe("React Workspace Columns", () => {
         expect(betweenButtons).not.toContain(dragHint)
     })
 
+    test("a column header's tooltip shows below its button where the window's controls would cover it", async () => {
+        let app = await startReactApp(inspectionScenario().api)
+        let filter = button(column(columnIds()[0]!), "Filter files")
+        // Happy DOM lays nothing out, so a tooltip is given the place a window gives it above or below its button.
+        let restoreLayout = layOutTooltips(placement => placement == "bottom" ? new DOMRect(900, 110, 120, 28) : new DOMRect(900, 30, 120, 28))
+        try {
+            showWindowControls(new DOMRect(0, 0, 1100, 47))
+            await app.act(() => hover(filter))
+            await app.act(() => wait(1600))
+            let clear = placements()
+            await app.act(() => hover(document.body, filter))
+            await app.act(() => wait(1000))
+
+            showWindowControls(new DOMRect(0, 0, 940, 47))
+            await app.act(() => hover(filter))
+            await app.act(() => wait(1600))
+            let covered = placements()
+
+            expect(clear).toEqual(["top"])
+            expect(covered).toEqual(["bottom"])
+        } finally {
+            restoreLayout()
+            delete (navigator as { windowControlsOverlay?: unknown }).windowControlsOverlay
+        }
+    })
+
     test("a column header's hint shows over the header, and its name's own over the name", async () => {
         let app = await startReactApp(inspectionScenario().api)
         let header = column(columnIds()[0]!).querySelector("header")!
@@ -256,6 +282,29 @@ function wait(milliseconds: number) {
 
 function tooltips() {
     return [...document.querySelectorAll("[role=tooltip]")].map(tooltip => tooltip.textContent)
+}
+
+function placements() {
+    return [...document.querySelectorAll<HTMLElement>("[role=tooltip]")].map(tooltip => tooltip.dataset.placement)
+}
+
+/** Places each tooltip where `place` puts it for its placement. */
+function layOutTooltips(place: (placement?: string) => DOMRect) {
+    let original = Object.getOwnPropertyDescriptor(Element.prototype, "getBoundingClientRect")!
+    Object.defineProperty(Element.prototype, "getBoundingClientRect", {
+        configurable: true,
+        value(this: Element) {
+            return this instanceof HTMLElement && this.classList.contains("react-aria-Tooltip")
+                ? place(this.dataset.placement)
+                : original.value.call(this)
+        },
+    })
+    return () => Object.defineProperty(Element.prototype, "getBoundingClientRect", original)
+}
+
+/** The window's controls, beside the title bar area they leave the page. */
+function showWindowControls(titlebarArea: DOMRect) {
+    Object.defineProperty(navigator, "windowControlsOverlay", { configurable: true, value: { visible: true, getTitlebarAreaRect: () => titlebarArea } })
 }
 
 function tabs() {

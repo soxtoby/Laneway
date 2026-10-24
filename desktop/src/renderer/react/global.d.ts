@@ -39,6 +39,11 @@ declare global {
         container?: "all" | "nearest"
     }
 
+    // The window's controls draw over the page's title bar with `titleBarOverlay`; TypeScript's DOM types lack the API.
+    interface Navigator {
+        readonly windowControlsOverlay?: { readonly visible: boolean; getTitlebarAreaRect(): DOMRect }
+    }
+
     interface Window {
         laneway: {
             recoverWorktree(repositoryId: string, request: RecoveryRequest): Promise<RecoveryActionResult>
