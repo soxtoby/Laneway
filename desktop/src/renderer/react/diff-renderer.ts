@@ -1,5 +1,5 @@
 import type { DiffLayout, DiffLine, FileDiffPage } from "@laneway/shared"
-import { DiffHunksRenderer, type FileDiffLoadedChangedFiles, wrapCoreCSS, wrapThemeCSS } from "@pierre/diffs"
+import { canUseWASM, DEFAULT_THEMES, DiffHunksRenderer, type FileDiffLoadedChangedFiles, getFiletypeFromFileName, getHighlighterIfLoaded, getHighlighterOptions, type HighlighterTypes, preloadHighlighter, wrapCoreCSS, wrapThemeCSS } from "@pierre/diffs"
 import { contextDiff, visibleDiffLines } from "./diff-context"
 import type { pierrePatch } from "./diff-patch"
 import { expandAllNode } from "./icon-nodes"
@@ -26,6 +26,34 @@ interface LineIndex {
 // Rendered lines are 24px tall, unless they wrap; only those near the scrolling column's viewport are drawn.
 let lineHeight = 24
 let renderedLines = 80
+
+/**
+ * Pierre's Highlights, which runs as WebAssembly, tokenizes many times faster than Shiki's regular expressions; Shiki
+ * stands in wherever WebAssembly can't compile. A page runs one kind of highlighter, so conflicts use this one too.
+ */
+export let highlighter: HighlighterTypes = canUseWASM() ? "highlights" : "shiki-js"
+
+interface Language {
+    loaded: Promise<void>
+    failed?: boolean
+}
+
+// Each language's highlighting loads once for every diff. One that fails to load is left to Pierre.
+let languages = new Map<string, Language>()
+
+function loadLanguage(name: string) {
+    let language = languages.get(name)
+    if (!language) {
+        let loading: Language = {
+            loaded: preloadHighlighter(getHighlighterOptions(name, { theme: DEFAULT_THEMES, preferredHighlighter: highlighter })).catch(() => {
+                loading.failed = true
+            }),
+        }
+        language = loading
+        languages.set(name, language)
+    }
+    return language
+}
 
 // Pierre's shadow root takes no page stylesheets, so its rules come from the theme's variables here.
 let diffCSS = `:host { --diffs-font-family: var(--font-family-mono); --diffs-font-size: 12px; --diffs-line-height: 24px;
@@ -72,6 +100,11 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
     let contextFiles: FileDiffLoadedChangedFiles | undefined
     let contextRead: AbortController | undefined
     let rendered = ""
+    // What the drawn lines show, other than where they start; empty while a spacer stands in for them.
+    let drawn = ""
+    let spacer = document.createElement("div")
+    // The language it waits for before it can draw.
+    let waiting: Language | undefined
     // Wrapped rows' measured heights, which place the drawn lines; rows never drawn count as one line.
     let heights: number[] = []
     // The layout the heights were measured in.
@@ -80,7 +113,16 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
     let decorated = ""
     let horizontalOffset = 0
     let syncedOffsets = new WeakMap<HTMLElement, number>()
-    let scroll = () => render()
+    // Scrolling moves the drawn lines only for a diff near the view; the observer notices one coming near.
+    let scroll = () => {
+        if (near)
+            render()
+    }
+    // Whether the diff is within the viewport's height of the column's view. The observer notices it coming near or
+    // going away for any reason, such as the files above it folding, and measures every diff in the column at once
+    // after layout, where measuring each here would lay out the column again for each diff.
+    let approach: IntersectionObserver | undefined
+    let near = false
     let dark = matchMedia("(prefers-color-scheme: dark)")
 
     // Pierre's own pane scrollbars sit under the drawn window of lines, often out of view; the pinned one drives them all.
@@ -116,8 +158,18 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
                 container = container.parentElement
             if (container != scrollContainer) {
                 scrollContainer?.removeEventListener("scroll", scroll)
+                approach?.disconnect()
+                approach = undefined
                 scrollContainer = container
                 scrollContainer?.addEventListener("scroll", scroll, { signal: lifetime.signal, passive: true })
+                near = false
+                if (scrollContainer) {
+                    approach = new IntersectionObserver(entries => {
+                        near = entries.at(-1)?.isIntersecting ?? near
+                        render()
+                    }, { root: scrollContainer, rootMargin: "100% 0px" })
+                    approach.observe(host)
+                }
             }
         }
         let { page, layout, wrap } = props
@@ -125,7 +177,10 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
             heights = []
             measuredFor = `${layout}:${wrap}`
         }
-        if (scrollContainer) {
+        // A diff away from the column's view isn't drawn, nor highlighted, until it nears; nor is one a glide is
+        // passing on its way to a chosen file (`data-gliding` on the column), which a scroll event redraws as it slows.
+        let shown = !scrollContainer || near && !scrollContainer.hasAttribute("data-gliding")
+        if (scrollContainer && near) {
             let offset = scrollContainer.getBoundingClientRect().top + scrollContainer.clientTop - host.getBoundingClientRect().top
             start = Math.max(0, rowAt(offset) - 10)
         }
@@ -142,20 +197,38 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
             index = indexLines(page)
             previous = page
             rendered = ""
+            drawn = ""
+        }
+        if (!diff) {
+            shadow.replaceChildren()
+            rendered = ""
+            drawn = ""
+            return
         }
 
         let appearance = dark.matches ? "dark" as const : "light" as const
-        let key = `${layout}:${wrap}:${appearance}:${start}:${props.showWhitespace}`
+        let total = visibleDiffLines(diff, layout, viewer.getExpandedHunksMap())
+        let first = Math.min(start, Math.max(0, total - 60))
+        let content = `${layout}:${wrap}:${appearance}:${props.showWhitespace}`
+        let key = `${content}:${first}`
         if (!force && rendered == key) {
             // Nothing drawn changed: at most the selection needs redrawing, which writes nothing when it is the same.
             decorate()
+            return
+        }
+        if (!shown) {
+            // Lines drawn for what it still shows stay until it nears; otherwise a spacer holds its place.
+            if (force)
+                rendered = ""
+            if (drawn != content)
+                hold(rowsHeight(0, total))
             return
         }
 
         viewer.setOptions({
             diffStyle: layout,
             themeType: appearance,
-            preferredHighlighter: "shiki-js",
+            preferredHighlighter: highlighter,
             disableFileHeader: true,
             hunkSeparators: "line-info-basic",
             collapsedContextThreshold: 0,
@@ -163,15 +236,31 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
             maxLineDiffLength: 10000,
             overflow: wrap ? "wrap" : "scroll",
         })
-        if (!diff) {
-            shadow.replaceChildren()
+        // Until its language has loaded, each call to Pierre queues another highlight of the whole diff, which runs even
+        // once the diff has gone. So the diff holds its place, and draws once the language loads if it is still near.
+        let name = diff.lang ?? getFiletypeFromFileName(diff.name)
+        let language = getHighlighterIfLoaded({ theme: DEFAULT_THEMES, lang: name }) ? undefined : loadLanguage(name)
+        if (language && !language.failed) {
+            if (!drawn)
+                hold(rowsHeight(0, total))
+            if (waiting != language) {
+                let loading = language
+                waiting = loading
+                void loading.loaded.then(() => {
+                    if (waiting == loading) {
+                        waiting = undefined
+                        render()
+                    }
+                })
+            }
             return
         }
-        let total = visibleDiffLines(diff, layout, viewer.getExpandedHunksMap())
-        let first = Math.min(start, Math.max(0, total - 60))
         let result = viewer.renderDiff(diff, { startingLine: first, totalLines: renderedLines, bufferBefore: 0, bufferAfter: 0 })
-        if (!result)
+        if (!result) {
+            if (!drawn)
+                hold(rowsHeight(0, total))
             return
+        }
         sheet.replaceSync(wrapCoreCSS("") + wrapThemeCSS(result.themeStyles, appearance) + diffCSS)
         let before = document.createElement("div")
         before.style.height = `${rowsHeight(0, first)}px`
@@ -193,12 +282,26 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
         }
 
         rendered = key
+        drawn = content
         decorated = ""
         decorate()
         if (wrap)
             measureRows(first)
         measureScrollbar()
         syncHorizontal()
+    }
+
+    // Stands in for undrawn lines at their unwrapped height, without the scrollbar of lines that aren't there.
+    function hold(height: number) {
+        if (shadow.childNodes.length != 1 || shadow.firstChild != spacer)
+            shadow.replaceChildren(spacer)
+        let size = `${height}px`
+        if (spacer.style.height != size)
+            spacer.style.height = size
+        rendered = ""
+        drawn = ""
+        if (!scrollbar.hidden)
+            scrollbar.hidden = true
     }
 
     // Only rows up to the last one measured are walked; past it every row is one line, so without wrapping (when
@@ -288,6 +391,8 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
     // Runs only when the drawn lines or the host's size change: every write here invalidates layout for the other
     // diffs in the column, which then pay for a reflow on their next measurement.
     function measureScrollbar() {
+        if (!drawn)
+            return
         let range = Math.max(0, ...[...shadow.querySelectorAll<HTMLElement>("[data-code]")].map(pane => pane.scrollWidth - pane.clientWidth))
         let hidden = range == 0
         if (scrollbar.hidden != hidden)
@@ -433,6 +538,7 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
             lifetime.abort()
             contextRead?.abort()
             resize.disconnect()
+            approach?.disconnect()
             viewer?.cleanUp()
             viewer = undefined
         },

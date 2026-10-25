@@ -1051,6 +1051,9 @@
     display: flex;
     flex-direction: column;
     outline: none;
+    /* React Aria lets a virtualized collection scroll itself, but the list scrolls with its column; a diff opened in it
+       follows the column's scrolling, and its scrollbar pins to the column's edge. */
+    overflow: visible !important;
 }
 
 /* A row leads with its chevron, or a file's space for one, then its icon, each level a chevron's width further in.
@@ -3159,7 +3162,7 @@
 
 /* The file at the top of a diff column is marked in its source column's list by a bar at its edge, which sets it
    apart from a hovered row; a chosen row keeps its choice's wash under the bar. */
-.file-row.active {
+.file-row[data-active] {
     box-shadow: inset 3px 0 var(--focus-ring-color);
 
     &:not([data-chosen]) {

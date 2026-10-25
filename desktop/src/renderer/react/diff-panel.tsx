@@ -11,7 +11,7 @@ import { TransferGrip, transferSource, useTransferScope } from "./transfer"
 import { Button } from "./ui/Button"
 import { SegmentedControl, SegmentedControlItem } from "./ui/SegmentedControl"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
-import { useSnapshot } from "./use-snapshot"
+import { useSnapshotValue } from "./use-snapshot"
 
 /** How a column lays out its diffs, saved with the column. */
 export interface DiffScope {
@@ -39,7 +39,7 @@ interface DiffControlsProps extends DiffProps {
 /** A diff's controls in its file's row: unified or side by side, wrapping every diff's lines, and showing whitespace. */
 export function DiffControls({ columnId, id, diff, inspection, breakout, entireFiles }: DiffControlsProps) {
     let { layout, setLayout } = useContext(DiffScopeContext)
-    let { wrapLines } = useSnapshot(inspection)
+    let wrapLines = useSnapshotValue(inspection, snapshot => snapshot.wrapLines)
     let breakoutButton = breakout && (
         <IconButton label="Break out diff" small onPress={breakout}>
             <BreakoutDiffIcon />
@@ -129,7 +129,7 @@ export function ImageModeToggle({ mode, onChange }: { mode: ImageDiffMode; onCha
  */
 export function DiffPanel({ columnId, id, diff, inspection, eligible }: DiffProps & { eligible: boolean }) {
     let { layout } = useContext(DiffScopeContext)
-    let { wrapLines } = useSnapshot(inspection)
+    let wrapLines = useSnapshotValue(inspection, snapshot => snapshot.wrapLines)
     let scope = useTransferScope()
     let page = diff.page && !eligible ? { ...diff.page, selectable: false } : diff.page
     let image = page != undefined && isImagePath(page.file.path)

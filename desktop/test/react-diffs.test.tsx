@@ -24,13 +24,9 @@ describe("React diffs", () => {
         })
         await app.act(() => press(button(trail(), "Inspect changes")))
         let [first, second] = commitFileRows()
-        // Pierre draws once its highlighter has loaded, which takes a moment the first time.
         let complete = async (path: string) => {
             let read = pending.get(path)!
-            await app.act(async () => {
-                read.finish(await scenario.api.readFileDiff("repository", read.id, read.request))
-                await new Promise(resolve => setTimeout(resolve, 50))
-            })
+            await app.act(async () => read.finish(await scenario.api.readFileDiff("repository", read.id, read.request)))
         }
 
         await app.act(() => openRow(first!))
@@ -40,6 +36,7 @@ describe("React diffs", () => {
         expect(diffPanel(first!)?.getAttribute("aria-label")).toBe("Diff for src/file.txt")
         expect(diffPanel(second!)?.getAttribute("aria-label")).toBe("Diff for other.txt")
         await complete("other.txt")
+        await drawn(app)
         let secondViewer = second!.querySelector(".pierre-diff")
         await app.act(() => gutter(second!, "Select deletion line 1").click())
         expect(second!.querySelector(".line-selection")?.textContent).toContain("1 line selected")
@@ -393,6 +390,15 @@ function diffPanel(row: HTMLElement) {
 
 function diffRoot(scope: Element) {
     return scope.querySelector(".pierre-diff")!.shadowRoot!
+}
+
+// Pierre draws once its highlighter has loaded, which takes a moment the first time.
+async function drawn(app: { act(action: () => unknown): Promise<void> }) {
+    for (let attempt = 0; attempt < 100; attempt++) {
+        await app.act(() => new Promise(resolve => setTimeout(resolve, 10)))
+        if ([...document.querySelectorAll(".pierre-diff")].every(host => host.shadowRoot?.querySelector("[data-code]")))
+            return
+    }
 }
 
 function gutter(scope: Element, label: string) {

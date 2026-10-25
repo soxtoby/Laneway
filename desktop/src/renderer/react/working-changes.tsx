@@ -1,5 +1,5 @@
 import type { BranchGraphMarker, ChangedFile, DiffSource, FileHistorySource, FileListView } from "@laneway/shared"
-import { type ReactNode, useEffect, useState } from "react"
+import { memo, type ReactNode, type RefObject, useCallback, useEffect, useState } from "react"
 import { Button as AriaButton, Form } from "react-aria-components"
 import type { ColumnView } from "./branch-workspace"
 import { type CommitComposer, defaultBranchName } from "./commit-composer"
@@ -9,7 +9,7 @@ import { Hint, IconButton } from "./controls"
 import { DiffControls, DiffPanel } from "./diff-panel"
 import { EditableName } from "./editable-name"
 import { fileListViewOptions } from "./file-list-view"
-import { type FileInspection, FileTree } from "./file-tree"
+import { type FileInspection, FileRowsLayout, FileTree, revealRow } from "./file-tree"
 import { applySelection } from "./historical-edit"
 import { applyTarget } from "./historical-edit-banner"
 import { ArchiveIcon, ChevronDownIcon, CloseIcon, DetachedIcon, FolderIcon, OpenColumnIcon, TreeIcon } from "./icons"
@@ -20,7 +20,7 @@ import { ChevronRight } from "./ui/icons"
 import { Menu, MenuItem, MenuSection, MenuTrigger, Separator } from "./ui/Menu"
 import { TextArea, TextField } from "./ui/TextField"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
-import { useSnapshot } from "./use-snapshot"
+import { useSnapshot, useSnapshotValue } from "./use-snapshot"
 
 interface WorkingChangesProps {
     column: Extract<ColumnView, { kind: "branch" | "virtual" }>
@@ -80,6 +80,10 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
                 apply: paths => void composer.stage(files.filter(file => paths.includes(file.path)), group == "working-unstaged"),
             }
             : undefined
+    // Kept across renders, so the lists skip renders that change nothing they show.
+    let columnId = column.id
+    let stagedItems = useCallback((file: ChangedFile) => discardItem(columnId, "working-staged", file, inspection), [columnId, inspection])
+    let unstagedItems = useCallback((file: ChangedFile) => discardItem(columnId, "working-unstaged", file, inspection), [columnId, inspection])
     let list = (group: "working-staged" | "working-unstaged", label: string) => (
         <FileList
             columnId={column.id}
@@ -92,7 +96,7 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
             root={path}
             selectable
             staging={staging(group)}
-            menuItems={file => discardItem(column.id, group, file, inspection)}
+            menuItems={group == "working-staged" ? stagedItems : unstagedItems}
         />
     )
 
@@ -404,8 +408,11 @@ interface FileListProps {
     comparison?: ComparisonColumnNode
 }
 
-/** One list of a column's files, with its reading and failure states and, once files are chosen, how many. */
-export function FileList(
+/**
+ * One list of a column's files, with its reading and failure states and, once files are chosen, how many. It renders
+ * again only when what it shows changes, not with each update to its column, such as each diff a diff column reads.
+ */
+export const FileList = memo(function FileList(
     {
         columnId,
         group,
@@ -425,6 +432,7 @@ export function FileList(
 ) {
     let scope = useTransferScope()
     let { target, props } = useTransferTarget<HTMLDivElement>(scope?.composition, staging)
+    let [layout] = useState(() => new FileRowsLayout())
     if (!files)
         return null
     let filter = inspected?.filter
@@ -464,7 +472,6 @@ export function FileList(
     let diffColumn = inspected?.diffColumn
     let inspect: FileInspection | undefined = inspected && {
         isOpen: file => !diffColumn && inspected.diffs[diffKey(group, file.path)] != undefined,
-        isActive: file => diffColumn?.group == group && diffColumn.shown == file.path,
         toggle: file => inspection.toggleDiff(columnId, group, file.path),
         close: hidden => inspection.closeDiffs(columnId, group, hidden.map(file => file.path)),
         controls: file => {
@@ -505,8 +512,9 @@ export function FileList(
         let opened = histories(file)
         return (
             <>
-                {opened.map(item => <MenuItem key={item.label} onAction={() => inspection.openHistory(columnId, item.source, item.path)}>{item.label}
-                </MenuItem>)}
+                {opened.map(item => (
+                    <MenuItem key={item.label} onAction={() => inspection.openHistory(columnId, item.source, item.path)}>{item.label}</MenuItem>
+                ))}
                 {opened.length > 0 && own && <Separator />}
                 {own}
             </>
@@ -514,6 +522,7 @@ export function FileList(
     }
     return (
         <div ref={target} {...props} className="change-file-list" data-group={group}>
+            <ActiveRow list={target} layout={layout} inspection={inspection} columnId={columnId} group={group} />
             {staging && group == "working-staged" && !listed.length && <p className="staging-hint">Drop files here to stage them</p>}
             {!working && files.loading && !files.inventory && <p className="column-placeholder" role="status">Reading files…</p>}
             {!working && files.error && (
@@ -538,6 +547,7 @@ export function FileList(
                     menuItems={items}
                     leading={leading}
                     inspect={inspect}
+                    layout={layout}
                 />
             )}
             {chosen > 0 && (
@@ -548,6 +558,63 @@ export function FileList(
             )}
         </div>
     )
+}, sameList)
+
+// A list shows its column's filter and chosen files, and its open diffs only while the column has no diff column;
+// with one, they open there instead.
+function sameList({ inspected: before, ...props }: FileListProps, { inspected: after, ...next }: FileListProps) {
+    let keys = new Set([...Object.keys(props), ...Object.keys(next)]) as Set<keyof typeof props>
+    if ([...keys].some(key => props[key] !== next[key]))
+        return false
+    if (before == after)
+        return true
+    return before != undefined && after != undefined && before.filter == after.filter && before.selected == after.selected
+        && before.diffColumn?.group == after.diffColumn?.group
+        && (before.diffColumn != undefined && after.diffColumn != undefined || before.diffs == after.diffs)
+}
+
+/**
+ * Marks the row of the file at the top of the column's diff column, and keeps it in view, scrolling only the list's
+ * own column. It follows the inspection itself, so the list's rows don't re-render each time the diff column scrolls
+ * to another file, and marks rows the Tree draws again, such as an unfolded folder's.
+ */
+function ActiveRow({ list, layout, inspection, columnId, group }: {
+    list: RefObject<HTMLElement | null>
+    layout: FileRowsLayout
+    inspection: Inspection
+    columnId: string
+    group: string
+}) {
+    let shown = useSnapshotValue(inspection, snapshot => {
+        let diffColumn = snapshot.columns[columnId]?.diffColumn
+        return diffColumn?.group == group ? diffColumn.shown : undefined
+    })
+    useEffect(() => {
+        let element = list.current
+        if (!element)
+            return
+        let mark = () => {
+            for (let row of element.querySelectorAll<HTMLElement>(".file-row[data-row-key]")) {
+                let active = row.dataset.rowKey == shown
+                if (row.hasAttribute("data-active") != active)
+                    row.toggleAttribute("data-active", active)
+            }
+        }
+        mark()
+        let rows = new MutationObserver(mark)
+        rows.observe(element, { childList: true, subtree: true })
+        // The Tree redraws its rows a render later, so it waits a frame, by which time a diff that was open under the row has gone.
+        let tree = element.querySelector<HTMLElement>(".file-tree")
+        let frame = requestAnimationFrame(() => {
+            if (tree && shown != undefined)
+                revealRow(tree, layout, shown)
+        })
+        return () => {
+            rows.disconnect()
+            cancelAnimationFrame(frame)
+        }
+    }, [list, layout, shown])
+    return null
 }
 
 /** Discard sits in the context menu only, so nothing on a row discards with one click. */

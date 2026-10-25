@@ -340,6 +340,7 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
     let activeId: string | undefined
     let focused: InspectionSnapshot["focused"]
     let wrapLines = false
+    let diffViews = new WeakMap<FileDiffState, FileDiffState>()
     let discards = createDiscards({
         api,
         notify,
@@ -392,11 +393,22 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
             showIgnored: state.showIgnored,
             history: { ...state.history },
             bases: { ...state.bases },
-            diffs: { ...state.diffs },
+            diffs: Object.fromEntries(Object.entries(state.diffs).map(([key, diff]) => [key, diffView(diff)])),
             diffColumn: state.diffColumn && { group: state.diffColumn.group, shown: state.diffColumn.shown },
             filter: state.filter,
             conflictsOnly: state.conflictsOnly,
         }
+    }
+
+    // A diff's reads and choices change it in place, so the snapshot shows a copy, kept until the diff changes again:
+    // a view can then skip the diffs that didn't change, which in a large diff column is nearly all of them.
+    function diffView(diff: FileDiffState) {
+        let view = diffViews.get(diff)
+        if (!view || !sameFields(view, diff)) {
+            view = { ...diff }
+            diffViews.set(diff, view)
+        }
+        return view
     }
 
     function auxiliaryView(node: AuxiliaryColumn<AuxiliaryValue>): AuxiliaryView {
@@ -1495,4 +1507,9 @@ function baseTips(branch: BranchGraphBranchNode) {
 // Any remote branch can publish this branch's commits, so moving any of them reads its history again.
 function historyKey(graph: BranchGraph, branch: BranchGraphBranchNode) {
     return JSON.stringify([branch.tip, baseTips(branch), graph.remoteTips, branch.unresolved])
+}
+
+function sameFields<T extends object>(a: T, b: T) {
+    let keys = Object.keys(a) as (keyof T)[]
+    return keys.length == Object.keys(b).length && keys.every(key => Object.hasOwn(b, key) && a[key] === b[key])
 }

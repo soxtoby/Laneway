@@ -1,5 +1,5 @@
 import type { BranchGraph, DiffLayout, FileListView } from "@laneway/shared"
-import type { ReactNode } from "react"
+import { type ReactNode, useMemo } from "react"
 import type { AppController } from "./app-controller"
 import type { ColumnView } from "./branch-workspace"
 import { CommitTrail } from "./commit-trail"
@@ -120,13 +120,17 @@ export function ColumnScopes({ controller, repositoryId, graph, column, children
     column: ColumnView
     children: ReactNode
 }) {
-    let scope = {
-        composition: controller.composition,
-        repositoryId,
-        selectedRemote: graph.selectedRemote,
-        branch: column.kind == "branch" ? column.branch.preferredRef : undefined,
-    }
-    let diffs = { layout: column.diffLayout, setLayout: (layout: DiffLayout) => controller.columns.setDiffLayout(column.id, layout) }
+    // Kept while what they hold stays, so the rows and diffs reading them don't re-render with every column update.
+    let { composition, columns } = controller
+    let branch = column.kind == "branch" ? column.branch.preferredRef : undefined
+    let scope = useMemo(
+        () => ({ composition, repositoryId, selectedRemote: graph.selectedRemote, branch }),
+        [composition, repositoryId, graph.selectedRemote, branch],
+    )
+    let diffs = useMemo(
+        () => ({ layout: column.diffLayout, setLayout: (layout: DiffLayout) => columns.setDiffLayout(column.id, layout) }),
+        [columns, column.id, column.diffLayout],
+    )
     return (
         <TransferScopeContext value={scope}>
             <DiffScopeContext value={diffs}>{children}</DiffScopeContext>

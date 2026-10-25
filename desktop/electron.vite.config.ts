@@ -6,7 +6,7 @@ import type { Plugin } from "vite"
 // During development Vite injects CSS imported from modules as <style> tags, and React Fast Refresh
 // adds an inline preamble script. The fixed nonce is added to the page CSP only for the dev server;
 // production CSS is extracted to files and has no preamble, so the shipped CSP keeps `style-src 'self'`
-// and `script-src 'self'`.
+// and `script-src 'self' 'wasm-unsafe-eval'`.
 let devNonce = "laneway-dev"
 
 let devNonceCsp: Plugin = {

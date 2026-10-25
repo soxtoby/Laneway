@@ -107,10 +107,10 @@ describe("React column navigation", () => {
         await app.act(() => commitFile("file.txt").focus())
         await app.act(() => key(commitFile("file.txt"), "ArrowDown"))
         expect(focused(commitFile("other.txt"))).toBe(true)
-        expect(commitFile("other.txt").classList.contains("active")).toBe(true)
+        expect(commitFile("other.txt").hasAttribute("data-active")).toBe(true)
         await app.act(() => key(commitFile("other.txt"), "ArrowUp"))
         expect(focused(commitFile("file.txt"))).toBe(true)
-        expect(commitFile("file.txt").classList.contains("active")).toBe(true)
+        expect(commitFile("file.txt").hasAttribute("data-active")).toBe(true)
         // Left on a file shown in the diff column returns to its commit rather than folding anything.
         await app.act(() => key(commitFile("file.txt"), "ArrowLeft"))
         expect(focused(commit)).toBe(true)

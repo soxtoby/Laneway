@@ -430,7 +430,7 @@ function file(column: HTMLElement, path: string) {
 }
 
 function marked() {
-    return commitFileRows().map(row => row.classList.contains("active"))
+    return commitFileRows().map(row => row.hasAttribute("data-active"))
 }
 
 function trail() {
@@ -461,7 +461,11 @@ function frame() {
 
 // Pierre draws once its highlighter has loaded, which takes a moment the first time.
 async function settle(app: { act(action: () => unknown): Promise<void> }) {
-    await app.act(() => new Promise(resolve => setTimeout(resolve, 50)))
+    for (let attempt = 0; attempt < 100; attempt++) {
+        await app.act(() => new Promise(resolve => setTimeout(resolve, 10)))
+        if ([...document.querySelectorAll(".pierre-diff")].every(host => host.shadowRoot?.querySelector("[data-code]")))
+            return
+    }
 }
 
 function diffRoot(scope: Element) {

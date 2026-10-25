@@ -1,7 +1,7 @@
 import type { ChangedFile, FileListView } from "@laneway/shared"
 import clsx from "clsx"
 import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from "react"
-import { Button as AriaButton, type Key, Tree } from "react-aria-components"
+import { Button as AriaButton, type Key, ListLayout, Rect, Tree, Virtualizer } from "react-aria-components"
 import { Hint } from "./controls"
 import { DenseTreeItem } from "./dense-row"
 import { DiffRegion } from "./diff-panel"
@@ -34,13 +34,13 @@ interface FileTreeProps {
     inspect?: FileInspection
     /** Text the column's filter looks for, marked where it shows in file names and folders. */
     highlight?: string
+    /** Lays out the list's rows, drawing only those near the view. */
+    layout: FileRowsLayout
 }
 
 /** A list's diffs: which files show one, and what the row draws for it. */
 export interface FileInspection {
     isOpen(file: ChangedFile): boolean
-    /** Whether the file's diff is at the top of the column's diff column; its row is marked. */
-    isActive(file: ChangedFile): boolean
     toggle(file: ChangedFile): void
     /** Closes the diffs of files a folded folder or group hides. */
     close(files: ChangedFile[]): void
@@ -50,11 +50,28 @@ export interface FileInspection {
 }
 
 /**
+ * Lays out a file list's rows as React Aria's ListLayout does, drawing only those within reach of the view, which
+ * scrolls with the column the list sits in. The column's arrow keys step through the rows that are drawn, so rows a
+ * little beyond the view are drawn too.
+ */
+export class FileRowsLayout extends ListLayout<unknown> {
+    override getVisibleLayoutInfos(rect: Rect) {
+        return super.getVisibleLayoutInfos(new Rect(rect.x, rect.y - rowsReach, rect.width, rect.height + 2 * rowsReach))
+    }
+}
+
+let rowsReach = 200
+// Rows are 28px, and grow to show a diff opened under them.
+let rowsLayout = { estimatedRowHeight: 28 }
+
+/**
  * A list of changed files, flat or in folders and optionally grouped, as React Aria's Tree. Ctrl+click or Space
  * chooses a file for bulk actions, or every file a folder or group holds, and Shift adds the rows from the last
- * one pressed; a plain press still opens the row.
+ * one pressed; a plain press still opens the row. Only the rows near the view are drawn.
  */
-export function FileTree({ label, files, view, group, selected, onSelect, root, menuItems, hideStagedBadge, leading, inspect, highlight }: FileTreeProps) {
+export function FileTree(
+    { label, files, view, group, selected, onSelect, root, menuItems, hideStagedBadge, leading, inspect, highlight, layout }: FileTreeProps,
+) {
     let nodes = fileTreeNodes(files, view)
     let folders = foldingNodes(nodes)
     // Folders start open; a folded one remembers that by its key while the list stays.
@@ -69,7 +86,7 @@ export function FileTree({ label, files, view, group, selected, onSelect, root, 
 
     let rowFiles = (key: string) => folders.get(key)?.files ?? files.filter(file => file.path == key)
     let choose = (key: string, range: boolean) => {
-        let rows = [...tree.current?.querySelectorAll<HTMLElement>("[data-row-key]") ?? []].map(row => row.dataset.rowKey!)
+        let rows = rowKeys(nodes, folded)
         let from = range && anchor.current != undefined ? rows.indexOf(anchor.current) : -1
         let to = rows.indexOf(key)
         if (from < 0 || to < 0) {
@@ -81,14 +98,6 @@ export function FileTree({ label, files, view, group, selected, onSelect, root, 
         let between = rows.slice(Math.min(from, to), Math.max(from, to) + 1)
         onSelect?.(between.flatMap(row => folders.has(row) && !folded.has(row) ? [] : rowFiles(row)), true)
     }
-
-    // The row the diff column has scrolled to stays in view, scrolling only the list's own column. The Tree redraws
-    // its rows a render later, so it waits a frame, by which time a diff that was open under the row has gone.
-    let active = files.find(file => inspect?.isActive(file))?.path
-    useEffect(() => {
-        let frame = requestAnimationFrame(() => tree.current?.querySelector(".file-row.active")?.scrollIntoView({ block: "nearest", container: "nearest" }))
-        return () => cancelAnimationFrame(frame)
-    }, [active])
 
     // Native capturing listeners see a press's modifiers and a Space before React Aria's own handlers.
     let pointerDown = useEffectEvent((event: PointerEvent) => {
@@ -147,25 +156,56 @@ export function FileTree({ label, files, view, group, selected, onSelect, root, 
     }
 
     return (
-        <Tree
-            ref={tree}
-            aria-label={label}
-            className="file-tree"
-            expandedKeys={expandedKeys}
-            onExpandedChange={keys => fold(new Set([...folders.keys()].filter(key => !keys.has(key))))}
-            onAction={act}
-        >
-            {nodes.map(node => (
-                <FileTreeRow
-                    key={node.key}
-                    node={node}
-                    flat={view.layout == "flat"}
-                    nested={folders.size > 0}
-                    props={{ isChosen, root, menuItems, hideStagedBadge, leading, inspect, highlight }}
-                />
-            ))}
-        </Tree>
+        <Virtualizer layout={layout} layoutOptions={rowsLayout} shouldObserveItemSize>
+            <Tree
+                ref={tree}
+                aria-label={label}
+                className="file-tree"
+                expandedKeys={expandedKeys}
+                onExpandedChange={keys => fold(new Set([...folders.keys()].filter(key => !keys.has(key))))}
+                onAction={act}
+            >
+                {nodes.map(node => (
+                    <FileTreeRow
+                        key={node.key}
+                        node={node}
+                        flat={view.layout == "flat"}
+                        nested={folders.size > 0}
+                        props={{ isChosen, root, menuItems, hideStagedBadge, leading, inspect, highlight }}
+                    />
+                ))}
+            </Tree>
+        </Virtualizer>
     )
+}
+
+/**
+ * Scrolls the list's column just far enough to show a row. A row out of reach of the view isn't drawn, so its place
+ * comes from the list's layout.
+ */
+export function revealRow(tree: HTMLElement, layout: FileRowsLayout, key: string) {
+    let row = [...tree.querySelectorAll<HTMLElement>("[data-row-key]")].find(candidate => candidate.dataset.rowKey == key)
+    if (row) {
+        row.scrollIntoView({ block: "nearest", container: "nearest" })
+        return
+    }
+    let place = layout.getLayoutInfo(key)?.rect
+    let scroller = tree.parentElement
+    while (scroller && !["auto", "scroll", "overlay"].includes(getComputedStyle(scroller).overflowY))
+        scroller = scroller.parentElement
+    if (!place || !scroller)
+        return
+    let top = tree.getBoundingClientRect().top + place.y
+    let view = scroller.getBoundingClientRect()
+    if (top < view.top)
+        scroller.scrollTop -= view.top - top
+    else if (top + place.height > view.bottom)
+        scroller.scrollTop += top + place.height - view.bottom
+}
+
+// The list's rows in the order they show: each folder or group, then the rows it holds unless it is folded.
+function rowKeys(nodes: FileTreeNode[], folded: Set<string>): string[] {
+    return nodes.flatMap(node => node.kind == "file" ? [node.key] : [node.key, ...folded.has(node.key) ? [] : rowKeys(node.children, folded)])
 }
 
 function FileTreeRow(
@@ -186,7 +226,7 @@ function FileTreeRow(
             <DenseTreeItem
                 id={node.key}
                 textValue={file.path}
-                className={clsx("compact file-row", open && "inspected", props.inspect?.isActive(file) && "active")}
+                className={clsx("compact file-row", open && "inspected")}
                 data-row-key={node.key}
                 data-chosen={props.isChosen(file) || undefined}
                 menu={{ label: `Actions for ${file.path}`, items: () => <FileMenuItems file={file} root={props.root} items={props.menuItems} /> }}
@@ -255,6 +295,15 @@ export function FileMenuItems({ file, root, items }: { file: ChangedFile; root?:
  * came from.
  */
 export function FileLabel({ file, showFolder, highlight }: { file: ChangedFile; showFolder: boolean; highlight?: string }) {
+    return (
+        <Hint text={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}>
+            <FilePath file={file} showFolder={showFolder} highlight={highlight} />
+        </Hint>
+    )
+}
+
+/** A file's name, then its folder and where it moved from, with the filter's matches marked. */
+export function FilePath({ file, showFolder, highlight }: { file: ChangedFile; showFolder: boolean; highlight?: string }) {
     let separator = file.path.lastIndexOf("/") + 1
     let folder = showFolder ? file.path.slice(0, separator) : ""
     let name = file.path.slice(separator)
@@ -262,17 +311,15 @@ export function FileLabel({ file, showFolder, highlight }: { file: ChangedFile; 
     let found = highlight ? occurrences(folder + name, highlight) : []
     let moved = file.oldPath && highlight ? occurrences(file.oldPath, highlight) : []
     return (
-        <Hint text={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}>
-            <span className="file-path">
-                <span className="file-name">{marked(name, folder.length, found)}</span>
-                {(folder || file.oldPath) && (
-                    <span className="file-directory">
-                        {marked(folder.replace(/\/$/, ""), 0, found)}
-                        {file.oldPath && <>{folder && " "}← {marked(file.oldPath, 0, moved)}</>}
-                    </span>
-                )}
-            </span>
-        </Hint>
+        <span className="file-path">
+            <span className="file-name">{marked(name, folder.length, found)}</span>
+            {(folder || file.oldPath) && (
+                <span className="file-directory">
+                    {marked(folder.replace(/\/$/, ""), 0, found)}
+                    {file.oldPath && <>{folder && " "}← {marked(file.oldPath, 0, moved)}</>}
+                </span>
+            )}
+        </span>
     )
 }
 

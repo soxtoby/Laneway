@@ -14,7 +14,7 @@
         "@laneway/git": "workspace:*",
         "@laneway/settings": "workspace:*",
         "@laneway/shared": "workspace:*",
-        "@pierre/diffs": "^1.4.1",
+        "@pierre/diffs": "^1.6.1",
         "@tabler/icons": "^3.49.0",
         "@tabler/icons-react": "^3.49.0",
         "clsx": "^2.1.1",

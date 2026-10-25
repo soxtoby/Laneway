@@ -31,19 +31,24 @@ export function navigationKeyDown(event: KeyboardEvent<HTMLElement>, diffColumn:
     // A folder row folds and unfolds as its tree does.
     if (!item || item.matches(".folder-row"))
         return
+    let expanded = isFile(item) ? item.matches(".inspected, [data-active]") : item.getAttribute("aria-expanded") == "true"
+    // A file shown in the diff column has nothing of its own to fold, so Left moves up from it.
+    let folds = expanded && !(diffColumn && isFile(item))
+    let up = event.key == "ArrowLeft" && !folds ? parent(item) : undefined
+    // A long list draws only the rows near the view; when a row's folder isn't drawn, its tree moves to it instead.
+    if (event.key == "ArrowLeft" && !folds && !up && Number(item.getAttribute("aria-level") ?? 1) > 1)
+        return
     event.preventDefault()
     event.stopPropagation()
-    let expanded = isFile(item) ? item.matches(".inspected, .active") : item.getAttribute("aria-expanded") == "true"
     if (event.key == "ArrowRight") {
         if (!expanded)
             item.click()
         return
     }
-    // A file shown in the diff column has nothing of its own to fold, so Left moves up from it.
-    if (expanded && !(diffColumn && isFile(item)))
+    if (folds)
         item.click()
     else
-        parent(item)?.focus()
+        up?.focus()
 }
 
 let itemSelector = ".stack-toggle, .commit-toggle, .file-tree [role=row]"

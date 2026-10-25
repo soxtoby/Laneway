@@ -6,6 +6,7 @@ import { type Conflicts, type ConflictSides, conflictSides, type ConflictView, t
 import { IconButton, MoreMenu } from "./controls"
 import { useRowMenu } from "./dense-row"
 import { DiffLines } from "./diff-lines"
+import { highlighter } from "./diff-renderer"
 import { FileLabel } from "./file-tree"
 import { CheckIcon, MergeToolIcon, TakeLeftIcon, TakeRightIcon, WarningIcon } from "./icons"
 import { errorMessage } from "./notice"
@@ -295,7 +296,7 @@ function MergeResolution({ name, contents, sides, busy, onResolve }: {
         let viewer = new UnresolvedFile({
             theme: { light: "github-light", dark: "github-dark" },
             themeType: dark.matches ? "dark" : "light",
-            preferredHighlighter: "shiki-js",
+            preferredHighlighter: highlighter,
             disableFileHeader: true,
             disableErrorHandling: true,
             expandUnchanged: true,

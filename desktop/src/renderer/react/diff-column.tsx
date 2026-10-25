@@ -1,11 +1,11 @@
 import type { ChangedFile, FileListView } from "@laneway/shared"
-import { Fragment, type KeyboardEvent, type MouseEvent, type RefObject, useLayoutEffect, useRef } from "react"
+import { createContext, Fragment, type KeyboardEvent, memo, type MouseEvent, type RefObject, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { Button as AriaButton } from "react-aria-components"
 import { Hint, IconButton } from "./controls"
 import { useRowMenu } from "./dense-row"
 import { DiffControls, DiffPanel } from "./diff-panel"
 import { orderedFiles } from "./file-list-view"
-import { CopyPathButton, FileLabel, FileMenuItems } from "./file-tree"
+import { CopyPathButton, FileLabel, FileMenuItems, FilePath } from "./file-tree"
 import { ChevronDownIcon, CloseIcon, CollapseAllIcon, ExpandAllIcon, FileStatusIcon, MaximizeIcon, RestoreIcon } from "./icons"
 import { type ColumnInspection, type DiffColumnView, diffKey, type FileDiffState, type Inspection, matchesFilter } from "./inspection"
 import { ChevronRight } from "./ui/icons"
@@ -59,11 +59,15 @@ export function DiffColumn({ view, sourceName, stacked, inspected, listView, ins
             scrolledByUser()
     }
     let title = diffColumnTitle(view, sourceName)
-    let fold = (paths: string[], folded: boolean) => {
+    let viewId = view.id
+    let fold = useCallback((paths: string[], folded: boolean) => {
         // Folding moves the files, so the column stops chasing the one it scrolled to.
         stopAiming()
-        inspection.foldDiffs(view.id, paths, folded)
-    }
+        inspection.foldDiffs(viewId, paths, folded)
+    }, [stopAiming, inspection, viewId])
+    let foldFile = useCallback((path: string, folded: boolean) => fold([path], folded), [fold])
+    let collapsed = new Set(view.collapsed)
+    let nearby = useNearby(scroller)
     // Like a column header, a double-click maximizes; the header's own controls keep theirs.
     let toggleMaximized = (event: MouseEvent) => {
         if (!(event.target instanceof Element && event.target.closest("button")))
@@ -110,51 +114,201 @@ export function DiffColumn({ view, sourceName, stacked, inspected, listView, ins
                     <CloseIcon />
                 </IconButton>
             </header>
-            <div ref={scroller} className="diff-column-files" data-grouped={listView.grouping != "none" || undefined} onScroll={spy.update}>
-                {files?.error && <p className="column-placeholder" role="alert">{files.error}</p>}
-                {files?.loading && !files.inventory && <p className="column-placeholder" role="status">Reading changes…</p>}
-                {ordered.map(({ file, group }, index) => {
-                    let id = diffKey(view.group, file.path)
-                    let diff = inspected?.diffs[id]
-                    return (
-                        <Fragment key={file.path}>
-                            {group != ordered[index - 1]?.group && (
-                                <h3 className="diff-column-group">
-                                    {group}
-                                    <span className="file-group-count">{ordered.filter(entry => entry.group == group).length}</span>
-                                </h3>
-                            )}
-                            {diff && (
-                                <DiffColumnFile
-                                    view={view}
-                                    file={file}
-                                    id={id}
-                                    diff={diff}
-                                    inspection={inspection}
-                                    root={root}
-                                    onFold={folded => fold([file.path], folded)}
-                                />
-                            )}
-                        </Fragment>
-                    )
-                })}
-            </div>
+            <NearbyContext value={nearby}>
+                <div ref={scroller} className="diff-column-files" data-grouped={listView.grouping != "none" || undefined} onScroll={spy.update}>
+                    {files?.error && <p className="column-placeholder" role="alert">{files.error}</p>}
+                    {files?.loading && !files.inventory && <p className="column-placeholder" role="status">Reading changes…</p>}
+                    {ordered.map(({ file, group }, index) => {
+                        let id = diffKey(view.group, file.path)
+                        let diff = inspected?.diffs[id]
+                        return (
+                            <Fragment key={file.path}>
+                                {group != ordered[index - 1]?.group && (
+                                    <h3 className="diff-column-group">
+                                        {group}
+                                        <span className="file-group-count">{ordered.filter(entry => entry.group == group).length}</span>
+                                    </h3>
+                                )}
+                                {diff && (
+                                    <DiffColumnFile
+                                        columnId={view.id}
+                                        sourceId={view.sourceId}
+                                        group={view.group}
+                                        entireFiles={view.entireFiles}
+                                        collapsed={collapsed.has(file.path)}
+                                        file={file}
+                                        id={id}
+                                        diff={diff}
+                                        inspection={inspection}
+                                        root={root}
+                                        onFold={foldFile}
+                                        eager={index < eagerFiles}
+                                    />
+                                )}
+                            </Fragment>
+                        )
+                    })}
+                </div>
+            </NearbyContext>
         </aside>
     )
 }
 
 let scrollingKeys = ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "]
 
-function DiffColumnFile({ view, file, id, diff, inspection, root, onFold }: {
-    view: DiffColumnView
+// The files at the top of a column draw their toolbars at once, so opening it draws nothing twice. Others draw a few a
+// frame, nearest the view first, so a glide arriving among many folded files doesn't stall.
+let eagerFiles = 12
+let toolbarsPerFrame = 8
+
+interface Nearby {
+    /** Calls `near` once `element` comes within the column's height of its view. */
+    observe(element: Element, near: () => void): () => void
+    disconnect(): void
+}
+
+let NearbyContext = createContext<Nearby | undefined>(undefined)
+
+/** One observer for every file in a column, rather than one each. */
+function useNearby(scroller: RefObject<HTMLElement | null>) {
+    let [nearby] = useState<Nearby>(() => {
+        let waiting = new Map<Element, () => void>()
+        // Files near the view while a glide passes them, which draw once it slows near its file, unless they've gone.
+        let passed = new Set<Element>()
+        let observer: IntersectionObserver | undefined
+        let lifetime = new AbortController()
+        let queued = new Set<Element>()
+        let frame: number | undefined
+        let draw = () => {
+            frame = undefined
+            let root = scroller.current
+            if (!root)
+                return
+            let view = root.getBoundingClientRect()
+            let middle = view.top + view.height / 2
+            let distance = (element: Element) => {
+                let box = element.getBoundingClientRect()
+                return box.bottom < view.top ? view.top - box.bottom : box.top > view.bottom ? box.top - view.bottom : middle - box.top
+            }
+            let nearest = [...queued].map(element => ({ element, distance: distance(element) })).sort((a, b) => a.distance - b.distance)
+            for (let { element } of nearest.slice(0, toolbarsPerFrame)) {
+                queued.delete(element)
+                waiting.get(element)?.()
+            }
+            if (queued.size)
+                frame = requestAnimationFrame(draw)
+        }
+        let promote = (element: Element) => {
+            queued.add(element)
+            frame ??= requestAnimationFrame(draw)
+        }
+        let arrive = () => {
+            if (scroller.current?.hasAttribute("data-gliding"))
+                return
+            for (let element of passed)
+                promote(element)
+            passed.clear()
+        }
+        return {
+            observe(element, near) {
+                let root = scroller.current
+                // Without layout, as in tests, every file is near.
+                if (!root || root.clientHeight == 0) {
+                    near()
+                    return () => {}
+                }
+                if (!observer) {
+                    observer = new IntersectionObserver(entries => {
+                        for (let entry of entries) {
+                            if (!entry.isIntersecting) {
+                                passed.delete(entry.target)
+                                queued.delete(entry.target)
+                            } else if (root.hasAttribute("data-gliding"))
+                                passed.add(entry.target)
+                            else
+                                promote(entry.target)
+                        }
+                    }, { root, rootMargin: "100% 0px" })
+                    root.addEventListener("scroll", arrive, { passive: true, signal: lifetime.signal })
+                }
+                waiting.set(element, near)
+                observer.observe(element)
+                return () => {
+                    waiting.delete(element)
+                    passed.delete(element)
+                    queued.delete(element)
+                    observer?.unobserve(element)
+                }
+            },
+            disconnect() {
+                observer?.disconnect()
+                lifetime.abort()
+                if (frame != undefined)
+                    cancelAnimationFrame(frame)
+            },
+        }
+    })
+    useEffect(() => () => nearby.disconnect(), [nearby])
+    return nearby
+}
+
+/** Whether a file has come within the column's height of its view; once it has, it stays near. */
+function useNear(section: RefObject<HTMLElement | null>, eager: boolean) {
+    let nearby = useContext(NearbyContext)
+    let [near, setNear] = useState(eager || !nearby)
+    useEffect(() => {
+        let element = section.current
+        if (near || !element || !nearby)
+            return
+        return nearby.observe(element, () => setNear(true))
+    }, [section, near, nearby])
+    return near
+}
+
+interface DiffColumnFileProps {
+    /** The diff column's ID. */
+    columnId: string
+    /** The Workspace Column whose diffs it shows. */
+    sourceId: string
+    group: string
+    entireFiles: boolean
+    collapsed: boolean
     file: ChangedFile
     id: string
     diff: FileDiffState
     inspection: Inspection
     root?: string
-    onFold(folded: boolean): void
-}) {
-    let collapsed = view.collapsed.includes(file.path)
+    onFold(path: string, folded: boolean): void
+}
+
+/**
+ * One file's toolbar and diff. It re-renders only when its own diff or fold changes, since a large column's every
+ * other file would otherwise re-render each time any diff loads. Its toolbar draws its controls once the file nears the
+ * view; before then the file shows as they would leave it.
+ */
+const DiffColumnFile = memo(function DiffColumnFile(props: DiffColumnFileProps & { eager: boolean }) {
+    let { sourceId, group, collapsed, file, id, diff, inspection, eager } = props
+    let section = useRef<HTMLDivElement>(null)
+    let near = useNear(section, eager)
+    return (
+        <div ref={section} className="diff-column-file" data-diff-path={file.path}>
+            {near
+                ? <DiffToolbar {...props} />
+                : (
+                    <header className="diff-toolbar">
+                        <span className="diff-file-toggle">
+                            {collapsed ? <ChevronRight /> : <ChevronDownIcon />}
+                            <FileStatusIcon status={file.conflicted ? "conflicted" : file.status} />
+                            <FilePath file={file} showFolder />
+                        </span>
+                    </header>
+                )}
+            {!collapsed && <DiffPanel columnId={sourceId} id={id} diff={diff} inspection={inspection} eligible={group != "comparison"} />}
+        </div>
+    )
+})
+
+function DiffToolbar({ columnId, sourceId, entireFiles, collapsed, file, id, diff, inspection, root, onFold }: DiffColumnFileProps) {
     // The file's history reads from where the list was read: its worktree or its commit.
     let source = diff.page?.source
     let history = source?.kind == "working"
@@ -168,35 +322,32 @@ function DiffColumnFile({ view, file, id, diff, inspection, root, onFold }: {
             <FileMenuItems
                 file={file}
                 root={root}
-                items={history && (() => <MenuItem onAction={() => inspection.openHistory(view.id, history, file.path)}>File history</MenuItem>)}
+                items={history && (() => <MenuItem onAction={() => inspection.openHistory(columnId, history, file.path)}>File history</MenuItem>)}
             />
         ),
     }
     let { row, openMenu } = useRowMenu<HTMLElement>(menu)
     return (
-        <div className="diff-column-file" data-diff-path={file.path}>
-            <header ref={row} className="diff-toolbar" onContextMenu={openMenu}>
-                <AriaButton
-                    className="diff-file-toggle"
-                    aria-label={`${collapsed ? "Expand" : "Collapse"} ${file.path}`}
-                    aria-expanded={!collapsed}
-                    onPress={() => onFold(!collapsed)}
-                >
-                    {collapsed ? <ChevronRight /> : <ChevronDownIcon />}
-                    <FileStatusIcon status={file.conflicted ? "conflicted" : file.status} />
-                    <FileLabel file={file} showFolder />
-                </AriaButton>
-                <CopyPathButton path={file.path} />
-                <DiffControls
-                    columnId={view.sourceId}
-                    id={id}
-                    diff={diff}
-                    inspection={inspection}
-                    entireFiles={{ shown: view.entireFiles, toggle: () => inspection.toggleEntireFiles(view.id) }}
-                />
-            </header>
-            {!collapsed && <DiffPanel columnId={view.sourceId} id={id} diff={diff} inspection={inspection} eligible={view.group != "comparison"} />}
-        </div>
+        <header ref={row} className="diff-toolbar" onContextMenu={openMenu}>
+            <AriaButton
+                className="diff-file-toggle"
+                aria-label={`${collapsed ? "Expand" : "Collapse"} ${file.path}`}
+                aria-expanded={!collapsed}
+                onPress={() => onFold(file.path, !collapsed)}
+            >
+                {collapsed ? <ChevronRight /> : <ChevronDownIcon />}
+                <FileStatusIcon status={file.conflicted ? "conflicted" : file.status} />
+                <FileLabel file={file} showFolder />
+            </AriaButton>
+            <CopyPathButton path={file.path} />
+            <DiffControls
+                columnId={sourceId}
+                id={id}
+                diff={diff}
+                inspection={inspection}
+                entireFiles={{ shown: entireFiles, toggle: () => inspection.toggleEntireFiles(columnId) }}
+            />
+        </header>
     )
 }
 
@@ -221,6 +372,8 @@ export function diffColumnTitle(view: DiffColumnView, sourceName: string) {
 function useArrival(scroller: RefObject<HTMLElement | null>, view: DiffColumnView, listed: ChangedFile[], inspected?: ColumnInspection) {
     let seen = useRef<number>(undefined)
     let aiming = useRef(false)
+    let gliding = useRef<Glide>(undefined)
+    useEffect(() => () => gliding.current?.stop(), [])
     useLayoutEffect(() => {
         let focus = view.focus
         let element = scroller.current
@@ -237,18 +390,86 @@ function useArrival(scroller: RefObject<HTMLElement | null>, view: DiffColumnVie
         let toolbar = target.querySelector<HTMLElement>(".diff-toolbar")
         // Under a group's heading the toolbar pins below it, so the file stops there to keep the heading in view.
         let pinned = toolbar ? parseFloat(getComputedStyle(toolbar).top) || 0 : 0
-        element.scrollTo({
-            top: element.scrollTop + target.getBoundingClientRect().top - element.getBoundingClientRect().top - pinned,
-            behavior: arrived && !matchMedia("(prefers-reduced-motion: reduce)").matches ? "smooth" : "instant",
-        })
+        let distance = () => target.getBoundingClientRect().top - element.getBoundingClientRect().top - pinned
+        // A chosen file glides into place, unless motion is reduced or there's no layout to glide through. While it
+        // glides, its place is measured again each frame, so it follows the diffs above it as they draw.
+        if (arrived && element.clientHeight > 0 && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+            gliding.current ??= glide(element, () => gliding.current = undefined)
+            gliding.current.to(distance)
+        } else if (!gliding.current) {
+            element.scrollTo({ top: element.scrollTop + distance(), behavior: "instant" })
+        }
         if (arrived)
             highlight(toolbar)
         let above = listed.slice(0, listed.findIndex(file => file.path == focus.path) + 1)
         if (above.every(file => !inspected?.diffs[diffKey(view.group, file.path)]?.loading))
             aiming.current = false
     })
-    return () => {
+    return useCallback(() => {
         aiming.current = false
+        gliding.current?.stop()
+    }, [])
+}
+
+interface Glide {
+    /** Retargets the glide, keeping its speed: `distance` measures how far the column still has to go. */
+    to(distance: () => number): void
+    stop(): void
+}
+
+// The spring's angular frequency, per millisecond: a glide settles in about half a second whatever the distance.
+let springRate = 0.015
+
+/**
+ * Scrolls `element` toward a target on a critically damped spring, as Pierre's CodeView does. The target is measured
+ * again each frame, and the browser's scroll anchoring, which moves the column as diffs above the view draw, carries
+ * the glide with it, so it lands where the target ends up rather than where it was when it started. While it is more
+ * than a screen from the target it marks the column `data-gliding`, so the files it passes draw nothing; once it is
+ * near, a scroll event has those around the target draw as the glide slows into place.
+ */
+function glide(element: HTMLElement, settled: () => void): Glide {
+    let passing = (fast: boolean) => {
+        if (fast == element.hasAttribute("data-gliding"))
+            return
+        element.toggleAttribute("data-gliding", fast)
+        if (!fast)
+            element.dispatchEvent(new Event("scroll"))
+    }
+    let distance = () => 0
+    let position = element.scrollTop
+    let velocity = 0
+    let written = position
+    let last = performance.now()
+    let request = requestAnimationFrame(function step(now) {
+        position += element.scrollTop - written
+        let destination = element.scrollTop + distance()
+        let elapsed = Math.max(0, now - last)
+        last = now
+        let decay = Math.exp(-springRate * elapsed)
+        let displacement = position - destination
+        let spring = velocity + springRate * displacement
+        position = destination + (displacement + spring * elapsed) * decay
+        velocity = (spring * (1 - springRate * elapsed) - springRate * displacement) * decay
+        if (Math.abs(destination - position) <= 0.5 && Math.abs(velocity) <= 0.05) {
+            element.scrollTop = destination
+            passing(false)
+            settled()
+            return
+        }
+        passing(Math.abs(destination - position) > element.clientHeight)
+        element.scrollTop = position
+        written = element.scrollTop
+        request = requestAnimationFrame(step)
+    })
+    return {
+        to(next) {
+            distance = next
+        },
+        stop() {
+            cancelAnimationFrame(request)
+            passing(false)
+            settled()
+        },
     }
 }
 
@@ -278,8 +499,13 @@ function useScrollSpy(scroller: RefObject<HTMLElement | null>, view: DiffColumnV
         // Grouped, toolbars pin under the group heading, so a file is at the top where arrival leaves it: under that heading.
         let toolbar = element.querySelector<HTMLElement>(".diff-toolbar")
         let top = element.getBoundingClientRect().top + (toolbar ? parseFloat(getComputedStyle(toolbar).top) || 0 : 0)
-        let sections = [...element.querySelectorAll<HTMLElement>("[data-diff-path]")]
-            .map(section => ({ path: section.dataset.diffPath!, top: section.getBoundingClientRect().top - top }))
+        // Each section is measured only if the search reaches it.
+        let sections = [...element.querySelectorAll<HTMLElement>("[data-diff-path]")].map(section => ({
+            path: section.dataset.diffPath!,
+            get top() {
+                return section.getBoundingClientRect().top - top
+            },
+        }))
         let path = shownFile(sections)
         if (path)
             report(path)
@@ -304,8 +530,18 @@ function useScrollSpy(scroller: RefObject<HTMLElement | null>, view: DiffColumnV
 /**
  * The file at the top of a diff column: the last whose section starts at or above the top of the files, given each
  * section's top relative to it, or the first while none has reached it. A pixel's leeway allows for fractional
- * scrolling. Files too short to reach the top at the end of the column are only marked by choosing them.
+ * scrolling. Files too short to reach the top at the end of the column are only marked by choosing them. Sections
+ * run down the column, so halving finds it, reading few of their tops.
  */
 export function shownFile(sections: { path: string; top: number }[]) {
-    return (sections.findLast(section => section.top <= 1) ?? sections[0])?.path
+    let below = 0
+    let above = sections.length
+    while (below < above) {
+        let middle = (below + above) >> 1
+        if (sections[middle]!.top <= 1)
+            below = middle + 1
+        else
+            above = middle
+    }
+    return (sections[below - 1] ?? sections[0])?.path
 }

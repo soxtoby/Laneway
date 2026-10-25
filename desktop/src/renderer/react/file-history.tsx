@@ -1,6 +1,6 @@
 import type { FileHistoryEntry, FileHistorySource, FileListView } from "@laneway/shared"
 import clsx from "clsx"
-import type { ReactNode } from "react"
+import { type ReactNode, useMemo } from "react"
 import { Button as AriaButton } from "react-aria-components"
 import { CommitAge } from "./commit-age"
 import { CommitCopyItems } from "./commit-trail"
@@ -313,7 +313,8 @@ function AuxiliaryFrame({ column, className, label, title, from, close, onClose,
     stacked: boolean
     children: ReactNode
 }) {
-    let diffs = { layout: column.layout, setLayout: (layout: typeof column.layout) => inspection.setLayout(column.hostId, layout) }
+    let { layout, hostId } = column
+    let diffs = useMemo(() => ({ layout, setLayout: (chosen: typeof layout) => inspection.setLayout(hostId, chosen) }), [inspection, hostId, layout])
     return (
         <DiffScopeContext value={diffs}>
             <aside
