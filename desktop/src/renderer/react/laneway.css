@@ -2227,7 +2227,10 @@
     }
 }
 
+/* A review inside a commit's trail covers the branch's line, as the commit's node does. */
 .transfer-review {
+    position: relative;
+    z-index: 2;
     display: grid;
     gap: var(--spacing-2);
     margin: var(--spacing-1) var(--spacing-2);
