@@ -58,13 +58,77 @@ describe("React Workspace Columns", () => {
         let header = () => column(opened[1]!).querySelector("header")!
 
         await app.act(() => dblclick(button(header(), "Maximize column")))
-        expect(columnIds()).toEqual(opened)
+        expect(maximized()).toEqual([])
 
         await app.act(() => dblclick(header()))
-        expect(columnIds()).toEqual([opened[1]])
+        expect(maximized()).toEqual([opened[1]])
 
         await app.act(() => dblclick(header()))
+        expect(maximized()).toEqual([])
+    })
+
+    test("a maximized column scrolls into view beside the others, and stays maximized while a tab scrolls to another", async () => {
+        let scenario = inspectionScenario()
+        scenario.graph.branches[0]!.checkedOut = [{ path: "D:/other", name: "other", head: scenario.graph.branches[0]!.tip, main: false }]
+        let app = await startReactApp(scenario.api)
+        let opened = columnIds()
+        let chosen = column(opened[1]!).getAttribute("aria-label")!
+        let scrolled: string[] = []
+        let original = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView")!
+        // A maximized column scrolls into view with its group, which holds its card.
+        Object.defineProperty(Element.prototype, "scrollIntoView", {
+            configurable: true,
+            value(this: HTMLElement) {
+                scrolled.push(this.dataset.columnId ?? this.querySelector<HTMLElement>("[data-column-id]")?.dataset.columnId ?? "")
+            },
+        })
+        let maximizing: string[]
+        try {
+            await app.act(() => press(button(column(opened[0]!), "Maximize column")))
+            await app.act(() => frame())
+            maximizing = scrolled.splice(0)
+            await app.act(() => press(tab(chosen)))
+        } finally {
+            Object.defineProperty(Element.prototype, "scrollIntoView", original)
+        }
+
         expect(columnIds()).toEqual(opened)
+        expect(maximizing).toEqual([opened[0]])
+        expect(scrolled).toEqual([opened[1]])
+        expect(maximized()).toEqual([opened[0]])
+    })
+
+    test("a tab chosen by pointer scrolls to its column without moving focus, and one chosen by Enter gives the column focus", async () => {
+        let scenario = inspectionScenario()
+        scenario.graph.branches[0]!.checkedOut = [{ path: "D:/other", name: "other", head: scenario.graph.branches[0]!.tip, main: false }]
+        let app = await startReactApp(scenario.api)
+        let opened = columnIds()
+        let [first, second] = opened.map(id => column(id).getAttribute("aria-label")!)
+        let scrolled: string[] = []
+        let original = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView")!
+        Object.defineProperty(Element.prototype, "scrollIntoView", {
+            configurable: true,
+            value(this: HTMLElement) {
+                scrolled.push(this.dataset.columnId ?? "")
+            },
+        })
+        let clicked: { scrolled: string[]; focusInColumn: boolean }
+        try {
+            // The browser focuses the tab after the press; moving focus during it would make React Aria take that
+            // focus as programmatic, re-rendering every list that shows focus.
+            await app.act(() => press(tab(second!)))
+            clicked = { scrolled: scrolled.splice(0), focusInColumn: document.activeElement?.closest("[data-column-id]") != null }
+            await app.act(() => {
+                tab(first!).focus()
+                key(tab(first!), "Enter")
+            })
+        } finally {
+            Object.defineProperty(Element.prototype, "scrollIntoView", original)
+        }
+
+        expect(clicked).toEqual({ scrolled: [opened[1]], focusInColumn: false })
+        expect(scrolled).toEqual([opened[0]])
+        expect(document.activeElement?.getAttribute("data-column-id")).toBe(opened[0])
     })
 
     test("a column header's buttons show their tooltips, and the header's hint stays away from them", async () => {
@@ -311,6 +375,15 @@ function tabs() {
     return [...document.querySelectorAll("[aria-label='Open columns'] [role=tab]")].map(tab =>
         tab.textContent + (tab.getAttribute("aria-selected") == "true" ? " *" : "")
     )
+}
+
+function tab(name: string) {
+    return [...document.querySelectorAll<HTMLElement>("[aria-label='Open columns'] [role=tab]")].find(tab => tab.textContent == name)!
+}
+
+/** The columns offering to restore their width, which only a maximized one does. */
+function maximized() {
+    return columnIds().filter(id => column(id).querySelector("[aria-label='Restore column']") != null)
 }
 
 function savedColumns(workspace: Workspace) {

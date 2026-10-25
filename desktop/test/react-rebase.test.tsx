@@ -109,7 +109,7 @@ describe("React Branch Graph rebase", () => {
         await app.act(() => press(button(dialog()!, "Continue and resolve now")))
 
         expect(dialog() == null).toBe(true)
-        expect([...document.querySelectorAll(".column-row > .column")].map(column => column.getAttribute("aria-label"))).toEqual(["child"])
+        expect([...document.querySelectorAll(".column-row .column")].map(column => column.getAttribute("aria-label"))).toEqual(["child"])
     })
 
     test("chooses a destination by keyboard or from the row's menu, and Escape stops choosing", async () => {
@@ -165,7 +165,7 @@ describe("React Branch Graph rebase", () => {
 
         await app.act(() => press(button(row("feature/sibling"), "Actions for feature/sibling")))
         await app.act(() => press(menuItem("Open column")))
-        expect([...document.querySelectorAll(".column-row > .column")].map(column => column.getAttribute("aria-label"))).toEqual(["feature/sibling"])
+        expect([...document.querySelectorAll(".column-row .column")].map(column => column.getAttribute("aria-label"))).toEqual(["feature/sibling"])
         // Keyboard actions on the selected row act on that identity, not the one leading its tip.
         await app.act(() => press(name("feature/sibling")))
         await app.act(() => key(row("feature/sibling"), "F2"))

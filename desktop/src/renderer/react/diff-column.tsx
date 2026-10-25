@@ -24,7 +24,7 @@ interface DiffColumnProps {
     inspection: Inspection
     /** The worktree the files live in, enabling "Copy full path". */
     root?: string
-    /** Whether its source column is maximized, which it shares the window with. */
+    /** Whether its source column is maximized, which it shares the row's view with. */
     maximized: boolean
     onMaximize(): void
     /** Closing returns focus to the source column. */
@@ -101,7 +101,7 @@ export function DiffColumn({ view, sourceName, stacked, inspected, listView, ins
                 <IconButton label="Collapse all" onPress={() => fold(listed.map(file => file.path), true)}>
                     <CollapseAllIcon />
                 </IconButton>
-                <IconButton label={maximized ? "Restore columns" : "Maximize column"} onPress={onMaximize}>
+                <IconButton label={maximized ? "Restore column" : "Maximize column"} onPress={onMaximize}>
                     {maximized ? <RestoreIcon /> : <MaximizeIcon />}
                 </IconButton>
                 <IconButton

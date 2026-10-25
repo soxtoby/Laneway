@@ -119,7 +119,7 @@ describe("React column navigation", () => {
 })
 
 function column() {
-    return document.querySelector<HTMLElement>(".column-row > .column")!
+    return document.querySelector<HTMLElement>(".column-row .column")!
 }
 
 function trail() {

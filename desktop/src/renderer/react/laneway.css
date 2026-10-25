@@ -241,9 +241,28 @@
     min-height: 0;
     display: flex;
     padding: var(--spacing-2);
+    /* A column scrolled into view keeps the row's padding beside it, so a maximized one fills the view exactly. */
+    scroll-padding-inline: var(--spacing-2);
     overflow: auto;
     /* Only diffs and commit messages select, so a drag can't carry a selection spanning the column. */
     user-select: none;
+}
+
+/* A column with its divider and auxiliary columns. Maximized, they fill the row's view, and the space its divider
+   would leave follows them. */
+.column-group {
+    flex: 0 0 auto;
+    display: flex;
+
+    &.maximized {
+        flex-basis: 100%;
+        /* Its auxiliary columns' own widths don't widen it past the view; the last takes what the others leave. */
+        min-width: 0;
+
+        &:not(:last-child) {
+            margin-inline-end: calc(var(--spacing-2) + 2px);
+        }
+    }
 }
 
 .column {
@@ -309,6 +328,7 @@
 
         & + .columns .column-row {
             padding-inline-start: 0;
+            scroll-padding-inline-start: 0;
         }
     }
 

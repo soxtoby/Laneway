@@ -42,10 +42,11 @@ export const WorkspaceColumns = memo(function WorkspaceColumns({ controller, fil
     useRefreshes(columns)
     useUndo(controller, snapshot.repositoryId)
     useReveal(snapshot.revealed)
+    useMaximized(snapshot.maximizedId)
     useAuxiliaryFocus(current?.focused)
     usePublishReviews(controller.publish, snapshot, graph, current)
 
-    // Escape restores a maximized column's neighbours.
+    // Escape restores a maximized column's width.
     useEffect(() => {
         if (!snapshot.maximizedId)
             return
@@ -76,7 +77,6 @@ export const WorkspaceColumns = memo(function WorkspaceColumns({ controller, fil
         )
     }
 
-    let visible = snapshot.maximizedId ? snapshot.columns.filter(column => column.id == snapshot.maximizedId) : snapshot.columns
     let header = {
         start(column: ColumnView, event: DragEvent) {
             dragging.current = { id: column.id, dropped: false }
@@ -110,70 +110,67 @@ export const WorkspaceColumns = memo(function WorkspaceColumns({ controller, fil
         columns.drop(dragging.current.id)
     }
     return (
-        <section
-            className={clsx("column-row", snapshot.maximizedId && "maximized")}
-            onDragEnterCapture={rowDrag}
-            onDragOverCapture={rowDrag}
-            onDropCapture={rowDrop}
-        >
-            {visible.flatMap(column => {
+        <section className="column-row" onDragEnterCapture={rowDrag} onDragOverCapture={rowDrag} onDropCapture={rowDrop}>
+            {snapshot.columns.map(column => {
                 // A collapsed column hides its auxiliary columns, and a column without its files has none to show.
                 let auxiliary = column.collapsed || column.kind == "recovery" || column.worktree?.missing ? [] : current?.auxiliary[column.id] ?? []
                 let attached = auxiliary.length > 0
-                // A maximized column shares the window with its auxiliary columns, split at its own width.
-                let split = snapshot.maximizedId != undefined && attached
-                return [
-                    <ColumnFrame
-                        key={column.id}
-                        column={column}
-                        snapshot={snapshot}
-                        inspected={current}
-                        graph={graph!}
-                        controller={controller}
-                        fileListView={fileListView}
-                        header={header}
-                        attached={attached}
-                        split={split}
-                    />,
-                    !column.collapsed && (!snapshot.maximizedId || split) && (
-                        <ColumnDivider
-                            key={`${column.id}:divider`}
-                            label="Resize branch column"
-                            width={column.width}
-                            minimum={minimumColumnWidth}
-                            defaultWidth={defaultColumnWidth}
+                let maximized = snapshot.maximizedId == column.id
+                // A maximized column shares the row's view with its auxiliary columns, split at its own width.
+                let split = maximized && attached
+                // Every column has its group, so maximizing one changes only its class and nothing in it mounts again.
+                return (
+                    <div key={column.id} className={clsx("column-group", maximized && "maximized")}>
+                        <ColumnFrame
+                            column={column}
+                            snapshot={snapshot}
+                            inspected={current}
+                            graph={graph!}
+                            controller={controller}
+                            fileListView={fileListView}
+                            header={header}
                             attached={attached}
-                            onResize={width => columns.resize(column.id, width)}
+                            split={split}
                         />
-                    ),
-                    ...auxiliary.flatMap((view, index) => {
-                        // The last one beside a maximized column takes the space the others leave.
-                        let last = index == auxiliary.length - 1
-                        return [
-                            <AuxiliaryFrame
-                                key={view.id}
-                                view={view}
-                                column={column}
-                                inspected={current}
-                                graph={graph!}
-                                controller={controller}
-                                fileListView={fileListView}
-                                maximized={snapshot.maximizedId == column.id}
-                            />,
-                            !(snapshot.maximizedId && last) && (
-                                <ColumnDivider
-                                    key={`${view.id}:divider`}
-                                    label="Resize auxiliary column"
-                                    width={view.width}
-                                    minimum={view.kind == "diff" ? minimumDiffColumnWidth : minimumColumnWidth}
-                                    defaultWidth={defaultAuxiliaryColumnWidth}
-                                    attached={!last}
-                                    onResize={width => controller.inspection.resizeAuxiliary(view.id, width)}
-                                />
-                            ),
-                        ]
-                    }),
-                ]
+                        {!column.collapsed && (!maximized || split) && (
+                            <ColumnDivider
+                                label="Resize branch column"
+                                width={column.width}
+                                minimum={minimumColumnWidth}
+                                defaultWidth={defaultColumnWidth}
+                                attached={attached}
+                                onResize={width => columns.resize(column.id, width)}
+                            />
+                        )}
+                        {auxiliary.flatMap((view, index) => {
+                            // The last one beside a maximized column takes the space the others leave.
+                            let last = index == auxiliary.length - 1
+                            return [
+                                <AuxiliaryFrame
+                                    key={view.id}
+                                    view={view}
+                                    column={column}
+                                    inspected={current}
+                                    graph={graph!}
+                                    controller={controller}
+                                    fileListView={fileListView}
+                                    maximized={maximized}
+                                />,
+                                !(maximized && last) && (
+                                    <ColumnDivider
+                                        key={`${view.id}:divider`}
+                                        label="Resize auxiliary column"
+                                        width={view.width}
+                                        minimum={view.kind == "diff" ? minimumDiffColumnWidth : minimumColumnWidth}
+                                        defaultWidth={defaultAuxiliaryColumnWidth}
+                                        attached={!last}
+                                        onResize={width => controller.inspection.resizeAuxiliary(view.id, width)}
+                                    />
+                                ),
+                            ]
+                        })}
+                    </div>
+                )
             })}
         </section>
     )
@@ -301,7 +298,7 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                 ref={headerRef}
                                 className="column-header"
                                 data-drop-target={isDropTarget || undefined}
-                                draggable={!snapshot.maximizedId}
+                                draggable
                                 onDoubleClick={toggleMaximized}
                                 onDragStart={event => header.start(column, event)}
                                 onDragEnd={header.end}
@@ -370,11 +367,8 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                             <Tooltip>Open diff column</Tooltip>
                                         </TooltipTrigger>
                                     )}
-                                    <IconButton
-                                        label={snapshot.maximizedId ? "Restore columns" : "Maximize column"}
-                                        onPress={() => columns.toggleMaximized(column.id)}
-                                    >
-                                        {snapshot.maximizedId ? <RestoreIcon /> : <MaximizeIcon />}
+                                    <IconButton label={maximized ? "Restore column" : "Maximize column"} onPress={() => columns.toggleMaximized(column.id)}>
+                                        {maximized ? <RestoreIcon /> : <MaximizeIcon />}
                                     </IconButton>
                                     {!column.worktree && column.kind != "recovery" && (
                                         <IconButton label="Close column" onPress={() => columns.close(column.id)}>
@@ -446,18 +440,29 @@ export function ColumnTabs({ columns }: { columns: BranchWorkspace }) {
     let snapshot = useSnapshot(columns)
     if (snapshot.columns.length == 0 || !snapshot.focusedId)
         return null
-    let show = (id: string) => {
+    let show = (id: string, focus: boolean) => {
         columns.focus(id)
         let element = columnElement(id)
-        element?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" })
-        ;(element?.querySelector<HTMLElement>(".expand-column") ?? element)?.focus({ preventScroll: true })
+        if (id == snapshot.maximizedId)
+            showMaximized(id)
+        else
+            element?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" })
+        if (focus)
+            (element?.querySelector<HTMLElement>(".expand-column") ?? element)?.focus({ preventScroll: true })
     }
-    // Arrow keys move between tabs; Enter or a click shows the column, which takes focus.
+    // Arrow keys move between tabs, and Enter shows the column, which takes focus. A click shows it and leaves focus
+    // on its tab: the browser focuses the tab after the press, and React Aria would take that focus, following one
+    // moved during the press, as programmatic, re-rendering every list that shows focus, twice per click.
     return (
-        <Tabs aria-label="Open columns" keyboardActivation="manual" selectedKey={snapshot.focusedId} onSelectionChange={key => show(String(key))}>
+        <Tabs aria-label="Open columns" keyboardActivation="manual" selectedKey={snapshot.focusedId}>
             <TabList aria-label="Open columns" className="react-aria-TabList column-tabs">
                 {snapshot.columns.map(column => (
-                    <Tab key={column.id} id={column.id} className={clsx("react-aria-Tab column-tab", column.collapsed && "collapsed")}>
+                    <Tab
+                        key={column.id}
+                        id={column.id}
+                        className={clsx("react-aria-Tab column-tab", column.collapsed && "collapsed")}
+                        onPressStart={event => show(column.id, event.pointerType == "keyboard" || event.pointerType == "virtual")}
+                    >
                         <ColumnKind column={column} />
                         <span className="column-tab-name">{column.name}</span>
                     </Tab>
@@ -560,6 +565,21 @@ function useReveal(revealed?: { id: string; serial: number }) {
         })
         return () => cancelAnimationFrame(frame)
     }, [revealed])
+}
+
+// A column that is maximized comes into view once it has grown to fill it.
+function useMaximized(id?: string) {
+    useEffect(() => {
+        if (!id)
+            return
+        let frame = requestAnimationFrame(() => showMaximized(id))
+        return () => cancelAnimationFrame(frame)
+    }, [id])
+}
+
+/** Scrolls a maximized column into view with its auxiliary columns, which together fill the row's view. */
+function showMaximized(id: string) {
+    columnElement(id)?.closest(".column-group")?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" })
 }
 
 // An auxiliary column that opens, or is asked for again, takes focus once it shows, after any menu that opened it

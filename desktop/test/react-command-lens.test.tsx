@@ -36,7 +36,7 @@ describe("React Command Lens", () => {
         await app.act(frame)
         expect(lens() == null).toBe(true)
         expect(selected()).toBe("branch:refs/heads/feature/laneway")
-        expect(document.querySelectorAll(".column-row > .column")).toHaveLength(0)
+        expect(document.querySelectorAll(".column-row .column")).toHaveLength(0)
         expect(rows().contains(document.activeElement)).toBe(true)
 
         // A repository's name finds the repository, and nothing found says so.
@@ -144,7 +144,7 @@ describe("React Command Lens", () => {
                 await app.act(frame)
                 expect(button(panel()!, "Show relevant").getAttribute("aria-pressed")).toBe("true")
                 expect(selected()).toBe(selectAnother ? feature!.id : remote.id)
-                expect(document.querySelectorAll(".column-row > .column")).toHaveLength(0)
+                expect(document.querySelectorAll(".column-row .column")).toHaveLength(0)
             } finally {
                 finishRefresh()
             }

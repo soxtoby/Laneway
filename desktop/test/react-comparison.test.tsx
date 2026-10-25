@@ -70,7 +70,8 @@ describe("React Branch Comparison", () => {
         await app.act(() => press(compare()))
         await app.act(frame)
         // Elements compare as booleans; a failed comparison of two elements would serialize the whole document.
-        expect(comparison()!.previousElementSibling?.previousElementSibling == source).toBe(true)
+        let order = [...document.querySelectorAll(".column-row .column")]
+        expect(order.indexOf(comparison()!)).toBe(order.indexOf(source) + 1)
         expect(comparison()!.querySelector("h2")?.textContent).toBe(`${main!.name} → ${feature!.name}`)
         expect(document.activeElement == comparison()).toBe(true)
         expect(requested).toEqual([{
@@ -144,7 +145,7 @@ describe("React Branch Comparison", () => {
 })
 
 function column(id: string) {
-    return [...document.querySelectorAll<HTMLElement>(".column-row > .column")].find(element => element.dataset.columnId == id)
+    return [...document.querySelectorAll<HTMLElement>(".column-row .column")].find(element => element.dataset.columnId == id)
 }
 
 function comparison() {

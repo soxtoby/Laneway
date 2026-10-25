@@ -117,7 +117,10 @@ export interface BranchWorkspace extends Store<ColumnsSnapshot> {
     toggleCollapsed(id: string): void
     /** A worktree's column collapses instead, as it stays while the worktree does. */
     close(id: string): void
-    /** Maximizes a column, or restores the row when it is already maximized. */
+    /**
+     * Maximizes a column, sizing it with its auxiliary columns to fill the row's view while the others stay beside
+     * it, or restores its width when it is already maximized. Only one column is maximized at a time.
+     */
     toggleMaximized(id: string): void
     restore(): void
     /** Moves a column by `delta` places. */
@@ -519,7 +522,8 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
     function toggleCollapsed(id: string) {
         change(activeId, state => {
             state.collapsedIds = state.collapsedIds.includes(id) ? state.collapsedIds.filter(candidate => candidate != id) : [...state.collapsedIds, id]
-            state.maximizedId = undefined
+            if (state.maximizedId == id)
+                state.maximizedId = undefined
         })
     }
 
@@ -574,7 +578,6 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
                 state.collapsedIds = state.collapsedIds.filter(candidate => candidate != id)
                 state.focusedId = id
                 state.widths[id] ??= defaultColumnWidth
-                state.maximizedId = undefined
                 state.revealed = { id, serial: (state.revealed?.serial ?? 0) + 1 }
             })
         },
@@ -642,7 +645,6 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
                 state.collapsedIds = state.collapsedIds.filter(candidate => candidate != id)
                 state.focusedId = id
                 state.widths[id] ??= defaultColumnWidth
-                state.maximizedId = undefined
                 state.revealed = { id, serial: (state.revealed?.serial ?? 0) + 1 }
             })
         },

@@ -36,7 +36,7 @@ export function ColumnDivider({ label, width, minimum, maximum, defaultWidth, at
             : event.key == "Home"
             ? minimum
             : event.key == "End"
-            ? maximum ? widest() : divider.current?.parentElement?.clientWidth ?? defaultWidth
+            ? maximum ? widest() : divider.current?.closest(".column-row")?.clientWidth ?? defaultWidth
             : undefined
         if (next != undefined) {
             event.preventDefault()

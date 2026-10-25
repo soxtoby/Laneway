@@ -130,13 +130,16 @@ app.on("browser-window-created", (_event, window) => {
                     focused: document.activeElement == aside,
                     width: Math.round(aside.getBoundingClientRect().width),
                 };
-                // Maximized, the source column keeps its width and the diff column takes the rest of the row.
+                // Maximized, the source column keeps its width and the diff column takes the rest of the row's view,
+                // which scrolls to show them.
                 aside.querySelector('[aria-label="Maximize column"]').click();
-                const columnRow = await wait(() => document.querySelector('.column-row.maximized'), 'the maximized column');
+                const maximized = await wait(() => document.querySelector('.column-group.maximized'), 'the maximized column');
+                const columnRow = maximized.parentElement;
+                const rowStart = columnRow.getBoundingClientRect().left + parseFloat(getComputedStyle(columnRow).paddingLeft);
                 const rowEnd = columnRow.getBoundingClientRect().right - parseFloat(getComputedStyle(columnRow).paddingRight);
-                diffColumn.split = columnRow.scrollWidth <= columnRow.clientWidth && Math.abs(aside.getBoundingClientRect().right - rowEnd) <= 1
-                    && Math.round(source.getBoundingClientRect().width) == 380;
-                aside.querySelector('[aria-label="Restore columns"]').click();
+                await wait(() => Math.abs(maximized.getBoundingClientRect().left - rowStart) <= 1, 'the maximized column to scroll into view');
+                diffColumn.split = Math.abs(aside.getBoundingClientRect().right - rowEnd) <= 1 && Math.round(source.getBoundingClientRect().width) == 380;
+                aside.querySelector('[aria-label="Restore column"]').click();
                 (await wait(() => document.querySelector('[aria-label="Close diff column"]'), 'the restored columns')).click();
                 await wait(() => !document.querySelector('.diff-column'), 'the diff column to close');
 

@@ -5,17 +5,13 @@ export interface ColumnSpan {
     right: number
 }
 
-/** The spans of a row's columns, whose cards carry `data-column-id` and are followed by what belongs to them. */
+/** The spans of a row's columns: each group, holding a card that carries `data-column-id` and what belongs to it. */
 export function columnSpans(row: Element): ColumnSpan[] {
-    let spans: ColumnSpan[] = []
-    for (let child of row.children) {
-        let rect = child.getBoundingClientRect()
-        if (child instanceof HTMLElement && child.dataset.columnId)
-            spans.push({ id: child.dataset.columnId, left: rect.left, right: rect.right })
-        else if (spans.length > 0)
-            spans[spans.length - 1].right = rect.right
-    }
-    return spans
+    return [...row.children].flatMap(group => {
+        let id = group.querySelector<HTMLElement>("[data-column-id]")?.dataset.columnId
+        let rect = group.getBoundingClientRect()
+        return id ? [{ id, left: rect.left, right: rect.right }] : []
+    })
 }
 
 /**

@@ -33,18 +33,19 @@ describe("React diff column", () => {
             expect(order()).toEqual(["column", "column-divider", "column", "column-divider"])
         }
 
-        // Maximizing from the diff column maximizes its source column, which shares the window with it.
+        // Maximizing from the diff column maximizes its source column, which shares the row's view with it; the
+        // next column stays beside them.
         await app.act(() => press(button(row, "Break out diff")))
         await app.act(() => press(button(diffColumn()!, "Maximize column")))
-        expect(order()).toEqual(["column", "column-divider", "auxiliary-column"])
+        expect(order()).toEqual(["column", "column-divider", "auxiliary-column", "column", "column-divider"])
         expect(source!.classList.contains("split")).toBe(true)
-        await app.act(() => press(button(diffColumn()!, "Restore columns")))
+        await app.act(() => press(button(diffColumn()!, "Restore column")))
         expect(order()).toHaveLength(6)
         await app.act(() => diffColumn()!.querySelector("header")!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })))
-        expect(order()).toEqual(["column", "column-divider", "auxiliary-column"])
+        expect(order()).toEqual(["column", "column-divider", "auxiliary-column", "column", "column-divider"])
         // Closing it leaves the source column maximized on its own.
         await app.act(() => press(button(diffColumn()!, "Close diff column")))
-        expect(order()).toEqual(["column"])
+        expect(order()).toEqual(["column", "column", "column-divider"])
     })
 
     test("shows a commit's whole diff, takes the files chosen in its source column, and gives the inline diffs back", async () => {
@@ -404,11 +405,11 @@ describe("React diff column", () => {
 })
 
 function columns() {
-    return [...document.querySelectorAll<HTMLElement>(".column-row > .column")]
+    return [...document.querySelectorAll<HTMLElement>(".column-row .column")]
 }
 
 function order() {
-    return [...document.querySelector(".column-row")!.children].map(node => node.classList[0])
+    return [...document.querySelectorAll(".column-group > *")].map(node => node.classList[0])
 }
 
 function diffColumn() {

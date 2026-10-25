@@ -457,7 +457,7 @@ function submenu() {
 }
 
 function columnNames() {
-    return [...document.querySelectorAll(".column-row > .column")].map(column => column.getAttribute("aria-label"))
+    return [...document.querySelectorAll(".column-row .column")].map(column => column.getAttribute("aria-label"))
 }
 
 // React Aria completes a keyboard press on its keyup.
