@@ -1,10 +1,10 @@
 import type { OpenRepository, RepositoryIconColor } from "@laneway/shared"
 import { graphemes, monogramText, repositoryIconColors, repositoryInitials } from "@laneway/shared"
 import type { ReactNode } from "react"
-import { useReducer, useRef } from "react"
+import { useRef } from "react"
 import { Autocomplete, type Key, ListBox, ListBoxItem, type Selection } from "react-aria-components"
 import { Hint } from "./controls"
-import { iconCatalog, iconLabel, searchIcons } from "./icon-catalog"
+import { iconLabel, searchIcons, useIconCatalog } from "./icon-catalog"
 import { CatalogGlyph, EmojiTypeIcon, IconTypeIcon, ImageTypeIcon, MonogramTypeIcon } from "./icons"
 import { automaticIcon, baseName, repositoryFolderName } from "./repositories"
 import type { IconImageApi } from "./repository-icon-images"
@@ -114,8 +114,7 @@ function ColorPicker({ editor, state }: { editor: RepositoryIdentityEditor; stat
 }
 
 function IconPicker({ editor, state }: { editor: RepositoryIdentityEditor; state: IdentitySnapshot }) {
-    let [, loaded] = useReducer((count: number) => count + 1, 0)
-    let catalog = iconCatalog(loaded)
+    let catalog = useIconCatalog()
     let results = catalog ? searchIcons(catalog, state.iconQuery) : []
     return (
         <>

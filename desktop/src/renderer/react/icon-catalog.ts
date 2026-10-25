@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from "react"
+
 /** A Tabler icon's shapes, drawn on its 24-unit grid. */
 export type CatalogNode = [tag: string, attributes: Record<string, string>][]
 
@@ -10,27 +12,33 @@ export interface IconCatalog {
 let catalog: IconCatalog | undefined
 let loading: Promise<IconCatalog> | undefined
 
-/**
- * The whole icon set, loaded once on first use so the application bundle stays small. `loaded` fires
- * after a pending load finishes, so a caller rendering before then can re-render with the result.
- */
-export function iconCatalog(loaded?: () => void): IconCatalog | undefined {
-    if (catalog)
-        return catalog
+/** The whole icon set, loaded once on first use so the application bundle stays small. */
+export function loadIconCatalog(): Promise<IconCatalog> {
     loading ??= Promise.all([import("@tabler/icons/tabler-nodes-outline.json"), import("@tabler/icons/icons.json")]).then(([nodes, icons]) => {
         // A few of Tabler's tags are numbers.
         let tags = Object.fromEntries(Object.entries(icons.default).map(([name, icon]) => [name, icon.tags.map(String)]))
         catalog = { nodes: nodes.default, tags }
         return catalog
     })
-    if (loaded)
-        void loading.then(loaded, loaded)
-    return undefined
+    return loading
 }
 
-/** The node for a saved icon name, or nothing while the catalog loads or when the name is unknown. */
-export function catalogNode(name: string, loaded?: () => void) {
-    return iconCatalog(loaded)?.nodes[name]
+/**
+ * The icon set once it has loaded. A view that `needs` it starts the load and renders again when it finishes; one that
+ * doesn't leaves it unloaded.
+ */
+export function useIconCatalog(needs = true): IconCatalog | undefined {
+    return useSyncExternalStore(needs ? watchCatalog : ignore, () => catalog)
+}
+
+function watchCatalog(changed: () => void) {
+    let watching = true
+    void loadIconCatalog().then(() => watching && changed())
+    return () => watching = false
+}
+
+function ignore() {
+    return () => {}
 }
 
 // Shown before any search, in rough order of how often a repository is one of these things.

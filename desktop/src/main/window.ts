@@ -1,7 +1,5 @@
 import { BrowserWindow, nativeTheme } from "electron"
 import { fileURLToPath } from "node:url"
-import windowsIcon from "../../resources/icon.ico?asset"
-import icon from "../../resources/icon.png?asset"
 import { titleBarOverlay, windowBackground } from "./window-colors"
 
 export function createWindow(appearance: string) {
@@ -14,7 +12,7 @@ export function createWindow(appearance: string) {
         backgroundColor: windowBackground(appearance),
         show: true,
         title: "Laneway",
-        icon: process.platform == "win32" ? windowsIcon : icon,
+        icon: resource(process.platform == "win32" ? "icon.ico" : "icon.png"),
         titleBarStyle: "hidden",
         titleBarOverlay: process.platform == "darwin" ? undefined : titleBarOverlay(appearance),
         webPreferences: {
@@ -29,6 +27,11 @@ export function createWindow(appearance: string) {
         void window.loadURL(process.env.ELECTRON_RENDERER_URL)
     else
         void window.loadFile(fileURLToPath(new URL("../renderer/index.html", import.meta.url)))
+}
+
+/** A file in `desktop/resources`, which is two folders up from both the main process's source and its bundle. */
+export function resource(name: string) {
+    return fileURLToPath(new URL(`../../resources/${name}`, import.meta.url))
 }
 
 // The renderer's styles switch with prefers-color-scheme, which follows this rather than the OS.

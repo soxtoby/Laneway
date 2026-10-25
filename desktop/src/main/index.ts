@@ -1,14 +1,13 @@
 import { defaultWorkspacePath } from "@laneway/settings"
 import { app, BrowserWindow, ipcMain, Menu } from "electron"
 import { resolve } from "node:path"
-import icon from "../../resources/icon.png?asset"
 import { CommitDrafts } from "./commit-drafts"
 import { inspectEngine, resolveEnginePath } from "./engine"
 import { registerInspectionHandlers } from "./ipc/inspection-ipc"
 import { registerOperationHandlers } from "./ipc/operation-ipc"
 import { registerRepositoryHandlers } from "./ipc/repository-ipc"
 import { OpenRepositories } from "./repositories"
-import { createWindow } from "./window"
+import { createWindow, resource } from "./window"
 import { WorkspaceManager } from "./workspace-manager"
 
 let workspacePath = resolve(app.getAppPath(), "..")
@@ -52,7 +51,7 @@ void app.whenReady().then(async () => {
     await workspace.load()
     registerHandlers()
     Menu.setApplicationMenu(null)
-    app.dock?.setIcon(icon)
+    app.dock?.setIcon(resource("icon.png"))
     createWindow(await repositories.appearance())
 })
 

@@ -1,8 +1,8 @@
 import type { RepositoryIcon, RepositoryIconColor } from "@laneway/shared"
 import { graphemeCount, repositoryInitials } from "@laneway/shared"
-import { createElement, type ReactNode, useLayoutEffect, useReducer, useRef, useState } from "react"
-import { catalogNode } from "./icon-catalog"
-import { type IconImageApi, iconImageUrl } from "./repository-icon-images"
+import { createElement, type ReactNode, useLayoutEffect, useRef, useState } from "react"
+import { useIconCatalog } from "./icon-catalog"
+import { type IconImageApi, useIconImage } from "./repository-icon-images"
 
 interface TileProps {
     icon?: RepositoryIcon
@@ -20,10 +20,10 @@ interface TileProps {
  * `data-kind` names what it shows.
  */
 export function RepositoryTile({ icon, name, api, isActive = false, isMissing = false, className = "tile" }: TileProps) {
-    let [, loaded] = useReducer((count: number) => count + 1, 0)
+    let url = useIconImage(api, icon?.kind == "image" ? icon.path : undefined)
+    let catalog = useIconCatalog(icon?.kind == "icon")
     let content: ReactNode
     if (icon?.kind == "image") {
-        let url = iconImageUrl(api, icon.path, loaded)
         if (url)
             content = <image href={url} x={2} y={2} width={16} height={16} preserveAspectRatio="xMidYMid meet" />
     } else if (icon?.kind == "emoji")
@@ -31,7 +31,7 @@ export function RepositoryTile({ icon, name, api, isActive = false, isMissing = 
     else if (icon?.kind == "monogram")
         content = <TileLetters text={icon.text} tone={icon.color} />
     else if (icon?.kind == "icon") {
-        let node = catalogNode(icon.name, loaded)
+        let node = catalog?.nodes[icon.name]
         // Tabler draws inside a 2-unit margin of its 24-unit grid; that live area fills the box images use.
         if (node) {
             content = (

@@ -23,7 +23,6 @@
         "git/**/*.ts",
         "cli/**/*.ts",
         "desktop/**/*.ts",
-        "desktop/**/*.tsx",
-        "electron.vite.config.ts"
+        "desktop/**/*.tsx"
     ]
 }

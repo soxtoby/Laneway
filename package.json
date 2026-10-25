@@ -13,9 +13,9 @@
     "scripts": {
         "build:engine": "bun build ./cli/src/main.ts --compile --outfile ./cli/bin/lane.exe",
         "predev": "bun run build:engine",
-        "dev": "bun run --cwd desktop dev",
+        "dev": "bun desktop/scripts/dev.ts",
         "predev:inspect": "bun run build:engine",
-        "dev:inspect": "bun run --cwd desktop dev:inspect",
+        "dev:inspect": "bun desktop/scripts/dev.ts --inspect",
         "build": "bun run build:engine && bun run --cwd desktop build",
         "test": "bun run build && bun test --parallel=8 --timeout=30000 --timings=tmp/test-timings.json --update-timings ./settings/test ./git/test ./cli/test ./desktop/test",
         "typecheck": "tsc --noEmit",
@@ -31,6 +31,7 @@
         "dprint": "^0.56.1",
         "eslint": "^10.9.0",
         "eslint-plugin-react-hooks": "^7.1.1",
+        "react-refresh": "^0.19.0",
         "stylelint": "^17.16.0",
         "typescript": "^6.0.0",
         "typescript-eslint": "^8.67.0"

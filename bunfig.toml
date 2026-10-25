@@ -1,0 +1,7 @@
+[test]
+# The renderer runs compiled by the React Compiler, as it ships.
+preload = ["./desktop/test/compile-renderer.ts"]
+
+[serve.static]
+# The development server compiles the renderer the same way.
+plugins = ["./desktop/react-compiler.ts"]

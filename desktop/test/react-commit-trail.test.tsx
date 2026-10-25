@@ -1,7 +1,7 @@
 import type { BranchHistoryCommit, LocalActionResult, LocalRequest } from "@laneway/shared"
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
+import { afterAll, afterEach, beforeAll, describe, expect, jest, test } from "bun:test"
 import type { Window as HappyWindow } from "happy-dom"
-import { button, installReactDom, press, startReactApp, stopReactApps, type } from "./react-dom"
+import { button, installReactDom, press, renderReact, startReactApp, stopReactApps, type } from "./react-dom"
 import { inspectionScenario } from "./renderer-fixtures"
 
 let browserWindow: HappyWindow
@@ -67,6 +67,23 @@ describe("React Commit Trail", () => {
         await app.act(() => press(menuItem("Show commit ages")))
         expect(trail().querySelector("time") == null).toBe(false)
         expect(saved).toEqual([false, true])
+    })
+
+    test("a commit's age moves on with the clock while it shows", async () => {
+        jest.useFakeTimers({ now: new Date(2026, 9, 25, 12, 0, 30) })
+        try {
+            let [{ createElement }, { CommitAge }] = await Promise.all([import("react"), import("../src/renderer/react/commit-age")])
+            let view = await renderReact(createElement(CommitAge, { authoredAt: new Date(2026, 9, 25, 12, 0).getTime() / 1000 }))
+            let age = () => view.container.querySelector("time")?.textContent
+            let ages = [age()]
+            await view.act(() => jest.advanceTimersByTime(2 * 60_000))
+            ages.push(age())
+            await view.unmount()
+
+            expect(ages).toEqual(["now", "2m"])
+        } finally {
+            jest.useRealTimers()
+        }
     })
 
     test("marks commits by other authors with their initials, name, and email, but not the developer's own", async () => {

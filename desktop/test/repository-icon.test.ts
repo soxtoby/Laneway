@@ -1,27 +1,17 @@
 import { firstEmoji, monogramText, RepositoryIconSchema, repositoryInitials } from "@laneway/shared"
 import { describe, expect, test } from "bun:test"
-import { type IconCatalog, iconCatalog, iconLabel, popularIcons, searchIcons } from "../src/renderer/react/icon-catalog"
+import { iconLabel, loadIconCatalog, popularIcons, searchIcons } from "../src/renderer/react/icon-catalog"
 import { expandAllNode } from "../src/renderer/react/icon-nodes"
-
-async function loadCatalog(): Promise<IconCatalog> {
-    // Another test in the same process may already have loaded the catalogue.
-    let loaded = Promise.withResolvers<void>()
-    let catalog = iconCatalog(() => loaded.resolve())
-    if (catalog)
-        return catalog
-    await loaded.promise
-    return iconCatalog()!
-}
 
 describe("Application icons", () => {
     test("the diff's expand control draws Tabler's selector, as the column's Expand all does", async () => {
-        let catalog = await loadCatalog()
+        let catalog = await loadIconCatalog()
         expect(expandAllNode).toEqual(catalog.nodes.selector!)
     })
 
     test("the icon catalogue loads once and searches names and tags", async () => {
-        let catalog = await loadCatalog()
-        expect(iconCatalog()).toBe(catalog)
+        let catalog = await loadIconCatalog()
+        expect(await loadIconCatalog()).toBe(catalog)
         expect(Object.keys(catalog.nodes).length).toBeGreaterThan(4000)
         // Every popular icon exists, so the empty query never shows gaps.
         expect(popularIcons.filter(name => !(name in catalog.nodes))).toEqual([])

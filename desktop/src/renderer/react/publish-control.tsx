@@ -147,8 +147,13 @@ export function PublishDialog({ publish, repositoryId }: { publish: Publish; rep
     let result = outcome?.result
     let receipt = result?.receipt
     let status = receipt && publishReceiptStatus(receipt)
+    // Callbacks read the outcome only once it exists: the React Compiler compares what they read at every render.
+    let close = () => {
+        if (outcome)
+            publish.close(outcome.repositoryId)
+    }
     return (
-        <Modal isOpen={open != undefined} isDismissable onOpenChange={isOpen => isOpen || publish.close(outcome!.repositoryId)}>
+        <Modal isOpen={open != undefined} isDismissable onOpenChange={isOpen => isOpen || close()}>
             <Dialog className="react-aria-Dialog publish-outcome" aria-label="Publish outcome">
                 <Heading slot="title">Publish</Heading>
                 {outcome?.error && <p className="publish-error" role="alert">{outcome.error}</p>}
@@ -167,12 +172,8 @@ export function PublishDialog({ publish, repositoryId }: { publish: Publish; rep
                 )}
                 {status && status != "published" && <p className="publish-note">{notes[status]}</p>}
                 <div className="dialog-actions">
-                    {status == "stale" && <Button variant="accent" onPress={() => publish.pull(outcome!.repositoryId)} autoFocus>Pull latest</Button>}
-                    <Button
-                        variant={status == "stale" ? "secondary" : "accent"}
-                        onPress={() => publish.close(outcome!.repositoryId)}
-                        autoFocus={status != "stale"}
-                    >
+                    {status == "stale" && outcome && <Button variant="accent" onPress={() => publish.pull(outcome.repositoryId)} autoFocus>Pull latest</Button>}
+                    <Button variant={status == "stale" ? "secondary" : "accent"} onPress={close} autoFocus={status != "stale"}>
                         Close
                     </Button>
                 </div>
