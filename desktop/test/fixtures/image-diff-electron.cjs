@@ -30,6 +30,9 @@ app.whenReady().then(async () => {
         let result = await window.webContents.executeJavaScript(
             "(async () => { try { return await window.imageDiffChecks() } catch (error) { return { error: error.stack, text: document.body.innerText } } })()",
         )
+        let remount = await window.webContents.executeJavaScript(
+            "(async () => { try { return await window.imageRemountChecks() } catch (error) { return { error: error.stack, text: document.body.innerText } } })()",
+        )
         // Pictures wider than the window show the difference between fitting and 1:1.
         let large = { old: picture(1200, 300, 100).toString("base64"), new: picture(1600, 400, 150).toString("base64") }
         await window.webContents.executeJavaScript(`window.mountImageDiff(${JSON.stringify(large)})`)
@@ -47,7 +50,7 @@ app.whenReady().then(async () => {
         let viewer = await window.webContents.executeJavaScript(
             "(async () => { try { return await window.imageViewerChecks() } catch (error) { return { error: error.stack, text: document.body.innerText } } })()",
         )
-        writeFileSync(join(directory, "result.json"), JSON.stringify({ ...result, viewer, messages }))
+        writeFileSync(join(directory, "result.json"), JSON.stringify({ ...result, remount, viewer, messages }))
         app.quit()
     } catch (error) {
         writeFileSync(join(directory, "result.json"), JSON.stringify({ error: String(error), messages }))

@@ -58,6 +58,14 @@ export class FileRowsLayout extends ListLayout<unknown> {
     override getVisibleLayoutInfos(rect: Rect) {
         return super.getVisibleLayoutInfos(new Rect(rect.x, rect.y - rowsReach, rect.width, rect.height + 2 * rowsReach))
     }
+
+    // Scrolling with its column, the list is as tall as its rows, so its height changes whenever a row opens a diff or
+    // a diff grows. Only a new width invalidates every row's measured height: ListLayout would otherwise drop them all
+    // for its estimate, collapsing the list for the layout in which the drawn rows measure themselves again, which
+    // moves the column's content under the view and leaves the rows the view passed undrawn.
+    override shouldInvalidate(newRect: Rect, oldRect: Rect) {
+        return newRect.width != oldRect.width
+    }
 }
 
 let rowsReach = 200

@@ -37,6 +37,7 @@ test("React image diffs decode and compare pictures under the production CSP", a
         expect(result.messages.filter((message: string) => /content security policy|refused/i.test(message))).toEqual([])
         expect(result).toMatchObject({
             decoded: true,
+            sized: true,
             swipe: { oldWidth: 120, newWidth: 160, divider: true },
             difference: "difference",
             onion: "0.5",
@@ -44,6 +45,15 @@ test("React image diffs decode and compare pictures under the production CSP", a
         expect(result.captions).toContain("Old · 120 × 80")
         expect(result.captions).toContain("New · 160 × 100")
         expect(result.swipe.clip).toContain("inset(0px 0px 0px 50%)")
+
+        // A page drawn again holds its pictures' room, their natural sizes within their borders, and their captions,
+        // until they're read again.
+        let remount = result.remount
+        expect(remount.error, remount.text).toBeUndefined()
+        expect(remount.before.map((box: { width: number; height: number }) => [Math.round(box.width), Math.round(box.height)])).toEqual([[122, 82], [162, 102]])
+        expect(remount.after).toEqual(remount.before.map((box: { tag: string }) => ({ ...box, tag: "img" })))
+        expect(remount.notice).not.toContain("Reading images")
+        expect(remount.notice).toContain("Old · 120 × 80 · ")
 
         // The enlarged picture fits the viewer, which leaves 24px around it and 16px inside, then shows every pixel at 1:1.
         // The kit's modal draws an outline, which takes no room.

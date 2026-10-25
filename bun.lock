@@ -71,6 +71,7 @@
     },
   },
   "patchedDependencies": {
+    "react-aria@3.53.1": "patches/react-aria@3.53.1.patch",
     "@pierre/diffs@1.6.1": "patches/@pierre%2Fdiffs@1.6.1.patch",
   },
   "packages": {

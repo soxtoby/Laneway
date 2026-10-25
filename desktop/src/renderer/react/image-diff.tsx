@@ -11,10 +11,25 @@ import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 interface Side {
     content?: ImageContent
     url?: string
+    /** Its natural size, measured as it decodes, or remembered from when the page last showed it. */
     width?: number
     height?: number
+    /** Its bytes, which the caption gives; remembered too. */
+    size?: number
     failed?: boolean
 }
+
+/** What a picture measured: enough to hold its room, and caption it, before it's read again. */
+interface Measured {
+    width: number
+    height: number
+    size: number
+}
+
+// A page's pictures, by `imageKey`, as they last measured. A list draws a row again as it scrolls back to it, so the
+// row's pictures are read again; remembered, they take their room from the row's first frame, rather than growing
+// once they've decoded, which would push the scroll out from under the view.
+let remembered = new Map<string, { old?: Measured; new?: Measured }>()
 
 type Zoom = "fit" | "actual"
 
@@ -38,7 +53,10 @@ export function imageKey(page: FileDiffPage) {
  * page's pictures start afresh.
  */
 export function ImageDiff({ page, mode, read }: ImageDiffProps) {
-    let [loaded, setLoaded] = useState<{ image?: FileImagePage; sides: { old: Side; new: Side }; error?: string }>({ sides: { old: {}, new: {} } })
+    let [loaded, setLoaded] = useState<{ image?: FileImagePage; sides: { old: Side; new: Side }; error?: string }>(() => {
+        let known = remembered.get(imageKey(page))
+        return { sides: { old: { ...known?.old }, new: { ...known?.new } } }
+    })
     let [position, setPosition] = useState(0.5)
     let [opacity, setOpacity] = useState(0.5)
     let [viewer, setViewer] = useState<Viewer>()
@@ -58,11 +76,12 @@ export function ImageDiff({ page, mode, read }: ImageDiffProps) {
                     return
                 let sides = { old: objectSide(result.old, page.file.oldPath ?? page.file.path), new: objectSide(result.new, page.file.path) }
                 urls.push(...[sides.old.url, sides.new.url].filter(url => url != undefined))
-                setLoaded({ image: result, sides })
+                // Measured before they show, so each picture takes its room in the frame it appears.
                 await Promise.all([measure(sides.old), measure(sides.new)])
                 if (controller.signal.aborted)
                     return
-                setLoaded({ image: result, sides: { old: { ...sides.old }, new: { ...sides.new } } })
+                remember(imageKey(page), sides)
+                setLoaded({ image: result, sides })
                 if (!fetchLfs && [result.old, result.new].some(side => side?.state == "lfs"))
                     await show(true)
             } catch (failure) {
@@ -72,7 +91,7 @@ export function ImageDiff({ page, mode, read }: ImageDiffProps) {
                 setLoaded(current =>
                     fetchLfs
                         ? { ...current, sides: { old: unfetched(current.sides.old, message), new: unfetched(current.sides.new, message) } }
-                        : { ...current, error: message }
+                        : { error: message, sides: { old: {}, new: {} } }
                 )
             }
         }
@@ -85,7 +104,12 @@ export function ImageDiff({ page, mode, read }: ImageDiffProps) {
     }, [])
 
     let { image, sides, error } = loaded
-    let comparable = image?.old && image.new && [sides.old, sides.new].every(side => side.url && !side.failed)
+    // A side the page has, or had when it was last shown: a picture, word of why there's none, or the room kept for one.
+    let has = (side: Side) => side.content != undefined || side.width != undefined
+    let any = has(sides.old) || has(sides.new)
+    let both = has(sides.old) && has(sides.new)
+    // Pictures compare once both have decoded, or had when the page was last shown.
+    let comparable = [sides.old, sides.new].every(side => side.width && side.height && !side.failed)
     let shown = comparable ? mode : "side-by-side"
 
     let renderImage = (side: Side, alt: string, enlarge: () => void) => {
@@ -96,10 +120,14 @@ export function ImageDiff({ page, mode, read }: ImageDiffProps) {
             return <div className="image-unavailable" role="status">Downloading from Git LFS…</div>
         if (side.failed)
             return <div className="image-unavailable">Could not display this image.</div>
+        // The room the picture took when the page last showed it, held while it's read again.
+        if (!side.url)
+            return <div className="image-picture" style={{ width: `${side.width}px`, aspectRatio: `${side.width} / ${side.height}` }} />
+        // Its natural size gives the picture its room before it decodes.
         return (
             <TooltipTrigger>
                 <AriaButton className="image-enlarge" aria-label={`Enlarge ${alt.toLowerCase()}`} onPress={enlarge}>
-                    <img className="image-picture" src={side.url} alt={alt} />
+                    <img className="image-picture" src={side.url} width={side.width} height={side.height} alt={alt} />
                 </AriaButton>
                 <Tooltip>Enlarge</Tooltip>
             </TooltipTrigger>
@@ -116,17 +144,16 @@ export function ImageDiff({ page, mode, read }: ImageDiffProps) {
     // The stage is sized from the pictures' natural dimensions so both layers scale together. Enlarged, it either
     // fits the window or shows every pixel and scrolls.
     let renderStage = (stacked: Exclude<ImageDiffMode, "side-by-side">, enlarged?: Zoom) => {
-        let known = [sides.old, sides.new].every(side => side.width && side.height)
         let widest = Math.max(sides.old.width ?? 0, sides.new.width ?? 0)
         let tallest = Math.max(sides.old.height ?? 0, sides.new.height ?? 0)
-        let span = (side: Side) => known ? `${side.width! / widest * 100}%` : "100%"
+        let span = (side: Side) => `${(side.width ?? 0) / widest * 100}%`
         let overlay: CSSProperties = stacked == "swipe"
             ? { clipPath: `inset(0 0 0 ${position * 100}%)` }
             : stacked == "onion"
             ? { opacity }
             : { mixBlendMode: "difference" }
         let width = enlarged == "fit" ? `min(${widest}px, calc(100% - 2px), calc(var(--viewer-height) * ${widest / tallest}))` : `${widest}px`
-        let size: CSSProperties = known ? { width, aspectRatio: `${widest} / ${tallest}`, ...(enlarged == "actual" ? { maxWidth: "none" } : {}) } : {}
+        let size: CSSProperties = { width, aspectRatio: `${widest} / ${tallest}`, ...(enlarged == "actual" ? { maxWidth: "none" } : {}) }
         let clickable = stacked != "swipe" && !enlarged
         let swipeTo = (event: PointerEvent<HTMLDivElement>) => {
             let bounds = event.currentTarget.getBoundingClientRect()
@@ -166,15 +193,14 @@ export function ImageDiff({ page, mode, read }: ImageDiffProps) {
                         }
                     }}
                 >
-                    <img className="image-layer" src={sides.old.url} alt="Old image" style={known ? { width: span(sides.old) } : { position: "static" }} />
-                    <img className="image-layer" src={sides.new.url} alt="New image" style={{ width: span(sides.new), ...overlay }} />
+                    {sides.old.url && <img className="image-layer" src={sides.old.url} alt="Old image" style={{ width: span(sides.old) }} />}
+                    {sides.new.url && <img className="image-layer" src={sides.new.url} alt="New image" style={{ width: span(sides.new), ...overlay }} />}
                     {stacked == "swipe" && <div className="image-divider" style={{ left: `${position * 100}%` }} />}
                 </div>
             </Hint>
         )
     }
 
-    let both = image?.old && image.new
     let single = viewer?.kind == "single" ? viewer.side : undefined
     let viewed = single ? sides[single] : undefined
     let viewerTitle = single
@@ -184,7 +210,7 @@ export function ImageDiff({ page, mode, read }: ImageDiffProps) {
     return (
         <div className="image-diff">
             {error && <p className="image-notice" role="alert">{error}</p>}
-            {!image && !error && <p className="image-notice" role="status">Reading images…</p>}
+            {!image && !error && !any && <p className="image-notice" role="status">Reading images…</p>}
             {comparable && shown != "side-by-side" && (
                 <div className="image-tools" role="group" aria-label="Image comparison">
                     {shown == "swipe" && (
@@ -218,12 +244,12 @@ export function ImageDiff({ page, mode, read }: ImageDiffProps) {
                     </TooltipTrigger>
                 </div>
             )}
-            {image && (shown == "side-by-side"
+            {any && (shown == "side-by-side"
                 ? (
                     // A two-row grid keeps both captions on one line even when the pictures differ in height.
                     <div className={both ? "image-sides both" : "image-sides"}>
-                        {image.old && renderFigure("old", both ? "Old" : undefined)}
-                        {image.new && renderFigure("new", both ? "New" : undefined)}
+                        {has(sides.old) && renderFigure("old", both ? "Old" : undefined)}
+                        {has(sides.new) && renderFigure("new", both ? "New" : undefined)}
                     </div>
                 )
                 : (
@@ -301,7 +327,7 @@ function ZoomIcon({ zoom }: { zoom: Zoom }) {
 
 function objectSide(content: ImageContent | undefined, path: string): Side {
     return content?.state == "ready"
-        ? { content, url: URL.createObjectURL(new Blob([content.bytes as BlobPart], { type: imageMimeType(path) })) }
+        ? { content, size: content.size, url: URL.createObjectURL(new Blob([content.bytes as BlobPart], { type: imageMimeType(path) })) }
         : { content }
 }
 
@@ -325,14 +351,26 @@ async function measure(side: Side) {
     }
 }
 
+// What the page's pictures measured, for the next time it shows; a page with none to show is forgotten.
+function remember(key: string, sides: { old: Side; new: Side }) {
+    let measured = ({ width, height, size }: Side) => width && height && size != undefined ? { width, height, size } : undefined
+    let pictures = { old: measured(sides.old), new: measured(sides.new) }
+    if (pictures.old || pictures.new)
+        remembered.set(key, pictures)
+    else
+        remembered.delete(key)
+}
+
 function describe(side: Side) {
     let content = side.content
     if (content?.state == "lfs")
         return `downloading · ${formatBytes(content.size)}`
-    if (content?.state != "ready")
+    if (content?.state == "unavailable")
         return "unavailable"
-    let size = formatBytes(content.size)
-    return side.width && side.height ? `${side.width} × ${side.height} · ${size}` : size
+    // A picture read, or remembered while it's read again, gives its size; one that couldn't decode gives only its bytes.
+    let dimensions = side.width && side.height ? `${side.width} × ${side.height}` : undefined
+    let size = side.size != undefined ? formatBytes(side.size) : undefined
+    return [dimensions, size].filter(text => text != undefined).join(" · ") || "unavailable"
 }
 
 function formatBytes(bytes: number) {

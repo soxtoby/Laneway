@@ -1,0 +1,48 @@
+diff --git a/dist/private/virtualizer/ScrollView.cjs b/dist/private/virtualizer/ScrollView.cjs
+index a2d0e5311c2bd24743a2ceaf14cf97b2754d3fa4..a9cac7d55161d131b0aef43718c8722e12a441cd 100644
+--- a/dist/private/virtualizer/ScrollView.cjs
++++ b/dist/private/virtualizer/ScrollView.cjs
+@@ -244,8 +244,10 @@ function $c3885d691318bb9e$export$2ea0c4974da4731b(props, ref) {
+     }, [
+         update
+     ]);
++    // Laneway: deferred to the next frame. Measuring at once lays the rows out again inside the observed element's own
++    // ResizeObserver loop, resizing it there, which the browser reports as undelivered notifications.
+     let onResize = (0, $bNhn7$react.useCallback)(()=>{
+-        updateSize((0, $bNhn7$reactdom.flushSync));
++        requestAnimationFrame(()=>updateSize((0, $bNhn7$reactdom.flushSync)));
+     }, [
+         updateSize
+     ]);
+diff --git a/dist/private/virtualizer/ScrollView.js b/dist/private/virtualizer/ScrollView.js
+index 1ef7c4715f4355662438397afaa3f1b6a6527316..089a4cad84bb5a59286b7b4e42de1c765c9460b4 100644
+--- a/dist/private/virtualizer/ScrollView.js
++++ b/dist/private/virtualizer/ScrollView.js
+@@ -233,8 +233,10 @@ function $71fb8ab235f68c9a$export$2ea0c4974da4731b(props, ref) {
+     }, [
+         update
+     ]);
++    // Laneway: deferred to the next frame. Measuring at once lays the rows out again inside the observed element's own
++    // ResizeObserver loop, resizing it there, which the browser reports as undelivered notifications.
+     let onResize = (0, $021Yk$useCallback)(()=>{
+-        updateSize((0, $021Yk$flushSync));
++        requestAnimationFrame(()=>updateSize((0, $021Yk$flushSync)));
+     }, [
+         updateSize
+     ]);
+diff --git a/dist/private/virtualizer/ScrollView.mjs b/dist/private/virtualizer/ScrollView.mjs
+index 67dd280cebbda43018422ba95113b4b1bbfe06da..5ceee50356e0188fbf3653a97b0fedb740354f55 100644
+--- a/dist/private/virtualizer/ScrollView.mjs
++++ b/dist/private/virtualizer/ScrollView.mjs
+@@ -233,8 +233,10 @@ function $d83ca946696b1300$export$2ea0c4974da4731b(props, ref) {
+     }, [
+         update
+     ]);
++    // Laneway: deferred to the next frame. Measuring at once lays the rows out again inside the observed element's own
++    // ResizeObserver loop, resizing it there, which the browser reports as undelivered notifications.
+     let onResize = (0, $3rdQQ$useCallback)(()=>{
+-        updateSize((0, $3rdQQ$flushSync));
++        requestAnimationFrame(()=>updateSize((0, $3rdQQ$flushSync)));
+     }, [
+         updateSize
+     ]);

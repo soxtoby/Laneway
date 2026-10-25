@@ -28,7 +28,13 @@ let page: FileDiffPage = {
 let root = createRoot(document.getElementById("app")!)
 let read: () => Promise<FileImagePage>
 let mode: ImageDiffMode = "side-by-side"
-Object.assign(window, { mountImageDiff: mount, imageDiffMode: chooseMode, imageDiffChecks: checks, imageViewerChecks: viewerChecks })
+Object.assign(window, {
+    mountImageDiff: mount,
+    imageDiffMode: chooseMode,
+    imageDiffChecks: checks,
+    imageViewerChecks: viewerChecks,
+    imageRemountChecks: remountChecks,
+})
 
 function mount(images: Images) {
     let bytes = (encoded?: string) => {
@@ -111,6 +117,10 @@ async function viewerChecks() {
 async function checks() {
     let pictures = () => [...document.querySelectorAll<HTMLImageElement>(".image-diff img")]
     let decoded = pictures().every(picture => picture.complete && picture.naturalWidth > 0)
+    // Each picture carries its natural size, which gives it its room before it decodes.
+    let sized = pictures().every(picture =>
+        Number(picture.getAttribute("width")) == picture.naturalWidth && Number(picture.getAttribute("height")) == picture.naturalHeight
+    )
     let captions = document.body.innerText
 
     await chooseMode("swipe")
@@ -129,7 +139,33 @@ async function checks() {
     await chooseMode("onion")
     let onion = getComputedStyle(pictures()[1]!).opacity
 
-    return { decoded, captions, swipe, difference, onion }
+    return { decoded, sized, captions, swipe, difference, onion }
+}
+
+// Draws the page again, as a list does when it scrolls back to a row, with its pictures' read held back: the room they
+// took should wait for them, and fit them when they arrive.
+async function remountChecks() {
+    let pictures = read
+    let release!: () => void
+    let held = new Promise<void>(resolve => release = resolve)
+    read = async () => {
+        await held
+        return pictures()
+    }
+    mode = "side-by-side"
+    flushSync(() => root.render(<></>))
+    render()
+    await settled()
+    let boxes = () =>
+        [...document.querySelectorAll<HTMLElement>(".image-sides .image-picture")].map(box => {
+            let { width, height } = box.getBoundingClientRect()
+            return { tag: box.tagName.toLowerCase(), width, height }
+        })
+    let before = boxes()
+    let notice = document.body.innerText
+    release()
+    await settled()
+    return { before, after: boxes(), notice }
 }
 
 // The kit's dialogs animate, so measurements wait for them to settle.
