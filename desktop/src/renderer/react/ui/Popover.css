@@ -12,9 +12,12 @@
     padding: 8px;
     overflow: auto;
 
+    /* A menu sized by the space to its right wraps near the window's edge, and moving it then resizes it again. */
     &[data-trigger="MenuTrigger"],
     &[data-trigger="SubmenuTrigger"] {
         padding: 0;
+        width: max-content;
+        max-width: calc(100vw - 24px);
     }
 
     .react-aria-OverlayArrow svg {
