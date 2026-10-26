@@ -16,8 +16,8 @@ Rebase a branch and its descendants using Laneway composition.`,
 Reword a commit and restack dependent history. Accepts Git revisions such as HEAD~2.
 Repeat -m for paragraphs, or use -F <message-file>. Branch defaults to the current branch.
 --yes approves rewriting published history or removing empty commits.`,
-    worktree: `lane worktree create [branch] [--commit <revision>] [--move]
-lane worktree switch <branch> [--path <worktree>] [--move]
+    worktree: `lane worktree create [branch] [--commit <revision>] [--move] [--local reset|new]
+lane worktree switch <branch> [--path <worktree>] [--move] [--local reset|new]
 lane worktree rename <path> <basename>
 lane worktree repair <path> <destination>
 lane worktree remove <path> [--discard]
@@ -25,7 +25,9 @@ lane worktree unlock <path>
 lane worktree list
 Paths resolve from the current directory. Switch defaults to the current worktree.
 Removal preserves Working Changes and Worktree-only Commits unless --discard is given.
---move approves transferring a branch held by another worktree.`,
+--move approves transferring a branch held by another worktree.
+A remote branch, such as origin/feature, checks out as a new local branch tracking it. When a local
+branch has its name already, --local reset moves that branch to it, and --local new creates feature-2.`,
     pull: `lane pull [branch ...] [--remote <remote>]
 Fetch and synchronize the named Active Stacks, including their bases and upstreams.
 With no branches, use the current branch. This does not publish.`,

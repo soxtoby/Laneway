@@ -295,6 +295,53 @@ test("detached unique commits are protected before switching, and undo after an 
     expect(git(path, "cat-file", "-t", unique)).toBe("commit")
 }, 60_000)
 
+test("checking out a remote-tracking branch in a new worktree creates a local branch tracking it, which undo removes", async () => {
+    let path = await fixture()
+    let remoteTip = await remoteBranch(path, "sox/remote")
+
+    await perform(path, { action: "create", branch: "refs/remotes/origin/sox/remote", move: true })
+
+    let linked = join(`${path}.worktrees`, "sox-remote")
+    expect(git(linked, "branch", "--show-current")).toBe("sox/remote")
+    expect(git(linked, "rev-parse", "HEAD")).toBe(remoteTip)
+    expect(git(path, "rev-parse", "--abbrev-ref", "sox/remote@{upstream}")).toBe("origin/sox/remote")
+
+    await transition(path, "undo")
+
+    expect(git(path, "branch", "--list", "sox/remote")).toBe("")
+    expect(Bun.spawnSync(["git", "config", "--get", "branch.sox/remote.remote"], { cwd: path }).exitCode).toBe(1)
+}, 60_000)
+
+test("checking out a remote-tracking branch whose name a local branch has asks first, then resets that branch or creates the next name", async () => {
+    let path = await fixture()
+    let remoteTip = await remoteBranch(path, "feature")
+    let localTip = git(path, "rev-parse", "feature")
+    git(path, "branch", "feature-2")
+    let request: WorktreeRequest = { action: "switch", path, branch: "refs/remotes/origin/feature", move: true }
+
+    await expect(perform(path, request)).rejects.toThrow("Choose whether to reset it or create feature-3")
+
+    await perform(path, { ...request, local: "new" })
+
+    expect(git(path, "branch", "--show-current")).toBe("feature-3")
+    expect(git(path, "rev-parse", "--abbrev-ref", "feature-3@{upstream}")).toBe("origin/feature")
+    expect(git(path, "rev-parse", "feature")).toBe(localTip)
+
+    await perform(path, { action: "switch", path, branch: "feature", move: true })
+    await writeFile(join(path, "a.txt"), "kept in a stash\n")
+    await perform(path, { ...request, local: "reset" })
+
+    expect(git(path, "branch", "--show-current")).toBe("feature")
+    expect(git(path, "rev-parse", "feature")).toBe(remoteTip)
+    expect(git(path, "rev-parse", "--abbrev-ref", "feature@{upstream}")).toBe("origin/feature")
+    expect(git(path, "stash", "list")).toContain("Laneway: feature")
+
+    await transition(path, "undo")
+
+    expect(git(path, "rev-parse", "feature")).toBe(localTip)
+    expect(await readFile(join(path, "a.txt"), "utf8")).toBe("kept in a stash\n")
+}, 60_000)
+
 test("compiled engine recovers worktree apply and undo at durable journal boundaries", async () => {
     let executable = resolve(import.meta.dir, "../bin/lane.exe")
     // An execution that stopped before writing its record is reversed; one that wrote it is completed.
@@ -503,6 +550,16 @@ async function fixture() {
     git(path, "commit", "-qm", "initial")
     git(path, "branch", "feature")
     return path
+}
+/** A remote-tracking branch on origin, one commit past main, that no local branch tracks. */
+async function remoteBranch(path: string, name: string) {
+    git(path, "remote", "add", "origin", join(path, "unused-remote"))
+    await writeFile(join(path, "a.txt"), "remote\n")
+    git(path, "commit", "-qam", "remote work")
+    let tip = git(path, "rev-parse", "HEAD")
+    git(path, "update-ref", `refs/remotes/origin/${name}`, tip)
+    git(path, "reset", "-q", "--hard", "HEAD~1")
+    return tip
 }
 function git(cwd: string, ...args: string[]) {
     let result = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" })

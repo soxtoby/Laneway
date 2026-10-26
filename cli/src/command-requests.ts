@@ -51,10 +51,22 @@ export async function worktreeRequest(action: string, args: Arguments, repo: Rep
     if (action == "create") {
         let [branch] = operands(args, 0, 1)
         let commit = option(args, "commit")
-        return { action, branch, commit: commit ? await commitId(repo, commit) : undefined, move: flag(args, "move") }
+        return {
+            action,
+            branch: branch && await checkoutBranch(repo, branch),
+            commit: commit ? await commitId(repo, commit) : undefined,
+            move: flag(args, "move"),
+            local: localBranchChoice(args),
+        }
     } else if (action == "switch") {
         let [branch] = operands(args, 1)
-        return { action, branch: branch!, path: await worktreePath(repo, cwd, option(args, "path")), move: flag(args, "move") }
+        return {
+            action,
+            branch: await checkoutBranch(repo, branch!),
+            path: await worktreePath(repo, cwd, option(args, "path")),
+            move: flag(args, "move"),
+            local: localBranchChoice(args),
+        }
     } else if (action == "rename") {
         let [path, basename] = operands(args, 2)
         return { action, path: resolve(cwd, path!), basename: basename! }
@@ -237,6 +249,19 @@ async function endpoint(value: string, owningBranch: string | undefined, repo: R
     } else {
         throw new UsageError(`Invalid endpoint "${value}". Use working[:path], commit:<revision>, after:<revision>, or branch:<name>.`)
     }
+}
+
+// A name only a remote-tracking branch has, such as origin/feature, checks that branch out.
+async function checkoutBranch(repo: RepositoryGit, branch: string) {
+    let remoteOnly = !branch.startsWith("refs/") && !await repo.resolveRef(`refs/heads/${branch}`) && await repo.resolveRef(`refs/remotes/${branch}`)
+    return remoteOnly ? `refs/remotes/${branch}` : branch
+}
+
+function localBranchChoice(args: Arguments) {
+    let choice = option(args, "local")
+    if (choice != undefined && choice != "reset" && choice != "new")
+        throw new UsageError("--local must be reset or new.")
+    return choice
 }
 
 async function worktreePath(repo: RepositoryGit, cwd: string, path?: string) {

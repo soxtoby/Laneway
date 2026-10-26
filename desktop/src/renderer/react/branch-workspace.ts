@@ -109,6 +109,11 @@ export interface BranchWorkspace extends Store<ColumnsSnapshot> {
      */
     renamed(oldRef: string, newRef: string): void
     /**
+     * Follows a remote-tracking branch's checkout: its column keeps its place as the column of the local branch that
+     * tracks it now, unless that branch has a column already.
+     */
+    tracked(remoteRef: string, localRef: string): void
+    /**
      * Follows a worktree switched to the branch of the column it was asked from: the worktree leaves the column
      * that showed it and backs that one, in the saved layout the next read reconciles against.
      */
@@ -314,6 +319,44 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
         let column = savedRepository(repositoryId)?.columns.find(candidate => candidate.id == columnId)
         let saved = column?.kind == "comparison" ? undefined : column?.worktreePath
         return branch?.checkedOut.find(worktree => worktree.path == saved)?.path ?? (branch?.checkedOut.length == 1 ? branch.checkedOut[0]!.path : undefined)
+    }
+
+    // A branch's column, and with `comparisons` any comparison naming it, keep their place, width, and state under its new ref.
+    function follow(repositoryId: string, oldRef: string, newRef: string, comparisons: boolean) {
+        let state = stateFor(repositoryId)
+        let ids = new Map([[`branch:${oldRef}`, `branch:${newRef}`]])
+        for (let [id, comparison] of comparisons ? Object.entries(state.comparisons) : []) {
+            let renamed = { from: renameComparisonRef(comparison.from, oldRef, newRef), to: renameComparisonRef(comparison.to, oldRef, newRef) }
+            let newId = comparisonColumnId(renamed.from, renamed.to)
+            if (newId != id) {
+                delete state.comparisons[id]
+                state.comparisons[newId] = renamed
+                ids.set(id, newId)
+            }
+        }
+        let rename = (id: string) => ids.get(id) ?? id
+        state.openedIds = state.openedIds.map(rename)
+        state.collapsedIds = state.collapsedIds.map(rename)
+        state.focusedId = state.focusedId && rename(state.focusedId)
+        state.maximizedId = state.maximizedId && rename(state.maximizedId)
+        for (let [oldId, newId] of ids) {
+            state.widths[newId] = state.widths[oldId] ?? defaultColumnWidth
+            state.diffLayouts[newId] = state.diffLayouts[oldId] ?? "unified"
+        }
+        // Nothing shows until the next read brings the renamed branch; the saved layout must already name it.
+        let saved = savedRepository(repositoryId)
+        if (saved) {
+            let columns = saved.columns.map((column): WorkspaceColumn => {
+                let id = rename(column.id)
+                if (id == column.id)
+                    return column
+                if (column.kind == "branch")
+                    return { ...column, id, ref: newRef }
+                return column.kind == "comparison" ? { ...column, id, ...state.comparisons[id] } : column
+            })
+            let focusedColumnId = saved.focusedColumnId && rename(saved.focusedColumnId)
+            void saveColumns(repositoryId, { columns, focusedColumnId, layoutInitialized: saved.layoutInitialized })
+        }
     }
 
     async function persist(repositoryId: string, layoutInitialized = true) {
@@ -668,43 +711,12 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
             void saveColumns(activeId, { columns, focusedColumnId: saved.focusedColumnId, layoutInitialized: saved.layoutInitialized })
         },
         renamed(oldRef, newRef) {
-            let repositoryId = activeId
-            if (!repositoryId)
-                return
-            let state = stateFor(repositoryId)
-            let ids = new Map([[`branch:${oldRef}`, `branch:${newRef}`]])
-            for (let [id, comparison] of Object.entries(state.comparisons)) {
-                let renamed = { from: renameComparisonRef(comparison.from, oldRef, newRef), to: renameComparisonRef(comparison.to, oldRef, newRef) }
-                let newId = comparisonColumnId(renamed.from, renamed.to)
-                if (newId != id) {
-                    delete state.comparisons[id]
-                    state.comparisons[newId] = renamed
-                    ids.set(id, newId)
-                }
-            }
-            let rename = (id: string) => ids.get(id) ?? id
-            state.openedIds = state.openedIds.map(rename)
-            state.collapsedIds = state.collapsedIds.map(rename)
-            state.focusedId = state.focusedId && rename(state.focusedId)
-            state.maximizedId = state.maximizedId && rename(state.maximizedId)
-            for (let [oldId, newId] of ids) {
-                state.widths[newId] = state.widths[oldId] ?? defaultColumnWidth
-                state.diffLayouts[newId] = state.diffLayouts[oldId] ?? "unified"
-            }
-            // Nothing shows until the next read brings the renamed branch; the saved layout must already name it.
-            let saved = savedRepository(repositoryId)
-            if (saved) {
-                let columns = saved.columns.map((column): WorkspaceColumn => {
-                    let id = rename(column.id)
-                    if (id == column.id)
-                        return column
-                    if (column.kind == "branch")
-                        return { ...column, id, ref: newRef }
-                    return column.kind == "comparison" ? { ...column, id, ...state.comparisons[id] } : column
-                })
-                let focusedColumnId = saved.focusedColumnId && rename(saved.focusedColumnId)
-                void saveColumns(repositoryId, { columns, focusedColumnId, layoutInitialized: saved.layoutInitialized })
-            }
+            if (activeId)
+                follow(activeId, oldRef, newRef, true)
+        },
+        tracked(remoteRef, localRef) {
+            if (activeId && !stateFor(activeId).openedIds.includes(`branch:${localRef}`))
+                follow(activeId, remoteRef, localRef, false)
         },
 
         toggleCollapsed,

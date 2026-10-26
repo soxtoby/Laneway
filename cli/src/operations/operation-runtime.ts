@@ -2,7 +2,7 @@ import { connectRepository, GitError, type RepositoryGit } from "@laneway/git"
 import { pathExists, previewWorktree, readHistoricalEdits, readHistoricalEditSessions, worktreeBasename } from "@laneway/git"
 import { normalize, readRegisteredWorktrees } from "@laneway/git"
 import { type OperationAvailability, type OperationAvailabilityReason, type OperationHistoryEntry, type OperationHistoryResult, type OperationSummary, type OperationTransitionResult, type RecoveredExecution, type RecoveryResult, type TestMutationResult } from "@laneway/shared"
-import type { WorktreeRequest, WorktreeResult } from "@laneway/shared"
+import { trackingBranchName, type WorktreeRequest, type WorktreeResult } from "@laneway/shared"
 import type { LocalRequest, LocalResult } from "@laneway/shared"
 import type { ConflictRequest, ConflictResult } from "@laneway/shared"
 import type { BranchGraphReadOptions, PublishRequest, PublishResult, PullRequest, PullResult } from "@laneway/shared"
@@ -243,11 +243,19 @@ class OperationRuntime {
         }
         if (token && token != preview.token)
             throw new OperationRuntimeError("operation.precondition-failed", "Worktree state changed after preview. Review it again.")
+        let tracking = preview.tracking
+        if ((request.action == "create" || request.action == "switch") && tracking?.taken && !request.local) {
+            throw new OperationRuntimeError(
+                "operation.precondition-failed",
+                `A local branch named ${tracking.name} already exists. Choose whether to reset it or create ${tracking.alternative}.`,
+            )
+        }
+        let branch = request.action == "create" || request.action == "switch"
+            ? tracking ? trackingBranchName(tracking, request.local) : request.branch?.replace(/^refs\/heads\//, "")
+            : undefined
         if (
             (request.action == "create" || request.action == "switch") && !request.move
-            && preview.worktrees.some(item =>
-                item.branchRef == `refs/heads/${request.branch?.replace(/^refs\/heads\//, "")}` && !("path" in request && item.path == request.path)
-            )
+            && preview.worktrees.some(item => item.branchRef == `refs/heads/${branch}` && !("path" in request && item.path == request.path))
         ) {
             throw new OperationRuntimeError("operation.precondition-failed", "Confirm moving the branch from its current worktree first.")
         }

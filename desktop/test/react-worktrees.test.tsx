@@ -1,4 +1,4 @@
-import type { LocalActionResult, LocalPreview, LocalRequest, WorktreePreview, WorktreeRequest } from "@laneway/shared"
+import type { LocalActionResult, LocalPreview, LocalRequest, TrackingBranch, WorktreePreview, WorktreeRequest } from "@laneway/shared"
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
 import type { Window as HappyWindow } from "happy-dom"
 import { button, installReactDom, press, startReactApp, stopReactApps, type } from "./react-dom"
@@ -156,6 +156,73 @@ describe("React worktree actions", () => {
         expect(toast.textContent).toContain("Checked out main in a new worktree.")
         await app.act(() => press(button(toast, "Undo")))
         expect(transitions).toEqual(["undo"])
+    })
+
+    test("a remote branch's column checks it out at once as a local branch tracking it, when no local branch has its name", async () => {
+        let scenario = inspectionScenario()
+        let { remote, saved } = openRemoteBranch(scenario, "origin/sox/remote")
+        await scenario.api.updateWorkspace(saved)
+        let executions: WorktreeRequest[] = []
+        let app = await startReactApp({
+            ...scenario.api,
+            previewWorktree: async (_id, request) => ({ ok: true, preview: worktreePreview(request, { tracking: tracking(remote.preferredRef, false) }) }),
+            executeWorktree: async (_id, request) => {
+                executions.push(request)
+                return { ok: true }
+            },
+        })
+
+        await app.act(() => press(button(columnElement(remote.id), "Check out branch")))
+        await app.act(() => press(menuItem("New worktree")))
+
+        expect(executions).toEqual([{ action: "create", branch: "refs/remotes/origin/sox/remote", move: true }])
+        expect(document.querySelector("[role=dialog]") == null).toBe(true)
+        expect(document.querySelector("[role=alertdialog]")?.textContent).toContain("Checked out sox/remote in a new worktree.")
+    })
+
+    test("a remote branch whose name a local branch has asks to reset that branch or create the next name, and its column becomes the new branch's", async () => {
+        let scenario = inspectionScenario()
+        let { remote, saved } = openRemoteBranch(scenario, "origin/sox/remote")
+        await scenario.api.updateWorkspace(saved)
+        let executions: WorktreeRequest[] = []
+        let app = await startReactApp({
+            ...scenario.api,
+            previewWorktree: async (_id, request) => ({ ok: true, preview: worktreePreview(request, { tracking: tracking(remote.preferredRef, true) }) }),
+            executeWorktree: async (_id, request) => {
+                executions.push(request)
+                // The new branch tracks the remote branch at its tip, so the two share one Branch Node.
+                let ref = "refs/heads/sox/remote-2"
+                let worktree = { path: "D:/Source/inspection.worktrees/sox-remote-2", name: "sox-remote-2", head: remote.tip, branchRef: ref, main: false }
+                scenario.graph.branches = scenario.graph.branches.map(branch =>
+                    branch == remote
+                        ? {
+                            ...remote,
+                            id: `branch:${ref}`,
+                            name: "sox/remote-2",
+                            preferredRef: ref,
+                            localRefs: [ref],
+                            remoteOnly: false,
+                            checkedOut: [worktree],
+                        }
+                        : branch
+                )
+                return { ok: true }
+            },
+        })
+        let columnIds = () => [...document.querySelectorAll("[data-column-id]")].map(column => column.getAttribute("data-column-id"))
+        let before = columnIds()
+
+        await app.act(() => press(button(columnElement(remote.id), "Check out branch")))
+        await app.act(() => press(menuItem("New worktree")))
+
+        expect(executions).toEqual([])
+        expect(dialog().textContent).toContain("A local branch named sox/remote already exists.")
+
+        await app.act(() => press(button(dialog(), "Create sox/remote-2")))
+
+        expect(executions).toEqual([{ action: "create", branch: "refs/remotes/origin/sox/remote", move: true, local: "new" }])
+        expect(columnIds()).toEqual(before.map(id => id == remote.id ? "branch:refs/heads/sox/remote-2" : id))
+        expect(document.querySelector("[role=alertdialog]")?.textContent).toContain("Checked out sox/remote-2 in a new worktree.")
     })
 
     test("a worktree column's actions copy its branch name and its worktree's path", async () => {
@@ -351,6 +418,34 @@ function worktreePreview(request: WorktreeRequest, change: Partial<WorktreePrevi
         token: "preview",
         ...change,
     }
+}
+
+/** Adds a remote-only branch to the scenario's graph, and a column for it after the others to its saved workspace. */
+function openRemoteBranch(scenario: ReturnType<typeof inspectionScenario>, name: string) {
+    let main = scenario.graph.branches[0]!
+    let ref = `refs/remotes/${name}`
+    let remote = {
+        ...main,
+        id: `branch:${ref}`,
+        name,
+        preferredRef: ref,
+        refs: [ref],
+        aliases: [name],
+        localRefs: [],
+        remoteRefs: [ref],
+        tip: "4".repeat(40),
+        primary: false,
+        remoteOnly: true,
+    }
+    scenario.graph.branches.push(remote)
+    scenario.graph.history.unshift({ objectId: remote.tip, lineId: remote.id, parentIds: [main.tip] })
+    let saved = scenario.saved()
+    saved.repositories[0]!.columns.push({ kind: "branch", id: remote.id, ref, lastSeenObjectId: remote.tip, width: 380 })
+    return { remote, saved }
+}
+
+function tracking(remoteRef: string, taken: boolean): TrackingBranch {
+    return { remoteRef, name: "sox/remote", taken, alternative: "sox/remote-2" }
 }
 
 function columnElement(id: string) {

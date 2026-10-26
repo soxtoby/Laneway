@@ -1,5 +1,5 @@
 import { branchSlug, hasUniqueCommits, normalize, populatedSubmodules, type RepositoryGit } from "@laneway/git"
-import type { RegisteredWorktree, WorktreePreview } from "@laneway/shared"
+import { type RegisteredWorktree, trackingBranchName, type WorktreePreview } from "@laneway/shared"
 import { mkdir } from "node:fs/promises"
 import { dirname } from "node:path"
 import type { ChangeRecorder } from "../operations/change-recorder"
@@ -7,12 +7,14 @@ import { recoveryBackupPath, removeLinkedWorktree } from "./worktree-directory"
 
 export async function mutateWorktree(repository: RepositoryGit, preview: WorktreePreview, operationId: string, branchPrefix: string, changes: ChangeRecorder) {
     let changedRefs = new Set<string>()
-    let { request, worktrees, destination } = preview
+    let { request, worktrees, destination, tracking } = preview
     let main = repository.descriptor.mainWorktree
     let current = "path" in request ? worktrees.find(item => normalize(item.path) == normalize(request.path))! : undefined
 
     if (request.action == "create" || request.action == "switch") {
-        let branch = request.branch?.replace(/^refs\/heads\//, "")
+        let branch = tracking ? trackingBranchName(tracking, request.local) : request.branch?.replace(/^refs\/heads\//, "")
+        // A remote-tracking branch checks out as a new local branch tracking it, or as the taken one reset to it.
+        let track = tracking ? [tracking.taken && request.local == "reset" ? "-B" : "-b", branch!, "--track"] : []
         let holder = branch ? worktrees.find(item => item.branchRef == `refs/heads/${branch}` && item.id != current?.id) : undefined
         if (holder && !request.move)
             throw new Error(`The branch is checked out in ${holder.path}. Confirm moving it first.`)
@@ -27,17 +29,17 @@ export async function mutateWorktree(repository: RepositoryGit, preview: Worktre
         if (current) {
             await changes.worktree(current.path, async () => {
                 await preserveBeforeSwitch(repository, current, branchPrefix, changedRefs)
-                await repository.command(current.path, ["checkout", branch!])
+                await repository.command(current.path, ["checkout", ...track, tracking?.remoteRef ?? branch!])
             })
         } else {
             await mkdir(dirname(destination!), { recursive: true })
             await repository.command(main, [
                 "worktree",
                 "add",
-                ...(branch ? [] : ["--detach"]),
+                ...(branch ? track : ["--detach"]),
                 "--",
                 destination!,
-                branch ?? (request.action == "create" ? request.commit! : ""),
+                tracking?.remoteRef ?? branch ?? (request.action == "create" ? request.commit! : ""),
             ])
         }
     } else if (request.action == "rename")

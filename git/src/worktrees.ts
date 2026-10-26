@@ -1,4 +1,4 @@
-import type { RegisteredWorktree, WorktreePreview, WorktreeRequest } from "@laneway/shared"
+import { type RegisteredWorktree, type TrackingBranch, trackingBranchName, type WorktreePreview, type WorktreeRequest } from "@laneway/shared"
 import { createHash } from "node:crypto"
 import { lstat, readdir, readFile, readlink } from "node:fs/promises"
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
@@ -6,7 +6,7 @@ import { readConflictState } from "./conflicts"
 import { GitError, type RepositoryGit } from "./index"
 
 export async function previewWorktree(repository: RepositoryGit, request: WorktreeRequest): Promise<WorktreePreview> {
-    if ((request.action == "create" || request.action == "switch") && request.branch) {
+    if ((request.action == "create" || request.action == "switch") && request.branch && !isRemoteRef(request.branch)) {
         let ref = request.branch.startsWith("refs/heads/") ? request.branch : `refs/heads/${request.branch}`
         let state = await readConflictState(repository).catch(() => undefined)
         let stack = state?.stacks.find(s => s.branches.some(b => b.ref == ref))
@@ -30,13 +30,23 @@ export async function previewWorktree(repository: RepositoryGit, request: Worktr
 
     let destination: string | undefined
     let holder: RegisteredWorktree | undefined
+    let tracking: TrackingBranch | undefined
     if (request.action == "create" || request.action == "switch") {
         if (request.action == "create" && Boolean(request.branch) == Boolean(request.commit))
             throw new GitError("git.command-failed", "Choose one local branch or one commit.")
         if (request.action == "create" && request.commit)
             await repository.command(repository.descriptor.mainWorktree, ["rev-parse", "--verify", `${request.commit}^{commit}`])
 
-        if (request.branch) {
+        if (request.branch && isRemoteRef(request.branch)) {
+            await repository.command(repository.descriptor.mainWorktree, ["show-ref", "--verify", request.branch])
+            tracking = await trackingBranch(repository, request.branch)
+            // Only resetting a taken name takes a branch that a worktree may hold, this one included.
+            if (tracking.taken && request.local != "new") {
+                holder = worktrees.find(item => item.branchRef == `refs/heads/${tracking!.name}` && item.id != current?.id)
+                if (holder?.missing)
+                    throw new GitError("git.invalid-root", "Locate or remove the missing worktree holding this branch first.")
+            }
+        } else if (request.branch) {
             if (request.branch.replace(/^refs\/heads\//, "").startsWith("-"))
                 throw new GitError("git.command-failed", "Invalid local branch name.")
             let ref = request.branch.startsWith("refs/heads/") ? request.branch : `refs/heads/${request.branch}`
@@ -50,7 +60,8 @@ export async function previewWorktree(repository: RepositoryGit, request: Worktr
 
         if (request.action == "create") {
             let home = `${repository.descriptor.mainWorktree}.worktrees`
-            let slug = branchSlug(request.branch ?? `detached-${request.commit!.slice(0, 8)}`)
+            let branch = tracking ? trackingBranchName(tracking, request.local) : request.branch
+            let slug = branchSlug(branch ?? `detached-${request.commit!.slice(0, 8)}`)
             destination = join(home, slug)
             for (let suffix = 2; await pathExists(destination) || worktrees.some(item => normalize(item.path) == normalize(destination!)); suffix++)
                 destination = join(home, `${slug}-${suffix}`)
@@ -131,6 +142,7 @@ export async function previewWorktree(repository: RepositoryGit, request: Worktr
         request,
         worktrees,
         destination,
+        tracking,
         affected,
         ignored,
         ignoredCount,
@@ -139,6 +151,28 @@ export async function previewWorktree(repository: RepositoryGit, request: Worktr
         populatedSubmodules: hasSubmodules,
         token: hash.digest("hex"),
     }
+}
+
+function isRemoteRef(branch: string) {
+    return branch.startsWith("refs/remotes/")
+}
+
+/** The local branch named after a remote-tracking branch, as `git checkout` names one, and the next free name beside it. */
+async function trackingBranch(repository: RepositoryGit, remoteRef: string): Promise<TrackingBranch> {
+    let main = repository.descriptor.mainWorktree
+    let remoteBranch = remoteRef.slice("refs/remotes/".length)
+    // A remote's name may itself contain slashes, so the longest one prefixing the ref is its remote.
+    let remote = (await repository.command(main, ["remote"])).toString().split(/\r?\n/)
+        .filter(name => name && remoteBranch.startsWith(`${name}/`))
+        .sort((a, b) => b.length - a.length)[0] ?? remoteBranch.split("/")[0]!
+    let name = remoteBranch.slice(remote.length + 1)
+    await repository.command(main, ["check-ref-format", "--branch", name])
+
+    let taken = Boolean(await repository.resolveRef(`refs/heads/${name}`))
+    let alternative = `${name}-2`
+    for (let suffix = 3; await repository.resolveRef(`refs/heads/${alternative}`); suffix++)
+        alternative = `${name}-${suffix}`
+    return { remoteRef, name, taken, alternative }
 }
 
 export async function readRegisteredWorktrees(repository: RepositoryGit): Promise<RegisteredWorktree[]> {

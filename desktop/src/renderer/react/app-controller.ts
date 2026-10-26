@@ -232,7 +232,13 @@ export function createAppController(api: Api): AppController {
     let worktrees = createWorktreeActions({
         api,
         mutating,
-        completed: async (repositoryId, request, columnId) => {
+        completed: async (repositoryId, request, columnId, ref) => {
+            // A remote-tracking branch's column becomes the column of the local branch its checkout made, in its place.
+            if ((request.action == "switch" || request.action == "create") && request.branch?.startsWith("refs/remotes/") && ref) {
+                columns.tracked(request.branch, ref)
+                if (columnId == `branch:${request.branch}`)
+                    columnId = `branch:${ref}`
+            }
             if (request.action == "switch" && columnId)
                 columns.switched(columnId, request.path)
             await columns.refresh(false)
@@ -240,8 +246,7 @@ export function createAppController(api: Api): AppController {
             if (request.action == "remove")
                 offerUndo(repositoryId, "worktree.removed", `Removed worktree ${request.path.split(/[\\/]/).pop()}.`)
             // A checkout brings the column of the worktree it went into forward.
-            if ((request.action == "switch" || request.action == "create") && request.branch) {
-                let ref = request.branch.startsWith("refs/heads/") ? request.branch : `refs/heads/${request.branch}`
+            if ((request.action == "switch" || request.action == "create") && ref) {
                 let graph = columns.snapshot().graph
                 if (graph && workspaceGraph(graph).branches.some(branch => branch.id == `branch:${ref}`))
                     columns.open(`branch:${ref}`)

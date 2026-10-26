@@ -1,4 +1,4 @@
-import type { WorktreePreview, WorktreeRequest } from "@laneway/shared"
+import { type TrackingBranch, trackingBranchName, type WorktreePreview, type WorktreeRequest } from "@laneway/shared"
 import { errorMessage } from "./notice"
 import { createStore, type Store } from "./store"
 
@@ -15,12 +15,17 @@ export interface WorktreeActionsSnapshot {
     preserve: boolean
     /** An undo that has to restore a removed worktree under a new name, because its directory is taken. */
     restore?: { repositoryId: string; name: string }
+    /** A checkout of a remote-tracking branch waiting to choose between resetting the local branch with its name and a new one. */
+    tracking?: { request: CheckoutRequest; branch: TrackingBranch }
 }
+
+type CheckoutRequest = Extract<WorktreeRequest, { action: "create" | "switch" }>
 
 /**
  * Creating, switching, renaming, repairing, unlocking, and removing worktrees; and undoing or redoing the Operation
  * History. Checking a branch out, in a worktree or a new one, and removing a worktree without Working Changes run at
- * once; any other operation is reviewed by the engine first and confirmed in a dialog.
+ * once; any other operation is reviewed by the engine first and confirmed in a dialog. A remote-tracking branch checks
+ * out as a local branch tracking it, and asks first only when a local branch has its name already.
  */
 export interface WorktreeActions extends Store<WorktreeActionsSnapshot> {
     /**
@@ -29,6 +34,8 @@ export interface WorktreeActions extends Store<WorktreeActionsSnapshot> {
      */
     prepare(repositoryId: string, request: WorktreeRequest, columnId?: string): Promise<void>
     setPreserve(preserve: boolean): void
+    /** Checks out the remote-tracking branch waiting on a choice, resetting the local branch with its name or making a new one. */
+    track(choice: "reset" | "new"): Promise<void>
     /** Runs the reviewed operation with the review's token. */
     execute(): Promise<void>
     /** Undoes or redoes the latest operation; `basename` restores a removed worktree under another name. */
@@ -40,8 +47,11 @@ export interface WorktreeActions extends Store<WorktreeActionsSnapshot> {
 
 interface WorktreeActionsOptions {
     api: Api
-    /** Runs after an operation succeeds; `columnId` is the column it was asked from. */
-    completed(repositoryId: string, request: WorktreeRequest, columnId?: string): Promise<void>
+    /**
+     * Runs after an operation succeeds; `columnId` is the column it was asked from, and `branch` the local branch a
+     * checkout left checked out.
+     */
+    completed(repositoryId: string, request: WorktreeRequest, columnId?: string, branch?: string): Promise<void>
     /** Runs after an undo or redo. */
     transitioned(repositoryId: string): Promise<void>
     mutating(busy: boolean): void
@@ -60,12 +70,24 @@ export function createWorktreeActions({ api, completed, transitioned, mutating }
     }
 
     // Without a token, the engine reviews the operation itself as it starts.
-    async function perform(repositoryId: string, request: WorktreeRequest, token?: string) {
+    async function perform(repositoryId: string, request: WorktreeRequest, token?: string, branch = checkoutRef(request)) {
         let result = await api.executeWorktree(repositoryId, request, token)
         if (!result.ok)
             throw new Error(result.error.message)
-        set({ preview: undefined })
-        await completed(repositoryId, request, columnId)
+        set({ preview: undefined, tracking: undefined })
+        await completed(repositoryId, request, columnId, branch)
+    }
+
+    // The engine names the local branch a remote-tracking branch checks out as, and whether one has its name already.
+    async function checkOutRemote(repositoryId: string, request: CheckoutRequest) {
+        let result = await api.previewWorktree(repositoryId, request)
+        if (!result.ok)
+            throw new Error(result.error.message)
+        let branch = result.preview.tracking!
+        if (branch.taken)
+            set({ tracking: { request, branch } })
+        else
+            await perform(repositoryId, request, undefined, `refs/heads/${branch.name}`)
     }
 
     async function act(action: () => Promise<void>) {
@@ -94,7 +116,7 @@ export function createWorktreeActions({ api, completed, transitioned, mutating }
                 // A checkout stashes the Working Changes it leaves behind and detaches any worktree it takes the
                 // branch from, all of which Undo restores, so it has nothing to ask.
                 if (request.action == "switch" || request.action == "create")
-                    return perform(repositoryId, request)
+                    return request.branch?.startsWith("refs/remotes/") ? checkOutRemote(repositoryId, request) : perform(repositoryId, request)
                 let result = await api.previewWorktree(repositoryId, request)
                 if (!result.ok)
                     throw new Error(result.error.message)
@@ -107,6 +129,13 @@ export function createWorktreeActions({ api, completed, transitioned, mutating }
             }),
 
         setPreserve: preserve => set({ preserve }),
+
+        track: choice =>
+            act(async () => {
+                let { repositoryId, tracking } = state()
+                if (repositoryId && tracking)
+                    await perform(repositoryId, { ...tracking.request, local: choice }, undefined, `refs/heads/${trackingBranchName(tracking.branch, choice)}`)
+            }),
 
         execute: () =>
             act(async () => {
@@ -141,4 +170,9 @@ export function createWorktreeActions({ api, completed, transitioned, mutating }
                 store.publish({ busy: false, preserve: true })
         },
     }
+}
+
+function checkoutRef(request: WorktreeRequest) {
+    if ((request.action == "switch" || request.action == "create") && request.branch)
+        return request.branch.startsWith("refs/heads/") ? request.branch : `refs/heads/${request.branch}`
 }
