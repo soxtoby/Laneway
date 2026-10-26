@@ -1,4 +1,4 @@
-import type { BranchGraph, BranchGraphBranchNode, PublishPlan, PublishResult } from "@laneway/shared"
+import { type BranchGraph, type BranchGraphBranchNode, primaryLocalRef, type PublishPlan, type PublishResult } from "@laneway/shared"
 import type { ColumnView } from "./branch-workspace"
 import { branchStack } from "./inspection"
 import { errorMessage, type Notice } from "./notice"
@@ -16,6 +16,15 @@ export interface PublishSnapshot {
      * Each shows only while its repository is active, so Pull latest from it takes that repository's open stacks.
      */
     outcomes: Record<string, PublishOutcome>
+    /** A publish that asks first, as the Primary Branch's does, until it goes ahead or is cancelled. */
+    confirming?: PublishConfirmation
+}
+
+export interface PublishConfirmation {
+    repositoryId: string
+    branch: string
+    /** The plan as it was when asked, which going ahead publishes; the Engine refuses it if the stack changed since. */
+    plan: PublishPlan
 }
 
 export interface PublishOutcome {
@@ -46,6 +55,10 @@ export interface Publish extends Store<PublishSnapshot> {
     review(repositoryId: string, branches: string[]): Promise<void>
     /** Publishes the branch's reviewed plan exactly as shown; the Engine refuses it if the stack changed since. */
     publish(repositoryId: string, branch: string): Promise<void>
+    /** Asks before publishing the branch's reviewed plan, keeping it as shown: `proceed` publishes it, and `cancel` doesn't. */
+    confirm(repositoryId: string, branch: string): void
+    proceed(): Promise<void>
+    cancel(): void
     /** Closes the repository's outcome and starts Pull latest, the way past a stale lease. */
     pull(repositoryId: string): void
     close(repositoryId: string): void
@@ -125,6 +138,27 @@ export function createPublish({ api, notify, remote, pull, completed }: PublishO
             set({ review: { repositoryId, branches: Object.fromEntries(branches.map(branch => [branch, reviewed(branch)])) } })
     }
 
+    async function start(repositoryId: string, branch: string, plan: PublishPlan) {
+        if (runs.has(repositoryId))
+            return
+        let started = {}
+        runs.set(repositoryId, started)
+        setRunning(repositoryId, { branch, message: "Publishing…" })
+        setOutcome(repositoryId)
+
+        let outcome = await attempt(repositoryId, branch, plan)
+        // A repository closed meanwhile has forgotten its publish.
+        if (runs.get(repositoryId) == started) {
+            runs.delete(repositoryId)
+            setRunning(repositoryId)
+            if (outcome.result?.status == "published" || outcome.result?.status == "nothing")
+                notify({ code: "publish.completed", message: outcome.result.message, transient: true })
+            else
+                setOutcome(repositoryId, outcome)
+            await completed(repositoryId)
+        }
+    }
+
     async function attempt(repositoryId: string, branch: string, plan: PublishPlan): Promise<PublishOutcome> {
         try {
             let response = await api.publish(repositoryId, { action: "publish", branch, remote: remote(repositoryId), token: plan.token })
@@ -136,32 +170,36 @@ export function createPublish({ api, notify, remote, pull, completed }: PublishO
         }
     }
 
+    function reviewedPlan(repositoryId: string, branch: string) {
+        let current = store.snapshot().review
+        return current?.repositoryId == repositoryId ? current.branches[branch]?.plan : undefined
+    }
+
     return {
         subscribe: store.subscribe,
         snapshot: store.snapshot,
         review,
 
         async publish(repositoryId, branch) {
-            let current = store.snapshot().review
-            let plan = current?.repositoryId == repositoryId ? current.branches[branch]?.plan : undefined
-            if (!plan || runs.has(repositoryId))
-                return
-            let started = {}
-            runs.set(repositoryId, started)
-            setRunning(repositoryId, { branch, message: "Publishing…" })
-            setOutcome(repositoryId)
-
-            let outcome = await attempt(repositoryId, branch, plan)
-            if (runs.get(repositoryId) != started)
-                return
-            runs.delete(repositoryId)
-            setRunning(repositoryId)
-            if (outcome.result?.status == "published" || outcome.result?.status == "nothing")
-                notify({ code: "publish.completed", message: outcome.result.message, transient: true })
-            else
-                setOutcome(repositoryId, outcome)
-            await completed(repositoryId)
+            let plan = reviewedPlan(repositoryId, branch)
+            if (plan)
+                await start(repositoryId, branch, plan)
         },
+
+        confirm(repositoryId, branch) {
+            let plan = reviewedPlan(repositoryId, branch)
+            if (plan)
+                set({ confirming: { repositoryId, branch, plan } })
+        },
+
+        async proceed() {
+            let { confirming } = store.snapshot()
+            set({ confirming: undefined })
+            if (confirming)
+                await start(confirming.repositoryId, confirming.branch, confirming.plan)
+        },
+
+        cancel: () => set({ confirming: undefined }),
 
         pull(repositoryId) {
             setOutcome(repositoryId)
@@ -175,8 +213,13 @@ export function createPublish({ api, notify, remote, pull, completed }: PublishO
             let kept = <T>(byRepository: Record<string, T>) => Object.fromEntries(Object.entries(byRepository).filter(([id]) => open.has(id)))
             for (let id of [...runs.keys()].filter(id => !open.has(id)))
                 runs.delete(id)
-            let { review, running, outcomes } = store.snapshot()
-            set({ review: review && open.has(review.repositoryId) ? review : undefined, running: kept(running), outcomes: kept(outcomes) })
+            let { review, running, outcomes, confirming } = store.snapshot()
+            set({
+                review: review && open.has(review.repositoryId) ? review : undefined,
+                running: kept(running),
+                outcomes: kept(outcomes),
+                confirming: confirming && open.has(confirming.repositoryId) ? confirming : undefined,
+            })
         },
 
         dispose: unsubscribe,
@@ -186,10 +229,11 @@ export function createPublish({ api, notify, remote, pull, completed }: PublishO
 /**
  * Whether a branch's header in a Commit Trail offers Publish: a local branch above the trail's Base whose own remote
  * branch doesn't have its tip, which the header's colour shows too, in a repository with a remote to publish to. The
- * Base, at the foot of the trail, never publishes.
+ * Base, at the foot of the trail, never publishes, except the Primary Branch, which has no Base of its own and
+ * publishes alone.
  */
 export function offersPublish(graph: BranchGraph, branch: BranchGraphBranchNode, below: BranchGraphBranchNode | undefined) {
-    return graph.availableRemotes.length > 0 && below != undefined && branch.localRefs.length > 0 && !branch.primary && !branch.published
+    return graph.availableRemotes.length > 0 && (below != undefined || branch.primary) && publishRef(graph, branch) != undefined && !branch.published
 }
 
 /** Every branch whose header offers Publish in the columns' Commit Trails, once each, in a stable order. */
@@ -201,8 +245,16 @@ export function publishBranches(graph: BranchGraph, columns: ColumnView[], bases
         let stack = branchStack(graph, column.branch, bases(column.id))
         stack.forEach((branch, index) => {
             if (offersPublish(graph, branch, stack[index + 1]))
-                branches.add(branch.localRefs[0]!)
+                branches.add(publishRef(graph, branch)!)
         })
     }
     return [...branches].sort()
+}
+
+/**
+ * The local branch a branch's header publishes. Local branches sharing a tip share a Branch Node, so the Primary
+ * Branch's node publishes its own local branch, never another at its tip.
+ */
+export function publishRef(graph: BranchGraph, branch: BranchGraphBranchNode) {
+    return branch.primary ? branch.localRefs.find(ref => ref == primaryLocalRef(graph)) : branch.localRefs[0]
 }

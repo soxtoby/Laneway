@@ -4268,8 +4268,9 @@
     font-weight: 600;
 }
 
-/* A publish that stopped short: each update's outcome, what stayed as it was, and the way forward. */
-.publish-outcome {
+/* Publishing the Primary Branch, which asks first; and a publish that stopped short: each update's outcome, what
+   stayed as it was, and the way forward. */
+:is(.publish-confirmation, .publish-outcome) {
     width: min(520px, calc(100vw - 32px));
 
     p {
@@ -4292,6 +4293,12 @@
 
 .publish-error {
     color: var(--invalid-color);
+}
+
+/* A force publish of the Primary Branch removes the remote's commits for everyone. */
+.publish-warning {
+    color: var(--invalid-color);
+    font-weight: 600;
 }
 
 .publish-status {

@@ -64,6 +64,34 @@ test(
     120_000,
 )
 
+test("the Primary Branch, which has no Base, publishes alone, leaving the stacks built on it", async () => {
+    let { origin, local } = await fixture()
+    let before = tip(origin, "one")
+    await commit(local, "base.txt", "local base\n", "unpublished base")
+    git(local, "switch", "-q", "one")
+    await commit(local, "one.txt", "one advanced\n", "one advanced")
+    git(local, "switch", "-q", "main")
+
+    let planned = await publish(local, { action: "plan", branch: "refs/heads/main" })
+    let result = await publish(local, { action: "publish", branch: "refs/heads/main", token: planned.plan!.token })
+
+    expect(planned.message).toBe("Publish main to origin.")
+    expect(planned.plan?.stack).toEqual(["main"])
+    expect(result.status).toBe("published")
+    expect(tip(origin, "main")).toBe(git(local, "rev-parse", "main"))
+    expect(tip(origin, "one")).toBe(before)
+}, 120_000)
+
+test("a branch sharing the Primary Branch's tip is not the Primary Branch, so it doesn't publish alone", async () => {
+    let { local } = await fixture()
+    await commit(local, "base.txt", "local base\n", "unpublished base")
+    git(local, "branch", "backup")
+
+    let result = await publish(local, { action: "plan", branch: "refs/heads/backup" })
+
+    expect(result.status).toBe("blocked")
+}, 120_000)
+
 test("planning several branches plans each as planning it alone would, and gives the reason a branch can't be planned", async () => {
     let { local } = await fixture()
     await advance(local, "one", "two")

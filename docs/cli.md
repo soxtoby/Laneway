@@ -112,7 +112,7 @@ reads a message file.
 
 `pull` defaults to the current branch's Active Stack and never publishes.
 `publish` defaults to the current branch's Active Stack and publishes its changed
-branches above the Base, each with an exact force-with-lease; `--preview` lists the
+branches above the Base, or the Primary Branch alone, each with an exact force-with-lease; `--preview` lists the
 destinations, and `--remote` chooses where branches without an upstream are created.
 A stale lease publishes nothing. `--resume` finishes a partial publish from its
 receipt; `--restore` force-publishes the remote tips that receipt replaced. Neither takes

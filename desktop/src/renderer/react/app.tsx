@@ -11,7 +11,7 @@ import { ArchiveIcon, BrandMark, GraphIcon, MoonIcon, PullIcon, RedoIcon, Search
 import { LocalBranchDialog } from "./local-branch-dialog"
 import { MissingRepository } from "./missing-repository"
 import { Notices } from "./notices"
-import { PublishDialog } from "./publish-control"
+import { PublishConfirmation, PublishDialog } from "./publish-control"
 import { PullDialog } from "./pull-dialog"
 import { RebaseDialog } from "./rebase-dialog"
 import { EntryDialogs } from "./repository-entry-dialogs"
@@ -148,6 +148,7 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
             <StashesDialog stashes={stashes} />
             <RebaseDialog rebase={controller.rebase} />
             <ReturnDialog edits={controller.edits} />
+            <PublishConfirmation publish={controller.publish} />
             <PublishDialog publish={controller.publish} repositoryId={active?.id} />
             <PullDialog pull={controller.pull} onResolve={(_repositoryId, branch) => columns.open(`branch:refs/heads/${branch}`)} />
             <CommandLensDialog controller={controller} workspace={workspace} />

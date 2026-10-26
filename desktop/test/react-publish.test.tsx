@@ -1,4 +1,4 @@
-import type { PublishActionResult, PublishPlan, PublishReceipt, PublishRequest, PublishUpdate, PullRequest, Workspace } from "@laneway/shared"
+import type { BranchGraph, PublishActionResult, PublishPlan, PublishReceipt, PublishRequest, PublishUpdate, PullRequest, Workspace } from "@laneway/shared"
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
 import type { Window as HappyWindow } from "happy-dom"
 import { button, installReactDom, press, startReactApp, stopReactApps } from "./react-dom"
@@ -31,6 +31,15 @@ let feature: PublishUpdate = {
     target: "2".repeat(40),
     kind: "create",
     setUpstream: true,
+}
+let main: PublishUpdate = {
+    branch: "main",
+    remote: "origin",
+    ref: "refs/heads/main",
+    expected: "a".repeat(40),
+    target: "1".repeat(40),
+    kind: "update",
+    setUpstream: false,
 }
 
 describe("React Publish", () => {
@@ -78,7 +87,7 @@ describe("React Publish", () => {
     })
 
     test("a repository without a remote offers no Publish", async () => {
-        let graph = { ...branchGraph(repositoryEntry("D:\\Source\\publish", []).id), availableRemotes: [], selectedRemote: undefined }
+        let graph = { ...publishingGraph(repositoryEntry("D:\\Source\\publish", []).id), availableRemotes: [], selectedRemote: undefined }
 
         await startPublishing(() => planned([], "Add a remote to publish."), { readBranchGraph: async () => ({ ok: true, graph }) })
 
@@ -163,7 +172,7 @@ describe("React Publish", () => {
     })
 
     test("once its branch is published, focus moves from Publish to its column", async () => {
-        let graph = branchGraph(repositoryEntry("D:\\Source\\publish", []).id)
+        let graph = publishingGraph(repositoryEntry("D:\\Source\\publish", []).id)
         let { app } = await startPublishing(request => {
             if (request.action == "plans")
                 return planned([one, feature])
@@ -187,7 +196,7 @@ describe("React Publish", () => {
         let workspace: Workspace = { repositories: [first, second], activeRepositoryId: first.id }
         let { app } = await startPublishing(request => request.action == "plans" ? planned([one, feature]) : answer.promise, {
             getState: async () => ({ ...appState(), workspace }),
-            readBranchGraph: async id => ({ ok: true, graph: branchGraph(id) }),
+            readBranchGraph: async id => ({ ok: true, graph: publishingGraph(id) }),
             selectRepository: async id => workspace = { ...workspace, activeRepositoryId: id },
             pullLatest: async (id, request) => (pulled.push([id, request]), { ok: false, error: { message: "Offline" } }),
         })
@@ -224,6 +233,45 @@ describe("React Publish", () => {
         expect(document.querySelector(".publish-outcome") == null).toBe(true)
         expect(publishButton("Publish one, feature/laneway").hasAttribute("data-pending")).toBe(false)
     })
+
+    test("the Primary Branch's header offers Publish, which asks first and publishes once confirmed", async () => {
+        let { app, requests } = await startPublishingPrimary(request => request.action == "plans" ? plannedAlone(main) : result("published", "Published main."))
+
+        await app.act(() => press(publishButton("Publish main")))
+        let confirmation = document.querySelector<HTMLElement>(".publish-confirmation")!
+        expect(confirmation.textContent).toContain("main is the Primary Branch")
+        expect(requests.some(request => request.action == "publish")).toBe(false)
+
+        await app.act(() => press(button(confirmation, "Publish")))
+        expect(requests.find(request => request.action == "publish")).toEqual({
+            action: "publish",
+            branch: "refs/heads/main",
+            remote: "origin",
+            token: "reviewed",
+        })
+    })
+
+    test("a Primary Branch publish that would force warns that the remote's commits go, and Escape publishes nothing and returns focus to it", async () => {
+        let { app, requests } = await startPublishingPrimary(() => plannedAlone({ ...main, kind: "force" }))
+        let publish = publishButton("Force publish main")
+        await app.act(() => publish.focus())
+
+        await app.act(() => key(publish, "Enter"))
+        let confirmation = document.querySelector<HTMLElement>(".publish-confirmation")!
+        expect(confirmation.querySelector(".publish-warning")?.textContent).toContain("origin/main has commits that main doesn't.")
+
+        await app.act(() => key(document.activeElement as HTMLElement, "Escape"))
+        await app.act(() => new Promise(resolve => requestAnimationFrame(resolve)))
+        expect(document.querySelector(".publish-confirmation") == null).toBe(true)
+        expect(requests.some(request => request.action == "publish")).toBe(false)
+        expect(document.activeElement == publish).toBe(true)
+    })
+
+    test("the Primary Branch's header publishes main, not another local branch sharing its tip", async () => {
+        let { requests } = await startPublishingPrimary(() => plannedAlone(main), "refs/heads/backup")
+
+        expect(requests).toEqual([{ action: "plans", branches: ["refs/heads/main"], remote: "origin" }])
+    })
 })
 
 async function startPublishing(
@@ -231,7 +279,7 @@ async function startPublishing(
     overrides: Partial<Window["laneway"]> = {},
 ) {
     let repository = repositoryEntry("D:\\Source\\publish", ["main", "feature/laneway"])
-    let graph = branchGraph(repository.id)
+    let graph = publishingGraph(repository.id)
     let workspace = { repositories: [repository], activeRepositoryId: repository.id }
     let requests: PublishRequest[] = []
     let app = await startReactApp(fakeLaneway({
@@ -244,6 +292,34 @@ async function startPublishing(
         ...overrides,
     }))
     return { app, requests }
+}
+
+// The Primary Branch's own column, with commits origin/main lacks, and any other local branches named sharing its tip.
+function startPublishingPrimary(
+    respond: (request: PublishRequest) => PublishActionResult | Promise<PublishActionResult>,
+    ...sharingTip: string[]
+) {
+    let repository = repositoryEntry("D:\\Source\\publish", ["main"])
+    let workspace = { repositories: [repository], activeRepositoryId: repository.id }
+    return startPublishing(respond, {
+        getState: async () => ({ ...appState(), workspace }),
+        readBranchGraph: async id => ({ ok: true, graph: primaryGraph(id, sharingTip) }),
+    })
+}
+
+// Local branches sharing a tip share a Branch Node, which is the Primary Branch's when it holds origin/main.
+function primaryGraph(repositoryId: string, sharingTip: string[]) {
+    let graph: BranchGraph = branchGraph(repositoryId)
+    graph.primaryBranch.ref = "refs/remotes/origin/main"
+    graph.branches[0]!.localRefs = [...sharingTip, "refs/heads/main"].sort()
+    return graph
+}
+
+// The fixture's graph with main on its remote, as a Primary Branch usually is, so only the branches built on it publish.
+function publishingGraph(repositoryId: string) {
+    let graph = branchGraph(repositoryId)
+    graph.branches[0]!.published = true
+    return graph
 }
 
 // A repository whose columns show the named branches, the last focused.
@@ -302,6 +378,21 @@ function planned(updates: PublishUpdate[], blocked?: string): PublishActionResul
             status: "planned",
             message: "Planned.",
             plans: ["refs/heads/feature/laneway", "refs/heads/other/team"].map(branch => ({ branch, message: blocked ?? "Publish.", plan })),
+        },
+    }
+}
+
+// The Primary Branch's plan, publishing it alone.
+function plannedAlone(update: PublishUpdate): PublishActionResult {
+    let plan: PublishPlan = { stack: ["main"], updates: [update], token: "reviewed" }
+    return {
+        ok: true,
+        result: {
+            type: "result",
+            command: "publish",
+            status: "planned",
+            message: "Planned.",
+            plans: [{ branch: "refs/heads/main", message: "Publish.", plan }],
         },
     }
 }

@@ -122,6 +122,14 @@ export interface BranchGraph {
     limited: Array<"shallow" | "partial" | "sparse">
 }
 
+/**
+ * The local branch named as the Primary Branch is on its remote. Publish's destinations are same-named, so it is the
+ * only local branch whose publish updates the Primary Branch; another sharing its tip, and so its Branch Node, is not.
+ */
+export function primaryLocalRef({ primaryBranch }: Pick<BranchGraph, "primaryBranch">) {
+    return primaryBranch.remote && primaryBranch.ref?.replace(`refs/remotes/${primaryBranch.remote}/`, "refs/heads/")
+}
+
 export interface BranchGraphReadOptions {
     authorIdentities: AuthorIdentitySettings
     selectedRemote?: string

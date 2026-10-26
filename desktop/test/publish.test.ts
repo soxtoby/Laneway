@@ -45,6 +45,24 @@ describe("publish controller", () => {
         expect(sut.snapshot().outcomes).toEqual({})
     })
 
+    test("going ahead with a confirmation publishes the plan it showed, though the branch was planned again since", async () => {
+        let token = "shown"
+        let fake = fakeApi(request =>
+            request.action == "plans"
+                ? planned([{ branch: two, message: "Publish one, two to origin.", plan: plan(updates(), token) }])
+                : published("Published one, two.")
+        )
+        let { sut } = publisher(fake)
+        await sut.review(repositoryId, [two])
+        sut.confirm(repositoryId, two)
+        token = "planned again"
+        await sut.review(repositoryId, [two])
+
+        await sut.proceed()
+
+        expect(fake.requests.at(-1)).toEqual({ action: "publish", branch: two, remote: "origin", token: "shown" })
+    })
+
     test("a branch the Engine couldn't plan gives the Engine's reason", async () => {
         let fake = fakeApi(() => planned([{ branch: two, message: "two is not a local branch." }]))
         let { sut } = publisher(fake)

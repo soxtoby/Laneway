@@ -39,15 +39,18 @@ let notes = {
  * Publish on a local branch's header, for the branch's Active Stack: the branch and each one below it down to their
  * Base. It shows while the branch has something to publish. Its tooltip lists every destination before it is pressed.
  * Its icon differs for a stack that creates a remote branch, and it turns red as Force publish, naming each
- * force-with-lease ref, when any update rewrites remote history; that visible state is the only confirmation.
+ * force-with-lease ref, when any update rewrites remote history; that visible state is the only confirmation, except
+ * for the Primary Branch, which asks first.
  */
-export function PublishButton({ publish, repositoryId, branch, offered, busy }: {
+export function PublishButton({ publish, repositoryId, branch, offered, confirms, busy }: {
     publish: Publish
     repositoryId: string
     /** The branch's local ref. */
     branch: string
     /** The Branch Graph says the branch has something to publish; see `offersPublish`. */
     offered: boolean
+    /** The branch is the Primary Branch, whose publish asks first; see `PublishConfirmation`. */
+    confirms: boolean
     /** Another operation is running, which can move the stack. */
     busy: boolean
 }) {
@@ -82,9 +85,10 @@ export function PublishButton({ publish, repositoryId, branch, offered, busy }: 
                             className="icon-button small publish-button"
                             data-kind={kind}
                             aria-label={label}
+                            aria-haspopup={confirms ? "dialog" : undefined}
                             isDisabled={disabled}
                             isPending={pending}
-                            onPress={() => void publish.publish(repositoryId, branch)}
+                            onPress={() => confirms ? publish.confirm(repositoryId, branch) : void publish.publish(repositoryId, branch)}
                         >
                             {pending ? <ProgressCircle aria-label="Publishing…" isIndeterminate /> : <Icon />}
                         </AriaButton>
@@ -127,6 +131,44 @@ function Destinations({ updates }: { updates: PublishUpdate[] }) {
                 </li>
             ))}
         </ul>
+    )
+}
+
+/**
+ * Publishing the Primary Branch asks first, since everyone's work builds on it, and warns when it would force: the
+ * remote's commits that the branch lacks would go from the remote for everyone. It keeps the plan it opened with, so a
+ * stack planned again meanwhile can't turn it into a Force publish under a focused button; going ahead publishes that
+ * plan, which the Engine refuses if the stack changed since.
+ */
+export function PublishConfirmation({ publish }: { publish: Publish }) {
+    let { confirming } = useSnapshot(publish)
+    // The closing dialog keeps its content while it animates away.
+    let [last, setLast] = useState(confirming)
+    if (confirming && confirming != last)
+        setLast(confirming)
+    let shown = confirming ?? last
+    let updates = shown?.plan.updates ?? []
+    let forced = updates.filter(update => update.kind == "force")
+    let name = shown?.branch.slice("refs/heads/".length)
+    let action = forced.length ? "Force publish" : "Publish"
+    return (
+        <Modal isOpen={confirming != undefined} isDismissable onOpenChange={isOpen => isOpen || publish.cancel()}>
+            <Dialog className="react-aria-Dialog publish-confirmation">
+                <Heading slot="title">{action} {name}</Heading>
+                <p>{name} is the Primary Branch, the line everyone's work builds on.</p>
+                <Destinations updates={updates} />
+                {forced.map(update => (
+                    <p key={update.ref} className="publish-warning" role="alert">
+                        {update.remote}/{update.branch} has commits that {update.branch} doesn't. Force publish removes them from{" "}
+                        {update.remote}/{update.branch}, and anyone who has pulled them will need to reconcile their work.
+                    </p>
+                ))}
+                <div className="dialog-actions">
+                    <Button variant="secondary" onPress={publish.cancel} autoFocus={forced.length > 0}>Cancel</Button>
+                    <Button variant="accent" onPress={() => void publish.proceed()} autoFocus={!forced.length}>{action}</Button>
+                </div>
+            </Dialog>
+        </Modal>
     )
 }
 

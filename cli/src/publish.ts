@@ -1,5 +1,5 @@
 import { gitText, redactGitText, type RepositoryGit } from "@laneway/git"
-import { type BranchGraph, type BranchGraphReadOptions, type PublishBranchPlan, type PublishPlan, type PublishReceipt, publishReceiptStatus, type PublishRequest, type PublishResult, type PublishUpdate } from "@laneway/shared"
+import { type BranchGraph, type BranchGraphReadOptions, primaryLocalRef, type PublishBranchPlan, type PublishPlan, type PublishReceipt, publishReceiptStatus, type PublishRequest, type PublishResult, type PublishUpdate } from "@laneway/shared"
 import { isAncestor, readActiveStack } from "./active-stack"
 import { executeConflict } from "./conflicts/conflict-operations"
 import { ChangeRecorder } from "./operations/change-recorder"
@@ -126,8 +126,10 @@ async function planStack(reading: PublishReading, branch: string): Promise<{ pla
         throw new OperationRuntimeError("operation.precondition-failed", `${shortName(branch)} is not a local branch.`)
 
     let names = stack.branches.map(item => shortName(item.ref))
-    // The first member is the Base Branch, which Publish never updates.
-    let refs = stack.branches.slice(1).map(item => item.ref).filter(ref => ref.startsWith("refs/heads/"))
+    // The first member is the Base Branch, which Publish never updates. The Primary Branch has no Base, so its stack
+    // is itself alone, and it publishes by itself.
+    let alone = stack.branches.length == 1 && stack.branches[0]!.node.primary && branch == primaryLocalRef(graph)
+    let refs = stack.branches.slice(alone ? 0 : 1).map(item => item.ref).filter(ref => ref.startsWith("refs/heads/"))
     let selected = remote ?? graph.selectedRemote
     let unplaced = refs.find(ref => !locals.get(ref)?.upstream)
     let blocked = !remotes.length

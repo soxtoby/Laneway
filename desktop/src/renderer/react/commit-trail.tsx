@@ -13,7 +13,7 @@ import { EditableName } from "./editable-name"
 import { copyText } from "./file-paths"
 import { BranchIcon, DiffIcon, MoreIcon, WarningIcon } from "./icons"
 import { branchStack, type ColumnInspection, type Inspection } from "./inspection"
-import { offersPublish, type Publish } from "./publish"
+import { offersPublish, type Publish, publishRef } from "./publish"
 import { PublishButton } from "./publish-control"
 import type { Reword } from "./reword"
 import { TransferGrip, TransferReview, TransferSeam, useTransferScope, useTransferTarget } from "./transfer"
@@ -93,6 +93,7 @@ function StackBranch(props: StackBranchProps) {
     let { branch, own, above, below, column, inspected, inspection } = props
     let history = inspected?.history[branch.id]
     let open = own || history?.open == true
+    let publishing = publishRef(props.graph, branch)
     let unresolved = branch.unresolved && (
         <WarningIcon className="branch-conflict" role="img" aria-label={`${branch.name} has unresolved conflicts`} aria-hidden={false} />
     )
@@ -138,12 +139,13 @@ function StackBranch(props: StackBranchProps) {
                             {unresolved}
                         </AriaButton>
                     )}
-                {branch.localRefs.length > 0 && (
+                {publishing && (
                     <PublishButton
                         publish={props.publish}
                         repositoryId={props.repositoryId}
-                        branch={branch.localRefs[0]!}
+                        branch={publishing}
                         offered={offersPublish(props.graph, branch, below)}
+                        confirms={branch.primary}
                         busy={props.busy}
                     />
                 )}
