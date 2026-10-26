@@ -1,3 +1,4 @@
+import type { FileVersionRequest } from "@laneway/shared"
 import { afterEach, expect, test } from "bun:test"
 import { createHash } from "node:crypto"
 import { mkdir, mkdtemp, rename, rm, unlink, writeFile } from "node:fs/promises"
@@ -105,6 +106,30 @@ test("reports images above the size limit instead of sending them", async () => 
     let page = await startFileImageRead(api.descriptor, start, { source, path: "large.png" }, undefined, 32).result
     expect(page.old).toMatchObject({ state: "unavailable", reason: expect.stringContaining("larger") })
     expect(page.new).toEqual(ready(Buffer.alloc(16, 2)))
+})
+
+test("reads any file as either side of a comparison has it, whether or not it changed", async () => {
+    let { path, api, source } = await repository()
+    let read = (request: FileVersionRequest) => api.startReadFileVersion(request).result
+    await mkdir(resolve(path, "docs"))
+    await writeFile(resolve(path, "docs", "logo.png"), first)
+    git(path, "add", ".")
+    git(path, "commit", "-qm", "add logo")
+    let commit = { kind: "commit" as const, objectId: git(path, "rev-parse", "HEAD"), parentId: git(path, "rev-parse", "HEAD~1") }
+
+    expect(await read({ source: commit, path: "docs/logo.png", side: "new" })).toEqual(ready(first))
+    expect(await read({ source: commit, path: "docs/logo.png", side: "old" })).toEqual({ state: "missing" })
+    expect(await read({ source: commit, path: "file.txt", side: "old" })).toEqual(ready(Buffer.from("text\n")))
+
+    await writeFile(resolve(path, "docs", "logo.png"), second)
+    git(path, "add", ".")
+    await writeFile(resolve(path, "docs", "logo.png"), third)
+    expect(await read({ source, path: "docs/logo.png", side: "old" })).toEqual(ready(first))
+    expect(await read({ source, path: "docs/logo.png", side: "new" })).toEqual(ready(third))
+    expect(await read({ source, path: "docs/logo.png", view: "staged", side: "new" })).toEqual(ready(second))
+    expect(await read({ source, path: "docs/logo.png", view: "unstaged", side: "old" })).toEqual(ready(second))
+    expect(await read({ source, path: "docs/missing.png", side: "new" })).toEqual({ state: "missing" })
+    expect(read({ source, path: "../outside.png", side: "new" })).rejects.toThrow("Invalid repository file path.")
 })
 
 function pointer(oid: string, size: number) {

@@ -1,4 +1,4 @@
-import { createReactComponent, IconAdjustmentsHorizontal, IconAlertTriangle, IconArchive, IconArrowBackUp, IconArrowBarToDown, IconArrowBarToUp, IconArrowBarToUpDashed, IconArrowForwardUp, IconArrowRight, IconArrowsDiagonal, IconArrowsDiagonalMinimize2, IconCheck, IconChevronDown, IconChevronsLeft, IconChevronsRight, IconCopy, IconDots, IconExternalLink, IconFileDiff, IconFolder, IconGitBranch, IconGitCompare, IconGitMerge, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconLetterT, IconListTree, IconMinus, IconMoodSmile, IconMoon, IconPencil, IconPhoto, IconPhotoPlus, IconPlus, IconSearch, IconSelector, IconSun, IconTag, IconTextWrap, IconX } from "@tabler/icons-react"
+import { createReactComponent, IconAdjustmentsHorizontal, IconAlertTriangle, IconArchive, IconArrowBackUp, IconArrowBarToDown, IconArrowBarToUp, IconArrowBarToUpDashed, IconArrowForwardUp, IconArrowRight, IconArrowsDiagonal, IconArrowsDiagonalMinimize2, IconCheck, IconChevronDown, IconChevronsLeft, IconChevronsRight, IconCopy, IconDots, IconExternalLink, IconFileDiff, IconFolder, IconGitBranch, IconGitCompare, IconGitMerge, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconLetterT, IconListTree, IconMarkdown, IconMinus, IconMoodSmile, IconMoon, IconPencil, IconPhoto, IconPhotoOff, IconPhotoPlus, IconPlus, IconSearch, IconSelector, IconSun, IconTag, IconTextWrap, IconX } from "@tabler/icons-react"
 import { createElement, type ReactNode } from "react"
 import type { CatalogNode } from "./icon-catalog"
 import { collapseAllNode, customIconPaths, forcePublishNode } from "./icon-nodes"
@@ -46,6 +46,8 @@ export let CollapseAllIcon = tablerIcon(createReactComponent("outline", "chevron
 export let GraphIcon = tablerIcon(IconGitMerge)
 export let TagIcon = tablerIcon(IconTag)
 export let WrapLinesIcon = tablerIcon(IconTextWrap)
+export let RenderedMarkdownIcon = tablerIcon(IconMarkdown)
+export let BrokenPictureIcon = tablerIcon(IconPhotoOff)
 
 /** Laneway's Hidden L mark, from assets/brand/laneway-icon.svg, fitted to its 48-unit canvas. */
 export function BrandMark() {

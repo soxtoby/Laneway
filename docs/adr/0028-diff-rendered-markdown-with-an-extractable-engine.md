@@ -1,0 +1,9 @@
+# Diff rendered Markdown with an extractable engine
+
+A Rendered Markdown Diff comes from `@laneway/markdown-diff`, a workspace package that knows nothing of Laneway: it takes two Markdown documents and returns aligned rows of sanitized hast, so it can be published as a library of its own later. It parses GitHub Flavored Markdown with micromark, aligns blocks by their rendered content, pairs removed and added blocks by how alike their words are, and diffs a paired paragraph, heading, or table cell word by word over its formatted words, keeping inline formatting intact; lists, quotes, and tables compare their items, and code compares by line.
+
+We tried markdown-ast-diff first, a port of lowdown's tree diff. It replaced any paragraph that was a single run of text, so most prose edits showed as whole paragraphs removed and added; adding bold to one word did the same, a table with one edited cell was replaced whole, and edited list items paired with the wrong neighbours. Diffing the rendered HTML (htmldiff and its ports, visual-dom-diff) was rejected because it yields HTML strings that bypass React or nests markup wrongly across structural changes, and visual-dom-diff is archived.
+
+Pictures in a document load as each version has them: from the repository through Git, or from the web, which main downloads and hands over as bytes so the renderer's CSP keeps `img-src 'self' blob:` rather than allowing remote content. Web and email links open in the system's apps through main, and the window refuses to navigate anywhere itself.
+
+Consequences: parsing costs about a millisecond per kilobyte on the renderer's thread, so very large documents pause the window as they render. Embedded HTML is parsed per block, so an element opened in one block and closed in another, such as `<details>`, renders without its content.

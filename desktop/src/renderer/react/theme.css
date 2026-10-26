@@ -83,6 +83,18 @@
     --font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
     --font-family-mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
 
+    /* Rendered Markdown diffs: green and red washes for inserted and deleted words, paler ones for whole added and
+       removed list items and table rows, edges in the same hues, and the changes amber for changed blocks. */
+    --markdown-added-word: oklch(from var(--green) var(--lightness-300) calc(c * 0.6) h);
+    --markdown-added-background: oklch(from var(--green) var(--lightness-100) calc(c * 0.4) h);
+    --markdown-added-border: oklch(from var(--green) var(--lightness-800) c h);
+    --markdown-removed-word: oklch(from var(--red) var(--lightness-300) calc(c * 0.5) h);
+    --markdown-removed-background: oklch(from var(--red) var(--lightness-100) calc(c * 0.3) h);
+    --markdown-removed-border: oklch(from var(--red) var(--lightness-800) c h);
+    --markdown-changed-border: var(--changes-border);
+    --markdown-modified: var(--tint-1000);
+    --markdown-code-background: var(--gray-100);
+
     /* Chosen diff lines, washed in the accent. */
     --diff-selection: oklch(from var(--tint) l c h / 34%);
     /* An image difference shows what changed against black; the swipe divider keeps an edge on any picture. */

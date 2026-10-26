@@ -1,10 +1,13 @@
 import type { ChangeSelection, DiffSource, DiffView, FileDiffPage } from "@laneway/shared"
 import type { ImageDiffMode } from "./image-files"
+import type { MarkdownView } from "./markdown-files"
 
 export interface FileDiffState {
     showWhitespace: boolean
     /** How a changed picture is compared; unset until chosen, when the session's preferred mode applies. */
     imageMode?: ImageDiffMode
+    /** How a Markdown file's diff shows; unset until chosen, when the session's preferred view applies. */
+    markdownView?: MarkdownView
     group: string
     path: string
     view: DiffView

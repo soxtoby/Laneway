@@ -1,5 +1,5 @@
 import type { Appearance, AuthorIdentitySettings, BranchHistoryRequest, EntryProgress, RepositoryGraphSettings, Workspace } from "@laneway/shared"
-import type { ChangesRequest, FileDiffRequest, FileImageRequest, FileListView } from "@laneway/shared"
+import type { ChangesRequest, FileDiffRequest, FileImageRequest, FileListView, FileVersionRequest } from "@laneway/shared"
 import type { FileHistoryRequest } from "@laneway/shared"
 import type { WorktreeRequest } from "@laneway/shared"
 import type { CommitDraft, LocalRequest } from "@laneway/shared"
@@ -45,7 +45,11 @@ contextBridge.exposeInMainWorld("laneway", {
     readFileDiff: (repositoryId: string, requestId: string, request: FileDiffRequest) => ipcRenderer.invoke("changes:diff", repositoryId, requestId, request),
     readFileImage: (repositoryId: string, requestId: string, request: FileImageRequest) =>
         ipcRenderer.invoke("changes:image", repositoryId, requestId, request),
+    readFileVersion: (repositoryId: string, requestId: string, request: FileVersionRequest) =>
+        ipcRenderer.invoke("changes:version", repositoryId, requestId, request),
     cancelInspection: (repositoryId: string, requestId: string) => ipcRenderer.invoke("changes:cancel", repositoryId, requestId),
+    readRemoteImage: (url: string) => ipcRenderer.invoke("markdown:image", url),
+    openLink: (url: string) => ipcRenderer.invoke("markdown:open-link", url),
     getState: () => ipcRenderer.invoke("app:state"),
     openRepository: () => ipcRenderer.invoke("entry:open"),
     chooseDirectory: (defaultPath?: string) => ipcRenderer.invoke("entry:choose-directory", { defaultPath }),

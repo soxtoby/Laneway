@@ -1,0 +1,25 @@
+{
+    "name": "@laneway/markdown-diff",
+    "private": true,
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "dependencies": {
+        "diff": "^9.0.0",
+        "hast-util-raw": "^9.1.0",
+        "hast-util-sanitize": "^5.0.2",
+        "mdast-util-from-markdown": "^2.1.0",
+        "mdast-util-frontmatter": "^2.0.1",
+        "mdast-util-gfm": "^3.1.0",
+        "mdast-util-to-hast": "^13.2.1",
+        "micromark-extension-frontmatter": "^2.0.0",
+        "micromark-extension-gfm": "^3.0.0",
+        "unist-util-visit": "^5.2.0"
+    },
+    "devDependencies": {
+        "@types/hast": "^3.0.5",
+        "@types/mdast": "^4.0.4",
+        "hast-util-to-html": "^9.0.5"
+    }
+}

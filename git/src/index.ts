@@ -1,8 +1,8 @@
-import type { BranchGraphReadOptions, BranchHistoryRequest, ChangesRequest, DiffSource, FileDiffRequest, FileImageRequest } from "@laneway/shared"
+import type { BranchGraphReadOptions, BranchHistoryRequest, ChangesRequest, DiffSource, FileDiffRequest, FileImageRequest, FileVersionRequest } from "@laneway/shared"
 import { access, lstat, mkdir, readdir, readFile, realpath } from "node:fs/promises"
 import { isAbsolute, resolve } from "node:path"
 import { type BranchGraphReadCache, startBranchGraphRead, startBranchHistoryRead } from "./branch-graph"
-import { type ChangesReadCache, startChangesRead, startFileDiffRead, startFileImageRead } from "./changes"
+import { type ChangesReadCache, startChangesRead, startFileDiffRead, startFileImageRead, startFileVersionRead } from "./changes"
 import { conflictComparisonSource, conflictHistoryRequest, projectConflictGraph } from "./conflict-graph"
 import { GitError } from "./git-error"
 import { selectGit } from "./git-installation"
@@ -120,6 +120,15 @@ export class RepositoryGit {
                 (cwd, args, onOutput, input) => startGitProcess({ installation: this.descriptor.git, cwd, args, readOnly: true, onOutput, input }),
                 prepared,
                 this.changesCache,
+            ))
+    }
+
+    startReadFileVersion(request: FileVersionRequest) {
+        return this.withConflictComparison(request, prepared =>
+            startFileVersionRead(
+                this.readDescriptor,
+                (cwd, args, onOutput, input) => startGitProcess({ installation: this.descriptor.git, cwd, args, readOnly: true, onOutput, input }),
+                prepared,
             ))
     }
 

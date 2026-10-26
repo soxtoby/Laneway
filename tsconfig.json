@@ -21,6 +21,7 @@
         "shared/**/*.ts",
         "settings/**/*.ts",
         "git/**/*.ts",
+        "markdown-diff/**/*.ts",
         "cli/**/*.ts",
         "desktop/**/*.ts",
         "desktop/**/*.tsx"

@@ -3,10 +3,12 @@ import { createContext, type ReactNode, useContext } from "react"
 import { ToggleButton } from "react-aria-components"
 import { IconButton } from "./controls"
 import { DiffLines } from "./diff-lines"
-import { BreakoutDiffIcon, EntireFileIcon, ImageModeIcon, SplitDiffIcon, UnifiedDiffIcon, WhitespaceIcon, WrapLinesIcon } from "./icons"
+import { BreakoutDiffIcon, EntireFileIcon, ImageModeIcon, RenderedMarkdownIcon, SplitDiffIcon, UnifiedDiffIcon, WhitespaceIcon, WrapLinesIcon } from "./icons"
 import { ImageDiff, imageKey } from "./image-diff"
 import { type ImageDiffMode, imageModes, isComparableImage, isImagePath, preferredImageMode, visibleSummary } from "./image-files"
 import type { FileDiffState, Inspection } from "./inspection"
+import { MarkdownDiff } from "./markdown-diff"
+import { isMarkdownPath, preferredMarkdownView } from "./markdown-files"
 import { TransferGrip, transferSource, useTransferScope } from "./transfer"
 import { Button } from "./ui/Button"
 import { SegmentedControl, SegmentedControlItem } from "./ui/SegmentedControl"
@@ -36,7 +38,10 @@ interface DiffControlsProps extends DiffProps {
     entireFiles?: { shown: boolean; toggle(): void }
 }
 
-/** A diff's controls in its file's row: unified or side by side, wrapping every diff's lines, and showing whitespace. */
+/**
+ * A diff's controls in its file's row: unified or side by side, wrapping every diff's lines, and showing whitespace.
+ * A Markdown file's diff can show the rendered documents instead, where wrapping and whitespace don't apply.
+ */
 export function DiffControls({ columnId, id, diff, inspection, breakout, entireFiles }: DiffControlsProps) {
     let { layout, setLayout } = useContext(DiffScopeContext)
     let wrapLines = useSnapshotValue(inspection, snapshot => snapshot.wrapLines)
@@ -56,6 +61,8 @@ export function DiffControls({ columnId, id, diff, inspection, breakout, entireF
             </div>
         )
     }
+    let markdown = isMarkdownPath(diff.path)
+    let rendered = markdown && isRendered(diff)
     return (
         <div className="diff-controls">
             <div className="diff-layout-toggle" role="group" aria-label="Diff layout">
@@ -72,6 +79,19 @@ export function DiffControls({ columnId, id, diff, inspection, breakout, entireF
                     <Tooltip>Side by side</Tooltip>
                 </TooltipTrigger>
             </div>
+            {markdown && (
+                <TooltipTrigger>
+                    <ToggleButton
+                        className="icon-button small"
+                        aria-label="Show rendered Markdown"
+                        isSelected={rendered}
+                        onChange={selected => inspection.setMarkdownView(columnId, id, selected ? "rendered" : "source")}
+                    >
+                        <RenderedMarkdownIcon />
+                    </ToggleButton>
+                    <Tooltip>Show rendered Markdown</Tooltip>
+                </TooltipTrigger>
+            )}
             {entireFiles && (
                 <TooltipTrigger>
                     <ToggleButton className="icon-button small" aria-label="Show entire files" isSelected={entireFiles.shown} onChange={entireFiles.toggle}>
@@ -80,23 +100,27 @@ export function DiffControls({ columnId, id, diff, inspection, breakout, entireF
                     <Tooltip>Show entire files</Tooltip>
                 </TooltipTrigger>
             )}
-            <TooltipTrigger>
-                <ToggleButton className="icon-button small" aria-label="Wrap lines" isSelected={wrapLines} onChange={inspection.toggleWrapLines}>
-                    <WrapLinesIcon />
-                </ToggleButton>
-                <Tooltip>Wrap lines</Tooltip>
-            </TooltipTrigger>
-            <TooltipTrigger>
-                <ToggleButton
-                    className="icon-button small"
-                    aria-label="Show whitespace"
-                    isSelected={diff.showWhitespace}
-                    onChange={() => inspection.toggleWhitespace(columnId, id)}
-                >
-                    <WhitespaceIcon />
-                </ToggleButton>
-                <Tooltip>Show whitespace</Tooltip>
-            </TooltipTrigger>
+            {!rendered && (
+                <>
+                    <TooltipTrigger>
+                        <ToggleButton className="icon-button small" aria-label="Wrap lines" isSelected={wrapLines} onChange={inspection.toggleWrapLines}>
+                            <WrapLinesIcon />
+                        </ToggleButton>
+                        <Tooltip>Wrap lines</Tooltip>
+                    </TooltipTrigger>
+                    <TooltipTrigger>
+                        <ToggleButton
+                            className="icon-button small"
+                            aria-label="Show whitespace"
+                            isSelected={diff.showWhitespace}
+                            onChange={() => inspection.toggleWhitespace(columnId, id)}
+                        >
+                            <WhitespaceIcon />
+                        </ToggleButton>
+                        <Tooltip>Show whitespace</Tooltip>
+                    </TooltipTrigger>
+                </>
+            )}
             {breakoutButton}
         </div>
     )
@@ -133,6 +157,7 @@ export function DiffPanel({ columnId, id, diff, inspection, eligible }: DiffProp
     let scope = useTransferScope()
     let page = diff.page && !eligible ? { ...diff.page, selectable: false } : diff.page
     let image = page != undefined && isImagePath(page.file.path)
+    let markdown = page != undefined && isMarkdownPath(page.file.path) && isRendered(diff)
     let summary = page ? visibleSummary(page) : []
     let selection = eligible ? diff.selection : undefined
     let views = page?.source.kind == "working" ? viewChoices(diff, page.file) : []
@@ -172,6 +197,8 @@ export function DiffPanel({ columnId, id, diff, inspection, eligible }: DiffProp
                     {!image && page.lines.length == 0 && page.summary.length == 0 && <p className="diff-message">No net content difference in this view.</p>}
                     {image
                         ? <ImageDiff key={imageKey(page)} page={page} mode={diff.imageMode ?? preferredImageMode()} read={inspection.readImage} />
+                        : markdown
+                        ? <MarkdownDiff page={page} layout={layout} reader={inspection} />
                         : (
                             <DiffLines
                                 page={page}
@@ -230,6 +257,10 @@ export function DiffPanel({ columnId, id, diff, inspection, eligible }: DiffProp
             )}
         </section>
     )
+}
+
+function isRendered(diff: FileDiffState) {
+    return (diff.markdownView ?? preferredMarkdownView()) == "rendered"
 }
 
 // The staged and unstaged lists each show their own side of a file, so only conflict views remain to choose there;

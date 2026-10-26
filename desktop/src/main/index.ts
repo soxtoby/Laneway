@@ -4,6 +4,7 @@ import { resolve } from "node:path"
 import { CommitDrafts } from "./commit-drafts"
 import { inspectEngine, resolveEnginePath } from "./engine"
 import { registerInspectionHandlers } from "./ipc/inspection-ipc"
+import { registerMarkdownHandlers } from "./ipc/markdown-ipc"
 import { registerOperationHandlers } from "./ipc/operation-ipc"
 import { registerRepositoryHandlers } from "./ipc/repository-ipc"
 import { OpenRepositories } from "./repositories"
@@ -99,6 +100,7 @@ async function inspectEngineAtStartup() {
 function registerHandlers() {
     registerOperationHandlers(repositories, enginePath, commitDrafts)
     registerInspectionHandlers(repositories, enginePath)
+    registerMarkdownHandlers()
     ipcMain.handle("app:state", async () => ({
         workspace: await workspace.refreshAvailability(),
         settings: await repositories.gitSettings(),

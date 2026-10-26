@@ -346,6 +346,75 @@ describe("React diffs", () => {
         expect(button(row, "Swipe").getAttribute("aria-pressed")).toBe("true")
     })
 
+    test("a Markdown file's diff shows its rendered documents when chosen, with their pictures and links, for every Markdown diff after", async () => {
+        let scenario = inspectionScenario()
+        let readme = { path: "docs/README.md", status: "modified", staged: true, unstaged: false, untracked: false, ignored: false, conflicted: false }
+        let documents = {
+            old: "# Guide\n\nThe old words.\n\n![Logo](images/logo.png)\n",
+            new: "# Guide\n\nThe new words.\n\nSee [the site](https://example.com/).\n\n![Logo](images/logo.png)\n",
+        }
+        let picture = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
+        let pictureReads: string[] = []
+        let opened: string[] = []
+        let app = await startReactApp({
+            ...scenario.api,
+            readChanges: async (_id, _requestId, request) => ({
+                ok: true,
+                inventory: { source: request.source, files: [readme], version: "docs", parents: [] },
+            }),
+            readFileDiff: async (_id, _requestId, request) => ({
+                ok: true,
+                page: {
+                    source: request.source,
+                    file: readme,
+                    view: request.view ?? "combined",
+                    version: "one",
+                    summary: [],
+                    lines: [{ id: 0, kind: "hunk", text: "@@ -3 +3 @@", hunk: 0 }, { id: 1, kind: "deletion", text: "The old words.", oldLine: 3, hunk: 0 }, {
+                        id: 2,
+                        kind: "addition",
+                        text: "The new words.",
+                        newLine: 3,
+                        hunk: 0,
+                    }],
+                    selectable: false,
+                },
+            }),
+            readFileVersion: async (_id, _requestId, request) => {
+                if (request.path == "docs/README.md")
+                    return { ok: true, content: { state: "ready", bytes: new TextEncoder().encode(documents[request.side]), size: 0 } }
+                pictureReads.push(`${request.side} ${request.path}`)
+                return { ok: true, content: { state: "ready", bytes: picture, size: picture.length } }
+            },
+            openLink: async url => void opened.push(url),
+        })
+        let row = fileRows("working-staged")[0]!
+        await app.act(() => openRow(row))
+
+        await app.act(async () => {
+            press(button(row, "Show rendered Markdown"))
+            await new Promise(resolve => setTimeout(resolve, 20))
+        })
+        let rendered = row.querySelector(".markdown-diff")!
+        expect([...rendered.querySelectorAll("del[data-diff]")].map(element => element.textContent)).toEqual(["old"])
+        expect([...rendered.querySelectorAll("ins[data-diff]")].map(element => element.textContent)).toEqual(["new"])
+        expect(rendered.querySelector("[data-diff='added'] a")?.textContent).toBe("the site")
+        expect(rendered.querySelector("img")?.getAttribute("src")?.startsWith("blob:")).toBe(true)
+        expect(pictureReads).toEqual(["new docs/images/logo.png"])
+        expect(row.querySelector("[aria-label='Wrap lines']") == null).toBe(true)
+
+        await app.act(() => rendered.querySelector<HTMLElement>("a")!.click())
+        expect(opened).toEqual(["https://example.com/"])
+
+        await app.act(() => press(button(row, "Side by side")))
+        expect(row.querySelector(".markdown-diff")?.getAttribute("data-layout")).toBe("split")
+
+        // A Markdown diff opened next starts rendered too.
+        await app.act(() => openRow(row))
+        await app.act(() => openRow(row))
+        expect(button(row, "Show rendered Markdown").getAttribute("aria-pressed")).toBe("true")
+    })
+
     test("folding a folder closes the diffs of the files it hides", async () => {
         let scenario = inspectionScenario()
         let app = await startReactApp(scenario.api)

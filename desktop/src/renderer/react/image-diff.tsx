@@ -1,4 +1,4 @@
-import type { FileDiffPage, FileImagePage, ImageContent } from "@laneway/shared"
+import type { FileContent, FileDiffPage, FileImagePage } from "@laneway/shared"
 import { type CSSProperties, type KeyboardEvent, type PointerEvent, useEffect, useEffectEvent, useState } from "react"
 import { Button as AriaButton, ToggleButton } from "react-aria-components"
 import { Hint } from "./controls"
@@ -9,7 +9,7 @@ import { Modal } from "./ui/Modal"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 
 interface Side {
-    content?: ImageContent
+    content?: FileContent
     url?: string
     /** Its natural size, measured as it decodes, or remembered from when the page last showed it. */
     width?: number
@@ -325,7 +325,7 @@ function ZoomIcon({ zoom }: { zoom: Zoom }) {
     )
 }
 
-function objectSide(content: ImageContent | undefined, path: string): Side {
+function objectSide(content: FileContent | undefined, path: string): Side {
     return content?.state == "ready"
         ? { content, size: content.size, url: URL.createObjectURL(new Blob([content.bytes as BlobPart], { type: imageMimeType(path) })) }
         : { content }

@@ -10,18 +10,21 @@
     "dependencies": {
         "@atlaskit/pragmatic-drag-and-drop": "^3.1.0",
         "@laneway/git": "workspace:*",
+        "@laneway/markdown-diff": "workspace:*",
         "@laneway/settings": "workspace:*",
         "@laneway/shared": "workspace:*",
         "@pierre/diffs": "^1.6.1",
         "@tabler/icons": "^3.49.0",
         "@tabler/icons-react": "^3.49.0",
         "clsx": "^2.1.1",
+        "hast-util-to-jsx-runtime": "^2.3.6",
         "react": "^19.3.1",
         "react-aria-components": "1.22.1",
         "react-dom": "^19.3.1",
         "react-stately": "3.51.0"
     },
     "devDependencies": {
+        "@types/hast": "^3.0.5",
         "@types/node": "^26.2.0",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",

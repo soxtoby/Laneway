@@ -1,4 +1,4 @@
-import type { BranchGraph, BranchGraphBranchNode, BranchHistoryPage, ChangedFile, ChangesInventory, ComparisonRef, DiffLayout, DiffSource, DiffView, FileDiffPage, FileHistoryEntry, FileHistoryPage, FileHistorySource, FileImagePage } from "@laneway/shared"
+import type { BranchGraph, BranchGraphBranchNode, BranchHistoryPage, ChangedFile, ChangesInventory, ComparisonRef, DiffLayout, DiffSource, DiffView, FileDiffPage, FileHistoryEntry, FileHistoryPage, FileHistorySource, FileImagePage, FileVersion, RemoteImageResult } from "@laneway/shared"
 import type { FileDiffLoadedChangedFiles } from "@pierre/diffs"
 import { type AuxiliaryColumn, AuxiliaryColumns } from "./auxiliary-columns"
 import { comparisonKey } from "./comparison-columns"
@@ -7,6 +7,7 @@ import { createDiscards } from "./discard"
 import { type BlameState, type CommitDiffState, createFileHistories, type FileHistoryState } from "./file-histories"
 import { type ImageDiffMode, readDiffImage, rememberImageMode } from "./image-files"
 import { createDiffSession, type FileDiffState } from "./inspection-diff-session"
+import { type MarkdownVersions, type MarkdownView, readFileVersion, readMarkdownVersions, rememberMarkdownView } from "./markdown-files"
 import { errorMessage, type Notice } from "./notice"
 import { createStore, type Store } from "./store"
 
@@ -254,6 +255,16 @@ export interface Inspection extends Store<InspectionSnapshot> {
     readImage(page: FileDiffPage, signal: AbortSignal, fetchLfs?: boolean): Promise<FileImagePage>
     /** Compares a picture another way; every picture opens in the last mode chosen until Laneway restarts. */
     setImageMode(columnId: string, key: string, mode: ImageDiffMode): void
+    /** Shows a Markdown file's source lines or rendered documents; every Markdown diff opens the last way chosen until Laneway restarts. */
+    setMarkdownView(columnId: string, key: string, view: MarkdownView): void
+    /** Reads a Markdown document's old and new text for its rendered diff. */
+    readMarkdown(page: FileDiffPage, signal: AbortSignal): Promise<MarkdownVersions>
+    /** Reads a picture a rendered Markdown document shows from the repository, as one side of its diff has it. */
+    readMarkdownPicture(page: FileDiffPage, side: "old" | "new", path: string): Promise<FileVersion>
+    /** Downloads a picture from the web that a rendered Markdown document shows. */
+    readRemoteImage(url: string): Promise<RemoteImageResult>
+    /** Opens a rendered Markdown document's web or email link outside Laneway. */
+    openLink(url: string): void
     /** Toggles whole files together: all already chosen clears them, otherwise all become chosen; `add` only chooses them. */
     select(columnId: string, group: string, files: ChangedFile[], add?: boolean): void
     clearSelection(columnId: string): void
@@ -1437,6 +1448,23 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
             rememberImageMode(mode)
             publish()
         },
+
+        setMarkdownView(columnId, key, view) {
+            let found = diffFor(columnId, key)
+            if (!found)
+                return
+            found.diff.markdownView = view
+            rememberMarkdownView(view)
+            publish()
+        },
+
+        readMarkdown: (page, signal) => readMarkdownVersions(api, activeId ?? "", page, signal),
+
+        readMarkdownPicture: (page, side, path) => readFileVersion(api, activeId ?? "", { source: page.source, view: page.view, side, path, fetchLfs: true }),
+
+        readRemoteImage: url => api.readRemoteImage(url),
+
+        openLink: url => void api.openLink(url),
 
         select(columnId, group, files, add) {
             let state = columnState(columnId)

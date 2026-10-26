@@ -1,4 +1,4 @@
-import type { ChangedFile, ChangesInventory, ChangesRequest, ComparisonRef, DiffSource, FileDiffPage, FileDiffRequest, FileImagePage, FileImageRequest, ImageContent } from "@laneway/shared"
+import type { ChangedFile, ChangesInventory, ChangesRequest, ComparisonRef, DiffSource, DiffView, FileContent, FileDiffPage, FileDiffRequest, FileImagePage, FileImageRequest, FileVersion, FileVersionRequest } from "@laneway/shared"
 import { createHash } from "node:crypto"
 import { lstat, readFile, realpath } from "node:fs/promises"
 import { isAbsolute, relative, resolve, sep } from "node:path"
@@ -78,6 +78,17 @@ export function startFileImageRead(
 ): GitTask<FileImagePage> {
     let reader = operation(start)
     return { cancel: reader.cancel, result: fileImage(descriptor, reader, request, cache, limit) }
+}
+
+/** Reads one version of any file, changed or not, as one side of a comparison has it. */
+export function startFileVersionRead(
+    descriptor: RepositoryDescriptor,
+    start: StartCommand,
+    request: FileVersionRequest,
+    limit = imageSizeLimit,
+): GitTask<FileVersion> {
+    let reader = operation(start)
+    return { cancel: reader.cancel, result: fileVersion(descriptor, reader, request, limit) }
 }
 
 function operation(start: StartCommand) {
@@ -269,10 +280,10 @@ async function fileImage(
         throw new GitError("git.command-failed", "This comparison is unavailable for the selected file.")
 
     let oldPath = file.oldPath ?? file.path
-    let store: ImageStore = { reader, cwd, commonDirectory: descriptor.commonDirectory, limit, fetchLfs: request.fetchLfs == true }
-    let blob = (object: string, path: string) => readImageBlob(store, object, path)
-    let worktree = () => readWorktreeImage(store, file.path)
-    let sides: { old?: ImageContent; new?: ImageContent } = {}
+    let store: BlobStore = { reader, cwd, commonDirectory: descriptor.commonDirectory, limit, fetchLfs: request.fetchLfs == true, noun: "image" }
+    let blob = (object: string, path: string) => readBlob(store, object, path)
+    let worktree = () => readWorktreeFile(store, file.path)
+    let sides: { old?: FileContent; new?: FileContent } = {}
 
     if (source.kind == "comparison") {
         sides.old = file.oldMode != "000000" ? await blob(`${source.fromObjectId}:${oldPath}`, oldPath) : undefined
@@ -309,39 +320,86 @@ async function fileImage(
     }
 }
 
+async function fileVersion(descriptor: RepositoryDescriptor, reader: Reader, request: FileVersionRequest, limit: number): Promise<FileVersion> {
+    validatePath(request.path)
+    let revision = sideRevision(request.source, request.view ?? "combined", request.side)
+    if (revision == undefined)
+        return { state: "missing" }
+
+    let cwd = await directory(descriptor, reader, request.source)
+    let store: BlobStore = { reader, cwd, commonDirectory: descriptor.commonDirectory, limit, fetchLfs: request.fetchLfs == true, noun: "file" }
+    let read = (revision: string) =>
+        revision == "worktree" ? readWorktreeFile(store, request.path) : readBlob(store, `${revision}:${request.path}`, request.path)
+    // A conflict stage holds only the conflicted files, so the others come from the index; a conflicted file has no
+    // stage 0, so one missing from its stage stays missing.
+    let content = await unlessMissing(read(revision)) ?? (/^:[1-3]$/.test(revision) ? await unlessMissing(read(":0")) : undefined)
+    return content ?? { state: "missing" }
+}
+
+/** The revision a side of a comparison reads from: an object, `HEAD`, an index stage such as `:0`, or the worktree. */
+function sideRevision(source: DiffSource, view: DiffView, side: "old" | "new") {
+    let stage = { base: 1, ours: 2, theirs: 3 }[view as "base" | "ours" | "theirs"]
+    if (source.kind == "comparison")
+        return side == "old" ? source.fromObjectId : source.toObjectId
+    if (source.kind == "commit")
+        return side == "old" ? source.parentId : source.objectId
+    if (source.kind == "refs")
+        return undefined
+    if (stage)
+        return side == "new" ? `:${stage}` : undefined
+    if (view == "staged")
+        return side == "old" ? "HEAD" : ":0"
+    if (view == "unstaged")
+        return side == "old" ? ":0" : "worktree"
+    return side == "old" ? "HEAD" : "worktree"
+}
+
+async function unlessMissing(read: Promise<FileContent>) {
+    try {
+        return await read
+    } catch (error) {
+        let missing = error instanceof GitError ? error.code == "git.command-failed" : (error as NodeJS.ErrnoException).code == "ENOENT"
+        if (!missing)
+            throw error
+        return undefined
+    }
+}
+
 async function stagesOf(reader: Reader, cwd: string, path: string) {
     let output = await reader.run(cwd, ["ls-files", "--stage", "-z", "--", path])
     return output.split("\0").filter(Boolean).map(record => Number(record.split("\t")[0].split(" ")[2]))
 }
 
-interface ImageStore {
+interface BlobStore {
     reader: Reader
     cwd: string
     commonDirectory: string
     limit: number
     fetchLfs: boolean
+    /** What the reasons a version is unavailable call it. */
+    noun: "image" | "file"
 }
 
-async function readImageBlob(store: ImageStore, object: string, path: string): Promise<ImageContent> {
+async function readBlob(store: BlobStore, object: string, path: string): Promise<FileContent> {
     let bytes = await collectOutput(store, ["cat-file", "blob", object])
-    return bytes ? imageContent(store, bytes, path) : oversized(store.limit)
+    return bytes ? blobContent(store, bytes, path) : oversized(store)
 }
 
-async function readWorktreeImage(store: ImageStore, path: string): Promise<ImageContent> {
+async function readWorktreeFile(store: BlobStore, path: string): Promise<FileContent> {
     await safeFile(store.cwd, path)
     let absolute = resolve(store.cwd, path)
     let stat = await lstat(absolute)
-    return stat.size > store.limit ? oversized(store.limit) : imageContent(store, await readFile(absolute), path)
+    return stat.size > store.limit ? oversized(store) : blobContent(store, await readFile(absolute), path)
 }
 
-// A Git LFS pointer stands in for the image. Its object comes from the local LFS store when present; downloading
+// A Git LFS pointer stands in for the file. Its object comes from the local LFS store when present; downloading
 // it is a separate, explicitly requested read so the first read stays quick and offline.
-async function imageContent(store: ImageStore, bytes: Buffer, path: string): Promise<ImageContent> {
+async function blobContent(store: BlobStore, bytes: Buffer, path: string): Promise<FileContent> {
     let pointer = lfsPointer(bytes)
     if (!pointer)
         return ready(bytes)
     if (pointer.size > store.limit)
-        return oversized(store.limit)
+        return oversized(store)
 
     let stored = await readLfsObject(store.commonDirectory, pointer.oid)
     if (stored)
@@ -363,24 +421,24 @@ async function readLfsObject(commonDirectory: string, oid: string) {
 }
 
 // Smudging through git-lfs downloads the object into the local store, so later reads find it there.
-async function fetchLfsObject(store: ImageStore, pointer: Buffer, path: string): Promise<ImageContent> {
+async function fetchLfsObject(store: BlobStore, pointer: Buffer, path: string): Promise<FileContent> {
     try {
         let bytes = await collectOutput(store, ["lfs", "smudge", "--", path], pointer.toString("utf8"))
         if (!bytes)
-            return oversized(store.limit)
+            return oversized(store)
         else if (lfsPointer(bytes))
-            return { state: "unavailable", reason: "Git LFS could not download this image." }
+            return { state: "unavailable", reason: `Git LFS could not download this ${store.noun}.` }
         else
             return ready(bytes)
     } catch (error) {
         if (!(error instanceof GitError) || error.code != "git.command-failed")
             throw error
-        return { state: "unavailable", reason: /not a git command/i.test(error.message) ? "Install Git LFS to show this image." : error.message }
+        return { state: "unavailable", reason: /not a git command/i.test(error.message) ? `Install Git LFS to show this ${store.noun}.` : error.message }
     }
 }
 
 /** Streams a command's output up to the size limit; `undefined` means the limit was exceeded. */
-async function collectOutput(store: ImageStore, args: string[], input?: string) {
+async function collectOutput(store: BlobStore, args: string[], input?: string) {
     let chunks: Buffer[] = []
     let length = 0
     await store.reader.run(
@@ -397,7 +455,7 @@ async function collectOutput(store: ImageStore, args: string[], input?: string) 
     return length > store.limit ? undefined : Buffer.concat(chunks)
 }
 
-function ready(bytes: Buffer): ImageContent {
+function ready(bytes: Buffer): FileContent {
     return { state: "ready", bytes: new Uint8Array(bytes), size: bytes.length }
 }
 
@@ -411,8 +469,8 @@ function lfsPointer(bytes: Buffer) {
     return text.startsWith("version https://git-lfs.github.com/spec/v1\n") && oid && size ? { oid: oid[1], size: Number(size[1]) } : undefined
 }
 
-function oversized(limit: number): ImageContent {
-    return { state: "unavailable", reason: `This image is larger than ${Math.round(limit / 1024 / 1024)} MB.` }
+function oversized(store: BlobStore): FileContent {
+    return { state: "unavailable", reason: `This ${store.noun} is larger than ${Math.round(store.limit / 1024 / 1024)} MB.` }
 }
 
 function snapshotKey(source: DiffSource, version: string) {

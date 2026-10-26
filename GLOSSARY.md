@@ -169,6 +169,10 @@ _Avoid_: Diff Column, Commit Diff Column
 The picture view of a changed raster image inside any file diff, in place of text lines. An added or removed image shows that one picture; a changed image compares both versions side by side, with a swipe divider, as an onion-skin fade, or as a difference blend, and the chosen mode persists for the session. Git LFS pointers show the image, downloading the object through Git LFS when the local store lacks it. SVG keeps its text diff.
 _Avoid_: Binary diff, image preview
 
+**Rendered Markdown Diff**:
+The view of a Markdown file's diff as the documents it renders, which its row may choose over source lines for every Markdown diff in the session. Aligned blocks show deleted and inserted words, formatting that alone changed, and changed code lines, unified or side by side; unchanged blocks away from changes fold unless whole files show, and an added or deleted document renders as it is ([ADR 0028](docs/adr/0028-diff-rendered-markdown-with-an-extractable-engine.md)).
+_Avoid_: Markdown preview, rich diff, prose diff
+
 **Working Changes**:
 The uncommitted, non-ignored changes belonging to one worktree. Before checkout changes, Laneway stores them in an ordinary Git stash associated with the old branch and exposes that stash as a Branch Marker. When Worktree Backing transfers between open columns, the old column keeps them visible as Stashed Working Changes. Ordinary commits use Git's staged snapshot when present, otherwise all Working Changes; transfers to arbitrary destinations use Change Selection.
 _Avoid_: Staged changes, unstaged changes

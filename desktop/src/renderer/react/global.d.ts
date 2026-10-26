@@ -1,5 +1,5 @@
 import type { Appearance, AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryDefaults, EntryProgress, EntryResult, GitSettingsState, RepositoryGraphSettings, RepositoryImageFile, Workspace } from "@laneway/shared"
-import type { ChangesRequest, ChangesResult, FileDiffRequest, FileDiffResult, FileImageRequest, FileImageResult, FileListView } from "@laneway/shared"
+import type { ChangesRequest, ChangesResult, FileDiffRequest, FileDiffResult, FileImageRequest, FileImageResult, FileListView, FileVersionRequest, FileVersionResult, RemoteImageResult } from "@laneway/shared"
 import type { WorktreeActionResult, WorktreePreviewResult, WorktreeRequest } from "@laneway/shared"
 import type { CommitDraft, LocalActionResult, LocalRequest } from "@laneway/shared"
 import type { DiscardRequest, DiscardResult, DiscardUndoResult } from "@laneway/shared"
@@ -73,7 +73,13 @@ declare global {
             readFileHistory(repositoryId: string, requestId: string, request: FileHistoryRequest): Promise<FileHistoryResult>
             readFileDiff(repositoryId: string, requestId: string, request: FileDiffRequest): Promise<FileDiffResult>
             readFileImage(repositoryId: string, requestId: string, request: FileImageRequest): Promise<FileImageResult>
+            /** One version of any file as a side of a comparison has it, changed or not. */
+            readFileVersion(repositoryId: string, requestId: string, request: FileVersionRequest): Promise<FileVersionResult>
             cancelInspection(repositoryId: string, requestId: string): Promise<boolean>
+            /** Downloads a picture from the web that rendered Markdown shows. */
+            readRemoteImage(url: string): Promise<RemoteImageResult>
+            /** Opens a web or email link from rendered Markdown in the system's browser or mail app. */
+            openLink(url: string): Promise<void>
             getState(): Promise<AppState>
             openRepository(): Promise<EntryResult>
             chooseDirectory(defaultPath?: string): Promise<string | undefined>

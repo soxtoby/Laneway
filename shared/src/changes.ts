@@ -108,8 +108,8 @@ export interface FileImageRequest {
     fetchLfs?: boolean
 }
 
-/** One version of an image. An `lfs` side is a pointer whose object has not been downloaded yet. */
-export type ImageContent =
+/** One version of a file's bytes. An `lfs` version is a pointer whose object has not been downloaded yet. */
+export type FileContent =
     | { state: "ready"; bytes: Uint8Array; size: number }
     | { state: "lfs"; size: number }
     | { state: "unavailable"; reason: string }
@@ -120,9 +120,9 @@ export interface FileImagePage {
     view: DiffView
     version: string
     /** Absent when the file was added, or when the view shows one conflict stage. */
-    old?: ImageContent
+    old?: FileContent
     /** Absent when the file was deleted. */
-    new?: ImageContent
+    new?: FileContent
 }
 
 export type ChangesResult = { ok: true; inventory: ChangesInventory } | { ok: false; error: EntryError }
@@ -130,6 +130,24 @@ export type ChangesResult = { ok: true; inventory: ChangesInventory } | { ok: fa
 export type FileDiffResult = { ok: true; page: FileDiffPage } | { ok: false; error: EntryError }
 
 export type FileImageResult = { ok: true; page: FileImagePage } | { ok: false; error: EntryError }
+
+/** Any file as one side of a comparison has it, such as a changed Markdown document or a picture it shows. */
+export interface FileVersionRequest {
+    source: DiffSource
+    path: string
+    view?: DiffView
+    /** The version the comparison starts from, or the one it ends at. */
+    side: "old" | "new"
+    fetchLfs?: boolean
+}
+
+/** A file's content in one version, or `missing` when that version doesn't have the file. */
+export type FileVersion = FileContent | { state: "missing" }
+
+export type FileVersionResult = { ok: true; content: FileVersion } | { ok: false; error: EntryError }
+
+/** A picture from the web that a Markdown document shows. */
+export type RemoteImageResult = { ok: true; bytes: Uint8Array; mimeType: string } | { ok: false; reason: string }
 
 let objectIdSchema = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)
 let branchRefSchema = z.string().regex(/^refs\/(heads|remotes)\/.+/)
@@ -173,5 +191,13 @@ export let FileImageRequestSchema = z.object({
     path: z.string().min(1),
     view: z.enum(["combined", "staged", "unstaged", "base", "ours", "theirs"]).optional(),
     inventoryVersion: z.string().optional(),
+    fetchLfs: z.boolean().optional(),
+})
+
+export let FileVersionRequestSchema = z.object({
+    source: DiffSourceSchema,
+    path: z.string().min(1),
+    view: z.enum(["combined", "staged", "unstaged", "base", "ours", "theirs"]).optional(),
+    side: z.enum(["old", "new"]),
     fetchLfs: z.boolean().optional(),
 })

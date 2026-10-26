@@ -2105,6 +2105,299 @@
     }
 }
 
+/* Rendered Markdown diffs: the documents with GitHub-like typography, each aligned block edged by how it changed, and
+   words washed where they were inserted or deleted. Side by side, the old and new blocks share each grid row. */
+
+.markdown-diff {
+    padding: var(--spacing-2) var(--spacing-3) var(--spacing-2) var(--spacing-1);
+    color: var(--text-color);
+    font-size: var(--font-size);
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+
+    &[data-layout="split"] {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: var(--spacing-3);
+
+        > .markdown-gap {
+            grid-column: 1 / -1;
+        }
+    }
+
+    > .markdown-gap {
+        display: block;
+        height: var(--spacing-6);
+        margin: var(--spacing-1) 0 var(--spacing-1) var(--spacing-3);
+        color: var(--text-color-placeholder);
+        font-size: var(--font-size-sm);
+    }
+}
+
+.markdown-cell {
+    min-width: 0;
+    padding: 1px 0 1px var(--spacing-3);
+    border-left: 3px solid transparent;
+
+    &[data-change="added"] {
+        border-left-color: var(--markdown-added-border);
+    }
+
+    &[data-change="removed"] {
+        border-left-color: var(--markdown-removed-border);
+    }
+
+    &[data-change="changed"] {
+        border-left-color: var(--markdown-changed-border);
+    }
+
+    /* Each block keeps its own spacing, but a cell's edges stay flush with its neighbours'. */
+    > :first-child {
+        margin-top: 0;
+    }
+
+    > :last-child {
+        margin-bottom: 0;
+    }
+
+    [data-layout="unified"] > & + & {
+        margin-top: var(--spacing-3);
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        margin: 0.25em 0 0.5em;
+        font-weight: 600;
+        line-height: 1.25;
+    }
+
+    h1 {
+        padding-bottom: 0.3em;
+        border-bottom: 1px solid var(--border-color);
+        font-size: 1.75em;
+    }
+
+    h2 {
+        padding-bottom: 0.3em;
+        border-bottom: 1px solid var(--border-color);
+        font-size: 1.4em;
+    }
+
+    h3 {
+        font-size: 1.2em;
+    }
+
+    h4 {
+        font-size: 1em;
+    }
+
+    h5,
+    h6 {
+        font-size: 0.875em;
+    }
+
+    h6 {
+        color: var(--text-color-placeholder);
+    }
+
+    p,
+    ul,
+    ol,
+    blockquote,
+    pre,
+    table {
+        margin: 0 0 0.75em;
+    }
+
+    ul,
+    ol {
+        padding-left: 2em;
+    }
+
+    li + li,
+    li > ul,
+    li > ol {
+        margin-top: 0.25em;
+    }
+
+    li > ul,
+    li > ol {
+        margin-bottom: 0;
+    }
+
+    .task-list-item {
+        list-style: none;
+
+        input {
+            margin: 0 0.35em 0 -1.4em;
+            vertical-align: middle;
+        }
+    }
+
+    blockquote {
+        padding: 0 1em;
+        border-left: 0.25em solid var(--border-color);
+        color: var(--text-color-placeholder);
+    }
+
+    a {
+        color: var(--link-color);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+        cursor: pointer;
+    }
+
+    code {
+        padding: 0.1em 0.35em;
+        border-radius: var(--radius-sm);
+        background: var(--markdown-code-background);
+        font-family: var(--font-family-mono);
+        font-size: 0.875em;
+    }
+
+    pre {
+        padding: var(--spacing-2) var(--spacing-3);
+        border-radius: var(--radius-sm);
+        background: var(--markdown-code-background);
+        overflow-x: auto;
+        line-height: 1.45;
+
+        code {
+            padding: 0;
+            background: none;
+            font-size: var(--font-size-sm);
+            white-space: pre;
+        }
+
+        span[data-diff] {
+            display: block;
+            margin: 0 calc(-1 * var(--spacing-3));
+            padding: 0 var(--spacing-3);
+        }
+    }
+
+    table {
+        border-collapse: collapse;
+        display: block;
+        width: max-content;
+        max-width: 100%;
+        overflow-x: auto;
+    }
+
+    th,
+    td {
+        padding: var(--spacing-1) var(--spacing-3);
+        border: 1px solid var(--border-color);
+    }
+
+    th {
+        font-weight: 600;
+    }
+
+    tr:nth-child(2n) td {
+        background: var(--markdown-code-background);
+    }
+
+    hr {
+        height: 0.25em;
+        margin: 1.25em 0;
+        border: 0;
+        background: var(--border-color);
+    }
+
+    img {
+        max-width: 100%;
+        height: auto;
+        vertical-align: middle;
+    }
+
+    /* What changed. Inserted and deleted words wash in green and red; deleted ones are struck. Whole blocks
+       inside a list or table wash too, while changed ones only edge their cell. */
+    ins[data-diff="added"] {
+        border-radius: 2px;
+        background: var(--markdown-added-word);
+        text-decoration: none;
+    }
+
+    del[data-diff="removed"] {
+        border-radius: 2px;
+        background: var(--markdown-removed-word);
+        text-decoration: line-through;
+        text-decoration-color: var(--markdown-removed-border);
+    }
+
+    /* A picture hides the wash behind it, so a swapped one is outlined instead. */
+    ins[data-diff="added"] :is(img, .markdown-picture) {
+        outline: 2px solid var(--markdown-added-border);
+        outline-offset: 1px;
+    }
+
+    del[data-diff="removed"] :is(img, .markdown-picture) {
+        outline: 2px solid var(--markdown-removed-border);
+        outline-offset: 1px;
+        opacity: 0.6;
+    }
+
+    span[data-diff="modified"] {
+        text-decoration: underline dotted var(--markdown-modified);
+        text-decoration-thickness: 2px;
+        text-underline-offset: 3px;
+    }
+
+    :is(li, tr, pre span)[data-diff="added"],
+    &[data-change="added"] > [data-diff="added"] {
+        background: var(--markdown-added-background);
+    }
+
+    :is(li, tr, pre span)[data-diff="removed"],
+    &[data-change="removed"] > [data-diff="removed"] {
+        background: var(--markdown-removed-background);
+    }
+
+    pre span[data-diff="added"] {
+        background: var(--markdown-added-word);
+    }
+
+    pre span[data-diff="removed"] {
+        background: var(--markdown-removed-word);
+    }
+}
+
+.markdown-picture {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-1);
+    min-width: var(--spacing-8);
+    min-height: var(--spacing-8);
+    padding: 0 var(--spacing-2);
+    border: 1px dashed var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+    vertical-align: middle;
+
+    svg {
+        flex: none;
+        width: 16px;
+        height: 16px;
+    }
+}
+
+/* An added or deleted document renders as it is, without marks. */
+.markdown-diff[data-whole] {
+    .markdown-cell {
+        border-left-color: transparent;
+    }
+
+    [data-diff] {
+        background: none;
+    }
+}
+
 /* Composition: grips that drag rows, destinations that mark where a drop lands, and the review at a destination. */
 
 .transfer-grip {
