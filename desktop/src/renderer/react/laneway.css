@@ -1696,27 +1696,35 @@
 .file-row.inspected {
     height: auto;
 
+    /* Its tint lies over an opaque ground, so the lines scrolling under it don't show through. */
     .file-content {
         position: sticky;
         top: calc(-1 * var(--scroller-padding-top, 0px));
         z-index: 3;
         height: 28px;
         border-radius: var(--radius-sm);
-        background: var(--gray-50);
+        background:
+            linear-gradient(var(--file-tint, transparent) 0 0),
+            var(--gray-50);
     }
 
-    /* Only the row's own line takes the hover and choice tints, not its diff. */
+    /* Only the row's own line takes the hover and choice tints, not its diff, and the pointer is on the row only
+       while it is on that line. */
     &[data-hovered],
     &[data-chosen] {
         background: none;
     }
 
-    &[data-hovered] .file-content {
-        background: var(--highlight-hover);
+    &[data-hovered] .file-content:hover {
+        --file-tint: var(--highlight-hover);
     }
 
     &[data-chosen] .file-content {
-        background: var(--selection-background);
+        --file-tint: var(--selection-background);
+    }
+
+    &[data-chosen][data-hovered] .file-content:hover {
+        --file-tint: var(--selection-background-hover);
     }
 
     /* Focus too marks only the row's own line. */
@@ -2476,6 +2484,11 @@
    that keeps its other controls showing. Hidden, it keeps its room, so the row doesn't shift. */
 :is(.dense-row:not([data-hovered], [data-focus-visible], [data-focus-visible-within]), :is(.commit-row, .stack-heading, .history-row):not(:hover, :has([data-focus-visible])))
     .grip:not([data-chosen], [data-focus-visible]) {
+    visibility: hidden;
+}
+
+/* The pointer on an open file's diff isn't on its row. */
+.file-row.inspected:not([data-focus-visible], [data-focus-visible-within]) .file-content:not(:hover) .grip:not([data-chosen], [data-focus-visible]) {
     visibility: hidden;
 }
 
@@ -3607,8 +3620,11 @@
     padding: 0 var(--spacing-2) 0 var(--spacing-1);
     background: var(--gray-50);
 
+    /* Pinned over its diff, the row lays its tint over its own ground. */
     &:hover {
-        background: var(--highlight-hover);
+        background:
+            linear-gradient(var(--highlight-hover) 0 0),
+            var(--gray-50);
 
         .row-actions {
             opacity: 1;
