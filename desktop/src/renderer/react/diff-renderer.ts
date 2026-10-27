@@ -139,10 +139,16 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
         syncHorizontal()
     }, { passive: true, signal: lifetime.signal })
     dark.addEventListener("change", () => render(), { signal: lifetime.signal })
-    // A narrower host changes how far the panes overflow, which only this measurement notices.
+    // A narrower host changes how far the panes overflow, which only this measurement notices. It measures on the next
+    // frame: showing the pinned scrollbar or drawing other lines here resizes the column's file list inside the
+    // browser's ResizeObserver loop, which reports it as undelivered notifications.
+    let resizeFrame = 0
     let resize = new ResizeObserver(() => {
-        render()
-        measureScrollbar()
+        cancelAnimationFrame(resizeFrame)
+        resizeFrame = requestAnimationFrame(() => {
+            render()
+            measureScrollbar()
+        })
     })
     resize.observe(host)
     render()
@@ -538,6 +544,7 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
             lifetime.abort()
             contextRead?.abort()
             resize.disconnect()
+            cancelAnimationFrame(resizeFrame)
             approach?.disconnect()
             viewer?.cleanUp()
             viewer = undefined

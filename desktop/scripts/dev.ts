@@ -35,18 +35,24 @@ else {
 }
 
 /**
- * Serves a development copy of the page. Hot updates arrive as `blob:` scripts, and the server adds one inline script,
- * which the page's CSP would block; the copy allows exactly those, and the built page keeps the CSP it ships with.
+ * Serves a development copy of the page. Hot updates arrive as `blob:` scripts, the server adds one inline script, and
+ * the copy adds `dev-page.ts` as another, which the page's CSP would block; the copy allows exactly those, and the built
+ * page keeps the CSP it ships with.
  */
 async function serveRenderer() {
     // The hash of the inline script Bun's development server adds; if Bun changes it, only a CSP report follows.
     let beacon = "'sha256-ES8VF47udzjVFFPh4RhgcgjUrADRd1Ef0GD9UagS2mY='"
+    let script = new Bun.Transpiler({ loader: "ts" }).transformSync(await Bun.file(resolve(desktop, "scripts/dev-page.ts")).text())
+    let scriptHash = `'sha256-${new Bun.CryptoHasher("sha256").update(script).digest("base64")}'`
     let directory = resolve(root, "node_modules/.cache/laneway-dev")
     let html = await Bun.file(resolve(desktop, "src/renderer/index.html")).text()
     let entry = relative(directory, resolve(desktop, "src/renderer/react/main.tsx")).replaceAll("\\", "/")
-    let page = html.replace("script-src 'self'", `script-src 'self' blob: ${beacon}`).replace(`src="./react/main.tsx"`, `src="${entry}"`)
-    if (!page.includes(beacon) || !page.includes(entry))
-        throw new Error("The renderer page no longer has the CSP or entry script the development copy changes.")
+    let page = html
+        .replace("script-src 'self'", `script-src 'self' blob: ${beacon} ${scriptHash}`)
+        .replace("</head>", `<script>${script}</script></head>`)
+        .replace(`src="./react/main.tsx"`, `src="${entry}"`)
+    if (!page.includes(beacon) || !page.includes(script) || !page.includes(entry))
+        throw new Error("The renderer page no longer has the CSP, head, or entry script the development copy changes.")
     mkdirSync(directory, { recursive: true })
     let copy = resolve(directory, "index.html")
     await Bun.write(copy, page)
