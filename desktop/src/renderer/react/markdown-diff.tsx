@@ -94,12 +94,16 @@ export function MarkdownDiff({ page, layout, reader }: MarkdownDiffProps) {
                         : split
                         ? (
                             <Fragment key={item.index}>
-                                <div className="markdown-cell" data-change={item.row.change}>{item.row.old && render(item.row.old, "old")}</div>
-                                <div className="markdown-cell" data-change={item.row.change}>{item.row.new && render(item.row.new, "new")}</div>
+                                <div className="markdown-cell" data-change={item.row.change} data-row={item.index}>
+                                    {item.row.old && render(item.row.old, "old")}
+                                </div>
+                                <div className="markdown-cell" data-change={item.row.change} data-row={item.index}>
+                                    {item.row.new && render(item.row.new, "new")}
+                                </div>
                             </Fragment>
                         )
                         : (
-                            <div key={item.index} className="markdown-cell" data-change={item.row.change}>
+                            <div key={item.index} className="markdown-cell" data-change={item.row.change} data-row={item.index}>
                                 {render(item.row.unified, item.row.change == "removed" ? "old" : "new")}
                             </div>
                         )
@@ -107,6 +111,35 @@ export function MarkdownDiff({ page, layout, reader }: MarkdownDiffProps) {
             </div>
         </MarkdownContext>
     )
+}
+
+/**
+ * Notes the block at `y` on screen in a rendered Markdown diff, or the first below it. Once the diff has switched layout,
+ * where its blocks wrap to other heights, the returned function scrolls the diff's column to put the same point of the
+ * block back at `y`, or the block's top back where it was, and returns how far it scrolled.
+ */
+export function holdBlock(root: Element, y: number) {
+    let cell = [...root.querySelectorAll<HTMLElement>(".markdown-cell")].find(cell => {
+        let { bottom, height } = cell.getBoundingClientRect()
+        return bottom > y && height > 0
+    })
+    if (!cell)
+        return
+    let { top, height } = cell.getBoundingClientRect()
+    let point = Math.max(y, top)
+    let fraction = (point - top) / height
+    let row = cell.dataset.row
+    return () => {
+        let moved = root.querySelector(`.markdown-cell[data-row="${row}"]`)?.getBoundingClientRect()
+        let scroller = root.parentElement
+        while (scroller && !["auto", "scroll", "overlay"].includes(getComputedStyle(scroller).overflowY))
+            scroller = scroller.parentElement
+        if (!moved || !scroller)
+            return 0
+        let from = scroller.scrollTop
+        scroller.scrollTop += moved.top + fraction * moved.height - point
+        return scroller.scrollTop - from
+    }
 }
 
 /** The rows to show: each change with the unchanged blocks beside it, and the runs between as gaps unless opened. */

@@ -4,7 +4,7 @@ import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from "rea
 import { Button as AriaButton, type Key, ListLayout, Rect, Tree, Virtualizer } from "react-aria-components"
 import { Hint } from "./controls"
 import { DenseTreeItem } from "./dense-row"
-import { DiffRegion } from "./diff-panel"
+import { DiffRegion, HeldRowContext } from "./diff-panel"
 import { type FileTreeNode, fileTreeNodes } from "./file-list-view"
 import { copyText, fileName, fullPath } from "./file-paths"
 import { CheckIcon, CopyIcon, FileStatusIcon, FolderIcon } from "./icons"
@@ -55,8 +55,23 @@ export interface FileInspection {
  * little beyond the view are drawn too.
  */
 export class FileRowsLayout extends ListLayout<unknown> {
+    // Rows drawn wherever they are, such as one whose diff holds its place while the rows above it grow.
+    private held = new Set<Key>()
+
+    /** Keeps a row drawn wherever the list moves it, until the returned function lets it go. */
+    hold = (key: Key) => {
+        this.held.add(key)
+        return () => void this.held.delete(key)
+    }
+
     override getVisibleLayoutInfos(rect: Rect) {
-        return super.getVisibleLayoutInfos(new Rect(rect.x, rect.y - rowsReach, rect.width, rect.height + 2 * rowsReach))
+        let infos = super.getVisibleLayoutInfos(new Rect(rect.x, rect.y - rowsReach, rect.width, rect.height + 2 * rowsReach))
+        for (let key of this.held) {
+            let info = this.getLayoutInfo(key)
+            if (info && !infos.some(drawn => drawn.key == key))
+                infos.push(info)
+        }
+        return infos
     }
 
     // Scrolling with its column, the list is as tall as its rows, so its height changes whenever a row opens a diff or
@@ -164,26 +179,28 @@ export function FileTree(
     }
 
     return (
-        <Virtualizer layout={layout} layoutOptions={rowsLayout} shouldObserveItemSize>
-            <Tree
-                ref={tree}
-                aria-label={label}
-                className="file-tree"
-                expandedKeys={expandedKeys}
-                onExpandedChange={keys => fold(new Set([...folders.keys()].filter(key => !keys.has(key))))}
-                onAction={act}
-            >
-                {nodes.map(node => (
-                    <FileTreeRow
-                        key={node.key}
-                        node={node}
-                        flat={view.layout == "flat"}
-                        nested={folders.size > 0}
-                        props={{ isChosen, root, menuItems, hideStagedBadge, leading, inspect, highlight }}
-                    />
-                ))}
-            </Tree>
-        </Virtualizer>
+        <HeldRowContext value={layout.hold}>
+            <Virtualizer layout={layout} layoutOptions={rowsLayout} shouldObserveItemSize>
+                <Tree
+                    ref={tree}
+                    aria-label={label}
+                    className="file-tree"
+                    expandedKeys={expandedKeys}
+                    onExpandedChange={keys => fold(new Set([...folders.keys()].filter(key => !keys.has(key))))}
+                    onAction={act}
+                >
+                    {nodes.map(node => (
+                        <FileTreeRow
+                            key={node.key}
+                            node={node}
+                            flat={view.layout == "flat"}
+                            nested={folders.size > 0}
+                            props={{ isChosen, root, menuItems, hideStagedBadge, leading, inspect, highlight }}
+                        />
+                    ))}
+                </Tree>
+            </Virtualizer>
+        </HeldRowContext>
     )
 }
 

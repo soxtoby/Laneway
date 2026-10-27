@@ -1,6 +1,6 @@
 import type { DiffLayout, DiffLine, FileDiffPage } from "@laneway/shared"
 import { canUseWASM, DEFAULT_THEMES, DiffHunksRenderer, type FileDiffLoadedChangedFiles, getFiletypeFromFileName, getHighlighterIfLoaded, getHighlighterOptions, type HighlighterTypes, preloadHighlighter, wrapCoreCSS, wrapThemeCSS } from "@pierre/diffs"
-import { contextDiff, visibleDiffLines } from "./diff-context"
+import { contextDiff, drawnRow, visibleDiffLines } from "./diff-context"
 import type { pierrePatch } from "./diff-patch"
 import { expandAllNode } from "./icon-nodes"
 
@@ -21,6 +21,25 @@ export interface DiffLinesProps {
 interface LineIndex {
     /** Keyed by `addition:<new>`, `deletion:<old>`, `context:old:<old>` and `context:new:<new>`. */
     lines: Map<string, DiffLine>
+}
+
+/** A drawn line, by its row in the whole file in each layout, and where its top was on screen. */
+interface HeldLine {
+    unified: number
+    split: number
+    top: number
+}
+
+let renderers = new WeakMap<Element, ReturnType<typeof createDiffRenderer>>()
+
+/**
+ * Notes the line drawn at `y` on screen in the diff drawn into `host`, or the first drawn below it. Once the diff has
+ * switched layout, the returned function scrolls the diff's column to put that line back where it was, and returns how
+ * far it scrolled.
+ */
+export function holdLine(host: Element, y: number) {
+    let line = renderers.get(host)?.lineAt(y)
+    return line && (() => renderers.get(host)?.showLine(line) ?? 0)
 }
 
 // Rendered lines are 24px tall, unless they wrap; only those near the scrolling column's viewport are drawn.
@@ -113,6 +132,8 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
     let decorated = ""
     let horizontalOffset = 0
     let syncedOffsets = new WeakMap<HTMLElement, number>()
+    // The line last put back in place after a switch of layout.
+    let placed: HeldLine | undefined
     // Scrolling moves the drawn lines only for a diff near the view; the observer notices one coming near.
     let scroll = () => {
         if (near)
@@ -535,12 +556,52 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
         }
     }
 
-    return {
+    function lineAt(y: number) {
+        let held: HeldLine | undefined
+        for (let line of shadow.querySelectorAll<HTMLElement>("[data-line][data-line-index]")) {
+            let { top, bottom } = line.getBoundingClientRect()
+            if (bottom > y && bottom > top && (!held || top < held.top)) {
+                let [unified = 0, split = 0] = line.dataset.lineIndex!.split(",").map(Number)
+                held = { unified, split, top }
+            }
+        }
+        // A side by side row holds a deletion and an addition, so a line just put back there is held again, and
+        // switching back returns to it rather than to its row's deletion.
+        let split = props.layout == "split"
+        if (held && placed && (split ? placed.split == held.split : placed.unified == held.unified) && Math.abs(placed.top - held.top) < 1)
+            return placed
+        return held
+    }
+
+    // Scrolls the column to put the line back where it was, and returns how far. Lines are drawn only near the view, so
+    // a line that isn't drawn is scrolled to by its row first, then by where it's drawn.
+    function showLine(line: HeldLine) {
+        if (!viewer || !diff || !scrollContainer)
+            return 0
+        placed = line
+        let split = props.layout == "split"
+        let index = split ? line.split : line.unified
+        let row = drawnRow(diff, props.layout, viewer.getExpandedHunksMap(), index)
+        let from = scrollContainer.scrollTop
+        for (let attempt = 0; attempt < 4; attempt++) {
+            render()
+            let drawnLine = [...shadow.querySelectorAll<HTMLElement>("[data-line][data-line-index]")]
+                .find(element => Number(element.dataset.lineIndex!.split(",")[split ? 1 : 0]) == index)
+            let top = drawnLine?.getBoundingClientRect().top ?? host.getBoundingClientRect().top + rowsHeight(0, row)
+            if (Math.abs(top - line.top) < 1)
+                break
+            scrollContainer.scrollTop += top - line.top
+        }
+        return scrollContainer.scrollTop - from
+    }
+
+    let renderer = {
         update(next: DiffLinesProps) {
             props = next
             render()
         },
         dispose() {
+            renderers.delete(host)
             lifetime.abort()
             contextRead?.abort()
             resize.disconnect()
@@ -549,7 +610,11 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
             viewer?.cleanUp()
             viewer = undefined
         },
+        lineAt,
+        showLine,
     }
+    renderers.set(host, renderer)
+    return renderer
 }
 
 // Built imperatively because Pierre owns this part of the page; it draws the expand-all icon.

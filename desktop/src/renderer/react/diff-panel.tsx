@@ -1,13 +1,14 @@
 import type { ChangedFile, DiffLayout, DiffView } from "@laneway/shared"
-import { createContext, type ReactNode, useContext } from "react"
+import { createContext, type ReactNode, useContext, useRef } from "react"
 import { ToggleButton } from "react-aria-components"
 import { IconButton } from "./controls"
 import { DiffLines } from "./diff-lines"
+import { holdLine } from "./diff-renderer"
 import { BreakoutDiffIcon, EntireFileIcon, ImageModeIcon, RenderedMarkdownIcon, SplitDiffIcon, UnifiedDiffIcon, WhitespaceIcon, WrapLinesIcon } from "./icons"
 import { ImageDiff, imageKey } from "./image-diff"
 import { type ImageDiffMode, imageModes, isComparableImage, isImagePath, preferredImageMode, visibleSummary } from "./image-files"
 import type { FileDiffState, Inspection } from "./inspection"
-import { MarkdownDiff } from "./markdown-diff"
+import { holdBlock, MarkdownDiff } from "./markdown-diff"
 import { isMarkdownPath, preferredMarkdownView } from "./markdown-files"
 import { TransferGrip, transferSource, useTransferScope } from "./transfer"
 import { Button } from "./ui/Button"
@@ -22,6 +23,12 @@ export interface DiffScope {
 }
 
 export let DiffScopeContext = createContext<DiffScope>({ layout: "unified", setLayout: () => {} })
+
+/**
+ * In a list that draws only the rows near the view, keeps the row with this key drawn wherever the list moves it, so
+ * its diff can hold its place, until the returned function lets it go.
+ */
+export let HeldRowContext = createContext<((key: string) => () => void) | undefined>(undefined)
 
 interface DiffProps {
     columnId: string
@@ -45,6 +52,12 @@ interface DiffControlsProps extends DiffProps {
 export function DiffControls({ columnId, id, diff, inspection, breakout, entireFiles }: DiffControlsProps) {
     let { layout, setLayout } = useContext(DiffScopeContext)
     let wrapLines = useSnapshotValue(inspection, snapshot => snapshot.wrapLines)
+    let holdRow = useContext(HeldRowContext)
+    let layoutToggle = useRef<HTMLDivElement>(null)
+    let switchLayout = (chosen: DiffLayout) => {
+        if (chosen != layout)
+            holdPlace(layoutToggle.current, () => setLayout(chosen), holdRow)
+    }
     let breakoutButton = breakout && (
         <IconButton label="Break out diff" small onPress={breakout}>
             <BreakoutDiffIcon />
@@ -65,15 +78,15 @@ export function DiffControls({ columnId, id, diff, inspection, breakout, entireF
     let rendered = markdown && isRendered(diff)
     return (
         <div className="diff-controls">
-            <div className="diff-layout-toggle" role="group" aria-label="Diff layout">
+            <div ref={layoutToggle} className="diff-layout-toggle" role="group" aria-label="Diff layout">
                 <TooltipTrigger>
-                    <ToggleButton className="icon-button small" aria-label="Unified" isSelected={layout == "unified"} onChange={() => setLayout("unified")}>
+                    <ToggleButton className="icon-button small" aria-label="Unified" isSelected={layout == "unified"} onChange={() => switchLayout("unified")}>
                         <UnifiedDiffIcon />
                     </ToggleButton>
                     <Tooltip>Unified</Tooltip>
                 </TooltipTrigger>
                 <TooltipTrigger>
-                    <ToggleButton className="icon-button small" aria-label="Side by side" isSelected={layout == "split"} onChange={() => setLayout("split")}>
+                    <ToggleButton className="icon-button small" aria-label="Side by side" isSelected={layout == "split"} onChange={() => switchLayout("split")}>
                         <SplitDiffIcon />
                     </ToggleButton>
                     <Tooltip>Side by side</Tooltip>
@@ -125,6 +138,52 @@ export function DiffControls({ columnId, id, diff, inspection, breakout, entireF
         </div>
     )
 }
+
+/**
+ * Switching layout draws every diff in the column at another height, so the diff whose controls `change` it holds its
+ * place: the line or rendered block just under its header stays where it is, whether the header is pinned over the
+ * diff or sits above it. A file list moves the rows below a diff only once it has measured the diff's new height, a
+ * frame or more later, so the place is held each frame until it stays put, or until the user takes over, and the
+ * list keeps the diff's row drawn meanwhile, though it may move far from the view.
+ */
+function holdPlace(controls: Element | null, change: () => void, holdRow?: (key: string) => () => void) {
+    // The controls sit in the diff's header (its file's row, its toolbar in a diff column, or its history entry's row),
+    // beside its panel.
+    let header = controls?.closest(".file-content, .diff-toolbar, .history-row")
+    let panel = header?.parentElement?.querySelector(".diff-panel")
+    let y = header?.getBoundingClientRect().bottom ?? 0
+    let lines = panel?.querySelector(".pierre-diff")
+    let markdown = panel?.querySelector(".markdown-diff")
+    let restore = lines ? holdLine(lines, y) : markdown ? holdBlock(markdown, y) : undefined
+    if (!restore) {
+        change()
+        return
+    }
+    let held = new AbortController()
+    let key = header?.closest<HTMLElement>("[data-row-key]")?.dataset.rowKey
+    if (key != undefined && holdRow)
+        held.signal.addEventListener("abort", holdRow(key))
+    change()
+    let still = 0
+    let frames = 0
+    let frame = requestAnimationFrame(function hold() {
+        still = Math.abs(restore()) < 1 ? still + 1 : 0
+        if (still < settledFrames && ++frames < heldFrames)
+            frame = requestAnimationFrame(hold)
+        else
+            held.abort()
+    })
+    for (let type of ["wheel", "pointerdown", "keydown"]) {
+        addEventListener(type, () => {
+            cancelAnimationFrame(frame)
+            held.abort()
+        }, { capture: true, passive: true, signal: held.signal })
+    }
+}
+
+// A place held after a switch of layout is let go once it has stayed put this many frames, or after the most.
+let settledFrames = 4
+let heldFrames = 60
 
 /** How a changed picture compares: its versions side by side, or stacked to swipe, fade, or difference. */
 export function ImageModeToggle({ mode, onChange }: { mode: ImageDiffMode; onChange(mode: ImageDiffMode): void }) {

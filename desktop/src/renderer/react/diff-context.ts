@@ -81,3 +81,22 @@ export function visibleDiffLines(diff: FileDiffMetadata, layout: DiffLayout, exp
 
     return total
 }
+
+/**
+ * A line's row among the rows a diff draws, from its row in the whole file (one half of Pierre's `data-line-index`),
+ * which also counts the unchanged lines folded away before each hunk.
+ */
+export function drawnRow(diff: FileDiffMetadata, layout: DiffLayout, expanded: Map<number, HunkExpansionRegion>, index: number) {
+    let folded = 0
+    for (let [position, hunk] of diff.hunks.entries()) {
+        let start = layout == "split" ? hunk.splitLineStart : hunk.unifiedLineStart
+        let region = diff.isPartial ? undefined : expanded.get(position)
+        // A gap's lines shown from either end are drawn; those between them are folded.
+        let folds = start - hunk.collapsedBefore + (region?.fromStart ?? 0)
+        if (folds >= index)
+            break
+        folded += Math.max(0, Math.min(index, start - (region?.fromEnd ?? 0)) - folds)
+    }
+
+    return index - folded
+}
