@@ -21,6 +21,7 @@ import { Button } from "./ui/Button"
 import { Tab, TabList, Tabs } from "./ui/Tabs"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 import { useSnapshot } from "./use-snapshot"
+import { FileListViewMenu } from "./working-changes"
 import { workspaceGraph } from "./worktree-columns"
 import { MissingWorktree, WorktreeMenu, WorktreeTitle } from "./worktree-controls"
 
@@ -353,19 +354,27 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                         />
                                     )}
                                     {column.kind == "comparison" && (
-                                        // Mirrors Working Changes' control: it opens the comparison's whole diff, or focuses it.
-                                        <TooltipTrigger>
-                                            <ToggleButton
-                                                className="icon-button"
-                                                aria-label="Open diff column"
-                                                isSelected={files?.diffColumn != undefined}
-                                                isDisabled={!files?.files.comparison?.inventory?.files.some(file => !file.ignored)}
-                                                onChange={() => controller.inspection.openDiffColumn(column.id, "comparison")}
-                                            >
-                                                <OpenColumnIcon />
-                                            </ToggleButton>
-                                            <Tooltip>Open diff column</Tooltip>
-                                        </TooltipTrigger>
+                                        // Mirrors Working Changes' controls: its file list view, and a control that opens the
+                                        // comparison's whole diff, or focuses it.
+                                        <>
+                                            <FileListViewMenu
+                                                label={`File list view for ${column.name}`}
+                                                view={fileListView}
+                                                onChange={view => void controller.setFileListView(view)}
+                                            />
+                                            <TooltipTrigger>
+                                                <ToggleButton
+                                                    className="icon-button"
+                                                    aria-label="Open diff column"
+                                                    isSelected={files?.diffColumn != undefined}
+                                                    isDisabled={!files?.files.comparison?.inventory?.files.some(file => !file.ignored)}
+                                                    onChange={() => controller.inspection.openDiffColumn(column.id, "comparison")}
+                                                >
+                                                    <OpenColumnIcon />
+                                                </ToggleButton>
+                                                <Tooltip>Open diff column</Tooltip>
+                                            </TooltipTrigger>
+                                        </>
                                     )}
                                     <IconButton label={maximized ? "Restore column" : "Maximize column"} onPress={() => columns.toggleMaximized(column.id)}>
                                         {maximized ? <RestoreIcon /> : <MaximizeIcon />}

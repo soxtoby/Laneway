@@ -320,7 +320,7 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
                         <DiffIcon />
                     </IconButton>
                 )}
-                {open && <FileListViewMenu label={`File list view for commit ${commit.subject}`} view={view} onChange={onViewChange} />}
+                {open && <FileListViewMenu label={`File list view for commit ${commit.subject}`} view={view} small onChange={onViewChange} />}
                 <span className="row-actions" data-visible={open || undefined}>
                     <MoreMenu label={menu.label}>{menu.items()}</MoreMenu>
                 </span>

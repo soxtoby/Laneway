@@ -1,4 +1,4 @@
-import type { DiffSource, FileHistoryRequest } from "@laneway/shared"
+import type { DiffSource, FileHistoryRequest, FileListView } from "@laneway/shared"
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
 import type { Window as HappyWindow } from "happy-dom"
 import { button, installReactDom, press, startReactApp, stopReactApps } from "./react-dom"
@@ -142,6 +142,42 @@ describe("React Branch Comparison", () => {
         expect(comparison()!.querySelector("[aria-label='Maximize column']")).not.toBeNull()
         expect(comparison()!.querySelector(".column-path") == null).toBe(true)
     })
+
+    test("the header's view menu lays out and groups the comparison's files, as every file list's does", async () => {
+        let scenario = inspectionScenario()
+        let [main, feature] = scenario.graph.branches
+        let saved: FileListView[] = []
+        let app = await startReactApp({
+            ...scenario.api,
+            readChanges: async (...args) => {
+                let request = args[2]
+                if (request.source.kind != "refs")
+                    return scenario.api.readChanges(...args)
+                let source = { kind: "comparison" as const, fromObjectId: main!.tip, toObjectId: feature!.tip }
+                let files = ["src/file.txt", "test/file.test.ts"].map(path => ({ ...scenario.page.file, path }))
+                return { ok: true, inventory: { source, version: "inventory", parents: [], files } }
+            },
+            setFileListView: async view => {
+                saved.push(view)
+                return view
+            },
+        })
+        let header = () => comparison()!.querySelector<HTMLElement>(".column-header")!
+        let choose = async (item: string) => {
+            await app.act(() => press(button(header(), `File list view for ${main!.name} → ${feature!.name}`)))
+            await app.act(() => press(menuItem(item)))
+        }
+        await app.act(() => press(button(column(feature!.id)!, `Compare ${feature!.name} with ${main!.name}`)))
+
+        await choose("Folders")
+        expect(saved).toEqual([{ layout: "tree", grouping: "none" }])
+        expect(folderNames()).toEqual(["src", "test"])
+
+        await choose("Flat list")
+        await choose("Group by file kind")
+        expect(saved.at(-1)).toEqual({ layout: "flat", grouping: "kind" })
+        expect(folderNames()).toEqual(["Implementation", "Tests"])
+    })
 })
 
 function column(id: string) {
@@ -157,12 +193,18 @@ function frame() {
     return new Promise(resolve => requestAnimationFrame(resolve))
 }
 
+function folderNames() {
+    return [...comparison()!.querySelectorAll(".branch-comparison .folder-name")].map(name => name.textContent)
+}
+
 function menuItems() {
-    return [...document.querySelectorAll("[role=menu] [role=menuitem]")].map(item => item.textContent)
+    return [...document.querySelectorAll("[role=menu] :is([role=menuitem], [role=menuitemradio])")].map(item => item.textContent)
 }
 
 function menuItem(label: string) {
-    let item = [...document.querySelectorAll<HTMLElement>("[role=menu] [role=menuitem]")].find(candidate => candidate.textContent == label)
+    let item = [...document.querySelectorAll<HTMLElement>("[role=menu] :is([role=menuitem], [role=menuitemradio])")].find(candidate =>
+        candidate.textContent == label
+    )
     if (!item)
         throw new Error(`No ${label} menu item in: ${menuItems().join(", ")}`)
     return item

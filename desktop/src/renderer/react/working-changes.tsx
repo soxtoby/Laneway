@@ -1,4 +1,5 @@
 import type { BranchGraphMarker, ChangedFile, DiffSource, FileHistorySource, FileListView } from "@laneway/shared"
+import clsx from "clsx"
 import { memo, type ReactNode, type RefObject, useCallback, useEffect, useState } from "react"
 import { Button as AriaButton, Form } from "react-aria-components"
 import type { ColumnView } from "./branch-workspace"
@@ -146,7 +147,7 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
                     </h3>
                     {!clean && (
                         <>
-                            <FileListViewMenu label="File list view for Working Changes" view={view} onChange={onViewChange} />
+                            <FileListViewMenu label="File list view for Working Changes" view={view} small onChange={onViewChange} />
                             <IconButton label="Open diff column" small isDisabled={!files.length} onPress={() => inspection.openWorkingDiffColumn(column.id)}>
                                 <OpenColumnIcon />
                             </IconButton>
@@ -633,11 +634,11 @@ function historySource(source: DiffSource): FileHistorySource | undefined {
 }
 
 /** The layout and grouping of every file list; the choice applies to them all and is saved. */
-export function FileListViewMenu({ label, view, onChange }: { label: string; view: FileListView; onChange(view: FileListView): void }) {
+export function FileListViewMenu({ label, view, small, onChange }: { label: string; view: FileListView; small?: boolean; onChange(view: FileListView): void }) {
     return (
         <MenuTrigger>
             <TooltipTrigger>
-                <AriaButton className="icon-button small" aria-label={label}>
+                <AriaButton className={clsx("icon-button", small && "small")} aria-label={label}>
                     <TreeIcon />
                 </AriaButton>
                 <Tooltip>File list view</Tooltip>
