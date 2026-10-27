@@ -50,6 +50,8 @@ export class WorkspaceManager {
                 layoutInitialized: repository.layoutInitialized,
                 ...(repository.label ? { label: repository.label } : {}),
                 ...(repository.icon ? { icon: structuredClone(repository.icon) } : {}),
+                ...(repository.scripts ? { scripts: structuredClone(repository.scripts) } : {}),
+                ...(repository.lastScriptId ? { lastScriptId: repository.lastScriptId } : {}),
             }
             return info
                 ? { ...common, status: "available" as const, info, ...(favicon ? { favicon } : {}) }
@@ -70,6 +72,11 @@ export class WorkspaceManager {
             ...(activeRepositoryId ? { activeRepositoryId } : {}),
             ...(this.persistenceError ? { persistenceError: this.persistenceError } : {}),
         }
+    }
+
+    /** A saved Repository Script, as the main process runs only what Workspace State holds. */
+    script(repositoryId: string, scriptId: string) {
+        return this.stored.repositories.find(repository => repository.id == repositoryId)?.scripts?.find(script => script.id == scriptId)
     }
 
     repositoryOpenDefaultPath() {
@@ -181,9 +188,11 @@ export class WorkspaceManager {
             ...this.requireStored(repository.id),
             ...repository,
             focusedColumnId: repository.focusedColumnId,
-            // The identity is part of each snapshot, so leaving it out clears it.
+            // The identity and scripts are part of each snapshot, so leaving them out clears them.
             label: repository.label,
             icon: repository.icon,
+            scripts: repository.scripts,
+            lastScriptId: repository.lastScriptId,
             open: true,
             anchors: [...new Set(repository.columns.flatMap(column => column.kind == "comparison" ? [] : [column.lastSeenObjectId]))],
         }))

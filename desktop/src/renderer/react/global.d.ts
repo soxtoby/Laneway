@@ -1,4 +1,4 @@
-import type { Appearance, AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryDefaults, EntryProgress, EntryResult, GitSettingsState, RepositoryGraphSettings, RepositoryImageFile, Workspace } from "@laneway/shared"
+import type { Appearance, AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryDefaults, EntryProgress, EntryResult, GitSettingsState, RepositoryGraphSettings, RepositoryImageFile, ScriptRunResult, Workspace } from "@laneway/shared"
 import type { ChangesRequest, ChangesResult, FileDiffRequest, FileDiffResult, FileImageRequest, FileImageResult, FileListView, FileVersionRequest, FileVersionResult, RemoteImageResult } from "@laneway/shared"
 import type { WorktreeActionResult, WorktreePreviewResult, WorktreeRequest } from "@laneway/shared"
 import type { CommitDraft, LocalActionResult, LocalRequest } from "@laneway/shared"
@@ -31,6 +31,8 @@ interface AppState {
     showCommitAges: boolean
     /** The Branch Graph's width, once resized. */
     graphWidth?: number
+    /** Node's name for the operating system, which names its file manager. */
+    platform: string
 }
 
 declare global {
@@ -97,6 +99,11 @@ declare global {
             readIconImage(path: string): Promise<{ bytes: Uint8Array; mime: string } | undefined>
             /** The image files in an open repository's Main Worktree, likely icons first; empty for a missing repository. */
             listRepositoryImages(repositoryId: string): Promise<RepositoryImageFile[]>
+            /**
+             * Runs a saved Repository Script, or opens the folder, in a worktree's directory. A script without a
+             * terminal settles once it exits, and one in a terminal once its window opens.
+             */
+            runScript(repositoryId: string, path: string, scriptId: string): Promise<ScriptRunResult>
             chooseGit(): Promise<GitSettingsState>
             useGitFromPath(): Promise<GitSettingsState>
             resetSettings(): Promise<GitSettingsState>

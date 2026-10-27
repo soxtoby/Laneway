@@ -109,6 +109,7 @@ function registerHandlers() {
         showCommitAges: await repositories.showCommitAges(),
         graphWidth: await repositories.graphWidth(),
         engine: engineStatus,
+        platform: process.platform,
     }))
 
     registerRepositoryHandlers(repositories, workspace)

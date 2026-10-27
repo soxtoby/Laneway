@@ -1,5 +1,6 @@
 import { type ComparisonRef, type DiffLayout } from "./changes"
 import type { RepositoryIdentity } from "./repository-icon"
+import type { RepositoryScripts } from "./repository-script"
 
 export type ObjectFormat = "sha1" | "sha256"
 
@@ -58,7 +59,7 @@ export interface ComparisonWorkspaceColumn {
 
 export type WorkspaceColumn = BranchWorkspaceColumn | VirtualBranchWorkspaceColumn | ComparisonWorkspaceColumn
 
-export interface AvailableOpenRepository extends RepositoryIdentity {
+export interface AvailableOpenRepository extends RepositoryIdentity, RepositoryScripts {
     status: "available"
     id: string
     path: string
@@ -70,7 +71,7 @@ export interface AvailableOpenRepository extends RepositoryIdentity {
     layoutInitialized: boolean
 }
 
-export interface MissingOpenRepository extends RepositoryIdentity {
+export interface MissingOpenRepository extends RepositoryIdentity, RepositoryScripts {
     status: "missing"
     id: string
     path: string

@@ -1,4 +1,4 @@
-import { createReactComponent, IconAdjustmentsHorizontal, IconAlertTriangle, IconArchive, IconArrowBackUp, IconArrowBarToDown, IconArrowBarToUp, IconArrowBarToUpDashed, IconArrowForwardUp, IconArrowRight, IconArrowsDiagonal, IconArrowsDiagonalMinimize2, IconCheck, IconChevronDown, IconChevronsLeft, IconChevronsRight, IconCopy, IconDots, IconExternalLink, IconFileDiff, IconFolder, IconGitBranch, IconGitCompare, IconGitMerge, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconLetterT, IconListTree, IconMarkdown, IconMinus, IconMoodSmile, IconMoon, IconPencil, IconPhoto, IconPhotoOff, IconPhotoPlus, IconPlus, IconSearch, IconSelector, IconSun, IconTag, IconTextWrap, IconX } from "@tabler/icons-react"
+import { createReactComponent, IconAdjustmentsHorizontal, IconAlertTriangle, IconArchive, IconArrowBackUp, IconArrowBarToDown, IconArrowBarToUp, IconArrowBarToUpDashed, IconArrowForwardUp, IconArrowRight, IconArrowsDiagonal, IconArrowsDiagonalMinimize2, IconCheck, IconChevronDown, IconChevronsLeft, IconChevronsRight, IconCopy, IconDots, IconExternalLink, IconFileDiff, IconFolder, IconFolderOpen, IconGitBranch, IconGitCompare, IconGitMerge, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconLetterT, IconListTree, IconMarkdown, IconMinus, IconMoodSmile, IconMoon, IconPencil, IconPhoto, IconPhotoOff, IconPhotoPlus, IconPlus, IconSearch, IconSelector, IconSettings, IconSun, IconTag, IconTextWrap, IconX } from "@tabler/icons-react"
 import { createElement, type ReactNode } from "react"
 import type { CatalogNode } from "./icon-catalog"
 import { collapseAllNode, customIconPaths, forcePublishNode } from "./icon-nodes"
@@ -13,6 +13,7 @@ export let ForcePublishIcon = tablerIcon(createReactComponent("outline", "arrow-
 export let MoreIcon = tablerIcon(IconDots)
 export let OpenColumnIcon = tablerIcon(IconExternalLink)
 export let FolderIcon = tablerIcon(IconFolder)
+export let OpenFolderIcon = tablerIcon(IconFolderOpen)
 export let BranchIcon = tablerIcon(IconGitBranch)
 export let TreeIcon = tablerIcon(IconListTree)
 export let MaximizeIcon = tablerIcon(IconArrowsDiagonal)
@@ -25,6 +26,7 @@ export let AddIcon = tablerIcon(IconPlus)
 export let RedoIcon = tablerIcon(IconArrowForwardUp)
 export let SearchIcon = tablerIcon(IconSearch)
 export let SettingsIcon = tablerIcon(IconAdjustmentsHorizontal)
+export let ConfigureIcon = tablerIcon(IconSettings)
 export let SunIcon = tablerIcon(IconSun)
 export let UndoIcon = tablerIcon(IconArrowBackUp)
 export let CloseIcon = tablerIcon(IconX)

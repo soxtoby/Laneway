@@ -1,4 +1,4 @@
-import type { Appearance, BranchHistoryCommit, FileListView, OpenRepository, RepositoryIdentity, Workspace, WorkspaceColumn } from "@laneway/shared"
+import type { Appearance, BranchHistoryCommit, FileListView, OpenRepository, RepositoryIdentity, RepositoryScripts, Workspace, WorkspaceColumn } from "@laneway/shared"
 import { defaultFileListView } from "@laneway/shared"
 import { type BranchRebase, createBranchRebase } from "./branch-rebase"
 import { type BranchWorkspace, createBranchWorkspace } from "./branch-workspace"
@@ -17,6 +17,7 @@ import { createPublish, type Publish } from "./publish"
 import { createPullLatest, type PullLatest } from "./pull-latest"
 import { createRepositoryEntry, type RepositoryEntry } from "./repository-entry"
 import { createRepositoryIdentityEditor, type RepositoryIdentityEditor } from "./repository-identity"
+import { createRepositoryScripts, type RepositoryScriptsController } from "./repository-scripts"
 import { createReword, type Reword } from "./reword"
 import { createStashes, type Stashes } from "./stashes"
 import { createStore, type Store } from "./store"
@@ -40,6 +41,8 @@ export type AppSnapshot =
         showCommitAges: boolean
         /** The Branch Graph's width, once resized; its default otherwise. */
         graphWidth?: number
+        /** Node's name for the operating system, which names its file manager. */
+        platform: string
         notice?: Notice
     }
 
@@ -49,6 +52,8 @@ export interface AppController extends Store<AppSnapshot> {
     readonly entry: RepositoryEntry
     readonly gitSettings: GitSettings
     readonly identity: RepositoryIdentityEditor
+    /** Each repository's scripts, run from its worktree columns. */
+    readonly scripts: RepositoryScriptsController
     /** The active repository's Workspace Columns. */
     readonly columns: BranchWorkspace
     /** The files and commits each column shows. */
@@ -95,6 +100,8 @@ export interface AppController extends Store<AppSnapshot> {
     locateRepository(id: string): Promise<void>
     /** Shows a repository's new name and icon at once, and saves them once changes pause. */
     customizeRepository(id: string, identity: RepositoryIdentity): void
+    /** Shows a repository's scripts and the one its script buttons repeat at once, and saves them. */
+    setScripts(id: string, scripts: RepositoryScripts): Promise<void>
     /** Takes every open repository's id in the new order. */
     reorderRepositories(ids: string[]): Promise<void>
     /** Replaces a Workspace State that can't be read with an empty one. */
@@ -164,6 +171,13 @@ export function createAppController(api: Api): AppController {
         api,
         workspace: () => ready()?.workspace,
         commit: (id, chosen) => controller.customizeRepository(id, chosen),
+    })
+    let scripts = createRepositoryScripts({
+        api,
+        notify,
+        workspace: () => ready()?.workspace,
+        platform: () => ready()?.platform ?? "",
+        change: (id, chosen) => void controller.setScripts(id, chosen),
     })
 
     let inspection = createInspection({
@@ -378,6 +392,7 @@ export function createAppController(api: Api): AppController {
         entry,
         gitSettings,
         identity,
+        scripts,
         columns,
         inspection,
         branches,
@@ -404,6 +419,7 @@ export function createAppController(api: Api): AppController {
                     fileListView: state.fileListView,
                     showCommitAges: state.showCommitAges,
                     graphWidth: state.graphWidth,
+                    platform: state.platform,
                 })
                 if (state.workspace.persistenceError?.code == "workspace.partial")
                     notify({ code: state.workspace.persistenceError.code, message: state.workspace.persistenceError.message })
@@ -554,6 +570,29 @@ export function createAppController(api: Api): AppController {
             update({ workspace: { ...current.workspace, repositories } })
             clearTimeout(identitySave)
             identitySave = setTimeout(() => void saveWorkspace(), 200)
+        },
+
+        async setScripts(id, chosen) {
+            let current = ready()
+            if (!current)
+                return
+            let repositories = current.workspace.repositories.map(repository => {
+                if (repository.id != id)
+                    return repository
+                let changed = { ...repository, ...chosen }
+                if (!chosen.scripts?.length)
+                    delete changed.scripts
+                if (!chosen.lastScriptId)
+                    delete changed.lastScriptId
+                return changed
+            })
+            let workspace = { ...current.workspace, repositories }
+            update({ workspace })
+            try {
+                update({ workspace: await api.updateWorkspace(workspace) })
+            } catch (error) {
+                notify({ code: "workspace.save.failed", message: errorMessage(error) })
+            }
         },
 
         // The new order shows at once; a dropped repository already appears in its slot while the workspace saves.

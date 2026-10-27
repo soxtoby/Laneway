@@ -1,5 +1,5 @@
-import type { ComparisonRef, DiffLayout, ObjectFormat, RepositoryIcon, Workspace, WorkspaceColumn } from "@laneway/shared"
-import { RepositoryIconSchema, RepositoryLabelSchema } from "@laneway/shared"
+import type { ComparisonRef, DiffLayout, ObjectFormat, RepositoryIcon, RepositoryScript, Workspace, WorkspaceColumn } from "@laneway/shared"
+import { openFolderScriptId, RepositoryIconSchema, RepositoryLabelSchema, RepositoryScriptSchema } from "@laneway/shared"
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, resolve } from "node:path"
@@ -12,6 +12,9 @@ export interface StoredRepository {
     /** The user's display name for the repository; the folder name shows when absent. */
     label?: string
     icon?: RepositoryIcon
+    scripts?: RepositoryScript[]
+    /** The script the repository's worktree columns repeat; see `RepositoryScripts`. */
+    lastScriptId?: string
     anchors: string[]
     open: boolean
     columns: WorkspaceColumn[]
@@ -195,6 +198,14 @@ function parsePresentation(value: unknown, restoring = false) {
     let icon = record.icon === undefined ? undefined : RepositoryIconSchema.safeParse(record.icon)
     if (!restoring && ((label && !label.success) || (icon && !icon.success)))
         return undefined
+    let scripts = parseScripts(record.scripts, restoring)
+    if (scripts === null)
+        return undefined
+    // The script repeated may have been removed since; the button then opens the folder.
+    let lastScriptId = typeof record.lastScriptId == "string"
+            && (record.lastScriptId == openFolderScriptId || scripts?.some(script => script.id == record.lastScriptId))
+        ? record.lastScriptId
+        : undefined
 
     return {
         id: record.id,
@@ -203,7 +214,20 @@ function parsePresentation(value: unknown, restoring = false) {
         layoutInitialized: record.layoutInitialized === true,
         ...(label?.success ? { label: label.data } : {}),
         ...(icon?.success ? { icon: icon.data } : {}),
+        ...(scripts?.length ? { scripts } : {}),
+        ...(lastScriptId ? { lastScriptId } : {}),
     }
+}
+
+/** A repository's scripts, without those that no longer parse on restore; `null` rejects a renderer's invalid list. */
+function parseScripts(value: unknown, restoring: boolean): RepositoryScript[] | undefined | null {
+    if (value === undefined)
+        return undefined
+    if (!Array.isArray(value))
+        return restoring ? undefined : null
+    let scripts = value.map(script => RepositoryScriptSchema.safeParse(script)).filter(script => script.success).map(script => script.data)
+    let unique = scripts.filter((script, index) => scripts.findIndex(other => other.id == script.id) == index)
+    return !restoring && unique.length != value.length ? null : unique
 }
 
 function parseColumn(value: unknown, restoring = false): WorkspaceColumn | undefined {

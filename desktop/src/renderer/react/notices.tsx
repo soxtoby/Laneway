@@ -16,6 +16,7 @@ export function Notices({ controller, notice }: { controller: AppController; not
         let replaced = false
         let key = queue.add({
             title: notice.message,
+            description: notice.output,
             action: notice.action && { label: notice.action.label, onAction: notice.action.run },
         }, {
             timeout: notice.transient ? notice.duration ?? transientDuration : undefined,

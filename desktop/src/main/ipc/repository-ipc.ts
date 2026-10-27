@@ -1,10 +1,11 @@
 import { isLikelyCloneSource } from "@laneway/git"
-import { type AuthorIdentitySettings, type EntryDefaults, type EntryResult, FileListViewSchema, type Workspace } from "@laneway/shared"
+import { type AuthorIdentitySettings, type EntryDefaults, type EntryResult, FileListViewSchema, openFolderScriptId, type ScriptRunResult, type Workspace } from "@laneway/shared"
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron"
 import { EntryQueue } from "../entry-queue"
 import type { OpenRepositories } from "../repositories"
 import { entryError } from "../repositories"
 import { listRepositoryImages, readIconImage } from "../repository-icons"
+import { isDirectory, runScript } from "../scripts"
 import { applyNativeTheme } from "../window"
 import { titleBarOverlay } from "../window-colors"
 import type { WorkspaceManager } from "../workspace-manager"
@@ -14,6 +15,7 @@ export function registerRepositoryHandlers(repositories: OpenRepositories, works
     registerEntryHandlers()
     registerWorkspaceHandlers()
     registerSettingsHandlers()
+    registerScriptHandlers()
 
     function registerEntryHandlers() {
         ipcMain.handle("entry:defaults", (_event, request: { form?: unknown }) => {
@@ -213,6 +215,22 @@ export function registerRepositoryHandlers(repositories: OpenRepositories, works
         ipcMain.handle("settings:open-file", async () => {
             let state = await repositories.gitSettings()
             return shell.openPath(state.path)
+        })
+    }
+
+    function registerScriptHandlers() {
+        ipcMain.handle("script:run", async (_event, request: { repositoryId?: unknown; path?: unknown; scriptId?: unknown }): Promise<ScriptRunResult> => {
+            if (typeof request?.repositoryId != "string" || typeof request.path != "string" || typeof request.scriptId != "string")
+                return { ok: false, message: "The script request is invalid." }
+            if (request.scriptId != openFolderScriptId) {
+                let script = workspace.script(request.repositoryId, request.scriptId)
+                return script ? runScript(script, request.path) : { ok: false, message: "The script is no longer saved." }
+            }
+            // Opening a file would run it, so only a directory opens.
+            if (!await isDirectory(request.path))
+                return { ok: false, message: `${request.path} is no longer a directory.` }
+            let error = await shell.openPath(request.path)
+            return error ? { ok: false, message: error } : { ok: true }
         })
     }
 

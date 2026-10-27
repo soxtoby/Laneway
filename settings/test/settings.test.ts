@@ -78,6 +78,28 @@ describe("Workspace State", () => {
         expect("label" in workspace.repositories[1]).toBe(false)
     })
 
+    test("round-trips repository scripts, dropping a script that no longer parses and a last script that names none", async () => {
+        let path = (await temporarySettingsPath()).replace("settings.json", "workspace.json")
+        let repository = { id: "repository-1", path: "D:\\Source\\project", name: "project", anchors: [], open: true, layoutInitialized: false, columns: [] }
+        let build = { id: "build", name: "Build", command: "bun run build", icon: { kind: "emoji" as const, emoji: "🛠️" } }
+        let serve = { id: "serve", name: "Serve", command: "bun dev", terminal: true }
+        await writeWorkspace({
+            version: 1,
+            repositories: [{ ...repository, scripts: [build, { id: "broken", name: "", command: "x" }, serve], lastScriptId: "serve" }, {
+                ...repository,
+                id: "repository-2",
+                scripts: [build],
+                lastScriptId: "removed",
+            }],
+        }, path)
+
+        let { workspace } = await readWorkspace(path)
+
+        expect(workspace.repositories[0]).toMatchObject({ scripts: [build, serve], lastScriptId: "serve" })
+        expect(workspace.repositories[1].scripts).toEqual([build])
+        expect("lastScriptId" in workspace.repositories[1]).toBe(false)
+    })
+
     test("skips malformed repository records", async () => {
         let path = (await temporarySettingsPath()).replace("settings.json", "workspace.json")
         await mkdir(resolve(path, ".."), { recursive: true })

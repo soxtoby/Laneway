@@ -17,6 +17,7 @@ import { CommitDiffColumn, FileHistoryColumn } from "./file-history"
 import { BranchIcon, CloseIcon, CollapseColumnIcon, CompareIcon, ExpandColumnIcon, FolderIcon, MaximizeIcon, OpenColumnIcon, RestoreIcon, SearchIcon, WarningIcon } from "./icons"
 import type { AuxiliaryView, InspectionSnapshot } from "./inspection"
 import { type Publish, publishBranches } from "./publish"
+import { ScriptButton } from "./script-button"
 import { Button } from "./ui/Button"
 import { Tab, TabList, Tabs } from "./ui/Tabs"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
@@ -316,6 +317,9 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                         </div>
                                     )}
                                 <div className="column-actions" data-controls>
+                                    {column.worktree && !column.worktree.missing && column.kind != "recovery" && (
+                                        <ScriptButton controller={controller} repositoryId={snapshot.repositoryId!} path={column.worktree.path} />
+                                    )}
                                     {column.kind == "branch" && (column.branch.unresolved || files?.conflictsOnly) && (
                                         <TooltipTrigger>
                                             <ToggleButton

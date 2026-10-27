@@ -171,6 +171,8 @@
     grid-template-areas:
         ". check icon label"
         ". . . desc";
+    /* It stops short of the menu's end column, so it keeps the gutter that column gives other items' labels. */
+    padding-inline-end: var(--spacing-3);
     margin-inline-end: 0;
     border-start-end-radius: 0;
     border-end-end-radius: 0;
@@ -587,6 +589,33 @@
     display: flex;
     align-items: center;
     gap: var(--spacing-1);
+}
+
+/* A worktree column's script button: the script's icon runs it, and the narrow chevron beside it lists the rest. */
+.script-split {
+    flex: 0 0 auto;
+    display: flex;
+
+    > .script-run {
+        border-start-end-radius: 0;
+        border-end-end-radius: 0;
+
+        > svg.script-tile {
+            width: 20px;
+            height: 20px;
+        }
+    }
+
+    > .script-more {
+        width: var(--spacing-4);
+        border-start-start-radius: 0;
+        border-end-start-radius: 0;
+
+        > svg {
+            width: var(--spacing-3);
+            height: var(--spacing-3);
+        }
+    }
 }
 
 /* Collapsing runs the header's full height from the column's edge, an easy target. */
@@ -2825,6 +2854,31 @@
     }
 }
 
+/* Script icons stand alone like other glyphs; only letters keep the tile they sit on. */
+.script-tile:not([data-kind="initials"], [data-kind="monogram"]) .tile-frame {
+    display: none;
+}
+
+.script-menu .react-aria-MenuItem > svg.script-tile {
+    width: 20px;
+    height: 20px;
+}
+
+/* A coloured icon takes the highlight's ink, as the menu's other icons do, so an amber one can't vanish into it. */
+.script-menu .react-aria-MenuItem[data-focused] > svg.script-tile [data-tone] {
+    color: inherit;
+}
+
+/* A script's gear shares its row as a split menu item's chevron does, outranking the kit's menu icon rule. */
+.react-aria-MenuItem.split-more.script-configure > svg {
+    margin: 0;
+    color: var(--text-color-placeholder);
+}
+
+.react-aria-MenuItem.script-configure[data-focused] > svg {
+    color: inherit;
+}
+
 .tile-text {
     fill: var(--text-color);
     font-family: var(--font-family);
@@ -2951,6 +3005,28 @@
 .settings-dialog,
 .identity-dialog {
     width: 500px;
+}
+
+/* The script dialog's form spaces its fields as the dialog does; its icon pickers are shorter, under the command. Its
+   rules outrank the kit's form and modal rules, which Bun's development server loads after this stylesheet. */
+.react-aria-Form.script-form {
+    gap: var(--spacing-4);
+
+    .react-aria-TextField {
+        margin: 0;
+    }
+
+    .identity-mode {
+        height: 236px;
+    }
+}
+
+.script-command input {
+    font-family: var(--font-family-mono);
+}
+
+.react-aria-Button.dialog-delete {
+    margin-inline-end: auto;
 }
 
 .identity-header {
@@ -3336,13 +3412,20 @@
 .react-aria-Toast {
     width: 360px;
 
+    /* A failed script's output, as it printed it. */
     [slot="description"] {
         overflow-wrap: anywhere;
+        max-height: 8lh;
+        overflow: auto;
+        font-family: var(--font-family-mono);
+        font-size: var(--font-size-sm);
+        white-space: pre-wrap;
     }
 }
 
-/* Segmented controls with an icon beside each label, such as the Repository Icon type. */
-.segmented-control .segmented-control-item > span {
+/* Segmented controls with an icon beside each label, such as the Repository Icon type. The icon outranks the kit's
+   rule for the label, which Bun's development server loads after this stylesheet. */
+.segmented-control .segmented-control-item > span:has(> svg) {
     height: 100%;
     display: inline-flex;
     align-items: center;

@@ -20,6 +20,10 @@ _Avoid_: App icon, avatar
 The name shown for a repository everywhere in Laneway: a user-chosen label, otherwise the folder name of its Main Worktree. Changing it never renames the folder. Both are edited from the repository's context menu in the rail.
 _Avoid_: Repository name, title
 
+**Repository Script**:
+A one-line command the user saves for a repository, with a name and an icon chosen as a Repository Icon's override is (its name's initials without one), run in a worktree's directory from the script button on that worktree's Workspace Column. It runs through the system shell with no window, reporting only a failure, with the end of its output, or, if chosen, in a terminal window that stays open. The button repeats the repository's last-run script. Its menu lists opening the worktree in the platform's file manager, which every repository has and which can't be changed or removed, then each script with a gear that configures or deletes it, then creating one. Deleting applies at once with Undo. Scripts and the last-run choice persist in Workspace State.
+_Avoid_: Custom command, action, task
+
 **Command Lens**:
 The global keyboard-first search and navigation surface. Selecting a branch locates it in the Branch Graph; the Command Lens never switches a worktree itself.
 _Avoid_: Command palette, branch switcher

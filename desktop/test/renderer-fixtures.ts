@@ -246,6 +246,7 @@ export function fakeLaneway(overrides: Partial<Window["laneway"]> = {}): Window[
         resetWorkspace: async () => ({ repositories: [] }),
         readIconImage: async () => undefined,
         listRepositoryImages: async () => [],
+        runScript: async () => ({ ok: true }),
         chooseGit: async () => appState().settings,
         useGitFromPath: async () => appState().settings,
         resetSettings: async () => appState().settings,
@@ -275,5 +276,6 @@ export function appState() {
         appearance: "light" as const,
         fileListView: { layout: "flat" as const, grouping: "none" as const },
         showCommitAges: true,
+        platform: "win32",
     }
 }

@@ -165,6 +165,33 @@ describe("Workspace manager", () => {
         expect(manager.snapshot().repositories[0].icon).toBeUndefined()
     })
 
+    test("saves repository scripts with the presentation, where running finds them, and rejects an invalid one", async () => {
+        let repositoryPath = await temporaryDirectory("laneway-workspace-scripts-")
+        expect(runGit(repositoryPath, "init", "--quiet").exitCode).toBe(0)
+        let statePath = resolve(await temporaryDirectory("laneway-workspace-state-"), "workspace.json")
+        let settingsPath = resolve(await temporaryDirectory("laneway-workspace-settings-"), "settings.json")
+        let manager = new WorkspaceManager(new OpenRepositories(settingsPath), statePath)
+        await manager.load()
+        let opened = await manager.open(repositoryPath)
+        let repository = opened.repositories[0]
+        let script = { id: "build", name: "Build", command: "bun run build" }
+
+        await manager.update({ ...opened, repositories: [{ ...repository, scripts: [script], lastScriptId: "build" }] })
+
+        expect(manager.snapshot().repositories[0]).toMatchObject({ scripts: [script], lastScriptId: "build" })
+        expect(manager.script(repository.id, "build")).toEqual(script)
+        let restored = await new WorkspaceManager(new OpenRepositories(settingsPath), statePath).load()
+        expect(restored.repositories[0]).toMatchObject({ scripts: [script], lastScriptId: "build" })
+
+        // A script with two lines can't run as one command, so the whole presentation is refused.
+        await expect(manager.update({ ...opened, repositories: [{ ...repository, scripts: [{ ...script, command: "a\nb" }] }] })).rejects.toThrow()
+        expect(manager.script(repository.id, "build")).toEqual(script)
+
+        await manager.update(opened)
+        expect(manager.script(repository.id, "build")).toBeUndefined()
+        expect(manager.snapshot().repositories[0].lastScriptId).toBeUndefined()
+    })
+
     test("infers a repository's favicon only when it is unambiguous", async () => {
         let repositoryPath = await temporaryDirectory("laneway-workspace-favicon-")
         expect(runGit(repositoryPath, "init", "--quiet").exitCode).toBe(0)

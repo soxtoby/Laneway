@@ -2,6 +2,8 @@
 export interface Notice {
     code: string
     message: string
+    /** What a command printed, shown under the message as it printed it. */
+    output?: string
     /** Confirmations close themselves; failures and guidance wait for the user. */
     transient?: boolean
     /** How long a transient notice stays when it needs longer than the default, such as an undo window. */

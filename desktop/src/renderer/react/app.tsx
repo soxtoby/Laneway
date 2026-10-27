@@ -18,6 +18,7 @@ import { EntryDialogs } from "./repository-entry-dialogs"
 import type { IconImageApi } from "./repository-icon-images"
 import { RepositoryIdentityDialog } from "./repository-identity-dialog"
 import { RepositoryPanel } from "./repository-panel"
+import { ScriptDialog } from "./script-dialog"
 import { Starting, StartupFailed, WorkspaceRecovery } from "./startup"
 import { StashesDialog } from "./stashes-dialog"
 import { Button } from "./ui/Button"
@@ -153,6 +154,7 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
             <PullDialog pull={controller.pull} onResolve={(_repositoryId, branch) => columns.open(`branch:refs/heads/${branch}`)} />
             <CommandLensDialog controller={controller} workspace={workspace} />
             <RepositoryIdentityDialog editor={identity} repositories={workspace.repositories} api={api} />
+            <ScriptDialog scripts={controller.scripts} workspace={workspace} />
             <Notices controller={controller} notice={notice} />
         </div>
     )

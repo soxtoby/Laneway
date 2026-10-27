@@ -65,6 +65,7 @@ contextBridge.exposeInMainWorld("laneway", {
     resetWorkspace: () => ipcRenderer.invoke("workspace:reset"),
     readIconImage: (path: string) => ipcRenderer.invoke("icon:read", { path }),
     listRepositoryImages: (repositoryId: string) => ipcRenderer.invoke("icon:list", { repositoryId }),
+    runScript: (repositoryId: string, path: string, scriptId: string) => ipcRenderer.invoke("script:run", { repositoryId, path, scriptId }),
     chooseGit: () => ipcRenderer.invoke("settings:choose-git"),
     useGitFromPath: () => ipcRenderer.invoke("settings:use-path"),
     resetSettings: () => ipcRenderer.invoke("settings:reset"),
