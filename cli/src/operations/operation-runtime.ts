@@ -17,6 +17,7 @@ import { mutateHistoricalEdit, prepareHistoricalEdit } from "../historical-edit/
 import { LocalPreconditionError, mutateLocal, prepareLocal } from "../local-mutations"
 import { executePublish, type PublishProgressReporter } from "../publish"
 import { executePull, preparePull, type PullPreparation, type PullProgressReporter } from "../pull-latest"
+import { recordFetchedUpstreams } from "../pulled-upstreams"
 import { recoveryBackupPath } from "../worktrees/worktree-directory"
 import { mutateWorktree } from "../worktrees/worktree-mutations"
 import { captureRegistration, recreateRegistration, registrationObjects } from "../worktrees/worktree-registration"
@@ -1120,6 +1121,10 @@ export async function executeOperationCommand(
         prepared = await preparePull(repository, command.request, command.graphOptions(repository.descriptor.id), () => cancellation.isCancelled(), progress)
         if (prepared.kind == "no-remotes")
             return { type: "result", command: "pull", status: "no-remotes", message: "Add a remote to pull.", fetches: [], stacks: [] }
+        // Whether or not this pull goes on to update a branch, a later one must know the upstream tip it last pulled.
+        // Losing that would make fetched commits look already pulled, so recording ignores cancellation.
+        let { trackingBefore } = prepared
+        await store.withLock(false, neverCancelled, () => recordFetchedUpstreams(repository, trackingBefore))
         if (prepared.kind == "cancelled") {
             return {
                 type: "result",

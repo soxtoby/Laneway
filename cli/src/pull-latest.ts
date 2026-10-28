@@ -3,6 +3,7 @@ import type { BranchGraphBranchNode, BranchGraphReadOptions, PullFetch, PullRequ
 import { isAncestor, readActiveStack } from "./active-stack"
 import { type ConflictSession, gitHead, openConflictSession, rewriteStack, type StackRewritePlan } from "./conflicts/conflict-operations"
 import type { ChangeRecorder } from "./operations/change-recorder"
+import { forgetPulledUpstream, readPulledUpstreams, readRemoteTips } from "./pulled-upstreams"
 
 type Changes = ChangeRecorder
 export type PullProgressReporter = (message: string, completed: number, total: number) => void
@@ -21,13 +22,14 @@ interface ScopedStack {
 }
 export type PullPreparation =
     | { kind: "no-remotes" }
-    | { kind: "cancelled"; fetches: PullFetch[] }
+    // Remote-tracking tips from before fetching, for recording the upstreams the fetches moved.
+    | { kind: "cancelled"; fetches: PullFetch[]; trackingBefore: Map<string, string> }
     | {
         kind: "prepared"
         fetches: PullFetch[]
+        trackingBefore: Map<string, string>
         stacks: ScopedStack[]
         blocked: PullStackOutcome[]
-        upstreamBefore: Map<string, string | null>
         remotesFor: (stack: ScopedStack) => string[]
     }
 
@@ -98,17 +100,12 @@ export async function preparePull(
     if (!toFetch.length)
         toFetch.push(...remotes.slice(0, 1))
 
-    let upstreamBefore = new Map<string, string | null>()
-    for (let branch of stacks.flatMap(stack => stack.branches)) {
-        if (branch.upstream && !upstreamBefore.has(branch.upstream.ref))
-            upstreamBefore.set(branch.upstream.ref, await repo.resolveRef(branch.upstream.ref))
-    }
-
+    let trackingBefore = await readRemoteTips(repo)
     let total = toFetch.length + stacks.length
     let fetches: PullFetch[] = []
     for (let [index, remote] of toFetch.entries()) {
         if (cancelled())
-            return { kind: "cancelled", fetches }
+            return { kind: "cancelled", fetches, trackingBefore }
         progress(`Fetching ${remote}…`, index, total)
         let result = await repo.run(main(repo), ["fetch", "--prune", "--no-write-fetch-head", "--", remote])
         if (result.exitCode == 0)
@@ -116,7 +113,7 @@ export async function preparePull(
         else
             fetches.push({ remote, status: "failed", message: result.stderr.toString().trim() || `Git could not fetch ${remote}.` })
     }
-    return { kind: "prepared", fetches, stacks, blocked, upstreamBefore, remotesFor }
+    return { kind: "prepared", fetches, trackingBefore, stacks, blocked, remotesFor }
 }
 
 export async function executePull(
@@ -136,6 +133,7 @@ export async function executePull(
     let editing = new Map((await readHistoricalEditSessions(repo)).map(({ session }) => [session.branch, session]))
     let held = heldBranches(prepared.stacks, editing)
     let failedRemotes = new Set(prepared.fetches.filter(fetch => fetch.status == "failed").map(fetch => fetch.remote))
+    let pulled = await readPulledUpstreams(repo)
     let processed = new Map<string, { before: string; current: string }>()
     let outcomes: PullStackOutcome[] = [...prepared.blocked]
 
@@ -165,7 +163,7 @@ export async function executePull(
                 let messages = prepared.fetches.filter(fetch => failed.includes(fetch.remote)).map(fetch => `${fetch.remote}: ${fetch.message}`)
                 throw new PullSkip(`Fetching ${failed.join(", ")} failed, so this stack was not updated. ${messages.join(" ")}`)
             }
-            outcomes.push(await updateStack(repo, session, stack, prepared.upstreamBefore, processed, changes, cancelled, working))
+            outcomes.push(await updateStack(repo, session, stack, pulled, processed, changes, cancelled, working))
         } catch (error) {
             if ([...changes].some(([ref, value]) => !snapshot.has(ref) || snapshot.get(ref) != value))
                 throw error
@@ -213,7 +211,7 @@ async function updateStack(
     repo: RepositoryGit,
     session: ConflictSession,
     stack: ScopedStack,
-    upstreamBefore: Map<string, string | null>,
+    pulled: Map<string, string | null>,
     processed: Map<string, { before: string; current: string }>,
     changes: Changes,
     cancelled: () => boolean,
@@ -236,6 +234,11 @@ async function updateStack(
             return null
         // A vanished upstream leaves nothing to incorporate; the branch still synchronizes onto its Base.
         return repo.resolveRef(branch.upstream.ref)
+    }
+    // Inside the pull's operation, so undoing the pull restores what the branch last pulled.
+    let forget = async (ref: string) => {
+        if (pulled.delete(ref))
+            await forgetPulledUpstream(repo, ref)
     }
 
     // Branches already synchronized by an overlapping stack in this pull form the effective Base.
@@ -291,6 +294,7 @@ async function updateStack(
             if (cancelled())
                 return { id: stack.id, branches: names, status: "cancelled", message: "Cancelled before this stack was updated." }
             await rewriteStack(repo, session, { refs: [base.ref], base: upstream, sources: [[]] }, changes, cancelled)
+            await forget(base.ref)
             baseNew = upstream
             changed = true
         } else {
@@ -310,6 +314,7 @@ async function updateStack(
     interface Planned {
         branch: ScopedBranch
         local: string
+        upstream: string | null
         sources: string[]
         existing: boolean
         incoming: boolean
@@ -319,7 +324,7 @@ async function updateStack(
         let existing = Boolean(stackOf(branch.ref))
         let local = await currentTip(branch)
         let upstream = await upstreamTip(branch)
-        let previousUpstream = branch.upstream ? upstreamBefore.get(branch.upstream.ref) ?? null : null
+        let previousUpstream = pulled.has(branch.ref) ? pulled.get(branch.ref)! : upstream
         // The provisional tip of an Unresolved Stack already carries its retained steps.
         let retainedTip = existing ? (await repo.resolveRef(stackOf(branch.ref)!.temporaryRef)) ?? local : local
         let sources: string[]
@@ -330,7 +335,7 @@ async function updateStack(
             sources = await linear(repo, [upstream], existing ? [...placed, local] : placed)
             incoming = true
         } else if (upstream == previousUpstream) {
-            // Local history was rewritten since the last fetch and its publication is pending; nothing new arrived.
+            // Local history was rewritten since the last pull and its publication is pending; nothing new arrived.
             sources = existing ? [] : await linear(repo, [local], placed)
         } else {
             let rewritten = Boolean(previousUpstream) && !(await isAncestor(repo, previousUpstream!, upstream))
@@ -355,7 +360,7 @@ async function updateStack(
             }
             incoming = true
         }
-        planned.push({ branch, local, sources, existing, incoming })
+        planned.push({ branch, local, upstream, sources, existing, incoming })
         placed.push(local)
         if (upstream)
             placed.push(upstream)
@@ -409,6 +414,9 @@ async function updateStack(
         let result = await rewriteStack(repo, session, plan, changes, cancelled)
         for (let branch of result.branches)
             processed.set(branch.ref, { before: branch.before, current: branch.current })
+        // Each branch with an upstream now holds its tip, or deliberately replaces it; a vanished one keeps its record.
+        for (let item of run.items.filter(item => item.upstream))
+            await forget(item.branch.ref)
         parent = result.branches.at(-1)!.current
         completedRuns++
     }

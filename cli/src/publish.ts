@@ -5,6 +5,7 @@ import { executeConflict } from "./conflicts/conflict-operations"
 import { ChangeRecorder } from "./operations/change-recorder"
 import { OperationRuntimeError } from "./operations/operation-contracts"
 import { latestReceipt, type MutationLock, openReceipt, readReceipt, receiptId, saveReceipt } from "./publish-receipts"
+import { caughtUp, readPulledUpstreams } from "./pulled-upstreams"
 
 export type PublishProgressReporter = (message: string, completed: number, total: number) => void
 export interface PublishContext {
@@ -107,6 +108,8 @@ interface PublishReading {
     remotes: string[]
     graph: BranchGraph
     locals: Map<string, LocalBranch>
+    /** The upstream tips branches last pulled, for branches whose upstream a Laneway fetch has moved since. */
+    pulled: Map<string, string | null>
     /** The remote the request named, if any. */
     remote?: string
     /** Each branch's update, by ref, shared by every stack it belongs to. */
@@ -116,7 +119,8 @@ interface PublishReading {
 async function readPublishing(repo: RepositoryGit, graphOptions: BranchGraphReadOptions, remote?: string): Promise<PublishReading> {
     let remotes = (await gitText(repo, ["remote"])).split("\n").filter(Boolean)
     let graph = await repo.startReadBranchGraph({ ...graphOptions, refreshRemote: false }).result
-    return { repo, remotes, graph, locals: await readLocalBranches(repo, remotes), remote, updates: new Map() }
+    let [locals, pulled] = await Promise.all([readLocalBranches(repo, remotes), readPulledUpstreams(repo)])
+    return { repo, remotes, graph, locals, pulled, remote, updates: new Map() }
 }
 
 async function planStack(reading: PublishReading, branch: string): Promise<{ plan: PublishPlan; refs: string[] }> {
@@ -144,7 +148,7 @@ async function planStack(reading: PublishReading, branch: string): Promise<{ pla
         ? `Choose a remote to publish ${shortName(unplaced)} to.`
         : !(await publishable(repo, refs))
         ? unresolved
-        : undefined
+        : await unpulled(reading, refs)
 
     let updates: PublishUpdate[] = []
     for (let ref of blocked ? [] : refs) {
@@ -183,6 +187,19 @@ async function planUpdate(repo: RepositoryGit, ref: string, local: LocalBranch, 
         ? "update" as const
         : "force" as const
     return kind && { branch: name, remote, ref, expected, target: local.tip, kind, setUpstream: !sameNamed }
+}
+
+// A fetch that moved an upstream the branch hasn't pulled since brought commits the branch lacks, and a lease taken from
+// that fetch would let the push discard them.
+async function unpulled({ repo, locals, pulled }: PublishReading, refs: string[]) {
+    for (let ref of refs) {
+        let upstream = locals.get(ref)?.upstream
+        if (upstream?.remoteRef != ref || !pulled.has(ref))
+            continue
+        if (!(await caughtUp(repo, locals.get(ref)!.tip, await repo.resolveRef(upstream.tracking), pulled.get(ref)!)))
+            return `${shortName(upstream.tracking)} changed since the last pull. Pull latest, then publish again.`
+    }
+    return undefined
 }
 
 async function publishable(repo: RepositoryGit, refs: string[]) {

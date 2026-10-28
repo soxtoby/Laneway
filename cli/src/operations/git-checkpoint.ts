@@ -4,6 +4,7 @@ import { createHash } from "node:crypto"
 import { lstat, mkdir, readFile, readlink, rm, writeFile } from "node:fs/promises"
 import { dirname, join, relative, resolve, sep } from "node:path"
 import { z } from "zod"
+import { pulledUpstreamKey } from "../pulled-upstreams"
 import { removeLinkedWorktree } from "../worktrees/worktree-directory"
 import { copyObjects, safePath, saveWorkingChanges } from "../worktrees/worktree-registration"
 import { retainRecoveryObjects } from "./recovery-objects"
@@ -180,12 +181,12 @@ async function restoreCheckpointState(repo: RepositoryGit, source: GitCheckpoint
     let configKeys = new Set([...source.branchConfig, ...target.branchConfig].map(([key]) => key))
     for (let key of configKeys) {
         let old = source.branchConfig.filter(([k]) => k == key), next = target.branchConfig.filter(([k]) => k == key)
-        // Publish records upstreams outside Operation History. A surviving branch keeps its current upstream
-        // unless the reversed operation changed it, or, without that record, unless the target had one.
+        // Upstream configuration is recorded outside Operation History. A surviving branch keeps its current upstream
+        // configuration unless the reversed operation changed it, or, without that record, unless the target had it.
         let branch = upstreamBranch(key)
         let unchanged = left ? JSON.stringify(left.branchConfig.filter(([k]) => k == key)) == JSON.stringify(next) : !next.length
-        let published = branch != undefined && unchanged && Boolean(target.refs[`refs/heads/${branch}`])
-        if (JSON.stringify(old) != JSON.stringify(next) && !published) {
+        let kept = branch != undefined && unchanged && Boolean(target.refs[`refs/heads/${branch}`])
+        if (JSON.stringify(old) != JSON.stringify(next) && !kept) {
             await repo.run(main, ["config", "--unset-all", key])
             for (let [, value] of next)
                 await repo.command(main, ["config", "--add", key, value])
@@ -339,7 +340,7 @@ export function checkpointIdentity(checkpoint: GitCheckpoint) {
     return JSON.stringify({
         ...checkpoint,
         refs: Object.entries(checkpoint.refs).sort(),
-        // Publish records upstreams outside Operation History, so they never make an operation look externally changed.
+        // Upstream configuration is recorded outside Operation History, so it never makes an operation look externally changed.
         branchConfig: checkpoint.branchConfig.filter(([key]) => upstreamBranch(key) == undefined).toSorted(([a], [b]) => a.localeCompare(b)),
         worktrees: checkpoint.worktrees.map(w => ({
             ...w,
@@ -351,8 +352,13 @@ export function checkpointIdentity(checkpoint: GitCheckpoint) {
     })
 }
 
+/**
+ * The branch whose upstream configuration this key is. Publish records upstreams, and fetches the upstream tips branches
+ * last pulled, outside Operation History.
+ */
 export function upstreamBranch(key: string) {
-    return /^branch\.(.+)\.(?:remote|merge)$/.exec(key)?.[1]
+    let [, branch, variable] = /^branch\.(.+)\.([^.]+)$/.exec(key) ?? []
+    return variable == "remote" || variable == "merge" || pulledUpstreamKey(key) ? branch : undefined
 }
 
 export async function workingFingerprint(repo: RepositoryGit, w: Pick<Worktree, "path" | "scope">, unmerged: Buffer = Buffer.alloc(0)) {

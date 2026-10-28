@@ -1,4 +1,4 @@
-import { type ConflictResult, ExitCode, type LocalResult, type PublishRequest, type PublishResult } from "@laneway/shared"
+import { type ConflictResult, ExitCode, type LocalResult, type PublishRequest, type PublishResult, type PullResult } from "@laneway/shared"
 import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -283,6 +283,29 @@ test("a stale lease aborts the whole publish and points to Pull latest", async (
     expect(tip(origin, "two")).toBe(before)
 }, 120_000)
 
+test("a branch whose upstream Laneway fetched without pulling can't publish over the fetched commits until it pulls", async () => {
+    let { origin, other, local } = await fixture()
+    await advance(local, "one")
+    git(other, "switch", "-qc", "one", "origin/one")
+    await commit(other, "colleague.txt", "colleague\n", "colleague on one")
+    git(other, "push", "-q", "origin", "one")
+    let colleague = tip(origin, "one")
+    // With no open stacks, a pull only fetches.
+    await pull(local, [])
+
+    let blocked = await publish(local, { action: "publish", branch: "refs/heads/one" })
+
+    expect(blocked.status).toBe("blocked")
+    expect(blocked.message).toBe("origin/one changed since the last pull. Pull latest, then publish again.")
+    expect(tip(origin, "one")).toBe(colleague)
+
+    await pull(local, ["refs/heads/one"])
+    let published = await publish(local, { action: "publish", branch: "refs/heads/one" })
+
+    expect(published.status).toBe("published")
+    expect(git(local, "merge-base", "--is-ancestor", colleague!, "one")).toBe("")
+}, 120_000)
+
 test("a failing pre-push hook publishes nothing, and Resume completes the publish afterwards", async () => {
     let { origin, local } = await fixture()
     await writeHook(join(local, ".git", "hooks", "pre-push"), 'echo "lint failed" >&2\nexit 1')
@@ -552,6 +575,15 @@ async function publish(path: string, request: PublishRequest, cancellation?: Can
         path,
         cancellation,
     ) as PublishResult
+}
+
+async function pull(path: string, branches: string[]) {
+    return await executeOperationCommand({
+        command: "pull",
+        request: { branches },
+        noWait: false,
+        graphOptions: () => ({ authorIdentities: { primary: "publish@example.invalid", secondary: [] }, remotePatterns: [] }),
+    }, path) as PullResult
 }
 
 async function history(path: string) {

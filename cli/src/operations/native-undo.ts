@@ -73,7 +73,7 @@ export async function validateNativeUndo(repo: RepositoryGit, undo: NativeUndo, 
     }
     if (undo.index && await nativeIndexEntries(repo, undo.cwd) != undo.index[side].entries)
         throw changed("index-changed", "The index changed outside Laneway.")
-    // Publish records upstreams outside Operation History, so they never block undo; undo still restores the
+    // Upstream configuration is recorded outside Operation History, so it never blocks undo; undo still restores the
     // upstream configuration the Git command changed.
     let config = undo.config.filter(entry => upstreamBranch(entry.key) == undefined)
     if (config.length) {

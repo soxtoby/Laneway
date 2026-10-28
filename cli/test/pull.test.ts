@@ -113,6 +113,31 @@ test("restacks branches left behind a parent or Base that moved before the pull,
     expect(git(local, "merge-base", "--is-ancestor", newMain, "one")).toBe("")
 }, 120_000)
 
+test("incorporates upstream commits an earlier fetch brought but no pull integrated, including after undoing the pull that did", async () => {
+    let { other, local } = await fixture()
+    git(other, "switch", "-qc", "one", "origin/one")
+    await commit(other, "shared.txt", "from colleague\n", "colleague on one")
+    git(other, "push", "-q", "origin", "one")
+    git(local, "switch", "-q", "one")
+    let mine = await commit(local, "mine.txt", "mine\n", "mine on one")
+    git(local, "switch", "-q", "main")
+    // With no open stacks, a pull only fetches.
+    await pull(local, [])
+    let result = await pull(local, ["refs/heads/one"])
+
+    expect(result.stacks[0]).toMatchObject({ status: "updated" })
+    expect(git(local, "log", "--format=%s", "main..one").split("\n")).toEqual(["mine on one", "colleague on one", "one"])
+
+    await transition(local, "undo")
+
+    expect(git(local, "rev-parse", "one")).toBe(mine)
+
+    let again = await pull(local, ["refs/heads/one"])
+
+    expect(again.stacks[0]).toMatchObject({ status: "updated" })
+    expect(git(local, "log", "--format=%s", "main..one").split("\n")).toEqual(["mine on one", "colleague on one", "one"])
+}, 120_000)
+
 test("defers commit conflicts as an Unresolved Stack, skips a diverged Base, and updates the Unresolved Stack on a later pull", async () => {
     let { other, local } = await fixture()
     git(other, "switch", "-q", "main")
