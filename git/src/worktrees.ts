@@ -1,8 +1,8 @@
 import { type RegisteredWorktree, type TrackingBranch, trackingBranchName, type WorktreePreview, type WorktreeRequest } from "@laneway/shared"
 import { createHash } from "node:crypto"
-import { lstat, readdir, readFile, readlink } from "node:fs/promises"
+import { copyFile, lstat, readdir, readFile, readlink, stat, utimes } from "node:fs/promises"
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
-import { readConflictState } from "./conflicts"
+import { readConflictState, withConflictScratch } from "./conflicts"
 import { GitError, type RepositoryGit } from "./index"
 
 export async function previewWorktree(repository: RepositoryGit, request: WorktreeRequest): Promise<WorktreePreview> {
@@ -271,4 +271,32 @@ export async function hasUniqueCommits(repository: RepositoryGit, worktree: Regi
 
     let output = await repository.command(repository.descriptor.mainWorktree, ["rev-list", "--max-count=1", worktree.head, "--not", "--branches", "--tags"])
     return output.length > 0
+}
+
+/**
+ * The tree of a worktree's files, including non-ignored untracked ones, laid over `base`. The temporary index starts as a
+ * copy of the worktree's own, so Git reuses its cached file stats instead of rehashing every file.
+ */
+export async function workingFilesTree(repository: RepositoryGit, path: string, base: string) {
+    let index = resolve(path, (await repository.command(path, ["rev-parse", "--git-path", "index"])).toString().trim())
+    return withConflictScratch(async scratch => {
+        let env = { GIT_INDEX_FILE: join(scratch, "index") }
+        await copyIndex(index, env.GIT_INDEX_FILE)
+        // Resetting keeps the cached stats of entries whose content matches the base.
+        await repository.command(path, ["read-tree", "--reset", base], undefined, env)
+        await repository.command(path, ["add", "-A"], undefined, env)
+        return (await repository.command(path, ["write-tree"], undefined, env)).toString().trim()
+    })
+}
+
+// Git rechecks the content of entries no older than their index, so the copy must not look newer than the original.
+async function copyIndex(index: string, copy: string) {
+    try {
+        let { atime, mtime } = await stat(index)
+        await copyFile(index, copy)
+        await utimes(copy, atime, mtime)
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code != "ENOENT")
+            throw error
+    }
 }

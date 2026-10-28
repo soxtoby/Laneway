@@ -1,6 +1,5 @@
-import { blob, gitText, isText, replaceTreeFiles, type RepositoryGit, treeEntries, withConflictScratch } from "@laneway/git"
+import { blob, gitText, isText, replaceTreeFiles, type RepositoryGit, treeEntries, workingFilesTree } from "@laneway/git"
 import type { CompositionRequest, DiffLine } from "@laneway/shared"
-import { join } from "node:path"
 
 export async function selectionTrees(repo: RepositoryGit, request: CompositionRequest) {
     let source = request.source
@@ -90,12 +89,7 @@ export async function workingTree(repo: RepositoryGit, path: string) {
     if (!dirty)
         return index.toString().trim()
 
-    return withConflictScratch(async scratch => {
-        let env = { GIT_INDEX_FILE: join(scratch, "index") }
-        await repo.command(path, ["read-tree", index.toString().trim()], undefined, env)
-        await repo.command(path, ["add", "-A"], undefined, env)
-        return (await repo.command(path, ["write-tree"], undefined, env)).toString().trim()
-    })
+    return workingFilesTree(repo, path, index.toString().trim())
 }
 
 // Apply only the explicitly selected +/- records; never infer their paired line.

@@ -1,6 +1,4 @@
-import type { RepositoryGit } from "@laneway/git"
-import { mkdir, rm } from "node:fs/promises"
-import { dirname, join } from "node:path"
+import { type RepositoryGit, workingFilesTree } from "@laneway/git"
 import type { Change, Registration } from "./operation-record"
 
 export type Trees = { index: string; files: string }
@@ -48,15 +46,5 @@ export class ChangeRecorder extends Map<string, string | null> {
 /** The worktree's index as a tree, and its files including non-ignored untracked ones as another. */
 export async function worktreeTrees(repo: RepositoryGit, path: string): Promise<Trees> {
     let index = (await repo.command(path, ["write-tree"])).toString().trim()
-    let scratch = join(repo.descriptor.commonDirectory, "laneway", `trees-index-${crypto.randomUUID()}`)
-    let env = { GIT_INDEX_FILE: scratch }
-    await mkdir(dirname(scratch), { recursive: true })
-    try {
-        await repo.command(path, ["read-tree", index], undefined, env)
-        await repo.command(path, ["add", "-A"], undefined, env)
-        let files = (await repo.command(path, ["write-tree"], undefined, env)).toString().trim()
-        return { index, files }
-    } finally {
-        await rm(scratch, { force: true })
-    }
+    return { index, files: await workingFilesTree(repo, path, index) }
 }

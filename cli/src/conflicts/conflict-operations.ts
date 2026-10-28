@@ -1,7 +1,7 @@
-import { blob, candidateReady, conflictHunks, conflictStateRef, gitText, hasConflictMarkers, isText, normalize, readConflictState, readRegisteredWorktrees, readStoredHistoricalEdits, replaceTreeFiles, replayTree, type RepositoryGit, rewriteCommit, storeConflictState, temporaryBranchPrefix, treeEntries, withConflictScratch } from "@laneway/git"
+import { blob, candidateReady, conflictHunks, conflictStateRef, gitText, hasConflictMarkers, isText, normalize, readConflictState, readRegisteredWorktrees, readStoredHistoricalEdits, replaceTreeFiles, replayTree, type RepositoryGit, rewriteCommit, storeConflictState, temporaryBranchPrefix, treeEntries, workingFilesTree } from "@laneway/git"
 import { type ConflictRequest, type ConflictState, type ConflictSubject, type UnresolvedStack } from "@laneway/shared"
 import { lstat, readFile, realpath } from "node:fs/promises"
-import { dirname, isAbsolute, join, relative, resolve } from "node:path"
+import { dirname, isAbsolute, relative, resolve } from "node:path"
 import { followAcceptedRewrites } from "../historical-edit/accepted-rewrites"
 import type { ChangeRecorder } from "../operations/change-recorder"
 import { candidateRef, checkedCandidate, readCandidate, saveCandidate } from "./conflict-candidates"
@@ -125,7 +125,7 @@ export async function executeConflict(repo: RepositoryGit, request: ConflictRequ
             await requireWorktree(repo, working.path)
             if (await gitHead(repo, working.path) != working.head)
                 throw new Error("The worktree moved. Resume the Working Changes Conflict on its original base.")
-            let current = await workingTree(repo, working.path)
+            let current = await workingFilesTree(repo, working.path, "HEAD")
             let target = request.action == "accept"
                 ? await replaceTreeFiles(repo, subject.tree, candidate.files)
                 : working.beforeTree ?? await gitText(repo, ["rev-parse", `${working.head}^{tree}`])
@@ -513,13 +513,13 @@ async function publishProvisional(
         let target = unresolved ? tip : (boundary?.current ?? tip)
         let oldHead = await gitHead(repo, holder.path)
         let dirty = Boolean((await repo.command(holder.path, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])).length)
-        let current = dirty ? await workingTree(repo, holder.path) : await gitText(repo, ["rev-parse", `${oldHead}^{tree}`])
+        let current = dirty ? await workingFilesTree(repo, holder.path, "HEAD") : await gitText(repo, ["rev-parse", `${oldHead}^{tree}`])
         let merged = dirty
             ? await replayTree(repo, oldHead, target, current, crypto.randomUUID())
             : { tree: await gitText(repo, ["rev-parse", `${target}^{tree}`]) }
         let index = (await repo.command(holder.path, ["write-tree"])).toString().trim()
         let staged = dirty ? await replayTree(repo, oldHead, target, index, crypto.randomUUID()) : merged
-        if (await gitHead(repo, holder.path) != oldHead || await workingTree(repo, holder.path) != current)
+        if (await gitHead(repo, holder.path) != oldHead || await workingFilesTree(repo, holder.path, "HEAD") != current)
             throw new Error("Working Changes moved while preparing resolution. Refresh and retry.")
         working.set(holder.path, {
             ...merged,
@@ -597,7 +597,7 @@ export async function applyStashConflict(repo: RepositoryGit, path: string, stas
     let head = await gitHead(repo, path)
     let index = (await repo.command(path, ["write-tree"])).toString().trim()
     // Returning from Historical Edit restores its changes over the original ones, which Keep stashed must leave in place.
-    let current = await workingTree(repo, path)
+    let current = await workingFilesTree(repo, path, "HEAD")
     let dirty = current != index || index != await gitText(repo, ["rev-parse", `${head}^{tree}`])
     let stashTree = await gitText(repo, ["rev-parse", `${stash}^{tree}`])
     // Include the stash's untracked parent in the same merge so collisions are deferred too.
@@ -630,14 +630,6 @@ export async function applyStashConflict(repo: RepositoryGit, path: string, stas
 }
 export async function gitHead(repo: RepositoryGit, path: string) {
     return (await repo.command(path, ["rev-parse", "HEAD"])).toString().trim()
-}
-async function workingTree(repo: RepositoryGit, path: string) {
-    return withConflictScratch(async scratch => {
-        let env = { GIT_INDEX_FILE: join(scratch, "index") }
-        await repo.command(path, ["read-tree", "HEAD"], undefined, env)
-        await repo.command(path, ["add", "-A"], undefined, env)
-        return (await repo.command(path, ["write-tree"], undefined, env)).toString().trim()
-    })
 }
 export async function dropStash(repo: RepositoryGit, oid: string, changes: Changes) {
     let list = (await gitText(repo, ["stash", "list", "--format=%H"])).split("\n")
