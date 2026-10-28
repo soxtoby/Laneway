@@ -361,7 +361,17 @@ async function updateStack(
             placed.push(upstream)
     }
 
-    if (!changed && baseOld == baseNew && planned.every(item => !item.incoming)) {
+    // Replay changes nothing only when each branch already sits on its parent's tip, however long ago the Base moved.
+    let current = !changed && planned.every(item => !item.incoming)
+    let parentTip = baseNew
+    for (let item of planned) {
+        let unresolved = stackOf(item.branch.ref)
+        current &&= unresolved
+            ? unresolved.branches[0]!.ref != item.branch.ref || unresolved.base == parentTip
+            : await isAncestor(repo, parentTip, item.local)
+        parentTip = unresolved?.branches.find(branch => branch.ref == item.branch.ref)!.current ?? item.local
+    }
+    if (current) {
         for (let item of planned)
             processed.set(item.branch.ref, { before: item.local, current: item.local })
         return { id: stack.id, branches: names, base: baseOutcome, status: "current", message: "Already current." }

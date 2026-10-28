@@ -91,6 +91,28 @@ test("fast-forwards a stack consisting only of the primary branch", async () => 
     expect(again.stacks[0]).toMatchObject({ branches: ["main"], status: "current" })
 }, 120_000)
 
+test("restacks branches left behind a parent or Base that moved before the pull, including a remote-only Base", async () => {
+    let { other, local } = await fixture()
+    // A new commit on one leaves two behind its parent while the Base stays put.
+    git(local, "switch", "-q", "one")
+    let advanced = await commit(local, "more.txt", "more\n", "more on one")
+    let result = await pull(local, ["refs/heads/two"])
+
+    expect(result.stacks[0]).toMatchObject({ branches: ["main", "one", "two"], status: "updated" })
+    expect(git(local, "merge-base", "--is-ancestor", advanced, "two")).toBe("")
+    // Without a local main, the Base is origin/main, already fetched by the time the pull starts.
+
+    git(local, "branch", "-qD", "main")
+    git(other, "switch", "-q", "main")
+    let newMain = await commit(other, "base.txt", "base updated\n", "upstream main")
+    git(other, "push", "-q", "origin", "main")
+    git(local, "fetch", "-q", "origin")
+    let remoteBase = await pull(local, ["refs/heads/two"])
+
+    expect(remoteBase.stacks[0]).toMatchObject({ branches: ["origin/main", "one", "two"], status: "updated" })
+    expect(git(local, "merge-base", "--is-ancestor", newMain, "one")).toBe("")
+}, 120_000)
+
 test("defers commit conflicts as an Unresolved Stack, skips a diverged Base, and updates the Unresolved Stack on a later pull", async () => {
     let { other, local } = await fixture()
     git(other, "switch", "-q", "main")
