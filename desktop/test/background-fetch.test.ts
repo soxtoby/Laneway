@@ -68,6 +68,35 @@ test("keeps a failed fetch's reason until a fetch succeeds, ignoring fetches Pul
     expect(failures).toEqual(["origin: terminal prompts disabled", "origin: terminal prompts disabled", "The engine stopped.", undefined])
 })
 
+test("fetches now however recently it fetched, one fetch at a time, and keeps when the last good fetch finished", async () => {
+    let { environment, advance } = fakeEnvironment()
+    let answers: Array<(result: FetchActionResult) => void> = []
+    let fetching = createBackgroundFetch({
+        api: { fetchLatest: () => new Promise(resolve => answers.push(resolve)) },
+        active: () => ({ repositoryId: "repo", branches: [] }),
+        environment,
+    })
+
+    let first = fetching.refresh()
+    await fetching.fetchNow()
+
+    expect(answers).toHaveLength(1)
+    expect(fetching.snapshot().running.repo).toBe(true)
+
+    await advance(10_000)
+    answers[0]!(fetched())
+    await first
+
+    expect(fetching.snapshot()).toMatchObject({ running: { repo: false }, fetched: { repo: 10_000 } })
+
+    let second = fetching.fetchNow()
+    await advance(10_000)
+    answers[1]!(fetched([{ remote: "origin", status: "failed", message: "offline" }]))
+    await second
+
+    expect(fetching.snapshot()).toMatchObject({ fetched: { repo: 10_000 }, failures: { repo: "origin: offline" } })
+})
+
 test("waits for the active repository's Branch Graph before fetching", async () => {
     let { environment } = fakeEnvironment()
     let requests = 0

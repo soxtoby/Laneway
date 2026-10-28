@@ -100,6 +100,7 @@ export function ColumnBody({ controller, repositoryId, graph, column, inspected,
                         compare={(from, to) => controller.columns.openComparison(column.id, from, to)}
                         conflicts={conflicts}
                         publish={controller.publish}
+                        pull={controller.pull}
                         busy={busy}
                         repositoryId={repositoryId}
                     />

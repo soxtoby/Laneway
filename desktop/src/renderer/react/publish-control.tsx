@@ -30,7 +30,7 @@ let statusLabels: Record<PublishUpdateStatus, string> = {
 
 // What a publish that stopped short left as it was; its summary gives the way forward.
 let notes = {
-    stale: "Local branches are unchanged. Laneway doesn't fetch or retry on its own: Pull latest brings in what changed, then publish again.",
+    stale: "Local branches are unchanged. Laneway doesn't retry on its own: Pull latest brings what changed into this stack, then publish again.",
     partial: "Local branches are unchanged, and what was published stays on the remote.",
     failed: "Local branches and the remote are unchanged.",
 }
@@ -178,7 +178,7 @@ export function PublishConfirmation({ publish }: { publish: Publish }) {
  */
 export function PublishDialog({ publish, repositoryId }: { publish: Publish; repositoryId?: string }) {
     let { outcomes } = useSnapshot(publish)
-    // Only the active repository's outcome shows, so Pull latest takes its open stacks; another repository's waits.
+    // Only the active repository's outcome shows, so Pull latest carries its open stacks; another repository's waits.
     let shown = repositoryId == undefined ? undefined : outcomes[repositoryId]
     let open = shown && repositoryId != undefined ? { repositoryId, ...shown } : undefined
     // The closing dialog keeps its content while it animates away.

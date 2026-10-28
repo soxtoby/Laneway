@@ -325,12 +325,18 @@ export function createAppController(api: Api): AppController {
 
     let lens = createCommandLens({ api, workspace: () => ready()?.workspace })
 
-    // A pull starts from the header, so it pulls the active repository's open stacks.
+    // The active repository's open columns' local branches; a column showing a remote branch has no stack to update.
+    let openBranches = () =>
+        columns.snapshot().columns.flatMap(column =>
+            column.kind == "branch" && column.branch.preferredRef.startsWith("refs/heads/") ? [column.branch.preferredRef] : []
+        )
+
+    // A pull starts from a column of the active repository, carrying the open stacks that overlap its stack.
     let pull = createPullLatest({
         api,
         notify,
         mutating,
-        scope: () => columns.snapshot().columns.flatMap(column => column.kind == "branch" ? [column.branch.preferredRef] : []),
+        open: openBranches,
         graph: () => columns.snapshot().graph,
         completed: async () => {
             await columns.refresh(false)
@@ -341,10 +347,10 @@ export function createAppController(api: Api): AppController {
     let fetching = createBackgroundFetch({
         api,
         active() {
-            let { repositoryId, graph, columns: open } = columns.snapshot()
+            let { repositoryId, graph } = columns.snapshot()
             if (!repositoryId || !graph?.availableRemotes.length)
                 return undefined
-            return { repositoryId, branches: open.flatMap(column => column.kind == "branch" ? [column.branch.preferredRef] : []), remote: graph.selectedRemote }
+            return { repositoryId, branches: openBranches(), remote: graph.selectedRemote }
         },
     })
     // Its open columns are known once a repository's Branch Graph loads, so that is when it first fetches.
@@ -363,7 +369,7 @@ export function createAppController(api: Api): AppController {
                 notify(notice)
         },
         remote: () => columns.snapshot().graph?.selectedRemote,
-        pull: repositoryId => void pull.start(repositoryId),
+        pull: (repositoryId, branch) => void pull.start(repositoryId, branch),
         completed: () => columns.refresh(false),
     })
 

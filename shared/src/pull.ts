@@ -4,8 +4,11 @@ import { OperationSummarySchema } from "./operation-history"
 let oid = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)
 
 export let PullRequestSchema = z.object({
-    // Open Workspace Column branches whose Active Stacks are in scope, frozen at activation.
+    // Branches whose Active Stacks are in scope, frozen at activation: a Workspace Column's, or those named.
     branches: z.array(z.string().regex(/^refs\/heads\/.+/)),
+    // Every open Workspace Column's branch. An open stack sharing a branch above its Base with one in scope joins it,
+    // so no open branch is left built on history the pull replaced.
+    open: z.array(z.string().regex(/^refs\/heads\/.+/)).optional(),
     remote: z.string().min(1).optional(),
 })
 export type PullRequest = z.infer<typeof PullRequestSchema>

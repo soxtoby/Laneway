@@ -44,7 +44,7 @@ app.on("browser-window-created", (_event, window) => {
                     body: background('body'),
                     header: background('header'),
                     panel: background('.repository-panel'),
-                    // Disabled accent buttons, such as Pull latest without a remote, keep the kit's grey.
+                    // Disabled accent buttons keep the kit's grey.
                     accent: background('.button-base[data-variant="accent"]:not([data-disabled])'),
                 });
 

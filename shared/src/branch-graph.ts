@@ -59,6 +59,8 @@ export interface BranchGraphBranchNode {
     ahead: number
     behind: number
     base: BranchGraphBase
+    /** Its known Base's tip is outside its history: the Base moved on after it forked, so Pull latest would restack it. */
+    behindBase: boolean
     involvement: "involved" | "uninvolved" | "unknown"
     checkedOut: BranchGraphWorktree[]
     lastUniqueCommit?: BranchGraphCommitSummary

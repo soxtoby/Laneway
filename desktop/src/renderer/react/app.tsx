@@ -1,17 +1,18 @@
 import { type ReactNode, useEffect } from "react"
 import type { AppController, AppSnapshot } from "./app-controller"
+import type { BackgroundFetch } from "./background-fetch"
 import { BranchGraphPanel, defaultGraphWidth } from "./branch-graph"
 import { CommandLensDialog } from "./command-lens-dialog"
 import { CommitAgesShown } from "./commit-age"
 import { ContextMenuHost } from "./context-menu"
-import { Hint } from "./controls"
 import { GitSettingsDialog } from "./git-settings-dialog"
 import { ReturnDialog } from "./historical-edit-banner"
-import { ArchiveIcon, BrandMark, GraphIcon, MoonIcon, PullIcon, RedoIcon, SearchIcon, SettingsIcon, SunIcon, UndoIcon } from "./icons"
+import { ArchiveIcon, BrandMark, GraphIcon, MoonIcon, RedoIcon, SearchIcon, SettingsIcon, SunIcon, UndoIcon } from "./icons"
 import { LocalBranchDialog } from "./local-branch-dialog"
 import { MissingRepository } from "./missing-repository"
 import { Notices } from "./notices"
 import { PublishConfirmation, PublishDialog } from "./publish-control"
+import { FetchButton } from "./pull-control"
 import { PullDialog } from "./pull-dialog"
 import { RebaseDialog } from "./rebase-dialog"
 import { EntryDialogs } from "./repository-entry-dialogs"
@@ -49,8 +50,6 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
     let entering = useSnapshot(entry).operation != "idle"
     // Repository operations wait for any other that is under way.
     let { busy: columnsBusy, graphView, graph } = useSnapshot(columns)
-    let pulling = useSnapshot(controller.pull).running
-    let fetchFailures = useSnapshot(controller.fetching).failures
     let worktreesBusy = useSnapshot(worktrees).busy
     let branchesBusy = useSnapshot(branches).busy
     let operating = columnsBusy || worktreesBusy || branchesBusy
@@ -67,19 +66,7 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
                 actions={active?.status == "available"
                     ? {
                         busy: operating,
-                        pull: {
-                            available: graph != undefined && graph.availableRemotes.length > 0,
-                            hint: !graph
-                                ? "Loading the Branch Graph…"
-                                : graph.availableRemotes.length == 0
-                                ? "Add a remote to pull."
-                                : fetchFailures[active.id]
-                                ? `Fetch and synchronize open stacks. Fetching in the background failed: ${fetchFailures[active.id]}`
-                                : "Fetch and synchronize open stacks",
-                            running: pulling[active.id],
-                            start: () => void controller.pull.start(active.id),
-                            cancel: () => void controller.pull.cancel(active.id),
-                        },
+                        fetch: { fetching: controller.fetching, repositoryId: active.id, remotes: graph && graph.availableRemotes.length > 0 },
                         stashes: () => void stashes.open(active.id, active.info.mainWorktree),
                         undo: () => void worktrees.transition(active.id, "undo"),
                         redo: () => void worktrees.transition(active.id, "redo"),
@@ -169,20 +156,11 @@ interface HeaderProps {
     graph?: { shown: boolean; toggle(): void }
     tabs: ReactNode
     /** The open repository's operations; absent when none is open. */
-    actions?: { busy: boolean; pull: PullControl; stashes(): void; undo(): void; redo(): void }
+    actions?: { busy: boolean; fetch: { fetching: BackgroundFetch; repositoryId: string; remotes?: boolean }; stashes(): void; undo(): void; redo(): void }
     appearance: "light" | "dark"
     busy: boolean
     onToggleAppearance(): void
     onOpenSettings(): void
-}
-
-/** Pull latest in the header: unavailable without a remote, and while it runs, its progress and Cancel. */
-interface PullControl {
-    available: boolean
-    hint: string
-    running?: { message: string }
-    start(): void
-    cancel(): void
 }
 
 function Header({ onOpenLens, graph, tabs, actions, appearance, busy, onToggleAppearance, onOpenSettings }: HeaderProps) {
@@ -213,24 +191,7 @@ function Header({ onOpenLens, graph, tabs, actions, appearance, busy, onToggleAp
             </HeaderButton>
             {actions && (
                 <>
-                    {actions.pull.running
-                        ? (
-                            <span className="pull-progress" role="status">
-                                <span className="pull-progress-message">{actions.pull.running.message}</span>
-                                <Button variant="secondary" aria-label="Cancel pull" onPress={actions.pull.cancel}>Cancel</Button>
-                            </span>
-                        )
-                        : (
-                            // The hint explains a disabled button too, so it sits on a wrapper.
-                            <Hint text={actions.pull.hint} forControl>
-                                <span className="pull-latest">
-                                    <Button variant="accent" isDisabled={actions.busy || !actions.pull.available} onPress={actions.pull.start}>
-                                        <PullIcon />
-                                        Pull latest
-                                    </Button>
-                                </span>
-                            </Hint>
-                        )}
+                    <FetchButton {...actions.fetch} />
                     <Button variant="secondary" isDisabled={actions.busy} onPress={actions.stashes}>
                         <ArchiveIcon />
                         Stashes

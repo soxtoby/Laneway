@@ -15,6 +15,8 @@ import { BranchIcon, DiffIcon, MoreIcon, WarningIcon } from "./icons"
 import { branchStack, type ColumnInspection, type Inspection } from "./inspection"
 import { offersPublish, type Publish, publishRef } from "./publish"
 import { PublishButton } from "./publish-control"
+import { PullButton } from "./pull-control"
+import { incoming, type PullLatest } from "./pull-latest"
 import type { Reword } from "./reword"
 import { TransferGrip, TransferReview, TransferSeam, useTransferScope, useTransferTarget } from "./transfer"
 import { Button } from "./ui/Button"
@@ -46,6 +48,8 @@ export interface CommitTrailProps {
     conflicts: Conflicts
     /** Publishes a branch's Active Stack from its header. */
     publish: Publish
+    /** Pulls the column's Active Stack from its own branch's header. */
+    pull: PullLatest
     /** Another operation is running, which can move the stacks. */
     busy: boolean
     repositoryId: string
@@ -139,6 +143,17 @@ function StackBranch(props: StackBranchProps) {
                             {unresolved}
                         </AriaButton>
                     )}
+                {own && branch.preferredRef.startsWith("refs/heads/") && (
+                    <PullButton
+                        pull={props.pull}
+                        repositoryId={props.repositoryId}
+                        branch={branch.preferredRef}
+                        name={branch.name}
+                        incoming={incoming(props.graph, branch, inspected?.bases ?? {})}
+                        remotes={props.graph.availableRemotes.length > 0}
+                        busy={props.busy}
+                    />
+                )}
                 {publishing && (
                     <PublishButton
                         publish={props.publish}

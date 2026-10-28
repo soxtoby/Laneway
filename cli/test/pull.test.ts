@@ -113,6 +113,30 @@ test("restacks branches left behind a parent or Base that moved before the pull,
     expect(git(local, "merge-base", "--is-ancestor", newMain, "one")).toBe("")
 }, 120_000)
 
+test("pulling one column's stack carries open stacks sharing a branch above its Base, but not those sharing only the Base", async () => {
+    let { other, local } = await fixture()
+    // one has a commit of its own, so the colleague's commit rewrites it, and three, built on it, must move with it.
+    git(local, "switch", "-q", "one")
+    await commit(local, "mine.txt", "mine\n", "mine on one")
+    git(local, "switch", "-qc", "three")
+    await commit(local, "three.txt", "three\n", "three")
+    git(local, "switch", "-qc", "side", "main")
+    let side = await commit(local, "side.txt", "side\n", "side")
+    git(local, "switch", "-q", "main")
+    git(other, "switch", "-qc", "one", "origin/one")
+    await commit(other, "shared.txt", "from colleague\n", "colleague on one")
+    git(other, "push", "-q", "origin", "one")
+    git(other, "switch", "-q", "main")
+    let newMain = await commit(other, "base.txt", "base updated\n", "upstream main")
+    git(other, "push", "-q", "origin", "main")
+    let result = await pull(local, ["refs/heads/two"], undefined, ["refs/heads/two", "refs/heads/three", "refs/heads/side"])
+
+    expect(result.stacks.map(stack => [stack.branches, stack.status])).toEqual([[["main", "one", "two"], "updated"], [["main", "one", "three"], "updated"]])
+    expect(git(local, "rev-parse", "main")).toBe(newMain)
+    expect(git(local, "log", "--format=%s", "main..three").split("\n")).toEqual(["three", "mine on one", "colleague on one", "one"])
+    expect(git(local, "rev-parse", "side")).toBe(side)
+}, 120_000)
+
 test("incorporates upstream commits an earlier fetch brought but no pull integrated, including after undoing the pull that did", async () => {
     let { other, local } = await fixture()
     git(other, "switch", "-qc", "one", "origin/one")
@@ -377,10 +401,10 @@ function git(path: string, ...args: string[]) {
     return p.stdout.toString().trim()
 }
 
-async function pull(path: string, branches: string[], onProgress?: (message: string) => void) {
+async function pull(path: string, branches: string[], onProgress?: (message: string) => void, open?: string[]) {
     return await executeOperationCommand({
         command: "pull",
-        request: { branches },
+        request: { branches, open },
         noWait: false,
         graphOptions: () => ({ authorIdentities: { primary: "pull@example.invalid", secondary: [] }, remotePatterns: [] }),
         progress: message => onProgress?.(message),

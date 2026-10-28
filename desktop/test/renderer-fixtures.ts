@@ -116,6 +116,7 @@ export function branchGraph(repositoryId: string) {
         ahead: 0,
         behind: 0,
         base: { status: "unknown" as const, candidates: [] },
+        behindBase: false,
         involvement: "uninvolved" as const,
         checkedOut: [],
         markers: [],

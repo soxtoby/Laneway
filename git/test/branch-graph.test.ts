@@ -357,6 +357,30 @@ describe("Branch Graph and lazy history", () => {
         expect(history.commits.map(commit => commit.objectId)).not.toContain(sideTip)
     })
 
+    test("marks a branch whose Base moved on after it forked", async () => {
+        let repository = await temporaryDirectory("laneway-graph-behind-base-")
+        expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
+        await commitFile(repository, "README.md", "initial\n", "Initial")
+        expect(runGit(repository, "checkout", "-q", "-b", "one").exitCode).toBe(0)
+        await commitFile(repository, "one.txt", "one\n", "One")
+        expect(runGit(repository, "checkout", "-q", "-b", "two").exitCode).toBe(0)
+        await commitFile(repository, "two.txt", "two\n", "Two")
+        expect(runGit(repository, "checkout", "-q", "main").exitCode).toBe(0)
+        await commitFile(repository, "main.txt", "main\n", "Main moves on")
+        expect(runGit(repository, "remote", "add", "upstream", ".").exitCode).toBe(0)
+        expect(runGit(repository, "update-ref", "refs/remotes/upstream/main", "main").exitCode).toBe(0)
+        expect(runGit(repository, "symbolic-ref", "refs/remotes/upstream/HEAD", "refs/remotes/upstream/main").exitCode).toBe(0)
+
+        let opened = await openRepository(repository)
+        let options = { authorIdentities: { primary: "laneway@example.invalid", secondary: [] }, selectedRemote: "upstream", remotePatterns: [] }
+        let graph = await opened.startReadBranchGraph(options).result
+        let behindBase = Object.fromEntries(graph.branches.map(branch => [branch.name, branch.behindBase]))
+
+        expect(behindBase).toEqual({ main: false, one: true, two: false })
+    })
+
     test("keeps the Primary Branch as Base for a branch it has moved past", async () => {
         let repository = await temporaryDirectory("laneway-graph-passed-")
         expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)

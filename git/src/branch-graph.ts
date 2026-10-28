@@ -567,6 +567,7 @@ function createBranches(refs: RefRecord[], worktrees: BranchGraphWorktree[], pri
             ahead: preferred.ahead,
             behind: preferred.behind,
             base: { status: "unknown", candidates: [] },
+            behindBase: false,
             involvement: "unknown",
             checkedOut: worktrees.filter(worktree => worktree.branchRef && local.some(ref => ref.ref == worktree.branchRef)),
             markers: [],
@@ -715,9 +716,11 @@ function enrichBranches(
 
     for (let branch of branches) {
         if (branch.base.status != "known") {
+            branch.behindBase = false
             branch.involvement = "unknown"
             branch.lastUniqueCommit = undefined
         } else {
+            branch.behindBase = !topology.isAncestor(branch.base.tip, branch.tip)
             branch.lastUniqueCommit = summaries.get(branch.tip)
             branch.involvement = !hasIdentities
                 ? "unknown"

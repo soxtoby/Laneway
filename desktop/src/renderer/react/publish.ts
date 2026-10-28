@@ -13,7 +13,7 @@ export interface PublishSnapshot {
     running: Record<string, PublishRun>
     /**
      * Publishes that didn't simply succeed, by repository, until acknowledged: partial, failed, stale, or refused.
-     * Each shows only while its repository is active, so Pull latest from it takes that repository's open stacks.
+     * Each shows only while its repository is active, so Pull latest from it carries that repository's open stacks.
      */
     outcomes: Record<string, PublishOutcome>
     /** A publish that asks first, as the Primary Branch's does, until it goes ahead or is cancelled. */
@@ -28,6 +28,8 @@ export interface PublishConfirmation {
 }
 
 export interface PublishOutcome {
+    /** The branch whose header started it. */
+    branch: string
     result?: PublishResult
     error?: string
 }
@@ -59,7 +61,7 @@ export interface Publish extends Store<PublishSnapshot> {
     confirm(repositoryId: string, branch: string): void
     proceed(): Promise<void>
     cancel(): void
-    /** Closes the repository's outcome and starts Pull latest, the way past a stale lease. */
+    /** Closes the repository's outcome and starts Pull latest for its branch's stack, the way past a stale lease. */
     pull(repositoryId: string): void
     close(repositoryId: string): void
     /** Forgets every other repository's publishes, ignoring their results, since a reopened repository starts afresh. */
@@ -72,7 +74,8 @@ interface PublishOptions {
     notify(notice: Notice): void
     /** The remote that branches without an upstream publish to. */
     remote(repositoryId: string): string | undefined
-    pull(repositoryId: string): void
+    /** Pulls the branch's Active Stack. */
+    pull(repositoryId: string, branch: string): void
     /**
      * Runs after every publish, which moves remote-tracking branches and records upstreams. The Branch Graph it
      * reads again has the columns plan again.
@@ -164,9 +167,9 @@ export function createPublish({ api, notify, remote, pull, completed }: PublishO
             let response = await api.publish(repositoryId, { action: "publish", branch, remote: remote(repositoryId), token: plan.token })
             if (!response.ok)
                 throw new Error(response.error.message)
-            return { result: response.result }
+            return { branch, result: response.result }
         } catch (error) {
-            return { error: errorMessage(error) }
+            return { branch, error: errorMessage(error) }
         }
     }
 
@@ -202,8 +205,10 @@ export function createPublish({ api, notify, remote, pull, completed }: PublishO
         cancel: () => set({ confirming: undefined }),
 
         pull(repositoryId) {
+            let outcome = store.snapshot().outcomes[repositoryId]
             setOutcome(repositoryId)
-            pull(repositoryId)
+            if (outcome)
+                pull(repositoryId, outcome.branch)
         },
 
         close: repositoryId => setOutcome(repositoryId),

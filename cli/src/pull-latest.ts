@@ -65,16 +65,34 @@ export async function preparePull(
         upstream: branch.remoteOnly ? undefined : upstreams.get(ref),
     })
 
+    let candidates: Array<{ chain: ScopedBranch[]; ambiguous?: string }> = []
+    for (let ref of [...new Set([...request.branches, ...request.open ?? []])]) {
+        let stack = await readActiveStack(repo, graph, ref)
+        if (stack)
+            candidates.push({ chain: stack.branches.map(item => scoped(item.node, item.ref)), ambiguous: stack.ambiguous })
+    }
+    // An open stack joins one in scope when they share a branch above their Bases, which the pull may replace; a
+    // shared Base only moves forward, leaving the stacks on it intact.
+    let inScope = candidates.filter(candidate => request.branches.includes(candidate.chain.at(-1)!.ref))
+    let own = new Set(inScope.flatMap(candidate => candidate.chain.slice(1).map(branch => branch.ref)))
+    for (let joined = true; joined;) {
+        joined = false
+        for (let candidate of candidates.filter(candidate => !inScope.includes(candidate))) {
+            if (candidate.chain.slice(1).some(branch => own.has(branch.ref))) {
+                inScope.push(candidate)
+                for (let branch of candidate.chain.slice(1))
+                    own.add(branch.ref)
+                joined = true
+            }
+        }
+    }
+
     let stacks: ScopedStack[] = []
     let blocked: PullStackOutcome[] = []
-    for (let ref of [...new Set(request.branches)]) {
-        let stack = await readActiveStack(repo, graph, ref)
-        if (!stack)
-            continue
-        let chain = stack.branches.map(item => scoped(item.node, item.ref))
+    for (let { chain, ambiguous } of inScope) {
         let id = crypto.randomUUID()
-        if (stack.ambiguous) {
-            let message = `The Base of ${stack.ambiguous} is ambiguous. Choose its Base in the Branch Graph, then pull again.`
+        if (ambiguous) {
+            let message = `The Base of ${ambiguous} is ambiguous. Choose its Base in the Branch Graph, then pull again.`
             blocked.push({ id, branches: chain.map(item => item.name), status: "skipped", message })
         } else {
             stacks.push({ id, branches: chain })

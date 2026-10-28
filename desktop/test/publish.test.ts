@@ -110,7 +110,7 @@ describe("publish controller", () => {
         expect(sut.snapshot().running).toEqual({})
     })
 
-    test("a stale lease opens an outcome whose way forward is Pull latest", async () => {
+    test("a stale lease opens an outcome whose way forward is Pull latest for the branch's stack", async () => {
         let fake = fakeApi(request =>
             request.action == "plans"
                 ? planned([{ branch: two, message: "Publish.", plan: plan() }])
@@ -133,7 +133,7 @@ describe("publish controller", () => {
         expect(sut.snapshot().outcomes[repositoryId]?.result?.status).toBe("stale")
 
         sut.pull(repositoryId)
-        expect(pulled).toEqual([repositoryId])
+        expect(pulled).toEqual([[repositoryId, two]])
         expect(sut.snapshot().outcomes).toEqual({})
     })
 
@@ -159,7 +159,7 @@ describe("publish controller", () => {
             }
             sut.close("first")
 
-            expect(sut.snapshot().outcomes).toEqual({ second: { result: failed("second was not published.").result } })
+            expect(sut.snapshot().outcomes).toEqual({ second: { branch: two, result: failed("second was not published.").result } })
         },
     )
 
@@ -201,12 +201,12 @@ describe("publish controller", () => {
 function publisher(fake: ReturnType<typeof fakeApi>) {
     let notices: Notice[] = []
     let completed: string[] = []
-    let pulled: string[] = []
+    let pulled: Array<[string, string]> = []
     let sut = createPublish({
         api: fake.api,
         notify: notice => notices.push(notice),
         remote: () => "origin",
-        pull: id => pulled.push(id),
+        pull: (id, branch) => pulled.push([id, branch]),
         completed: async id => {
             completed.push(id)
         },

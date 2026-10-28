@@ -4406,25 +4406,59 @@
     }
 }
 
-/* Pull latest in the header while it runs: the engine's progress and Cancel. */
-.pull-progress {
+/* Fetch in the header; a failed fetch marks it until one succeeds. */
+.fetch-slot {
     display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-2);
-    max-width: 320px;
-    color: var(--text-color-placeholder);
-    font-size: var(--font-size-sm);
 }
 
-.pull-progress-message {
+.react-aria-Button[data-failed]:not([data-disabled]) {
+    color: var(--invalid-color);
+}
+
+/* Pull latest on a column's own branch heading: the accent colour while commits are known to be waiting, and
+   while it runs, the engine's progress beside it. */
+.pull-slot {
+    flex: 0 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-1);
+}
+
+.pull-button {
+    &[data-incoming]:not([data-disabled]) {
+        color: var(--tint-1000);
+    }
+
+    &[data-disabled] {
+        color: var(--text-color-disabled);
+    }
+}
+
+.pull-progress {
     min-width: 0;
     overflow: hidden;
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+    font-weight: 400;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.pull-latest {
-    display: inline-flex;
+.react-aria-Tooltip.pull-tooltip {
+    max-width: min(480px, 90vw);
+    display: grid;
+    gap: var(--spacing-1);
+}
+
+.pull-tooltip-label {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.pull-incoming {
+    margin: 0;
+    padding-inline-start: var(--spacing-4);
 }
 
 /* A Pull latest that needs attention: each fetch, then each stack's outcome. */

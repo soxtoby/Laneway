@@ -121,7 +121,7 @@ describe("React Publish", () => {
         expect(publish.closest(".publish-slot")?.getAttribute("aria-description")).toBe("Resolve this stack's conflicts before publishing.")
     })
 
-    test("a stale lease shows that nothing was published and offers Pull latest, which pulls", async () => {
+    test("a stale lease shows that nothing was published and offers Pull latest, which pulls the published branch's stack", async () => {
         let pulled: unknown[] = []
         let { app } = await startPublishing(
             request =>
@@ -138,10 +138,10 @@ describe("React Publish", () => {
         await app.act(() => press(publishButton("Publish one, feature/laneway")))
         let outcome = document.querySelector<HTMLElement>(".publish-outcome")!
         expect([...outcome.querySelectorAll(".publish-status")].map(status => status.textContent)).toEqual(["Changed on remote", "Not published"])
-        expect(outcome.querySelector(".publish-note")?.textContent).toContain("Pull latest brings in what changed")
+        expect(outcome.querySelector(".publish-note")?.textContent).toContain("Pull latest brings what changed into this stack")
 
         await app.act(() => press(button(outcome, "Pull latest")))
-        expect(pulled.length).toBe(1)
+        expect(pulled).toMatchObject([{ branches: ["refs/heads/feature/laneway"] }])
         expect(document.querySelector(".publish-outcome") == null).toBe(true)
     })
 
@@ -189,7 +189,7 @@ describe("React Publish", () => {
         expect(document.activeElement == column).toBe(true)
     })
 
-    test("a stale outcome in a repository left while it published waits for it, and its Pull latest pulls that repository's stacks", async () => {
+    test("a stale outcome in a repository left while it published waits for it, and its Pull latest carries that repository's open stacks", async () => {
         let answer = Promise.withResolvers<PublishActionResult>()
         let pulled: [string, PullRequest][] = []
         let [first, second] = [repositoryEntry("D:\\Source\\first", ["main", "feature/laneway"]), repositoryEntry("D:\\Source\\second", ["main"])]
@@ -210,7 +210,11 @@ describe("React Publish", () => {
 
         await app.act(() => app.controller.selectRepository(first.id))
         await app.act(() => press(button(document.querySelector<HTMLElement>(".publish-outcome")!, "Pull latest")))
-        expect(pulled).toEqual([[first.id, { branches: ["refs/heads/main", "refs/heads/feature/laneway"], remote: "origin" }]])
+        expect(pulled).toEqual([[first.id, {
+            branches: ["refs/heads/feature/laneway"],
+            open: ["refs/heads/main", "refs/heads/feature/laneway"],
+            remote: "origin",
+        }]])
     })
 
     test("a repository closed while it publishes is ready to publish again when reopened, with no outcome from before", async () => {

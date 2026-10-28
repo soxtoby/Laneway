@@ -5,13 +5,19 @@ import { createStore, type Store } from "./store"
 type Api = Window["laneway"]
 
 export interface BackgroundFetchSnapshot {
-    /** Why each repository's last background fetch failed, until one succeeds. */
+    /** Repositories with a fetch under way. */
+    running: Record<string, boolean>
+    /** When each repository's last fetch finished without failing, in milliseconds since the epoch. */
+    fetched: Record<string, number>
+    /** Why each repository's last fetch failed, until one succeeds. */
     failures: Record<string, string>
 }
 
 export interface BackgroundFetch extends Store<BackgroundFetchSnapshot> {
     /** Fetches the active repository unless it fetched within the last minute. */
     refresh(): Promise<void>
+    /** Fetches the active repository however recently it fetched, unless it is fetching already. */
+    fetchNow(): Promise<void>
     dispose(): void
 }
 
@@ -40,53 +46,59 @@ let fresh = 60_000
  * stacks and those checked out, so the stacks being worked on change only when Pull latest runs.
  */
 export function createBackgroundFetch({ api, active, environment = windowEnvironment() }: BackgroundFetchOptions): BackgroundFetch {
-    let store = createStore<BackgroundFetchSnapshot>({ failures: {} })
-    let fetched = new Map<string, number>()
-    let running = new Set<string>()
+    let store = createStore<BackgroundFetchSnapshot>({ running: {}, fetched: {}, failures: {} })
+    let started = new Map<string, number>()
 
-    async function refresh() {
+    async function fetch(stale: boolean) {
         let scope = active()
-        let last = scope && fetched.get(scope.repositoryId)
-        if (!scope || running.has(scope.repositoryId) || last != undefined && environment.now() - last < fresh)
+        let last = scope && started.get(scope.repositoryId)
+        if (!scope || store.snapshot().running[scope.repositoryId] || stale && last != undefined && environment.now() - last < fresh)
             return
 
         let { repositoryId, branches, remote } = scope
-        running.add(repositoryId)
-        fetched.set(repositoryId, environment.now())
+        started.set(repositoryId, environment.now())
+        update(repositoryId, { running: true })
+        let failure: string | undefined
         try {
             let response = await api.fetchLatest(repositoryId, { branches, remote })
             // Pull latest fetched instead, and reports its own failures.
-            if (!response.ok || response.result.status != "cancelled")
-                fail(repositoryId, response.ok ? failure(response.result) : response.error.message)
+            if (response.ok && response.result.status == "cancelled") {
+                update(repositoryId, { running: false })
+                return
+            }
+            failure = response.ok ? failed(response.result) : response.error.message
         } catch (error) {
-            fail(repositoryId, errorMessage(error))
-        } finally {
-            running.delete(repositoryId)
+            failure = errorMessage(error)
         }
+        update(repositoryId, failure ? { running: false, failure } : { running: false, fetched: environment.now() })
     }
 
-    function fail(repositoryId: string, message: string | undefined) {
-        let failures = { ...store.snapshot().failures }
-        if (message)
-            failures[repositoryId] = message
-        else
+    function update(repositoryId: string, change: { running: boolean; fetched?: number; failure?: string }) {
+        let { running, fetched, failures } = store.snapshot()
+        running = { ...running, [repositoryId]: change.running }
+        if (change.fetched != undefined) {
+            fetched = { ...fetched, [repositoryId]: change.fetched }
+            failures = { ...failures }
             delete failures[repositoryId]
-        if (failures[repositoryId] != store.snapshot().failures[repositoryId])
-            store.publish({ failures })
+        }
+        if (change.failure)
+            failures = { ...failures, [repositoryId]: change.failure }
+        store.publish({ running, fetched, failures })
     }
 
     let stops = [
         environment.every(interval, () => {
             if (environment.focused())
-                void refresh()
+                void fetch(true)
         }),
-        environment.onFocus(() => void refresh()),
+        environment.onFocus(() => void fetch(true)),
     ]
 
     return {
         subscribe: store.subscribe,
         snapshot: store.snapshot,
-        refresh,
+        refresh: () => fetch(true),
+        fetchNow: () => fetch(false),
         dispose() {
             for (let stop of stops)
                 stop()
@@ -95,9 +107,9 @@ export function createBackgroundFetch({ api, active, environment = windowEnviron
     }
 }
 
-function failure(result: FetchResult) {
-    let failed = result.fetches.filter(fetch => fetch.status == "failed")
-    return failed.length ? failed.map(fetch => `${fetch.remote}: ${fetch.message ?? "Git could not fetch it."}`).join("\n") : undefined
+function failed(result: FetchResult) {
+    let failures = result.fetches.filter(fetch => fetch.status == "failed")
+    return failures.length ? failures.map(fetch => `${fetch.remote}: ${fetch.message ?? "Git could not fetch it."}`).join("\n") : undefined
 }
 
 // Controllers also run without a window, as their tests do; there, nothing has focus.
