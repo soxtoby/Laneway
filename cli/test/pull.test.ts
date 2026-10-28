@@ -1,5 +1,5 @@
 import { connectRepository, readConflictState } from "@laneway/git"
-import type { ConflictRequest, ConflictResult, PullResult } from "@laneway/shared"
+import type { ConflictRequest, ConflictResult, FetchResult, PullResult } from "@laneway/shared"
 import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -135,6 +135,48 @@ test("incorporates upstream commits an earlier fetch brought but no pull integra
     let again = await pull(local, ["refs/heads/one"])
 
     expect(again.stacks[0]).toMatchObject({ status: "updated" })
+    expect(git(local, "log", "--format=%s", "main..one").split("\n")).toEqual(["mine on one", "colleague on one", "one"])
+}, 120_000)
+
+test("fetching fast-forwards only branches outside every open or checked-out stack, and leaves the rest for Pull latest", async () => {
+    let { other, local } = await fixture()
+    git(other, "switch", "-qc", "side", "main")
+    await commit(other, "side.txt", "side\n", "side")
+    git(other, "push", "-q", "origin", "side")
+    git(local, "fetch", "-q", "origin")
+    git(local, "branch", "-q", "--track", "side", "origin/side")
+    let side = await commit(other, "side.txt", "side more\n", "more side")
+    git(other, "push", "-q", "origin", "side")
+    git(other, "switch", "-q", "main")
+    let newMain = await commit(other, "base.txt", "base updated\n", "upstream main")
+    git(other, "push", "-q", "origin", "main")
+    git(other, "switch", "-qc", "one", "origin/one")
+    await commit(other, "shared.txt", "from colleague\n", "colleague on one")
+    git(other, "push", "-q", "origin", "one")
+    // two is checked out, so main, the Base of its stack, stays put; one has a commit of its own, so it can't fast-forward.
+    git(local, "switch", "-q", "one")
+    await commit(local, "mine.txt", "mine\n", "mine on one")
+    git(local, "switch", "-q", "two")
+    let main = git(local, "rev-parse", "main")
+    let total = (await history(local)).total
+    let fetched = await fetchLatest(local, [])
+
+    expect(fetched).toMatchObject({ status: "fetched", fetches: [{ remote: "origin", status: "fetched" }], fastForwarded: ["refs/heads/side"] })
+    expect(git(local, "rev-parse", "side")).toBe(side)
+    expect(git(local, "rev-parse", "main")).toBe(main)
+    expect((await history(local)).total).toBe(total)
+    // An open column's stack is left alone too.
+
+    git(other, "switch", "-q", "side")
+    await commit(other, "side.txt", "side again\n", "side again")
+    git(other, "push", "-q", "origin", "side")
+
+    expect((await fetchLatest(local, ["refs/heads/side"])).fastForwarded).toEqual([])
+    expect(git(local, "rev-parse", "side")).toBe(side)
+
+    let pulled = await pull(local, ["refs/heads/one"])
+
+    expect(pulled.stacks[0]).toMatchObject({ branches: ["main", "one"], status: "updated", base: { after: newMain } })
     expect(git(local, "log", "--format=%s", "main..one").split("\n")).toEqual(["mine on one", "colleague on one", "one"])
 }, 120_000)
 
@@ -343,6 +385,15 @@ async function pull(path: string, branches: string[], onProgress?: (message: str
         graphOptions: () => ({ authorIdentities: { primary: "pull@example.invalid", secondary: [] }, remotePatterns: [] }),
         progress: message => onProgress?.(message),
     }, path) as PullResult
+}
+
+async function fetchLatest(path: string, branches: string[]) {
+    return await executeOperationCommand({
+        command: "fetch",
+        request: { branches },
+        noWait: false,
+        graphOptions: () => ({ authorIdentities: { primary: "pull@example.invalid", secondary: [] }, remotePatterns: [] }),
+    }, path) as FetchResult
 }
 
 async function conflict(path: string, request: ConflictRequest) {

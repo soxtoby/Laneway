@@ -158,6 +158,37 @@ describe("React Pull latest", () => {
         expect(header.querySelector(".pull-latest")?.getAttribute("aria-description")).toBe("Add a remote to pull.")
     })
 
+    test("fetches the active repository in the background, leaving its open stacks alone, and says why that failed", async () => {
+        let repository = repositoryInfo("D:\\Source\\background-fetch")
+        let graph = branchGraph(repository.id)
+        let requested: unknown
+        let app = await startReactApp(fakeLaneway({
+            getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
+            readBranchGraph: async () => ({ ok: true, graph }),
+            fetchLatest: async (_id, request) => {
+                requested = request
+                return {
+                    ok: true,
+                    result: {
+                        type: "result",
+                        command: "fetch",
+                        status: "fetched",
+                        message: "Fetching origin failed.",
+                        fetches: [{ remote: "origin", status: "failed", message: "terminal prompts disabled" }],
+                        fastForwarded: [],
+                    },
+                }
+            },
+        }))
+        await app.act(() => Bun.sleep(0))
+        let columns = app.controller.columns.snapshot().columns.flatMap(column => column.kind == "branch" ? [column.branch.preferredRef] : [])
+
+        expect(requested).toEqual({ branches: columns, remote: "origin" })
+        expect(document.querySelector(".header .pull-latest")?.getAttribute("aria-description")).toBe(
+            "Fetch and synchronize open stacks. Fetching in the background failed: origin: terminal prompts disabled",
+        )
+    })
+
     test("a failed pull shows why in its dialog", async () => {
         let repository = repositoryInfo("D:\\Source\\failed-pull")
         let graph = branchGraph(repository.id)

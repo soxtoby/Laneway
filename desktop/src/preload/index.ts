@@ -5,7 +5,7 @@ import type { WorktreeRequest } from "@laneway/shared"
 import type { CommitDraft, LocalRequest } from "@laneway/shared"
 import type { DiscardRequest } from "@laneway/shared"
 import type { ConflictRequest } from "@laneway/shared"
-import type { PullProgress, PullRequest } from "@laneway/shared"
+import type { FetchRequest, PullProgress, PullRequest } from "@laneway/shared"
 import type { PublishProgress, PublishRequest } from "@laneway/shared"
 import type { RecoveryRequest } from "@laneway/shared"
 import type { HistoricalEditRequest } from "@laneway/shared"
@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld("laneway", {
     recoverWorktree: (repositoryId: string, request: RecoveryRequest) => ipcRenderer.invoke("worktree:recover", repositoryId, request),
     pullLatest: (repositoryId: string, request: PullRequest) => ipcRenderer.invoke("pull:latest", repositoryId, request),
     cancelPull: (repositoryId: string) => ipcRenderer.invoke("pull:cancel", repositoryId),
+    fetchLatest: (repositoryId: string, request: FetchRequest) => ipcRenderer.invoke("fetch:latest", repositoryId, request),
     onPullProgress: (listener: (progress: PullProgress) => void) => {
         let handler = (_event: Electron.IpcRendererEvent, progress: PullProgress) => listener(progress)
         ipcRenderer.on("pull:progress", handler)

@@ -1,5 +1,5 @@
 import { isText, normalize, previewWorktree, readRegisteredWorktrees } from "@laneway/git"
-import { CommitDraftSchema, type ConflictActionResult, ConflictRequestSchema, DiscardRequestSchema, type DiscardResult, type DiscardUndoResult, type HistoricalEditActionResult, HistoricalEditRequestSchema, type LocalActionResult, LocalRequestSchema, type PublishActionResult, type PublishProgress, type PublishRequest, PublishRequestSchema, type PullActionResult, type PullProgress, PullRequestSchema, type RecoveryActionResult, RecoveryRequestSchema, type WorktreeActionResult, type WorktreePreviewResult, WorktreeRequestSchema } from "@laneway/shared"
+import { CommitDraftSchema, type ConflictActionResult, ConflictRequestSchema, DiscardRequestSchema, type DiscardResult, type DiscardUndoResult, type FetchActionResult, FetchRequestSchema, type FetchResult, type HistoricalEditActionResult, HistoricalEditRequestSchema, type LocalActionResult, LocalRequestSchema, type PublishActionResult, type PublishProgress, type PublishRequest, PublishRequestSchema, type PullActionResult, type PullProgress, PullRequestSchema, type RecoveryActionResult, RecoveryRequestSchema, type WorktreeActionResult, type WorktreePreviewResult, WorktreeRequestSchema } from "@laneway/shared"
 import { ipcMain, type WebContents } from "electron"
 import { mkdtemp, rm, rmdir, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -15,11 +15,14 @@ export function registerOperationHandlers(repositories: OpenRepositories, engine
     let conflictInspections = new Map<string, ConflictActionResult>()
     // One Pull latest per repository; cancellation stops at the next safe boundary.
     let activePulls = new Map<string, { cancel(): void }>()
+    // One background fetch per repository. Pull latest fetches the same remotes, so it waits for one under way.
+    let activeFetches = new Map<string, Promise<FetchActionResult>>()
     // One Publish per repository; reading plans goes on alongside.
     let activePublishes = new Set<string>()
     let discards = new WorkingDiscards(repositoryId => repositories.worktreeRepository(repositoryId))
     registerConflictHandlers()
     registerPullHandlers()
+    registerFetchHandlers()
     registerPublishHandlers()
     registerLocalHandlers()
     registerDiscardHandlers()
@@ -130,20 +133,36 @@ export function registerOperationHandlers(repositories: OpenRepositories, engine
                 let request = PullRequestSchema.parse(value)
                 let repository = repositories.worktreeRepository(repositoryId)
                 let sender = event.sender
-                let engine = runEngineCommand({
-                    enginePath,
-                    cwd: repository.descriptor.mainWorktree,
-                    args: ["pull", "--request", JSON.stringify(request), "--git-path", repository.descriptor.git.path],
-                    onMessage: message => {
-                        if (message.type == "progress" && !sender.isDestroyed()) {
-                            let progress: PullProgress = { repositoryId, message: message.message, completed: message.completed, total: message.total }
-                            sender.send("pull:progress", progress)
-                        }
-                    },
-                })
-                activePulls.set(repositoryId, engine)
+                let cancelled = false
+                activePulls.set(repositoryId, { cancel: () => cancelled = true })
 
                 try {
+                    await activeFetches.get(repositoryId)
+                    if (cancelled) {
+                        return {
+                            ok: true,
+                            result: {
+                                type: "result",
+                                command: "pull",
+                                status: "cancelled",
+                                message: "Pull cancelled before any local changes.",
+                                fetches: [],
+                                stacks: [],
+                            },
+                        }
+                    }
+                    let engine = runEngineCommand({
+                        enginePath,
+                        cwd: repository.descriptor.mainWorktree,
+                        args: ["pull", "--request", JSON.stringify(request), "--git-path", repository.descriptor.git.path],
+                        onMessage: message => {
+                            if (message.type == "progress" && !sender.isDestroyed()) {
+                                let progress: PullProgress = { repositoryId, message: message.message, completed: message.completed, total: message.total }
+                                sender.send("pull:progress", progress)
+                            }
+                        },
+                    })
+                    activePulls.set(repositoryId, engine)
                     return pullResponse(await engine.result)
                 } finally {
                     activePulls.delete(repositoryId)
@@ -158,6 +177,54 @@ export function registerOperationHandlers(repositories: OpenRepositories, engine
             active?.cancel()
             return Boolean(active)
         })
+    }
+
+    function registerFetchHandlers() {
+        ipcMain.handle("fetch:latest", (_event, repositoryId: unknown, value: unknown): Promise<FetchActionResult> => {
+            if (typeof repositoryId != "string")
+                return Promise.resolve({ ok: false, error: { message: "Choose a repository." } })
+            // A pull fetches for itself.
+            if (activePulls.has(repositoryId)) {
+                let result: FetchResult = {
+                    type: "result",
+                    command: "fetch",
+                    status: "cancelled",
+                    message: "Pull latest is fetching.",
+                    fetches: [],
+                    fastForwarded: [],
+                }
+                return Promise.resolve({ ok: true, result })
+            }
+            let fetching = activeFetches.get(repositoryId)
+            if (!fetching) {
+                fetching = fetchLatest(repositoryId, value).finally(() => activeFetches.delete(repositoryId))
+                activeFetches.set(repositoryId, fetching)
+            }
+            return fetching
+        })
+    }
+
+    async function fetchLatest(repositoryId: string, value: unknown): Promise<FetchActionResult> {
+        try {
+            let request = FetchRequestSchema.parse(value)
+            let repository = repositories.worktreeRepository(repositoryId)
+            let main = repository.descriptor.mainWorktree
+            // Nobody is there to answer a prompt, so Git, its credential manager, and ssh fail instead of asking, unless
+            // the user chose how ssh runs.
+            let ownSsh = process.env.GIT_SSH_COMMAND || process.env.GIT_SSH || (await repository.run(main, ["config", "core.sshCommand"])).exitCode == 0
+            let output = await runEngineCommand({
+                enginePath,
+                cwd: main,
+                args: ["fetch", "--request", JSON.stringify(request), "--git-path", repository.descriptor.git.path],
+                env: { GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never", ...(ownSsh ? {} : { GIT_SSH_COMMAND: "ssh -o BatchMode=yes" }) },
+            }).result
+            let result = output.messages.find(message => message.type == "result" && message.command == "fetch")
+            if (result?.type == "result" && result.command == "fetch")
+                return { ok: true, result }
+            throw new Error(output.messages.find(message => message.type == "error")?.message ?? (output.diagnostics || "Fetching failed."))
+        } catch (error) {
+            return { ok: false, error: { message: error instanceof Error ? error.message : String(error) } }
+        }
     }
 
     function pullResponse(output: EngineCommandResult): PullActionResult {

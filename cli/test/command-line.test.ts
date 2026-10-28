@@ -211,10 +211,11 @@ test("worktree workflows and Git wrappers honor -C and linked worktrees", async 
 
 test("workflow usage errors and empty conflict output are readable", async () => {
     let path = await repository()
-    for (let args of [["move", "--from", "working"], ["worktree", "remove"], ["reword", "HEAD"], ["pull", "--typo"], ["undo", "extra"]])
+    for (let args of [["move", "--from", "working"], ["worktree", "remove"], ["reword", "HEAD"], ["pull", "--typo"], ["fetch", "extra"], ["undo", "extra"]])
         expect((await lane(path, ...args)).exitCode).toBe(2)
     expect((await lane(path, "conflict", "list")).stdout).toBe("No unresolved conflicts.\n")
     expect((await lane(path, "pull")).stdout).toContain("Add a remote")
+    expect((await lane(path, "fetch")).stdout).toContain("Add a remote to fetch.")
 })
 
 test("conflict workflows resolve candidates without JSON inputs or version tokens", async () => {
@@ -258,6 +259,24 @@ test("pull defaults to the current stack and synchronizes a real remote", async 
     expect(git(local, "rev-parse", "HEAD")).toBe(git(upstream, "rev-parse", "HEAD"))
     expect((await lane(local, "undo")).exitCode).toBe(0)
     expect(await readFile(join(local, "README.md"), "utf8")).toBe("initial\n")
+}, 120_000)
+
+test("fetch fast-forwards a branch nothing has checked out, leaving the checked-out one for pull", async () => {
+    let upstream = await repository()
+    let main = git(upstream, "branch", "--show-current")
+    let local = await mkdtemp(join(tmpdir(), "lane-fetch-cli-"))
+    directories.push(local)
+    git(local, "clone", "-q", upstream, ".")
+    git(local, "branch", "-q", "--track", "behind", `origin/${main}`)
+    let before = git(local, "rev-parse", "HEAD")
+    await writeFile(join(upstream, "README.md"), "upstream\n")
+    git(upstream, "commit", "-am", "Upstream")
+    let result = await lane(local, "fetch")
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain("fast-forwarded behind")
+    expect(git(local, "rev-parse", "behind")).toBe(git(upstream, "rev-parse", "HEAD"))
+    expect(git(local, "rev-parse", "HEAD")).toBe(before)
 }, 120_000)
 
 test("rebase accepts branch names and retains descendant branch membership", async () => {

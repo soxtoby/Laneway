@@ -68,6 +68,7 @@ lane move --from working --to after:HEAD -m "Extract navigation fix"
 lane rebase feature --onto main --preview
 lane reword HEAD~2 -m "Clarify the earlier change"
 lane pull feature another-feature
+lane fetch
 lane publish feature --preview
 lane publish feature
 lane publish --resume <receipt-id>
@@ -111,6 +112,9 @@ reject concurrent changes. `-m` may be repeated for message paragraphs; `-F`
 reads a message file.
 
 `pull` defaults to the current branch's Active Stack and never publishes.
+`fetch` fetches as the desktop does in the background: it fast-forwards each branch strictly behind its upstream
+except those a worktree holds, those in the Active Stack of one it holds, and those in an Unresolved Stack or
+Historical Edit. It is outside undo/redo.
 `publish` defaults to the current branch's Active Stack and publishes its changed
 branches above the Base, or the Primary Branch alone, each with an exact force-with-lease; `--preview` lists the
 destinations, and `--remote` chooses where branches without an upstream are created.

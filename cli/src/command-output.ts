@@ -71,6 +71,12 @@ export function writeCommandResult(result: EngineMessage, json: boolean) {
                 console.log(`fetch ${fetch.remote} ${fetch.status}${fetch.message ? ` ${fetch.message}` : ""}`)
             for (let stack of result.stacks)
                 console.log(`${stack.status} ${stack.branches.join(" > ")}${stack.message ? ` ${stack.message}` : ""}`)
+        } else if (result.command == "fetch") {
+            console.log(result.message)
+            for (let fetch of result.fetches)
+                console.log(`fetch ${fetch.remote} ${fetch.status}${fetch.message ? ` ${fetch.message}` : ""}`)
+            for (let ref of result.fastForwarded)
+                console.log(`fast-forwarded ${ref.replace(/^refs\/heads\//, "")}`)
         } else if (result.command == "publish")
             writePublish(result)
         else if ("message" in result)

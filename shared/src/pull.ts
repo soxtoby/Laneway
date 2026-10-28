@@ -51,3 +51,23 @@ export interface PullProgress {
 }
 
 export type PullActionResult = { ok: true; result: PullResult } | { ok: false; error: { message: string } }
+
+export let FetchRequestSchema = z.object({
+    // Open Workspace Column branches; their Active Stacks are left for Pull latest.
+    branches: z.array(z.string().regex(/^refs\/heads\/.+/)),
+    remote: z.string().min(1).optional(),
+})
+export type FetchRequest = z.infer<typeof FetchRequestSchema>
+
+export let FetchResultSchema = z.object({
+    type: z.literal("result"),
+    command: z.literal("fetch"),
+    status: z.enum(["no-remotes", "fetched", "cancelled"]),
+    message: z.string(),
+    fetches: z.array(PullFetchSchema),
+    // Local branches moved to their upstream's tip.
+    fastForwarded: z.array(z.string()),
+})
+export type FetchResult = z.infer<typeof FetchResultSchema>
+
+export type FetchActionResult = { ok: true; result: FetchResult } | { ok: false; error: { message: string } }

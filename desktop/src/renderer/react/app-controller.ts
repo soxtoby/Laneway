@@ -1,5 +1,6 @@
 import type { Appearance, BranchHistoryCommit, FileListView, OpenRepository, RepositoryIdentity, RepositoryScripts, Workspace, WorkspaceColumn } from "@laneway/shared"
 import { defaultFileListView } from "@laneway/shared"
+import { type BackgroundFetch, createBackgroundFetch } from "./background-fetch"
 import { type BranchRebase, createBranchRebase } from "./branch-rebase"
 import { type BranchWorkspace, createBranchWorkspace } from "./branch-workspace"
 import { type CommandLens, createCommandLens, type LensResult } from "./command-lens"
@@ -70,6 +71,8 @@ export interface AppController extends Store<AppSnapshot> {
     /** Resolving conflicts that rewrites deferred. */
     readonly conflicts: Conflicts
     readonly pull: PullLatest
+    /** Fetching the active repository in the background, outside its open stacks. */
+    readonly fetching: BackgroundFetch
     /** Publishing a branch's stack from its header, which stays outside Operation History. */
     readonly publish: Publish
     /** Moving and copying files, commits, and branches between columns. */
@@ -335,6 +338,18 @@ export function createAppController(api: Api): AppController {
         },
     })
 
+    let fetching = createBackgroundFetch({
+        api,
+        active() {
+            let { repositoryId, graph, columns: open } = columns.snapshot()
+            if (!repositoryId || !graph?.availableRemotes.length)
+                return undefined
+            return { repositoryId, branches: open.flatMap(column => column.kind == "branch" ? [column.branch.preferredRef] : []), remote: graph.selectedRemote }
+        },
+    })
+    // Its open columns are known once a repository's Branch Graph loads, so that is when it first fetches.
+    unsubscribe.push(columns.subscribe(() => void fetching.refresh()))
+
     // A publish changes no local commits, so it leaves the Undo notice for the latest operation in place: its
     // confirmation waits for a notice offering Undo to close rather than replacing it, which would withdraw the Undo
     // and settle pending discards.
@@ -402,6 +417,7 @@ export function createAppController(api: Api): AppController {
         lens,
         conflicts,
         pull,
+        fetching,
         publish,
         composition,
         edits,
@@ -638,6 +654,7 @@ export function createAppController(api: Api): AppController {
             clearTimeout(identitySave)
             composition.dispose()
             pull.dispose()
+            fetching.dispose()
             publish.dispose()
             for (let stop of unsubscribe)
                 stop()

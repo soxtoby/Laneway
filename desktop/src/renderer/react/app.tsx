@@ -50,6 +50,7 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
     // Repository operations wait for any other that is under way.
     let { busy: columnsBusy, graphView, graph } = useSnapshot(columns)
     let pulling = useSnapshot(controller.pull).running
+    let fetchFailures = useSnapshot(controller.fetching).failures
     let worktreesBusy = useSnapshot(worktrees).busy
     let branchesBusy = useSnapshot(branches).busy
     let operating = columnsBusy || worktreesBusy || branchesBusy
@@ -72,6 +73,8 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
                                 ? "Loading the Branch Graph…"
                                 : graph.availableRemotes.length == 0
                                 ? "Add a remote to pull."
+                                : fetchFailures[active.id]
+                                ? `Fetch and synchronize open stacks. Fetching in the background failed: ${fetchFailures[active.id]}`
                                 : "Fetch and synchronize open stacks",
                             running: pulling[active.id],
                             start: () => void controller.pull.start(active.id),

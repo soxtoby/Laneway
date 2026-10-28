@@ -5,7 +5,7 @@ import { type WorktreeRequest, WorktreeRequestSchema } from "@laneway/shared"
 import { type LocalRequest, LocalRequestSchema } from "@laneway/shared"
 import { type ConflictRequest, ConflictRequestSchema } from "@laneway/shared"
 import { type PublishRequest, PublishRequestSchema } from "@laneway/shared"
-import { type PullRequest, PullRequestSchema } from "@laneway/shared"
+import { type FetchRequest, FetchRequestSchema, type PullRequest, PullRequestSchema } from "@laneway/shared"
 import { type RecoveryRequest, RecoveryRequestSchema } from "@laneway/shared"
 import { type HistoricalEditRequest, HistoricalEditRequestSchema } from "@laneway/shared"
 import { readFileSync, statSync } from "node:fs"
@@ -40,7 +40,7 @@ else if (args[0] == "echo") {
 } else if (
     args[0] == "local" || args[0] == "local-preview" || args[0] == "local-transfer" || args[0] == "worktree" || args[0] == "undo" || args[0] == "redo"
     || args[0] == "history"
-    || args[0] == "recover" || args[0] == "recovery-status" || args[0] == "conflict" || args[0] == "pull" || args[0] == "publish"
+    || args[0] == "recover" || args[0] == "recovery-status" || args[0] == "conflict" || args[0] == "pull" || args[0] == "fetch" || args[0] == "publish"
     || args[0] == "edit"
 ) {
     process.exitCode = await runOperationCommand(args[0], args.slice(1))
@@ -181,7 +181,7 @@ async function runOperationCommand(command: Exclude<OperationCommand["command"],
     let cancellation = monitorCancellation()
     try {
         let settings = await readSettings(process.env.LANEWAY_SETTINGS_PATH)
-        let command = parsed.command.command == "pull" || parsed.command.command == "publish"
+        let command = parsed.command.command == "pull" || parsed.command.command == "fetch" || parsed.command.command == "publish"
             ? {
                 ...parsed.command,
                 graphOptions: (repositoryId: string) => ({
@@ -281,6 +281,7 @@ function parseOperationArguments(command: Exclude<OperationCommand["command"], "
     let localRequest: LocalRequest | undefined
     let conflictRequest: ConflictRequest | undefined
     let pullRequest: PullRequest | undefined
+    let fetchRequest: FetchRequest | undefined
     let publishRequest: PublishRequest | undefined
     let editRequest: HistoricalEditRequest | undefined
     let token: string | undefined
@@ -315,6 +316,14 @@ function parseOperationArguments(command: Exclude<OperationCommand["command"], "
                 pullRequest = PullRequestSchema.parse(JSON.parse(commandArguments[++index]!))
             } catch {
                 return invalidOperationArgument(command, json, "Provide a valid pull request JSON object.", "--request")
+            }
+            continue
+        }
+        if (command == "fetch" && argument == "--request") {
+            try {
+                fetchRequest = FetchRequestSchema.parse(JSON.parse(commandArguments[++index]!))
+            } catch {
+                return invalidOperationArgument(command, json, "Provide a valid fetch request JSON object.", "--request")
             }
             continue
         }
@@ -413,6 +422,8 @@ function parseOperationArguments(command: Exclude<OperationCommand["command"], "
         return invalidOperationArgument(command, json, "A conflict request is required.", "--request")
     if (command == "pull" && !pullRequest)
         return invalidOperationArgument(command, json, "A pull request is required.", "--request")
+    if (command == "fetch" && !fetchRequest)
+        return invalidOperationArgument(command, json, "A fetch request is required.", "--request")
     if (command == "publish" && !publishRequest)
         return invalidOperationArgument(command, json, "A publish request is required.", "--request")
     if (command == "edit" && !editRequest)
@@ -434,6 +445,8 @@ function parseOperationArguments(command: Exclude<OperationCommand["command"], "
             ? { command, request: editRequest!, noWait, crashAfter }
             : command == "pull"
             ? { command, request: pullRequest!, noWait, crashAfter, graphOptions: () => ({ authorIdentities: { secondary: [] }, remotePatterns: [] }) }
+            : command == "fetch"
+            ? { command, request: fetchRequest!, noWait, graphOptions: () => ({ authorIdentities: { secondary: [] }, remotePatterns: [] }) }
             : command == "publish"
             ? { command, request: publishRequest!, noWait, graphOptions: () => ({ authorIdentities: { secondary: [] }, remotePatterns: [] }) }
             : command == "local" || command == "local-preview" || command == "local-transfer"

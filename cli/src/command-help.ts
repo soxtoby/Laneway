@@ -31,6 +31,10 @@ branch has its name already, --local reset moves that branch to it, and --local 
     pull: `lane pull [branch ...] [--remote <remote>]
 Fetch and synchronize the named Active Stacks, including their bases and upstreams.
 With no branches, use the current branch. This does not publish.`,
+    fetch: `lane fetch [--remote <remote>]
+Fetch the selected remote and every remote a local branch tracks, then fast-forward each branch
+strictly behind its upstream, except branches checked out in a worktree, those in the Active Stack
+of one that is, and those in an Unresolved Stack or Historical Edit. This is not part of undo.`,
     publish: `lane publish [branch] [--remote <remote>] [--preview]
 lane publish --resume <receipt>
 lane publish --restore <receipt>
@@ -88,6 +92,7 @@ Laneway workflows:
   reword           Edit a commit message and restack descendants
   worktree         Create, switch, rename, repair, remove, unlock, list
   pull             Fetch and synchronize Active Stacks
+  fetch            Fetch and fast-forward branches nothing has checked out
   publish          Publish an Active Stack, resume, or restore from a receipt
   conflict         Inspect and resolve deferred conflicts
   edit             Edit from an older commit: enter, apply, return, restart, status

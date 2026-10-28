@@ -165,6 +165,10 @@ export function fakeLaneway(overrides: Partial<Window["laneway"]> = {}): Window[
         recoverWorktree: async () => ({ ok: true }),
         pullLatest: async () => ({ ok: false, error: { message: "Pull latest unavailable" } }),
         cancelPull: async () => false,
+        fetchLatest: async () => ({
+            ok: true,
+            result: { type: "result", command: "fetch", status: "fetched", message: "Fetched.", fetches: [], fastForwarded: [] },
+        }),
         onPullProgress: () => () => undefined,
         publish: async (_id, request) => ({
             ok: true,

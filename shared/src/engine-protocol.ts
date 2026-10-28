@@ -4,7 +4,7 @@ import { HistoricalEditResultSchema } from "./historical-edit"
 import { LocalResultSchema } from "./local-operations"
 import { OperationHistoryResultSchema, OperationTransitionResultSchema, RecoveryResultSchema, TestMutationResultSchema, WorktreeResultSchema } from "./operation-history"
 import { PublishResultSchema } from "./publish"
-import { PullResultSchema } from "./pull"
+import { FetchResultSchema, PullResultSchema } from "./pull"
 import { RecoveryStatusResultSchema } from "./worktree-recovery"
 import { WorktreeListResultSchema } from "./worktrees"
 
@@ -90,6 +90,7 @@ export let EngineMessageSchema = z.union([
     LocalResultSchema,
     ConflictResultSchema,
     PullResultSchema,
+    FetchResultSchema,
     PublishResultSchema,
     HistoricalEditResultSchema,
     RecoveryResultSchema,

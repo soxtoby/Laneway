@@ -4,7 +4,7 @@ import type { WorktreeActionResult, WorktreePreviewResult, WorktreeRequest } fro
 import type { CommitDraft, LocalActionResult, LocalRequest } from "@laneway/shared"
 import type { DiscardRequest, DiscardResult, DiscardUndoResult } from "@laneway/shared"
 import type { ConflictActionResult, ConflictRequest } from "@laneway/shared"
-import type { PullActionResult, PullProgress, PullRequest } from "@laneway/shared"
+import type { FetchActionResult, FetchRequest, PullActionResult, PullProgress, PullRequest } from "@laneway/shared"
 import type { PublishActionResult, PublishProgress, PublishRequest } from "@laneway/shared"
 import type { RecoveryActionResult, RecoveryRequest } from "@laneway/shared"
 import type { HistoricalEditActionResult, HistoricalEditRequest } from "@laneway/shared"
@@ -51,6 +51,8 @@ declare global {
             recoverWorktree(repositoryId: string, request: RecoveryRequest): Promise<RecoveryActionResult>
             pullLatest(repositoryId: string, request: PullRequest): Promise<PullActionResult>
             cancelPull(repositoryId: string): Promise<boolean>
+            /** Fetches without prompting for credentials and fast-forwards branches outside the requested stacks. */
+            fetchLatest(repositoryId: string, request: FetchRequest): Promise<FetchActionResult>
             onPullProgress(listener: (progress: PullProgress) => void): () => void
             /** Plans, publishes, resumes, or restores a stack's publication; plans run alongside a publish. */
             publish(repositoryId: string, request: PublishRequest): Promise<PublishActionResult>

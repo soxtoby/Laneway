@@ -69,7 +69,7 @@ export async function runCommandLine(argv: string[]): Promise<number | undefined
     if (
         ["local", "local-preview", "local-transfer", "test-mutation", "echo", "--version"].includes(argv[0] ?? "")
         || (["undo", "redo", "recover"].includes(argv[0] ?? "") && argv.includes("--crash-after"))
-        || (["worktree", "pull", "publish", "conflict", "recover", "edit"].includes(argv[0] ?? "")
+        || (["worktree", "pull", "fetch", "publish", "conflict", "recover", "edit"].includes(argv[0] ?? "")
             && argv.some(arg => arg == "--request" || arg == "--request-file"))
     ) {
         return undefined
@@ -86,6 +86,7 @@ export async function runCommandLine(argv: string[]): Promise<number | undefined
             "reword",
             "worktree",
             "pull",
+            "fetch",
             "publish",
             "conflict",
             "edit",
@@ -200,6 +201,9 @@ export async function runCommandLine(argv: string[]): Promise<number | undefined
                 graphOptions,
                 progress,
             }
+        } else if (command == "fetch") {
+            operands(args, 0)
+            operation = { command, noWait, request: { branches: [], remote: option(args, "remote") }, graphOptions, progress }
         } else if (command == "publish")
             operation = { command, noWait, request: await publishRequest(args, repo), graphOptions, progress }
         else if (command == "recover") {
@@ -282,7 +286,7 @@ function workflowArguments(command: string, rest: string[]) {
         definitions = { branch: "string", message: "multiple", "message-file": "string", preview: "boolean", yes: "boolean", remote: "string" }
     else if (command == "rebase")
         definitions = { onto: "string", preview: "boolean", yes: "boolean", "allow-conflicts": "boolean", remote: "string" }
-    else if (command == "pull")
+    else if (command == "pull" || command == "fetch")
         definitions = { remote: "string" }
     else if (command == "publish")
         definitions = { remote: "string", preview: "boolean", resume: "string", restore: "string" }

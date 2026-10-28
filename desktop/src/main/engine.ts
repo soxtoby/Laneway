@@ -17,6 +17,8 @@ export interface EngineCommandOptions {
     enginePath: string
     cwd: string
     args: string[]
+    /** Added to the environment the engine, and the Git it runs, inherit. */
+    env?: Record<string, string>
     onMessage?: (message: EngineMessage) => void
 }
 
@@ -65,6 +67,7 @@ export function runEngineCommand(options: EngineCommandOptions) {
 
     let child = spawn(options.enginePath, args, {
         cwd: options.cwd,
+        env: options.env && { ...process.env, ...options.env },
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
     })

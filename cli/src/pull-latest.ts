@@ -107,13 +107,16 @@ export async function preparePull(
         if (cancelled())
             return { kind: "cancelled", fetches, trackingBefore }
         progress(`Fetching ${remote}…`, index, total)
-        let result = await repo.run(main(repo), ["fetch", "--prune", "--no-write-fetch-head", "--", remote])
-        if (result.exitCode == 0)
-            fetches.push({ remote, status: "fetched" })
-        else
-            fetches.push({ remote, status: "failed", message: result.stderr.toString().trim() || `Git could not fetch ${remote}.` })
+        fetches.push(await fetchRemote(repo, remote))
     }
     return { kind: "prepared", fetches, trackingBefore, stacks, blocked, remotesFor }
+}
+
+export async function fetchRemote(repo: RepositoryGit, remote: string): Promise<PullFetch> {
+    let result = await repo.run(main(repo), ["fetch", "--prune", "--no-write-fetch-head", "--", remote])
+    return result.exitCode == 0
+        ? { remote, status: "fetched" }
+        : { remote, status: "failed", message: result.stderr.toString().trim() || `Git could not fetch ${remote}.` }
 }
 
 export async function executePull(

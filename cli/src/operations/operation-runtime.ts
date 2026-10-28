@@ -5,7 +5,7 @@ import { type OperationAvailability, type OperationAvailabilityReason, type Oper
 import { trackingBranchName, type WorktreeRequest, type WorktreeResult } from "@laneway/shared"
 import type { LocalRequest, LocalResult } from "@laneway/shared"
 import type { ConflictRequest, ConflictResult } from "@laneway/shared"
-import type { BranchGraphReadOptions, PublishRequest, PublishResult, PullRequest, PullResult } from "@laneway/shared"
+import type { BranchGraphReadOptions, FetchRequest, FetchResult, PublishRequest, PublishResult, PullRequest, PullResult } from "@laneway/shared"
 import type { RecoveryRequest, RecoveryStatusResult, WorktreeRecovery } from "@laneway/shared"
 import type { HistoricalEditRequest, HistoricalEditResult } from "@laneway/shared"
 import type { GitResult } from "@laneway/shared"
@@ -13,6 +13,7 @@ import { lstat, readdir, readFile, readlink, rename, rm } from "node:fs/promises
 import { dirname, join, resolve, sep } from "node:path"
 import { isFileExtraction } from "../composition/file-extraction"
 import { conflictMutation, conflictPaths, executeConflict, suspendWorkingConflicts } from "../conflicts/conflict-operations"
+import { fastForwardBranches, fetchLatest, type FetchProgressReporter } from "../fetch-latest"
 import { mutateHistoricalEdit, prepareHistoricalEdit } from "../historical-edit/historical-edit"
 import { LocalPreconditionError, mutateLocal, prepareLocal } from "../local-mutations"
 import { executePublish, type PublishProgressReporter } from "../publish"
@@ -56,6 +57,13 @@ export type OperationCommand =
         progress?: PublishProgressReporter
     }
     | {
+        command: "fetch"
+        request: FetchRequest
+        noWait: boolean
+        graphOptions: (repositoryId: string) => BranchGraphReadOptions
+        progress?: FetchProgressReporter
+    }
+    | {
         command: "local" | "local-preview" | "local-transfer"
         request: LocalRequest
         token?: string
@@ -83,6 +91,7 @@ export type OperationCommandResult =
     | LocalResult
     | ConflictResult
     | PullResult
+    | FetchResult
     | PublishResult
     | HistoricalEditResult
 
@@ -1111,6 +1120,31 @@ export async function executeOperationCommand(
             lock: work => store.withLock(command.noWait, cancellation, work),
             cancelled: () => cancellation.isCancelled(),
             progress: command.progress ?? (() => {}),
+        })
+    }
+
+    // Fetch changes no local branch Pull latest would update, so it runs outside Operation History, holding the mutation
+    // lock only to record what it moved and fast-forward branches outside every open stack.
+    if (command.command == "fetch") {
+        let graphOptions = command.graphOptions(repository.descriptor.id)
+        let fetched = await fetchLatest(repository, command.request, graphOptions, () => cancellation.isCancelled(), command.progress ?? (() => {}))
+        if (fetched.kind == "no-remotes")
+            return { type: "result", command: "fetch", status: "no-remotes", message: "Add a remote to fetch.", fetches: [], fastForwarded: [] }
+        return store.withLock(false, neverCancelled, async (): Promise<FetchResult> => {
+            await recordFetchedUpstreams(repository, fetched.trackingBefore)
+            // An interrupted operation's recovery expects the branches it left, so nothing moves until it recovers.
+            let fastForwarded = fetched.kind == "fetched" && !(await store.readPendingExecutions()).length
+                ? await fastForwardBranches(repository, command.request, graphOptions)
+                : []
+            let failed = fetched.fetches.filter(fetch => fetch.status == "failed").map(fetch => fetch.remote)
+            let message = fetched.kind == "cancelled"
+                ? "Fetch cancelled."
+                : failed.length
+                ? `Fetching ${failed.join(", ")} failed.`
+                : fastForwarded.length
+                ? `Fetched; fast-forwarded ${fastForwarded.map(ref => ref.slice(11)).join(", ")}.`
+                : "Fetched."
+            return { type: "result", command: "fetch", status: fetched.kind, message, fetches: fetched.fetches, fastForwarded }
         })
     }
 
