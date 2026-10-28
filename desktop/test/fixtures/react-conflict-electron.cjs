@@ -112,6 +112,14 @@ app.on("browser-window-created", (_event, window) => {
                         if (control.textContent != 'Keep this' || control.parentElement.dataset.mergeConflict != kind) throw new Error('Keep this is not in its side heading: ' + action);
                     }
                     if (merge().querySelector('[data-merge-conflict-action="both"]').textContent != 'Keep both') throw new Error('Keep both missing');
+                    // Its long line scrolls under a pinned scrollbar, with each side's Keep this still in view.
+                    const host = row('file.txt').querySelector('.pierre-merge');
+                    const scrollbar = await wait(() => host.parentElement.querySelector('.diff-scrollbar:not([hidden])'));
+                    scrollbar.scrollLeft = 120;
+                    await wait(() => merge().querySelector('[data-code]').scrollLeft == 120);
+                    for (const control of merge().querySelectorAll('[data-merge-conflict-marker-row] button')) {
+                        if (control.getBoundingClientRect().right > host.getBoundingClientRect().right + 0.5) throw new Error('Keep this is out of view');
+                    }
                     const markerFont = getComputedStyle(merge().querySelector('[data-merge-conflict-marker-row]')).fontFamily;
                     const codeFont = getComputedStyle(merge().querySelector('[data-line]')).fontFamily;
                     if (markerFont == codeFont || /monospace|Consolas|Cascadia/.test(markerFont)) throw new Error('Conflict headings look like code: ' + markerFont);
@@ -129,7 +137,7 @@ app.on("browser-window-created", (_event, window) => {
                         control.click();
                         await wait(() => row('file.txt').dataset.resolved == 'true' && resolution.getAttribute('aria-busy') == 'false');
                         const file = await savedFile();
-                        const expected = choice == 'current' ? file.leftText : 'Order summary\\nDelivery: three business days.\\nDelivery: next business day.\\nTracking is included.\\n';
+                        const expected = choice == 'current' ? file.leftText : file.leftText.replace('Delivery: three business days.\\n', 'Delivery: three business days.\\nDelivery: next business day.\\n');
                         if (file.resultText != expected) throw new Error('Pierre choice was not saved: ' + choice);
                         if (button('Accept resolution', resolution)) throw new Error('A partial resolution can be accepted');
                         button('Discard progress', resolution).click();

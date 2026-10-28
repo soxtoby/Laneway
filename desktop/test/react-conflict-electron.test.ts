@@ -10,6 +10,8 @@ test("React conflict resolution through production IPC: inline in its commit, ke
     let root = resolve(import.meta.dir, "../..")
     let repository = join(directory, "repository")
     let engine = join(root, "cli/bin/lane.exe")
+    // Wider than any column, so the merge view scrolls it.
+    let tracking = `Tracking is included${" and updated at every depot".repeat(12)}.`
     try {
         await mkdir(repository)
         git("init", "-q", "-b", "main")
@@ -19,13 +21,13 @@ test("React conflict resolution through production IPC: inline in its commit, ke
         git("config", "merge.tool", "laneway-test")
         git("config", "mergetool.laneway-test.cmd", 'cat "$REMOTE" > "$MERGED"')
         git("config", "mergetool.laneway-test.trustExitCode", "true")
-        await writeFile(join(repository, "file.txt"), "Order summary\nDelivery: five business days.\nTracking is included.\n")
+        await writeFile(join(repository, "file.txt"), `Order summary\nDelivery: five business days.\n${tracking}\n`)
         await writeFile(join(repository, "payment.txt"), "Payment: cash\n")
         await writeFile(join(repository, "contact.ts"), 'export const support = "email"\n')
         git("add", ".")
         git("commit", "-qm", "base")
         git("switch", "-qc", "topic")
-        await writeFile(join(repository, "file.txt"), "Order summary\nDelivery: next business day.\nTracking is included.\n")
+        await writeFile(join(repository, "file.txt"), `Order summary\nDelivery: next business day.\n${tracking}\n`)
         await writeFile(join(repository, "payment.txt"), "Payment: card\n")
         await writeFile(join(repository, "contact.ts"), 'export const support = "live chat"\n')
         await writeFile(join(repository, "notes.txt"), "A clean file in the conflicted commit\n")
@@ -36,7 +38,7 @@ test("React conflict resolution through production IPC: inline in its commit, ke
         git("add", ".")
         git("commit", "-qm", "clean descendant")
         git("switch", "main")
-        await writeFile(join(repository, "file.txt"), "Order summary\nDelivery: three business days.\nTracking is included.\n")
+        await writeFile(join(repository, "file.txt"), `Order summary\nDelivery: three business days.\n${tracking}\n`)
         await writeFile(join(repository, "payment.txt"), "Payment: bank transfer\n")
         await writeFile(join(repository, "contact.ts"), 'export const support = "phone"\n')
         git("commit", "-qam", "base change")
@@ -91,7 +93,7 @@ test("React conflict resolution through production IPC: inline in its commit, ke
             }
         }
         expect(git("branch", "--show-current")).toBe("topic")
-        expect(git("show", "HEAD:file.txt")).toBe("Order summary\nDelivery: next business day.\nTracking is included.")
+        expect(git("show", "HEAD:file.txt")).toBe(`Order summary\nDelivery: next business day.\n${tracking}`)
         expect(git("show", "HEAD:payment.txt")).toBe("Payment: bank transfer")
         expect(git("show", "HEAD:contact.ts")).toBe('export const support = "live chat"')
         expect(git("status", "--porcelain")).toBe("")

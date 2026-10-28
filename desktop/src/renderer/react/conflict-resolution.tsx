@@ -261,21 +261,62 @@ function MergeResolution({ name, contents, sides, busy, onResolve }: {
     onResolve(contents: string): Promise<boolean>
 }) {
     let host = useRef<HTMLDivElement>(null)
+    let scrollbar = useRef<HTMLDivElement>(null)
     let pending = useRef(false)
     let [saving, setSaving] = useState(false)
     let [error, setError] = useState("")
     let latest = useEffectEvent(() => ({ busy, sides, onResolve }))
     useEffect(() => {
         let node = host.current
-        if (!node)
+        let bar = scrollbar.current
+        if (!node || !bar)
             return
+        let lifetime = new AbortController()
         let shadow = node.shadowRoot ?? node.attachShadow({ mode: "open" })
         let container = document.createElement("div")
         shadow.replaceChildren(container)
+        // Pierre's own scrollbar sits under the file's last line, often out of view; one pinned under the view drives
+        // its lines, as the diff column's does.
+        let pierre: ShadowRoot | undefined
+        let track = bar.firstElementChild as HTMLElement
+        let lines = () => pierre?.querySelector<HTMLElement>("[data-code]")
+        bar.hidden = true
+        bar.addEventListener("scroll", () => {
+            let pane = lines()
+            if (pane)
+                pane.scrollLeft = bar.scrollLeft
+        }, { passive: true, signal: lifetime.signal })
+        let follow = (event: Event) => {
+            if (event.target instanceof HTMLElement && event.target.hasAttribute("data-code"))
+                bar.scrollLeft = event.target.scrollLeft
+        }
+        // Measured on the next frame: showing the scrollbar inside the browser's ResizeObserver loop resizes the
+        // column around it, which the browser reports as undelivered notifications.
+        let frame = 0
+        let measure = () => {
+            cancelAnimationFrame(frame)
+            frame = requestAnimationFrame(() => {
+                let pane = lines()
+                let range = pane ? pane.scrollWidth - pane.clientWidth : 0
+                bar.hidden = range <= 0
+                track.style.width = `${bar.clientWidth + range}px`
+                bar.scrollLeft = pane?.scrollLeft ?? 0
+            })
+        }
+        let resize = new ResizeObserver(measure)
+        resize.observe(node)
         let sheet = new CSSStyleSheet()
+        // Pierre's scrollbar gives way to the pinned one, and side headings stay in view as the lines scroll, keeping
+        // their buttons within reach.
         sheet.replaceSync(`
-            :host { --diffs-font-family: var(--font-family-mono); --diffs-font-size: 12px; --diffs-line-height: 24px; }
+            :host { --diffs-font-family: var(--font-family-mono); --diffs-font-size: 12px; --diffs-line-height: 24px;
+                --diffs-scrollbar-gutter-override: 0px; }
+            [data-code] { scrollbar-width: none; }
             [data-merge-conflict-marker-row] {
+                position: sticky;
+                left: var(--diffs-column-number-width, 0);
+                box-sizing: border-box;
+                width: var(--diffs-column-content-width, auto);
                 display: flex;
                 align-items: center;
                 gap: 12px;
@@ -302,10 +343,17 @@ function MergeResolution({ name, contents, sides, busy, onResolve }: {
             expandUnchanged: true,
             onPostRender: (element, _instance, phase) => {
                 let root = element.shadowRoot
-                if (phase != "unmount" && root && !root.adoptedStyleSheets.includes(sheet))
+                if (phase == "unmount" || !root)
+                    return
+                if (!root.adoptedStyleSheets.includes(sheet))
                     root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet]
-                if (phase != "unmount" && root)
-                    placeSideControls(root, latest().sides)
+                if (pierre != root) {
+                    pierre = root
+                    // Scrolling the lines themselves, as a touchpad does, moves the scrollbar with them.
+                    root.addEventListener("scroll", follow, { capture: true, passive: true, signal: lifetime.signal })
+                }
+                placeSideControls(root, latest().sides)
+                measure()
             },
             onMergeConflictAction: (choice, instance) => {
                 let { busy: working, onResolve: resolve } = latest()
@@ -332,9 +380,11 @@ function MergeResolution({ name, contents, sides, busy, onResolve }: {
             viewer.setOptions({ ...viewer.options, themeType: dark.matches ? "dark" : "light" })
             viewer.rerender()
         }
-        dark.addEventListener("change", appearance)
+        dark.addEventListener("change", appearance, { signal: lifetime.signal })
         return () => {
-            dark.removeEventListener("change", appearance)
+            lifetime.abort()
+            resize.disconnect()
+            cancelAnimationFrame(frame)
             viewer.cleanUp()
         }
     }, [name, contents])
@@ -352,6 +402,10 @@ function MergeResolution({ name, contents, sides, busy, onResolve }: {
             </div>
             {error && <p className="column-placeholder" role="alert">{error}</p>}
             <div ref={host} className="pierre-merge" inert={saving || busy} />
+            {/* Sticks to the bottom of the scrolling column while any of the merge is in view. */}
+            <div ref={scrollbar} className="diff-scrollbar" aria-hidden="true">
+                <div className="diff-scrollbar-track" />
+            </div>
         </section>
     )
 }

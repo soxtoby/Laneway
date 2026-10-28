@@ -4878,6 +4878,11 @@
     }
 }
 
+/* Its width comes from the column: its diff scrollbar's track is as wide as the longest line, and would widen it. */
+.merge-resolution {
+    contain: inline-size;
+}
+
 .pierre-merge {
     min-height: 40px;
     max-height: min(65vh, 640px);
