@@ -96,6 +96,26 @@ describe("React app", () => {
         expect(button(document.body, "Switch to dark appearance")).toBeDefined()
     })
 
+    test("a downloaded update offers a restart in the header, which installs it", async () => {
+        let ready: ((update: { version: string }) => void) | undefined
+        let installs = 0
+        let app = await startApp(fakeLaneway({
+            onUpdateReady: listener => {
+                ready = listener
+                return () => ready = undefined
+            },
+            installUpdate: async () => {
+                installs++
+            },
+        }))
+        expect(document.querySelector("header")?.textContent).not.toContain("Restart to update")
+
+        await app.act(() => ready!({ version: "0.2.0" }))
+        await app.act(() => press(button(document.body, "Restart to update")))
+
+        expect(installs).toBe(1)
+    })
+
     test("an unreadable Workspace State offers a reset, which clears the warning", async () => {
         let resets = 0
         let app = await startApp(fakeLaneway({

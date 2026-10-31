@@ -33,6 +33,8 @@ interface AppState {
     graphWidth?: number
     /** Node's name for the operating system, which names its file manager. */
     platform: string
+    /** The version of a newer Laneway, downloaded and waiting to install. */
+    update?: string
 }
 
 declare global {
@@ -123,6 +125,10 @@ declare global {
             onEntryProgress(listener: (progress: EntryProgress) => void): () => void
             /** Fires after HEAD, refs, or worktree registrations change on disk, from any tool. */
             onRepositoryChanged(listener: (change: { repositoryId: string }) => void): () => void
+            /** Quits, installs the downloaded update, and starts the new version. */
+            installUpdate(): Promise<void>
+            /** Fires once a newer Laneway has downloaded. */
+            onUpdateReady(listener: (update: { version: string }) => void): () => void
         }
     }
 }

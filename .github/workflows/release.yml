@@ -1,0 +1,28 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - name: Check the tag names the desktop app's version
+        shell: bash
+        run: |
+          version=$(bun -e 'console.log(require("./desktop/package.json").version)')
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::$GITHUB_REF_NAME doesn't match version $version in desktop/package.json."
+            exit 1
+          fi
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bun run --cwd desktop package --publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

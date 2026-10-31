@@ -44,6 +44,8 @@ export type AppSnapshot =
         graphWidth?: number
         /** Node's name for the operating system, which names its file manager. */
         platform: string
+        /** The version of a newer Laneway, downloaded and waiting to install. */
+        readyUpdate?: string
         notice?: Notice
     }
 
@@ -109,6 +111,8 @@ export interface AppController extends Store<AppSnapshot> {
     reorderRepositories(ids: string[]): Promise<void>
     /** Replaces a Workspace State that can't be read with an empty one. */
     resetWorkspace(): Promise<void>
+    /** Quits, installs the downloaded update, and starts the new version. */
+    installUpdate(): void
     /** Shows a notice in place of the current one; the returned function withdraws it if it is still showing. */
     notify(notice: Notice): () => void
     dismissNotice(notice: Notice): void
@@ -124,6 +128,7 @@ export function createAppController(api: Api): AppController {
                 void columns.refresh()
         }),
         api.onEntryProgress(progress => entry.updateProgress(progress)),
+        api.onUpdateReady(({ version }) => update({ readyUpdate: version })),
     ]
 
     function ready() {
@@ -442,6 +447,7 @@ export function createAppController(api: Api): AppController {
                     showCommitAges: state.showCommitAges,
                     graphWidth: state.graphWidth,
                     platform: state.platform,
+                    readyUpdate: state.update,
                 })
                 if (state.workspace.persistenceError?.code == "workspace.partial")
                     notify({ code: state.workspace.persistenceError.code, message: state.workspace.persistenceError.message })
@@ -640,6 +646,10 @@ export function createAppController(api: Api): AppController {
             } catch (error) {
                 notify({ code: "workspace.reset.failed", message: errorMessage(error) })
             }
+        },
+
+        installUpdate() {
+            void api.installUpdate()
         },
 
         notify,

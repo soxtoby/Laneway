@@ -92,4 +92,10 @@ contextBridge.exposeInMainWorld("laneway", {
         ipcRenderer.on("repository:changed", handler)
         return () => ipcRenderer.off("repository:changed", handler)
     },
+    installUpdate: () => ipcRenderer.invoke("update:install"),
+    onUpdateReady: (listener: (update: { version: string }) => void) => {
+        let handler = (_event: Electron.IpcRendererEvent, update: { version: string }) => listener(update)
+        ipcRenderer.on("update:ready", handler)
+        return () => ipcRenderer.off("update:ready", handler)
+    },
 })

@@ -1,0 +1,9 @@
+# Distribute a Windows installer that updates from GitHub Releases
+
+Laneway ships as a one-click, per-user installer built by electron-builder (`desktop/scripts/package.ts`), and updates itself with electron-updater from this repository's GitHub Releases, which is why the repository is public. The installer holds the built `out/` and `resources/` in `app.asar`, and the Engine as `lane.exe` beside `Laneway.exe`, where the desktop app looks for it. The bundles carry every dependency, so no `node_modules` ship. The app id, `com.soxtoby.laneway`, keys the installation, so it must not change. Only the installed app is named Laneway, which names Electron's user data folder, so its single-instance lock doesn't stop `bun dev`; both still read and write the same settings and Workspace State.
+
+An installed Laneway checks for a newer release when it starts and every hour, and downloads it in the background. It downloads the whole installer: the installer is small enough that differential downloads, which would publish a block map with each release, aren't worth it. A downloaded update installs silently when Laneway quits; until then the header offers Restart to update, which installs it and starts the new version without asking, once no operation is under way. Development runs from source and never checks.
+
+Releases are unsigned for now, so Windows SmartScreen warns about the first installer people download until they choose Run anyway. Pushing a tag `v<version>` that matches `desktop/package.json` builds and publishes the release on GitHub Actions ([releasing](../releasing.md)). Windows is the only target, as it is for V1; updating on macOS would also need Apple's signing and notarization.
+
+Electron Forge with Squirrel.Windows was the alternative. electron-builder was chosen for its one-click installer, which needs no administrator rights, and for electron-updater, which reads releases straight from GitHub without a separate update service.

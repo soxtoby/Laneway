@@ -265,6 +265,8 @@ export function fakeLaneway(overrides: Partial<Window["laneway"]> = {}): Window[
         setRepositoryGraphSettings: async (_repositoryId, settings) => settings,
         onEntryProgress: () => () => undefined,
         onRepositoryChanged: () => () => undefined,
+        installUpdate: async () => undefined,
+        onUpdateReady: () => () => undefined,
         ...overrides,
     }
 }

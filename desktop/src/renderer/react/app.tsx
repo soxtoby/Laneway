@@ -7,7 +7,7 @@ import { CommitAgesShown } from "./commit-age"
 import { ContextMenuHost } from "./context-menu"
 import { GitSettingsDialog } from "./git-settings-dialog"
 import { ReturnDialog } from "./historical-edit-banner"
-import { ArchiveIcon, BrandMark, GraphIcon, MoonIcon, RedoIcon, SearchIcon, SettingsIcon, SunIcon, UndoIcon } from "./icons"
+import { ArchiveIcon, BrandMark, GraphIcon, MoonIcon, RedoIcon, SearchIcon, SettingsIcon, SunIcon, UndoIcon, UpdateIcon } from "./icons"
 import { LocalBranchDialog } from "./local-branch-dialog"
 import { MissingRepository } from "./missing-repository"
 import { Notices } from "./notices"
@@ -72,6 +72,7 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
                         redo: () => void worktrees.transition(active.id, "redo"),
                     }
                     : undefined}
+                update={snapshot.readyUpdate ? { version: snapshot.readyUpdate, busy: busy || operating, install: controller.installUpdate } : undefined}
                 appearance={appearance}
                 busy={busy}
                 onToggleAppearance={() => void controller.toggleAppearance()}
@@ -157,13 +158,15 @@ interface HeaderProps {
     tabs: ReactNode
     /** The open repository's operations; absent when none is open. */
     actions?: { busy: boolean; fetch: { fetching: BackgroundFetch; repositoryId: string; remotes?: boolean }; stashes(): void; undo(): void; redo(): void }
+    /** A newer Laneway, downloaded; it can't restart into it while an operation is under way. */
+    update?: { version: string; busy: boolean; install(): void }
     appearance: "light" | "dark"
     busy: boolean
     onToggleAppearance(): void
     onOpenSettings(): void
 }
 
-function Header({ onOpenLens, graph, tabs, actions, appearance, busy, onToggleAppearance, onOpenSettings }: HeaderProps) {
+function Header({ onOpenLens, graph, tabs, actions, update, appearance, busy, onToggleAppearance, onOpenSettings }: HeaderProps) {
     let appearanceLabel = appearance == "dark" ? "Switch to light appearance" : "Switch to dark appearance"
     return (
         <header className="header drag-region">
@@ -206,6 +209,15 @@ function Header({ onOpenLens, graph, tabs, actions, appearance, busy, onToggleAp
                 </>
             )}
             <span className="header-divider" />
+            {update && (
+                <TooltipTrigger>
+                    <Button variant="secondary" isDisabled={update.busy} onPress={update.install}>
+                        <UpdateIcon />
+                        Restart to update
+                    </Button>
+                    <Tooltip>Restart into Laneway {update.version}</Tooltip>
+                </TooltipTrigger>
+            )}
             <HeaderButton label={appearanceLabel} onPress={onToggleAppearance}>
                 {appearance == "dark" ? <SunIcon /> : <MoonIcon />}
             </HeaderButton>

@@ -8,6 +8,7 @@ import { registerMarkdownHandlers } from "./ipc/markdown-ipc"
 import { registerOperationHandlers } from "./ipc/operation-ipc"
 import { registerRepositoryHandlers } from "./ipc/repository-ipc"
 import { OpenRepositories } from "./repositories"
+import { readyUpdate, registerUpdates } from "./updates"
 import { createWindow, resource } from "./window"
 import { WorkspaceManager } from "./workspace-manager"
 
@@ -41,6 +42,10 @@ let engineStatus:
 app.commandLine.appendSwitch("enable-features", "OverlayScrollbar:mode/overlay")
 
 app.commandLine.appendSwitch("disable-features", "ScrollbarAnimations")
+
+// The installer's shortcuts carry the app's id, so the taskbar groups and pins the window with them.
+if (app.isPackaged)
+    app.setAppUserModelId("com.soxtoby.laneway")
 
 let singleInstance = app.requestSingleInstanceLock()
 
@@ -110,7 +115,9 @@ function registerHandlers() {
         graphWidth: await repositories.graphWidth(),
         engine: engineStatus,
         platform: process.platform,
+        update: readyUpdate(),
     }))
 
     registerRepositoryHandlers(repositories, workspace)
+    registerUpdates()
 }
