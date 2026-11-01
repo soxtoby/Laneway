@@ -46,3 +46,10 @@ test("Pierre supports a read-only content page without patch headers", () => {
     let diff = pierrePatch({ ...page, selectable: false, lines: [{ id: 0, kind: "context", text: "current", newLine: 1, hunk: -1 }] })!
     expect(diff.additionLines.join("")).toBe("current\n")
 })
+
+test("A file renamed without changes has no lines for Pierre to draw", () => {
+    let { page } = inspectionScenario()
+    let renamed = { ...page, file: { ...page.file, oldPath: "old.ts" }, lines: [] }
+
+    expect(pierrePatch(renamed)).toBeUndefined()
+})

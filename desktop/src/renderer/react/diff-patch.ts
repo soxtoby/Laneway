@@ -11,11 +11,13 @@ export function pierrePatch(page: FileDiffPage) {
         groups.set(line.hunk, group)
     }
 
-    let patch = "--- a/file\n+++ b/file\n"
-    for (let lines of groups.values())
-        patch += hunkPatch(lines)
+    let hunks = [...groups.values()].map(hunkPatch).join("")
+    // A page without changed lines, such as a pure rename or a mode change, has nothing to draw, and Pierre rejects
+    // a patch without hunks.
+    if (!hunks)
+        return undefined
 
-    let diff = processFile(patch, { throwOnError: true })
+    let diff = processFile(`--- a/file\n+++ b/file\n${hunks}`, { throwOnError: true })
     if (diff) {
         diff.name = page.file.path
         diff.prevName = page.file.oldPath
