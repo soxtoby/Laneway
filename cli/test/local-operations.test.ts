@@ -38,6 +38,28 @@ test("staged snapshots preserve later edits; commits undo and redo exact trees",
     expect(git(path, "rev-parse", "HEAD")).toBe(commit)
 }, 60_000)
 
+test("amend replaces the last commit on its parents with its author kept, and undo restores it", async () => {
+    let path = await fixture()
+    let base = git(path, "rev-parse", "HEAD")
+    await writeFile(join(path, "a.txt"), "first\n")
+    git(path, "commit", "-qam", "Subject that\nwraps\n\nOriginal body", "--author", "Other Author <other@example.invalid>", "--date", "2001-02-03T04:05:06Z")
+    let original = git(path, "rev-parse", "HEAD")
+    await writeFile(join(path, "b.txt"), "added\n")
+    let request: LocalRequest = { action: "commit", path, title: "Amended", message: "New body", amend: true }
+
+    expect((await preview(path, request)).lastCommit).toEqual({ objectId: original, title: "Subject that wraps", message: "Original body" })
+    expect((await perform(path, request)).status).toBe("performed")
+    expect(git(path, "rev-parse", "HEAD^")).toBe(base)
+    expect(git(path, "log", "-1", "--format=%an <%ae> %aI")).toBe("Other Author <other@example.invalid> 2001-02-03T04:05:06Z")
+    expect(git(path, "log", "-1", "--format=%B")).toBe("Amended\n\nNew body")
+    expect(git(path, "show", "HEAD:a.txt")).toBe("first")
+    expect(git(path, "show", "HEAD:b.txt")).toBe("added")
+
+    await transition(path, "undo")
+
+    expect(git(path, "rev-parse", "HEAD")).toBe(original)
+}, 60_000)
+
 test("SHA-256 commits honor clean filters, staged modes and signing failures", async () => {
     let path = await fixture(true, "sha256")
     git(path, "config", "filter.upper.clean", "tr a-z A-Z")

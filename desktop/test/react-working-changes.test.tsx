@@ -267,6 +267,39 @@ describe("React Working Changes", () => {
         expect(header().textContent).toContain("No Working Changes")
     })
 
+    test("Amend last commit fills the form from that commit and amends it, leaving the saved draft alone", async () => {
+        let scenario = inspectionScenario()
+        let draft = { title: "Saved draft", message: "", branch: "" }
+        let mutations: LocalRequest[] = []
+        let app = await startReactApp({
+            ...scenario.api,
+            readCommitDraft: async () => ({ ...draft }),
+            saveCommitDraft: async (_id, _path, value) => {
+                draft = { ...value }
+            },
+            localOperation: async (_id, request, token) => {
+                if (!token)
+                    return previewResult({ lastCommit: { objectId: "4".repeat(40), title: "Last subject", message: "Last body" } })
+                mutations.push(request)
+                return performed()
+            },
+        })
+        await app.act(() => press(button(workingChanges(), "More commit actions")))
+        await app.act(() => press(menuItem("Amend last commit…")))
+        expect(input("Commit title").value).toBe("Last subject")
+        expect(workingChanges().querySelector<HTMLTextAreaElement>("[aria-label='Commit message']")!.value).toBe("Last body")
+
+        await app.act(() => type(input("Commit title"), "Amended subject"))
+        await app.act(() => press(button(workingChanges(), "Amend with staged (2)")))
+
+        expect(mutations).toEqual([{ action: "commit", path: "D:\\Source\\inspection", title: "Amended subject", message: "Last body", amend: true }])
+        expect(draft.title).toBe("Saved draft")
+        expect(toast()?.textContent).toContain("Commit amended.")
+
+        await app.act(() => press(button(workingChanges(), "Commit…")))
+        expect(input("Commit title").value).toBe("Saved draft")
+    })
+
     test("a commit whose hooks change files waits for Continue, which accepts them", async () => {
         let scenario = inspectionScenario()
         let commits: LocalRequest[] = []

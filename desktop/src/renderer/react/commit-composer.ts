@@ -13,6 +13,8 @@ export interface ComposerSnapshot {
     stashing: boolean
     busy: boolean
     draft: CommitDraft
+    /** The form amends the last commit with these fields, prefilled from it and never saved as the draft. */
+    amend?: Pick<CommitDraft, "title" | "message">
     preview?: LocalPreview
     /** A commit whose hooks changed files, waiting for Continue or Cancel. */
     hook?: LocalResult
@@ -26,13 +28,15 @@ export interface CommitComposer extends Store<ComposerSnapshot> {
     /** Reads the saved draft and the first preview. */
     start(): Promise<void>
     compose(): void
+    /** Opens the form to amend the worktree's last commit, its title and message filled from it. */
+    amend(): void
     /** Closes the form, keeping the draft for next time. */
     cancel(): void
     edit(change: Partial<Pick<CommitDraft, "title" | "message">>): void
     /** Names the branch a detached worktree's commit creates. */
     nameBranch(name: string): void
     stage(files: ChangedFile[], unstage: boolean): Promise<void>
-    /** Commits the staged files, or every change when none are staged; continues past a hook review. */
+    /** Commits the staged files, or every change when none are staged, amending the last commit in its form; continues past a hook review. */
     commit(): Promise<void>
     dismissHook(): void
     openStash(): void
@@ -140,8 +144,15 @@ export function createCommitComposer({ api, repositoryId, path, blocked, notify,
 
     async function commit() {
         await refreshing
+        let { draft, amend, preview, hook } = state()
+        if (amend) {
+            let result = await run({ action: "commit", path, ...amend, amend: true, acceptHooks: hook?.hookToken })
+            if (result.status == "hook-review")
+                return set({ hook: result })
+            set({ hook: undefined, composing: false, amend: undefined })
+            return notify({ code: "commit.amended", message: result.message ?? "Commit amended.", transient: !result.message })
+        }
         await save()
-        let { draft, preview, hook } = state()
         if (!preview?.branch || preview.unborn && draft.branch != preview.branch)
             await run({ action: "branch-create", name: draft.branch, path })
         let result = await run({ action: "commit", path, title: draft.title, message: draft.message, acceptHooks: hook?.hookToken })
@@ -168,16 +179,29 @@ export function createCommitComposer({ api, repositoryId, path, blocked, notify,
         },
 
         compose() {
-            set({ composing: true })
+            set({ composing: true, amend: undefined })
+            refreshInBackground()
+        },
+
+        amend() {
+            let last = state().preview?.lastCommit
+            if (!last)
+                return
+            set({ composing: true, amend: { title: last.title, message: last.message }, hook: undefined })
             refreshInBackground()
         },
 
         cancel() {
-            set({ composing: false, hook: undefined })
-            void save()
+            let { amend } = state()
+            set({ composing: false, amend: undefined, hook: undefined })
+            if (!amend)
+                void save()
         },
 
         edit(change) {
+            let { amend } = state()
+            if (amend)
+                return set({ amend: { ...amend, ...change }, hook: undefined })
             set({ draft: { ...state().draft, ...change }, hook: undefined })
             void save()
         },

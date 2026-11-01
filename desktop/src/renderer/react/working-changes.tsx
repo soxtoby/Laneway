@@ -53,11 +53,16 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
     let staged = files.filter(file => file.staged)
     let disabled = state.busy || blocked
     let clean = working?.inventory != undefined && files.length == 0 && !state.composing && !state.stashing
-    let { draft, preview } = state
+    let { draft, preview, amend } = state
     let edit = column.worktree?.historicalEdit
     let detached = !edit && (column.kind == "virtual" || state.loaded && preview != undefined && (!preview.branch || preview.unborn))
     let unborn = column.kind == "virtual" && /^0+$/.test(column.branch.objectId) || preview?.unborn == true
-    let canCommit = !disabled && draft.title.trim() != "" && files.length > 0 && (preview?.branch != undefined || draft.branch.trim() != "") && !state.hook
+    // Only a branch's last commit can be amended; a detached head has no branch to move.
+    let amendable = state.loaded && preview?.branch != undefined && preview.lastCommit != undefined
+    let fields = amend ?? draft
+    let canCommit = !disabled && fields.title.trim() != "" && files.length > 0 && (preview?.branch != undefined || !amend && draft.branch.trim() != "")
+        && !state.hook
+    let commitLabel = `${amend ? "Amend with" : "Commit"} ${staged.length ? `staged (${staged.length})` : `all changes (${files.length})`}`
     let reveal = (action: () => void) => () => {
         setExpanded(true)
         action()
@@ -175,6 +180,7 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
                                     <Tooltip>More commit actions</Tooltip>
                                 </TooltipTrigger>
                                 <Menu>
+                                    <MenuItem isDisabled={!amendable} onAction={reveal(composer.amend)}>Amend last commit…</MenuItem>
                                     <MenuItem onAction={reveal(composer.openStash)}>Stash Working Changes…</MenuItem>
                                 </Menu>
                             </MenuTrigger>
@@ -188,7 +194,7 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
                                 <TextField
                                     aria-label="Commit title"
                                     placeholder="Commit title (required)"
-                                    value={draft.title}
+                                    value={fields.title}
                                     onChange={title => composer.edit({ title })}
                                     isDisabled={disabled}
                                     autoFocus
@@ -196,7 +202,7 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
                                 <TextArea
                                     aria-label="Commit message"
                                     placeholder="Message (optional)"
-                                    value={draft.message}
+                                    value={fields.message}
                                     onChange={message => composer.edit({ message })}
                                     isDisabled={disabled}
                                 />
@@ -215,7 +221,7 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
                                 <div className="commit-actions">
                                     <Button variant="secondary" isDisabled={disabled} onPress={composer.cancel}>Cancel</Button>
                                     <Button variant="accent" isDisabled={!canCommit} onPress={() => void composer.commit()}>
-                                        {state.busy ? "Working…" : staged.length ? `Commit staged (${staged.length})` : `Commit all changes (${files.length})`}
+                                        {state.busy ? "Working…" : commitLabel}
                                     </Button>
                                 </div>
                             </div>
@@ -227,7 +233,9 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
                                 <p>Continue with the prepared commit, or cancel to review the changes.</p>
                                 <div className="commit-actions">
                                     <Button variant="secondary" isDisabled={disabled} onPress={composer.dismissHook}>Cancel</Button>
-                                    <Button variant="accent" isDisabled={disabled} onPress={() => void composer.commit()}>Continue commit</Button>
+                                    <Button variant="accent" isDisabled={disabled} onPress={() => void composer.commit()}>
+                                        {amend ? "Continue amend" : "Continue commit"}
+                                    </Button>
                                 </div>
                             </div>
                         )}

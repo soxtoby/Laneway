@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os"
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { mutateComposition, prepareComposition } from "./composition/composition"
+import { commitAuthor, rawCommit } from "./composition/composition-commits"
 import { applyStashConflict } from "./conflicts/conflict-operations"
 import { type ChangeRecorder, worktreeTrees } from "./operations/change-recorder"
 import { readRecordedRefs } from "./operations/repository-snapshot"
@@ -12,7 +13,7 @@ import { captureWorktreeState as captureHookFiles } from "./worktrees/worktree-s
 
 interface LocalMetadata {
     stashes: Record<string, string | null>
-    hook?: { token: string; path: string; title: string; message: string; preparedMessage: string; tree: string; head: string | null }
+    hook?: { token: string; path: string; title: string; message: string; amend?: boolean; preparedMessage: string; tree: string; head: string | null }
 }
 export class LocalPreconditionError extends Error {}
 export async function prepareLocal(
@@ -80,6 +81,7 @@ export async function prepareLocal(
 
     let affected = worktrees.filter(item => !item.missing).map(item => item.path)
     let before = { refs: await readRecordedRefs(repository) }
+    let last = await lastCommit(repository, path)
     let files = (await repository.command(path, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])).toString().split("\0").filter(Boolean)
     let stagedResult = await repository.run(path, ["diff", "--cached", "--quiet", "--exit-code"])
     let refs = await repository.command(path, ["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes"])
@@ -97,7 +99,8 @@ export async function prepareLocal(
             affected,
             uniqueCommits,
             branch,
-            unborn: !await head(repository, path),
+            unborn: !last,
+            lastCommit: last,
             suggestedBranch,
             staged: stagedResult.exitCode == 1,
             files,
@@ -232,7 +235,16 @@ export async function mutateLocal(
         if (!preview.branch)
             throw new Error("Create a branch for this worktree before committing.")
         return expectedRefs.worktree(path, async (): Promise<LocalResult> => {
-            let parent = await head(repository, path)
+            let previous = await head(repository, path)
+            if (request.amend && !previous)
+                throw new Error("There is no commit to amend yet.")
+            // An amend replaces HEAD with a commit on HEAD's own parents, keeping its author, as Git's does.
+            let amended = request.amend && previous ? await rawCommit(repository, previous) : undefined
+            let parents = amended
+                ? [...amended.slice(0, amended.indexOf("\n\n")).matchAll(/^parent (\S+)$/gm)].map(match => match[1])
+                : previous
+                ? [previous]
+                : []
             let env: Record<string, string> = { GIT_EDITOR: ":" }
             for (let role of ["AUTHOR", "COMMITTER"]) {
                 let identity = /^(.*) <([^>]*)> (.+)$/.exec(await text(repository, path, ["var", `GIT_${role}_IDENT`]))
@@ -242,6 +254,8 @@ export async function mutateLocal(
                 env[`GIT_${role}_EMAIL`] = identity[2]
                 env[`GIT_${role}_DATE`] = identity[3]
             }
+            if (amended)
+                Object.assign(env, (await commitAuthor(repository, previous!)).env)
 
             // Snapshotting every worktree file to see what hooks changed costs seconds in a large
             // repository, so a repository without commit hooks skips the hooks and the snapshots.
@@ -254,7 +268,8 @@ export async function mutateLocal(
             if (request.acceptHooks) {
                 if (
                     !data.hook || data.hook.token != request.acceptHooks || normalize(data.hook.path) != normalize(path)
-                    || data.hook.title != request.title || data.hook.message != request.message || data.hook.head != parent
+                    || data.hook.title != request.title || data.hook.message != request.message || Boolean(data.hook.amend) != Boolean(request.amend)
+                    || data.hook.head != previous
                     || data.hook.tree != await text(repository, path, ["write-tree"])
                 ) {
                     throw new Error("The reviewed hook result changed. Review the commit again.")
@@ -302,28 +317,37 @@ export async function mutateLocal(
                 }
 
                 if (tree != initialTree || changedFiles.length) {
-                    data.hook = { token: crypto.randomUUID(), path, title: request.title, message: request.message, preparedMessage, tree, head: parent }
+                    data.hook = {
+                        token: crypto.randomUUID(),
+                        path,
+                        title: request.title,
+                        message: request.message,
+                        amend: request.amend,
+                        preparedMessage,
+                        tree,
+                        head: previous,
+                    }
                     await saveMetadata(repository, data)
                     return { ...result, status: "hook-review", changedFiles, hookToken: data.hook.token }
                 }
             }
 
             let tree = await text(repository, path, ["write-tree"])
-            let parentTree = parent
-                ? await text(repository, path, ["rev-parse", `${parent}^{tree}`])
+            let parentTree = parents[0]
+                ? await text(repository, path, ["rev-parse", `${parents[0]}^{tree}`])
                 : await text(repository, path, ["hash-object", "-t", "tree", "--stdin"])
             if (tree == parentTree || !preparedMessage.trim())
-                throw new Error("A commit requires a message and at least one content change.")
+                throw new Error(`${request.amend ? "An amended commit" : "A commit"} requires a message and at least one content change.`)
 
-            let commit = await createCommitObject(repository, path, tree, parent, preparedMessage, env)
+            let commit = await createCommitObject(repository, path, tree, parents, preparedMessage, env)
             if (
-                await text(repository, path, ["symbolic-ref", "HEAD"]) != `refs/heads/${preview.branch}` || await head(repository, path) != parent
+                await text(repository, path, ["symbolic-ref", "HEAD"]) != `refs/heads/${preview.branch}` || await head(repository, path) != previous
                 || await text(repository, path, ["write-tree"]) != tree
             ) {
                 throw new LocalPreconditionError("HEAD or the index changed while preparing the commit. No branch was updated.")
             }
 
-            await updateRefs([{ ref: `refs/heads/${preview.branch}`, before: parent, after: commit }])
+            await updateRefs([{ ref: `refs/heads/${preview.branch}`, before: previous, after: commit }])
             delete data.hook
 
             await saveMetadata(repository, data)
@@ -331,7 +355,7 @@ export async function mutateLocal(
             if (hooks.has("post-commit")) {
                 let post = await repository.run(path, ["hook", "run", "--ignore-missing", "post-commit"], undefined, env)
                 if (post.exitCode)
-                    result.message = `Commit created, but the post-commit hook failed: ${post.stderr.toString().trim()}`
+                    result.message = `${request.amend ? "Commit amended" : "Commit created"}, but the post-commit hook failed: ${post.stderr.toString().trim()}`
             }
             return result
         })
@@ -356,6 +380,17 @@ async function head(repository: RepositoryGit, path: string) {
 
     return result.exitCode ? null : result.stdout.toString().trim()
 }
+/** HEAD's commit, with its message split as the commit form shows it: the subject's lines joined, as Git's %s joins them, then the rest. */
+async function lastCommit(repository: RepositoryGit, path: string) {
+    let result = await repository.run(path, ["log", "-1", "--no-show-signature", "--format=%H%x00%B", "HEAD"])
+    if (result.exitCode)
+        return undefined
+    let [objectId, raw = ""] = result.stdout.toString().split("\0")
+    let body = raw.trim(), split = body.search(/\n[ \t]*\n/)
+    let subject = split < 0 ? body : body.slice(0, split)
+
+    return { objectId, title: subject.split("\n").map(line => line.trim()).join(" "), message: split < 0 ? "" : body.slice(split).trim() }
+}
 export async function localStashes(repository: RepositoryGit) {
     let data = await metadata(repository)
     let output = await text(repository, repository.descriptor.mainWorktree, ["stash", "list", "--format=%H%x00%gs"])
@@ -375,14 +410,14 @@ export async function createCommitObject(
     repository: RepositoryGit,
     path: string,
     tree: string,
-    parent: string | null,
+    parents: string[],
     message: string,
     env?: Record<string, string>,
 ) {
     let signing = await repository.run(path, ["config", "--bool", "--get", "commit.gpgsign"])
     return (await repository.command(
         path,
-        ["commit-tree", tree, ...(parent ? ["-p", parent] : []), ...(signing.stdout.toString().trim() == "true" ? ["-S"] : [])],
+        ["commit-tree", tree, ...parents.flatMap(parent => ["-p", parent]), ...(signing.stdout.toString().trim() == "true" ? ["-S"] : [])],
         message,
         env,
     )).toString().trim()

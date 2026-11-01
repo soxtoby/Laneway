@@ -178,7 +178,7 @@ The view of a Markdown file's diff as the documents it renders, which its row ma
 _Avoid_: Markdown preview, rich diff, prose diff
 
 **Working Changes**:
-The uncommitted, non-ignored changes belonging to one worktree. Before checkout changes, Laneway stores them in an ordinary Git stash associated with the old branch and exposes that stash as a Branch Marker. When Worktree Backing transfers between open columns, the old column keeps them visible as Stashed Working Changes. Ordinary commits use Git's staged snapshot when present, otherwise all Working Changes; transfers to arbitrary destinations use Change Selection.
+The uncommitted, non-ignored changes belonging to one worktree. Before checkout changes, Laneway stores them in an ordinary Git stash associated with the old branch and exposes that stash as a Branch Marker. When Worktree Backing transfers between open columns, the old column keeps them visible as Stashed Working Changes. Ordinary commits use Git's staged snapshot when present, otherwise all Working Changes; transfers to arbitrary destinations use Change Selection. Amending, from the Commit button's menu, takes the same snapshot into the branch's last commit as Git's amend does: the form fills from that commit's message, the commit keeps its parents and author, and branches built on it stay where they are.
 _Avoid_: Staged changes, unstaged changes
 
 **Ignored Files**:

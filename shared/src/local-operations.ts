@@ -11,6 +11,8 @@ export let LocalRequestSchema = z.discriminatedUnion("action", [
         path: z.string(),
         title: z.string().trim().min(1),
         message: z.string().default(""),
+        /** Replaces the worktree's last commit instead, keeping its parents and author. */
+        amend: z.boolean().optional(),
         acceptHooks: z.string().optional(),
     }),
     z.object({ action: z.literal("stage"), path: z.string(), files: z.array(z.string().min(1)).optional(), unstage: z.boolean().default(false) }),
@@ -30,6 +32,8 @@ export let LocalPreviewSchema = z.object({
     uniqueCommits: z.boolean(),
     branch: z.string().optional(),
     unborn: z.boolean(),
+    /** The worktree's HEAD commit, which an amend replaces; its message split as the commit form shows it. */
+    lastCommit: z.object({ objectId: z.string(), title: z.string(), message: z.string() }).optional(),
     suggestedBranch: z.string(),
     staged: z.boolean(),
     files: z.array(z.string()),

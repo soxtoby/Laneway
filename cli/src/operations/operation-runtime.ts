@@ -197,7 +197,7 @@ class OperationRuntime {
         await this.record(
             preview.affected,
             `local.${request.action}`,
-            request.action.replaceAll("-", " "),
+            request.action == "commit" && request.amend ? "amend" : request.action.replaceAll("-", " "),
             async recorder => {
                 try {
                     result = await mutateLocal(this.repository, request, preview, recorder, () => this.cancellation.isCancelled())
