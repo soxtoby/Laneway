@@ -18,11 +18,11 @@ export function registerRepositoryHandlers(repositories: OpenRepositories, works
     registerScriptHandlers()
 
     function registerEntryHandlers() {
-        ipcMain.handle("entry:defaults", (_event, request: { form?: unknown }) => {
+        ipcMain.handle("entry:defaults", async (_event, request: { form?: unknown }) => {
             let parent = workspace.repositoryOpenDefaultPath() ?? app.getPath("documents")
             if (request?.form != "clone")
                 return { parent } satisfies EntryDefaults
-            let text = clipboard.readText().trim()
+            let text = (await clipboard.readText()).trim()
             return { parent, ...(isLikelyCloneSource(text) ? { source: text } : {}) } satisfies EntryDefaults
         })
 

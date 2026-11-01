@@ -1,10 +1,10 @@
 {
     "name": "@laneway/desktop",
-    "private": true,
     "version": "0.1.0-alpha.1",
+    "private": true,
     "description": "An opinionated Git client",
-    "author": "Simon Oxtoby",
     "license": "MIT",
+    "author": "Simon Oxtoby",
     "type": "module",
     "main": "./out/main/index.js",
     "scripts": {
@@ -13,17 +13,17 @@
         "icons": "electron scripts/render-icon.ts"
     },
     "dependencies": {
-        "@atlaskit/pragmatic-drag-and-drop": "^3.1.0",
+        "@atlaskit/pragmatic-drag-and-drop": "^4.0.0",
         "@laneway/git": "workspace:*",
         "@laneway/markdown-diff": "workspace:*",
         "@laneway/settings": "workspace:*",
         "@laneway/shared": "workspace:*",
-        "@pierre/diffs": "^1.6.1",
-        "@tabler/icons": "^3.49.0",
-        "@tabler/icons-react": "^3.49.0",
+        "@pierre/diffs": "^1.6.2",
+        "@tabler/icons": "^3.50.0",
+        "@tabler/icons-react": "^3.50.0",
         "clsx": "^2.1.1",
         "electron-updater": "^6.8.11",
-        "hast-util-to-jsx-runtime": "^2.3.6",
+        "hast-util-to-jsx-runtime": "^2.3.7",
         "react": "^19.3.1",
         "react-aria-components": "1.22.1",
         "react-dom": "^19.3.1",
@@ -31,12 +31,12 @@
     },
     "devDependencies": {
         "@types/hast": "^3.0.5",
-        "@types/node": "^26.2.0",
+        "@types/node": "^26.6.6",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
-        "electron": "^43.4.1",
+        "electron": "^44.10.1",
         "electron-builder": "^26.18.0",
-        "happy-dom": "^20.11.15",
+        "happy-dom": "^21.0.4",
         "typescript": "^6.0.0"
     }
 }

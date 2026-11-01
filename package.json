@@ -2,7 +2,6 @@
     "name": "laneway",
     "private": true,
     "type": "module",
-    "packageManager": "bun@1.4.0",
     "workspaces": [
         "shared",
         "settings",
@@ -12,7 +11,7 @@
         "desktop"
     ],
     "scripts": {
-        "build:engine": "bun build ./cli/src/main.ts --compile --outfile ./cli/bin/lane.exe",
+        "build:engine": "bun build ./cli/src/main.ts --compile --bytecode --format=esm --outfile ./cli/bin/lane.exe",
         "predev": "bun run build:engine",
         "dev": "bun desktop/scripts/dev.ts",
         "predev:inspect": "bun run build:engine",
@@ -21,7 +20,7 @@
         "package": "bun run build && bun run --cwd desktop package",
         "prepare-release": "bun desktop/scripts/prepare-release.ts",
         "test": "bun run build && bun test --parallel=8 --timeout=30000 --timings=tmp/test-timings.json --update-timings ./settings/test ./git/test ./markdown-diff/test ./cli/test ./desktop/test",
-        "typecheck": "tsc --noEmit",
+        "typecheck": "bun check --no-script",
         "lint": "eslint . && stylelint \"desktop/src/renderer/react/*.css\"",
         "format": "dprint fmt --incremental=false",
         "format:check": "dprint check --incremental=false",
@@ -29,18 +28,19 @@
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
-        "@types/bun": "^1.4.0",
-        "@types/node": "^26.2.0",
-        "dprint": "^0.56.1",
-        "eslint": "^10.9.0",
+        "@types/bun": "^1.4.4",
+        "@types/node": "^26.6.6",
+        "dprint": "^0.64.3",
+        "eslint": "^10.14.0",
         "eslint-plugin-react-hooks": "^7.1.1",
         "react-refresh": "^0.19.0",
         "stylelint": "^17.16.0",
         "typescript": "^6.0.0",
-        "typescript-eslint": "^8.67.0"
+        "typescript-eslint": "^8.72.1"
     },
+    "packageManager": "bun@1.4.4",
     "patchedDependencies": {
-        "@pierre/diffs@1.6.1": "patches/@pierre%2Fdiffs@1.6.1.patch",
+        "@pierre/diffs@1.6.2": "patches/@pierre%2Fdiffs@1.6.2.patch",
         "react-aria@3.53.1": "patches/react-aria@3.53.1.patch"
     }
 }
