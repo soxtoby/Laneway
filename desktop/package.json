@@ -1,9 +1,10 @@
 {
     "name": "@laneway/desktop",
     "private": true,
-    "version": "0.1.0",
+    "version": "0.1.0-alpha.1",
     "description": "An opinionated Git client",
     "author": "Simon Oxtoby",
+    "license": "MIT",
     "type": "module",
     "main": "./out/main/index.js",
     "scripts": {
