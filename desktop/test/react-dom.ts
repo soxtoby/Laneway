@@ -121,8 +121,9 @@ export function hover(element: Element, from?: Element) {
 
 // React tracks an input's value to tell user input from its own updates, so the value goes through
 // the element's own setter, as typing would.
-export function type(input: HTMLInputElement, value: string) {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value)
+export function type(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
+    let prototype = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+    Object.getOwnPropertyDescriptor(prototype, "value")!.set!.call(input, value)
     input.dispatchEvent(new InputEvent("input", { bubbles: true }))
 }
 

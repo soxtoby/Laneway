@@ -7,6 +7,8 @@ type Api = Window["laneway"]
 export interface RewordSnapshot {
     title: string
     message: string
+    /** Whether the title or message differs from the commit's. */
+    edited: boolean
     busy: boolean
     /** A reviewed rewrite waiting for the user's decision: it rewrites published history or drops emptied commits. */
     preview?: LocalPreview
@@ -19,8 +21,6 @@ export interface RewordSnapshot {
  */
 export interface Reword extends Store<RewordSnapshot> {
     edit(change: Partial<Pick<RewordSnapshot, "title" | "message">>): void
-    /** Whether the title or message differs from the commit's. */
-    edited(): boolean
     apply(): Promise<void>
     /** Rewrites the history the review reported. */
     execute(): Promise<void>
@@ -41,7 +41,7 @@ export interface RewordOptions {
 }
 
 export function createReword({ api, repositoryId, branch, commit, selectedRemote, notify, changed, mutating, close }: RewordOptions): Reword {
-    let store = createStore<RewordSnapshot>({ title: commit.subject, message: commit.body ?? "", busy: false })
+    let store = createStore<RewordSnapshot>({ title: commit.subject, message: commit.body ?? "", edited: false, busy: false })
     let state = store.snapshot
     let set = (change: Partial<RewordSnapshot>) => store.publish({ ...state(), ...change })
 
@@ -80,9 +80,12 @@ export function createReword({ api, repositoryId, branch, commit, selectedRemote
         subscribe: store.subscribe,
         snapshot: store.snapshot,
 
-        edit: change => set({ ...change, preview: undefined }),
-
-        edited: () => state().title.trim() != commit.subject || state().message.trimEnd() != (commit.body ?? "").trimEnd(),
+        // Published rather than read through a method: the React Compiler memoizes a call on the stable controller.
+        edit: change => {
+            let { title, message } = { ...state(), ...change }
+            let edited = title.trim() != commit.subject || message.trimEnd() != (commit.body ?? "").trimEnd()
+            set({ ...change, edited, preview: undefined })
+        },
 
         apply: () =>
             act(async () => {

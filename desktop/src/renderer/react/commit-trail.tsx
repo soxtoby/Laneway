@@ -485,7 +485,7 @@ function RewordForm({ branch, commit, reword, close }: StackBranchProps & { comm
                 {state.preview
                     ? <Button variant="accent" isDisabled={state.busy} onPress={() => void controller.execute()}>Rewrite history</Button>
                     : (
-                        <Button variant="accent" isDisabled={state.busy || !state.title.trim() || !controller.edited()} onPress={() => void controller.apply()}>
+                        <Button variant="accent" isDisabled={state.busy || !state.title.trim() || !state.edited} onPress={() => void controller.apply()}>
                             {state.busy ? "Working…" : "Apply"}
                         </Button>
                     )}

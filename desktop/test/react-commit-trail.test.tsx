@@ -301,11 +301,12 @@ describe("React Commit Trail", () => {
         expect(graphReads).toBeGreaterThan(reads)
         expect(toast()?.textContent).toContain("Commit reworded.")
 
-        // Published history waits for an explicit decision instead of rewriting at once.
+        // Published history waits for an explicit decision instead of rewriting at once. A message alone is a reword too.
         published = ["feature/laneway"]
         rewords.length = 0
         form = await openForm()
-        await app.act(() => type(form.querySelector<HTMLInputElement>("[aria-label='Commit title']")!, "Inspect published changes"))
+        await app.act(() => type(form.querySelector<HTMLTextAreaElement>("[aria-label='Commit message']")!, "Inspect every published change."))
+        expect(button(form, "Apply").hasAttribute("disabled")).toBe(false)
         await app.act(() => press(button(form, "Apply")))
         expect(form.querySelector("[role=alert]")?.textContent).toContain("Rewrites history already published on feature/laneway")
         expect(rewords.map(call => call.token)).toEqual([undefined])
