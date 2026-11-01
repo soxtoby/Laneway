@@ -403,6 +403,45 @@ describe("React Commit Trail", () => {
         expect(transitions).toEqual(["undo"])
     })
 
+    test("a branch's menu moves its commits into its base at once, with Undo in the notice", async () => {
+        let scenario = inspectionScenario()
+        let [main, branch] = scenario.graph.branches
+        let calls: { request: LocalRequest; token?: string }[] = []
+        let transitions: string[] = []
+        let app = await startReactApp({
+            ...scenario.api,
+            localOperation: async (id, request, token) => {
+                calls.push({ request, token })
+                return token
+                    ? { ok: true, result: { type: "result", command: "local", status: "performed", message: "Moved 1 commit into main." } }
+                    : scenario.api.localOperation(id, request)
+            },
+            transitionOperation: async (_id, action) => {
+                transitions.push(action)
+                return { ok: true }
+            },
+        })
+
+        await app.act(() => press(button(trail(), "Actions for branch feature/laneway")))
+        await app.act(() => press(menuItem("Move 1 commit into main")))
+
+        let move: LocalRequest = { action: "move-into-base", branch: branch!.preferredRef, tip: branch!.tip, base: main!.preferredRef, baseTip: main!.tip }
+        expect(calls.filter(call => call.request.action == "move-into-base")).toEqual([{ request: move, token: undefined }, { request: move, token: "fixture" }])
+        expect(toast()?.textContent).toContain("Moved 1 commit into main.")
+        await app.act(() => press(button(toast()!, "Undo")))
+        expect(transitions).toEqual(["undo"])
+    })
+
+    test("a branch whose base moved on after it forked offers no move into that base", async () => {
+        let scenario = inspectionScenario()
+        scenario.graph.branches[1]!.behindBase = true
+        let app = await startReactApp(scenario.api)
+
+        await app.act(() => press(button(trail(), "Actions for branch feature/laneway")))
+
+        expect([...document.querySelectorAll("[role=menu] [role=menuitem]")].map(item => item.textContent)).toEqual(["Delete branch", "Copy branch name"])
+    })
+
     test("a deletion's Undo notice goes as soon as another operation starts, since Undo undoes the latest one", async () => {
         let scenario = inspectionScenario()
         let app = await startReactApp({

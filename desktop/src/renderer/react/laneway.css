@@ -1383,6 +1383,10 @@
         outline-offset: -2px;
     }
 
+    &:is(:hover, :focus-within) .row-actions {
+        opacity: 1;
+    }
+
     .stack-branch:has(> .stack-commits) > & {
         border-bottom: 1px solid var(--border-color);
     }

@@ -133,6 +133,7 @@ describe("React Branch Graph", () => {
             "Check out in",
             "Open column",
             "Rebase onto…",
+            "Move commits into main",
             "Create branch here…",
             "Rename branch…",
             "Delete branch",

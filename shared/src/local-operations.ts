@@ -19,6 +19,8 @@ export let LocalRequestSchema = z.discriminatedUnion("action", [
     z.object({ action: z.literal("branch-create"), name: z.string().min(1), commit: oid.optional(), path: z.string().optional() }),
     z.object({ action: z.literal("branch-rename"), name: z.string().min(1), newName: z.string().min(1) }),
     z.object({ action: z.literal("branch-delete"), name: z.string().min(1), confirmed: z.boolean().default(false) }),
+    /** Moves the local branch `base` up to `branch`'s tip, so it holds the branch's commits as they are. */
+    z.object({ action: z.literal("move-into-base"), branch: z.string().min(1), tip: oid, base: z.string().startsWith("refs/heads/"), baseTip: oid }),
     z.object({ action: z.literal("stash-create"), path: z.string(), label: z.string().default("") }),
     z.object({ action: z.literal("stash-apply"), path: z.string(), objectId: oid }),
     z.object({ action: z.literal("stash-drop"), objectId: oid }),
@@ -30,6 +32,8 @@ export let LocalPreviewSchema = z.object({
     token: z.string(),
     affected: z.array(z.string()),
     uniqueCommits: z.boolean(),
+    /** The commits a Move into Base adds to its base. */
+    commitCount: z.number().int().optional(),
     branch: z.string().optional(),
     unborn: z.boolean(),
     /** The worktree's HEAD commit, which an amend replaces; its message split as the commit form shows it. */

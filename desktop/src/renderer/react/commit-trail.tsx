@@ -13,6 +13,7 @@ import { EditableName } from "./editable-name"
 import { copyText } from "./file-paths"
 import { BranchIcon, DiffIcon, MoreIcon, WarningIcon } from "./icons"
 import { branchStack, type ColumnInspection, type Inspection } from "./inspection"
+import { movableBase, moveIntoBaseLabel } from "./local-branches"
 import { offersPublish, type Publish, publishRef } from "./publish"
 import { PublishButton } from "./publish-control"
 import { PullButton } from "./pull-control"
@@ -39,6 +40,9 @@ export interface CommitTrailProps {
     /** Renames the column's branch in place; a failure keeps the editor open with its message. */
     renameBranch(name: string): Promise<void>
     createBranchAt(commit: BranchHistoryCommit): void
+    /** Moves a branch's Base Branch up to its tip, so the base holds its commits. */
+    moveIntoBase(branch: BranchGraphBranchNode): void
+    deleteBranch(branch: BranchGraphBranchNode): void
     reword(branch: BranchGraphBranchNode, commit: BranchHistoryCommit, close: () => void): Reword
     /** Starts a Historical Edit from a commit; only a worktree-backed column outside one can. */
     editFrom?(commit: BranchHistoryCommit): void
@@ -104,10 +108,26 @@ function StackBranch(props: StackBranchProps) {
     // A local branch takes whole commits and other branches; any but the primary branch can move onto another.
     let scope = useTransferScope()
     let branchTarget = { kind: "branch" as const, branch: branch.preferredRef, tip: branch.tip }
-    let { target: heading, props: targetProps } = useTransferTarget<HTMLHeadingElement>(
+    let { target: headingRef, props: targetProps } = useTransferTarget<HTMLHeadingElement>(
         scope?.composition,
         scope && !branch.remoteOnly ? { kind: "compose", repositoryId: scope.repositoryId, target: branchTarget } : undefined,
     )
+    let base = movableBase(branch)
+    // The count names what moves only once the trail has read all of the branch's own commits.
+    let page = history?.page
+    let moving = base && page && page.nextOffset == undefined && page.tip == branch.tip && page.baseTips.includes(base.tip) ? page.commits.length : undefined
+    let menu = {
+        label: `Actions for branch ${branch.name}`,
+        items: () => (
+            <>
+                {base && <MenuItem onAction={() => props.moveIntoBase(branch)}>{moveIntoBaseLabel(base, moving)}</MenuItem>}
+                {branch.localRefs.length > 0 && <MenuItem onAction={() => props.deleteBranch(branch)}>Delete branch</MenuItem>}
+                <Separator />
+                <MenuItem onAction={() => void copyText(branch.name)}>Copy branch name</MenuItem>
+            </>
+        ),
+    }
+    let { row: menuRef, openMenu } = useRowMenu<HTMLHeadingElement>(menu)
     return (
         <section className={clsx("stack-branch", branch.published && "remote")} aria-label={`Branch ${branch.name}`}>
             {/* The seam at this branch's tip belongs to the branch built on it. */}
@@ -118,7 +138,15 @@ function StackBranch(props: StackBranchProps) {
                     target={{ kind: "seam", branch: above.preferredRef, parentId: branch.tip }}
                 />
             )}
-            <h3 ref={heading} {...targetProps} className="stack-heading">
+            <h3
+                ref={element => {
+                    headingRef.current = element
+                    menuRef.current = element
+                }}
+                {...targetProps}
+                className="stack-heading"
+                onContextMenu={openMenu}
+            >
                 {scope && !branch.remoteOnly && !branch.primary && (
                     <TransferGrip
                         composition={scope.composition}
@@ -178,6 +206,9 @@ function StackBranch(props: StackBranchProps) {
                         <DiffIcon />
                     </IconButton>
                 )}
+                <span className="row-actions">
+                    <MoreMenu label={menu.label}>{menu.items()}</MoreMenu>
+                </span>
             </h3>
             {scope && <TransferReview composition={scope.composition} repositoryId={scope.repositoryId} target={branchTarget} />}
             {scope && !branch.remoteOnly && (

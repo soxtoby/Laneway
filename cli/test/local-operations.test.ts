@@ -192,6 +192,80 @@ test("hook changes request review; failed hooks preserve draft content without c
     expect((await perform(path, request)).status).toBe("failed")
     expect(git(path, "rev-parse", "HEAD")).toBe(original)
 }, 60_000)
+test("move into base advances the base to the branch's own commits, unchanged, and undo moves it back", async () => {
+    let path = await fixture()
+    let baseTip = git(path, "rev-parse", "main")
+    git(path, "checkout", "-qb", "feature")
+    await commitFile(path, "a.txt", "one")
+    await commitFile(path, "a.txt", "two")
+    let tip = git(path, "rev-parse", "feature")
+
+    let result = await perform(path, moveIntoBase("refs/heads/feature", tip, baseTip))
+
+    expect(result.message).toBe("Moved 2 commits into main.")
+    expect([git(path, "rev-parse", "main"), git(path, "rev-parse", "feature")]).toEqual([tip, tip])
+
+    await transition(path, "undo")
+
+    expect(git(path, "rev-parse", "main")).toBe(baseTip)
+}, 60_000)
+test("move into base brings the worktree holding the base along with its Working Changes kept", async () => {
+    let path = await fixture()
+    await commitFile(path, "b.txt", "base")
+    let baseTip = git(path, "rev-parse", "main")
+    let linked = join(await mkdtemp(join(tmpdir(), "laneway-local-linked-")), "feature")
+    temporary.push(resolve(linked, ".."))
+    git(path, "worktree", "add", "-q", "-b", "feature", linked)
+    await commitFile(linked, "a.txt", "moved")
+    let tip = git(linked, "rev-parse", "HEAD")
+    await writeFile(join(path, "b.txt"), "dirty\n")
+
+    await perform(path, moveIntoBase("refs/heads/feature", tip, baseTip))
+
+    expect(git(path, "rev-parse", "HEAD")).toBe(tip)
+    expect(await readFile(join(path, "a.txt"), "utf8")).toBe("moved\n")
+    expect(git(path, "status", "--porcelain")).toBe("M b.txt")
+
+    await transition(path, "undo")
+
+    expect(git(path, "rev-parse", "HEAD")).toBe(baseTip)
+    expect(await readFile(join(path, "a.txt"), "utf8")).toBe("base\n")
+    expect(await readFile(join(path, "b.txt"), "utf8")).toBe("dirty\n")
+}, 60_000)
+test("move into base leaves the base where it was when the holding worktree's changes would be overwritten", async () => {
+    let path = await fixture()
+    let baseTip = git(path, "rev-parse", "main")
+    let linked = join(await mkdtemp(join(tmpdir(), "laneway-local-linked-")), "feature")
+    temporary.push(resolve(linked, ".."))
+    git(path, "worktree", "add", "-q", "-b", "feature", linked)
+    await commitFile(linked, "a.txt", "moved")
+    await writeFile(join(path, "a.txt"), "dirty\n")
+
+    let result = await perform(path, moveIntoBase("refs/heads/feature", git(linked, "rev-parse", "HEAD"), baseTip))
+
+    expect(result.status).toBe("failed")
+    expect(git(path, "rev-parse", "main")).toBe(baseTip)
+    expect(await readFile(join(path, "a.txt"), "utf8")).toBe("dirty\n")
+}, 60_000)
+test("move into base refuses a base that moved on after the branch forked", async () => {
+    let path = await fixture()
+    git(path, "checkout", "-qb", "feature")
+    await commitFile(path, "a.txt", "feature")
+    let tip = git(path, "rev-parse", "feature")
+    git(path, "checkout", "-q", "main")
+    await commitFile(path, "b.txt", "main")
+
+    await expect(preview(path, moveIntoBase("refs/heads/feature", tip, git(path, "rev-parse", "main"))))
+        .rejects.toThrow("main has commits feature doesn't. Rebase feature onto main first.")
+}, 60_000)
+async function commitFile(path: string, file: string, content: string) {
+    await writeFile(join(path, file), `${content}\n`)
+    git(path, "add", file)
+    git(path, "commit", "-qm", content)
+}
+function moveIntoBase(branch: string, tip: string, baseTip: string): LocalRequest {
+    return { action: "move-into-base", branch, tip, base: "refs/heads/main", baseTip }
+}
 async function fixture(initial = true, format = "sha1") {
     let path = await mkdtemp(join(tmpdir(), "laneway-local-test-"))
     temporary.push(path)

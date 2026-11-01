@@ -93,6 +93,8 @@ export function ColumnBody({ controller, repositoryId, graph, column, inspected,
                         onViewChange={onViewChange}
                         renameBranch={newName => branches.perform(repositoryId, { action: "branch-rename", name: column.branch.name, newName })}
                         createBranchAt={commit => branches.createAt(repositoryId, commit.objectId)}
+                        moveIntoBase={branch => void branches.moveIntoBase(repositoryId, branch)}
+                        deleteBranch={branch => void branches.delete(repositoryId, branch)}
                         reword={(branch, commit, close) => controller.reword(repositoryId, branch.preferredRef, commit, close)}
                         editFrom={path && !column.worktree?.historicalEdit
                             ? commit => void controller.edits.enter(repositoryId, path, commit.objectId)

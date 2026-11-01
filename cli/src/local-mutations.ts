@@ -79,6 +79,8 @@ export async function prepareLocal(
         }
     }
 
+    let commitCount = request.action == "move-into-base" ? await movableCommits(repository, request, worktrees) : undefined
+
     let affected = worktrees.filter(item => !item.missing).map(item => item.path)
     let before = { refs: await readRecordedRefs(repository) }
     let last = await lastCommit(repository, path)
@@ -98,6 +100,7 @@ export async function prepareLocal(
             token,
             affected,
             uniqueCommits,
+            commitCount,
             branch,
             unborn: !last,
             lastCommit: last,
@@ -192,6 +195,20 @@ export async function mutateLocal(
         }
 
         await saveMetadata(repository, data)
+    } else if (request.action == "move-into-base") {
+        let base = request.base.slice("refs/heads/".length)
+        let update = [{ ref: request.base, before: request.baseTip, after: request.tip }]
+        let holder = preview.worktrees.find(item => item.branch == base)
+        // A worktree with the base checked out brings its files along, keeping Working Changes as a checkout does.
+        if (holder) {
+            await expectedRefs.worktree(holder.path, async () => {
+                await repository.command(holder.path, ["read-tree", "-m", "-u", request.baseTip, request.tip])
+                await updateRefs(update)
+            })
+        } else {
+            await updateRefs(update)
+        }
+        result.message = `Moved ${preview.commitCount} commit${preview.commitCount == 1 ? "" : "s"} into ${base}.`
     } else if (request.action == "stash-create") {
         if (!preview.files.length)
             throw new Error("There are no Working Changes to stash.")
@@ -362,6 +379,26 @@ export async function mutateLocal(
     }
 
     return result
+}
+/** A Move into Base only adds commits to its base, so the base's tip must be in the branch's history. */
+async function movableCommits(
+    repository: RepositoryGit,
+    request: Extract<LocalRequest, { action: "move-into-base" }>,
+    worktrees: Awaited<ReturnType<typeof readRegisteredWorktrees>>,
+) {
+    let branch = request.branch.replace(/^refs\/(heads|remotes)\//, ""), base = request.base.slice("refs/heads/".length)
+    if (await repository.resolveRef(request.branch) != request.tip || await repository.resolveRef(request.base) != request.baseTip)
+        throw new Error("A branch moved. Try again.")
+    if (worktrees.some(item => item.branchRef == request.base && item.missing))
+        throw new Error("Locate the worktree holding this branch first.")
+
+    let counts = await text(repository, repository.descriptor.mainWorktree, ["rev-list", "--left-right", "--count", `${request.baseTip}...${request.tip}`])
+    let [behind, ahead] = counts.split(/\s+/).map(Number)
+    if (behind)
+        throw new Error(`${base} has commits ${branch} doesn't. Rebase ${branch} onto ${base} first.`)
+    if (!ahead)
+        throw new Error(`${base} already holds ${branch}'s commits.`)
+    return ahead
 }
 /** Hook files present in the worktree's hooks directory, honoring core.hooksPath like Git does. */
 async function installedHooks(repository: RepositoryGit, path: string, names: string[]) {

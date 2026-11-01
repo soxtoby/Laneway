@@ -11,6 +11,7 @@ import { useRowMenu } from "./dense-row"
 import { copyText } from "./file-paths"
 import { GraphSettings } from "./graph-settings"
 import { ArchiveIcon, CloseIcon, FolderIcon, TagIcon } from "./icons"
+import { movableBase, moveIntoBaseLabel } from "./local-branches"
 import { Button } from "./ui/Button"
 import { GripVertical } from "./ui/icons"
 import { Menu, MenuItem, Separator } from "./ui/Menu"
@@ -283,6 +284,7 @@ function GraphRows(
                 >
                     {({ row }) => {
                         let branch = row.node.kind == "branch" ? identities.branches.find(candidate => candidate.id == row.node.id) : undefined
+                        let base = branch && movableBase(branch)
                         return branch
                             ? (
                                 <BranchRow
@@ -321,6 +323,11 @@ function GraphRows(
                                                     }}
                                                 >
                                                     Rebase onto…
+                                                </MenuItem>
+                                            )}
+                                            {base && (
+                                                <MenuItem onAction={() => void branches.moveIntoBase(repositoryId, branch)}>
+                                                    {moveIntoBaseLabel(base)}
                                                 </MenuItem>
                                             )}
                                             <MenuItem onAction={() => branches.createAt(repositoryId, branch.tip)}>

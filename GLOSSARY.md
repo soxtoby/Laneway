@@ -117,6 +117,10 @@ _Avoid_: Git pull
 An explicit remote update for a branch's Active Stack, up to and including that branch, excluding its Base Branch and unrelated stacks. Branches without upstream publish to same-named branches on the selected remote; the control identifies every destination and force-with-lease update before activation. The Primary Branch, having no Base Branch, publishes alone; the desktop asks first, warning when it would force.
 _Avoid_: Push, push stack
 
+**Move into Base**:
+A Laneway Operation that moves a branch's local Base Branch up to the branch's tip, so the base holds the branch's own commits unchanged and the branch has none left of its own. It is offered only while the base's tip is still in the branch's history; a base that moved on needs the branch rebased onto it first. A worktree with the base checked out has its files brought along, keeping its Working Changes as a checkout does, and Git refuses as it would if they'd be overwritten. The branch stays, and nothing is published. It runs at once, with Undo.
+_Avoid_: Merge, land, integrate, fast-forward
+
 **Publish Receipt**:
 A durable record of intended and completed remote ref updates for one Publish, including a partial sequential outcome. It enables Resume and lease-guarded restoration; it is not an ordinary undo entry.
 _Avoid_: Publish undo, push log

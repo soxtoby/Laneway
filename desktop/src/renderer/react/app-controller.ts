@@ -236,7 +236,7 @@ export function createAppController(api: Api): AppController {
         api,
         notify,
         mutating,
-        completed: async (repositoryId, request, preview) => {
+        completed: async (repositoryId, request, preview, result) => {
             if (request.action == "branch-rename") {
                 columns.renamed(`refs/heads/${request.name}`, `refs/heads/${request.newName}`)
                 inspection.renamed(`refs/heads/${request.name}`, `refs/heads/${request.newName}`)
@@ -248,6 +248,8 @@ export function createAppController(api: Api): AppController {
                 let commits = preview.uniqueCommits ? " and the commits only it held" : ""
                 offerUndo(repositoryId, "branch.deleted", `Deleted branch ${request.name}${commits}.`)
             }
+            if (request.action == "move-into-base")
+                offerUndo(repositoryId, "branch.moved-into-base", result.message ?? "Moved the commits.")
         },
     })
 

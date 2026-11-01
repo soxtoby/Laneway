@@ -1,4 +1,4 @@
-import type { BranchGraphBranchNode, LocalPreview, LocalRequest } from "@laneway/shared"
+import type { BranchGraphBranchNode, LocalPreview, LocalRequest, LocalResult } from "@laneway/shared"
 import { errorMessage, type Notice } from "./notice"
 import { createStore, type Store } from "./store"
 
@@ -22,6 +22,8 @@ export interface LocalBranches extends Store<LocalBranchesSnapshot> {
     rename(repositoryId: string, branch: BranchGraphBranchNode): void
     /** Deletes a branch straight away, with any commits only it holds; a failure shows as a notice. */
     delete(repositoryId: string, branch: BranchGraphBranchNode): Promise<void>
+    /** Moves a branch's Base Branch up to its tip straight away, when `movableBase` offers one; a failure shows as a notice. */
+    moveIntoBase(repositoryId: string, branch: BranchGraphBranchNode): Promise<void>
     setName(name: string): void
     submit(): Promise<void>
     /** Closes the dialog, unless an operation is under way. */
@@ -33,7 +35,7 @@ export interface LocalBranches extends Store<LocalBranchesSnapshot> {
 interface LocalBranchesOptions {
     api: Api
     /** Runs after an operation succeeds and before the dialog closes, with the review it ran from. */
-    completed(repositoryId: string, request: LocalRequest, preview: LocalPreview): Promise<void>
+    completed(repositoryId: string, request: LocalRequest, preview: LocalPreview, result: LocalResult): Promise<void>
     mutating(busy: boolean): void
     notify(notice: Notice): void
 }
@@ -61,7 +63,23 @@ export function createLocalBranches({ api, completed, mutating, notify }: LocalB
             throw new Error(response.error.message)
         if (response.result.status == "failed")
             throw new Error(response.result.message)
-        await completed(repositoryId, request, preview)
+        await completed(repositoryId, request, preview, response.result)
+    }
+
+    // Deleting a branch and moving it into its base go without asking: Undo in their notice takes them back.
+    async function immediately(repositoryId: string, value: LocalRequest, failure: string) {
+        if (state().busy)
+            return
+        set({ busy: true })
+        mutating(true)
+        try {
+            await run(repositoryId, value, await inspect(repositoryId, value))
+        } catch (error) {
+            notify({ code: failure, message: errorMessage(error) })
+        } finally {
+            set({ busy: false })
+            mutating(false)
+        }
     }
 
     function request(dialog: BranchDialog): LocalRequest {
@@ -78,19 +96,13 @@ export function createLocalBranches({ api, completed, mutating, notify }: LocalB
 
         rename: (repositoryId, branch) => open(repositoryId, { action: "branch-rename", name: branch.name, original: branch.name }),
 
-        async delete(repositoryId, branch) {
-            if (state().busy)
-                return
-            let value: LocalRequest = { action: "branch-delete", name: branch.name, confirmed: true }
-            set({ busy: true })
-            mutating(true)
-            try {
-                await run(repositoryId, value, await inspect(repositoryId, value))
-            } catch (error) {
-                notify({ code: "branch.delete.failed", message: errorMessage(error) })
-            } finally {
-                set({ busy: false })
-                mutating(false)
+        delete: (repositoryId, branch) => immediately(repositoryId, { action: "branch-delete", name: branch.name, confirmed: true }, "branch.delete.failed"),
+
+        async moveIntoBase(repositoryId, branch) {
+            let base = movableBase(branch)
+            if (base) {
+                let value: LocalRequest = { action: "move-into-base", branch: branch.preferredRef, tip: branch.tip, base: base.ref, baseTip: base.tip }
+                await immediately(repositoryId, value, "branch.move-into-base.failed")
             }
         },
 
@@ -133,4 +145,15 @@ export function createLocalBranches({ api, completed, mutating, notify }: LocalB
             }
         },
     }
+}
+
+/** The Base Branch a branch's commits can move into: a local branch whose tip is still in the branch's history. */
+export function movableBase(branch: BranchGraphBranchNode) {
+    let base = branch.base
+    return base.status == "known" && base.ref.startsWith("refs/heads/") && !branch.behindBase && base.tip != branch.tip ? base : undefined
+}
+
+/** Names a Move into Base by its destination, and by how many commits move once they're all known. */
+export function moveIntoBaseLabel(base: { name: string }, count?: number) {
+    return count == undefined ? `Move commits into ${base.name}` : `Move ${count} commit${count == 1 ? "" : "s"} into ${base.name}`
 }
