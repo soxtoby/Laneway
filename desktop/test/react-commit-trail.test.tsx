@@ -426,7 +426,10 @@ describe("React Commit Trail", () => {
         await app.act(() => press(menuItem("Move 1 commit into main")))
 
         let move: LocalRequest = { action: "move-into-base", branch: branch!.preferredRef, tip: branch!.tip, base: main!.preferredRef, baseTip: main!.tip }
-        expect(calls.filter(call => call.request.action == "move-into-base")).toEqual([{ request: move, token: undefined }, { request: move, token: "fixture" }])
+        expect(calls.filter(call => call.request.action == "move-into-base")).toEqual([{ request: move, token: undefined }, {
+            request: move,
+            token: "fixture",
+        }])
         expect(toast()?.textContent).toContain("Moved 1 commit into main.")
         await app.act(() => press(button(toast()!, "Undo")))
         expect(transitions).toEqual(["undo"])

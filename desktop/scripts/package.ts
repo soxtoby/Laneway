@@ -1,9 +1,11 @@
 // Packages the built desktop app and the Engine as Laneway's Windows installer in `dist/`. With `--publish`, it also
-// uploads the installer to the GitHub release for its version, where installed copies find their updates.
+// uploads the installer to the GitHub release for its version, where installed copies find their updates, with the version's
+// notes from CHANGELOG.md.
 import { build } from "electron-builder"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 import { desktop, out } from "./bundles"
+import { changelogPath, sectionNotes } from "./changelog"
 
 let engine = resolve(desktop, "../cli/bin/lane.exe")
 
@@ -12,9 +14,15 @@ for (let built of [out, engine]) {
         throw new Error(`${built} is missing; run \`bun run build\` first.`)
 }
 
+let publish = process.argv.includes("--publish")
+let { version } = await Bun.file(resolve(desktop, "package.json")).json()
+let releaseNotes = sectionNotes(await Bun.file(changelogPath).text(), `v${version}`) || undefined
+if (publish && !releaseNotes)
+    throw new Error(`CHANGELOG.md has no notes for v${version}; run \`bun run prepare-release\` first.`)
+
 await build({
     projectDir: desktop,
-    publish: process.argv.includes("--publish") ? "always" : "never",
+    publish: publish ? "always" : "never",
     config: {
         // The installer keys its registration on the app id, so changing it would install a second Laneway.
         appId: "com.soxtoby.laneway",
@@ -44,5 +52,7 @@ await build({
         // installer's checksum, and `resources/app-update.yml` into the app, telling installed copies which releases to
         // check. Both happen whether or not it publishes.
         publish: { provider: "github", owner: "soxtoby", repo: "Laneway", releaseType: "release" },
+        // The GitHub release's description, which `latest.yml` also carries.
+        releaseInfo: { releaseNotes },
     },
 })

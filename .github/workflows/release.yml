@@ -13,12 +13,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
-      - name: Check the tag names the desktop app's version
+      - name: Check the tag names the desktop app's version and its changelog notes
         shell: bash
         run: |
           version=$(bun -e 'console.log(require("./desktop/package.json").version)')
           if [ "$GITHUB_REF_NAME" != "v$version" ]; then
             echo "::error::$GITHUB_REF_NAME doesn't match version $version in desktop/package.json."
+            exit 1
+          fi
+          if ! tr -d '\r' < CHANGELOG.md | grep -qxF "## $GITHUB_REF_NAME"; then
+            echo "::error::CHANGELOG.md has no notes for $GITHUB_REF_NAME."
             exit 1
           fi
       - run: bun install --frozen-lockfile
