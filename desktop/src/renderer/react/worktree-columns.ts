@@ -104,7 +104,9 @@ export function localIdentities(graph: BranchGraph, branch: BranchGraphBranchNod
             tags: ref == branch.preferredRef ? branch.tags : [],
             primary: branch.primary
                 && (graph.primaryBranch.ref == ref || !branch.localRefs.includes(graph.primaryBranch.ref ?? "") && ref == branch.preferredRef),
-            ...(ref == branch.preferredRef ? {} : { remoteRefs: [], upstreamRef: undefined, upstreamTip: undefined, ahead: 0, behind: 0 }),
+            ...(ref == branch.preferredRef
+                ? {}
+                : { remoteRefs: [], upstreamRef: undefined, upstreamTip: undefined, ahead: 0, behind: 0, upstreamIncoming: false }),
         }
     })
 }

@@ -381,6 +381,39 @@ describe("Branch Graph and lazy history", () => {
         expect(behindBase).toEqual({ main: false, one: true, two: false })
     })
 
+    test("marks an upstream with commits to pull, but not one a restacked branch replaced", async () => {
+        let repository = await temporaryDirectory("laneway-graph-upstream-incoming-")
+        expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
+        expect(runGit(repository, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
+        await commitFile(repository, "README.md", "initial\n", "Initial")
+        let initial = gitText(repository, "rev-parse", "HEAD")
+        await commitFile(repository, "published.txt", "published\n", "Published")
+        let published = gitText(repository, "rev-parse", "HEAD")
+        expect(runGit(repository, "remote", "add", "upstream", ".").exitCode).toBe(0)
+        for (let name of ["behind", "restacked", "moved"])
+            expect(runGit(repository, "update-ref", `refs/remotes/upstream/${name}`, published).exitCode).toBe(0)
+        // Strictly behind its upstream.
+        expect(runGit(repository, "branch", "behind", initial).exitCode).toBe(0)
+        // Rewritten locally since it last pulled, so its upstream holds only the commit it replaced.
+        expect(runGit(repository, "checkout", "-q", "-b", "restacked", initial).exitCode).toBe(0)
+        await commitFile(repository, "published.txt", "rewritten\n", "Rewritten")
+        // Rewritten too, but a fetch moved its upstream since it last pulled.
+        expect(runGit(repository, "checkout", "-q", "-b", "moved").exitCode).toBe(0)
+        await commitFile(repository, "moved.txt", "moved\n", "Moved")
+        expect(runGit(repository, "config", "branch.moved.lanewayPulledUpstream", initial).exitCode).toBe(0)
+        for (let name of ["behind", "restacked", "moved"])
+            expect(runGit(repository, "branch", "-q", `--set-upstream-to=upstream/${name}`, name).exitCode).toBe(0)
+
+        let graph = await (await openRepository(repository)).startReadBranchGraph({
+            authorIdentities: { primary: "laneway@example.invalid", secondary: [] },
+            remotePatterns: [],
+        }).result
+        let incoming = Object.fromEntries(graph.branches.filter(branch => !branch.remoteOnly).map(branch => [branch.name, branch.upstreamIncoming]))
+
+        expect(incoming).toEqual({ main: false, behind: true, restacked: false, moved: true })
+    })
+
     test("keeps the Primary Branch as Base for a branch it has moved past", async () => {
         let repository = await temporaryDirectory("laneway-graph-passed-")
         expect(runGit(repository, "init", "--initial-branch=main", "--quiet").exitCode).toBe(0)

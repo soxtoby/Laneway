@@ -119,7 +119,7 @@ export function incoming(graph: BranchGraph, branch: BranchGraphBranchNode, base
     let stack = end < 0 ? trail : trail.slice(0, end + 1)
     let reasons: string[] = []
     for (let [index, item] of stack.entries()) {
-        if (!item.remoteOnly && item.upstreamRef && item.behind > 0)
+        if (!item.remoteOnly && item.upstreamRef && item.upstreamIncoming)
             reasons.push(`${item.upstreamRef.replace(/^refs\/remotes\//, "")} has ${plural(item.behind, "new commit")}`)
         let base = stack[index + 1]
         if (base && item.behindBase)

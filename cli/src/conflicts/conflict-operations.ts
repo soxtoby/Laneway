@@ -225,9 +225,11 @@ export async function openConflictSession(repo: RepositoryGit, changes: Changes)
 
     let before = await repo.resolveRef(conflictStateRef)
 
-    let observedRefs = new Map<string, string | null>()
-    for (let ref of await repo.listRefs("refs/heads/"))
-        observedRefs.set(ref, await repo.resolveRef(ref))
+    // One read for every branch; a Git launch per branch is seconds in a repository with many.
+    let listed = await repo.command(repo.descriptor.mainWorktree, ["for-each-ref", "--format=%(refname) %(objectname)", "refs/heads/"])
+    let observedRefs = new Map<string, string | null>(
+        listed.toString().split("\n").filter(Boolean).map(line => line.split(" ") as [string, string]),
+    )
 
     let updateRefs = async (updates: Parameters<RepositoryGit["updateRefs"]>[0]) => {
         for (let update of updates) {

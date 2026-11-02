@@ -15,8 +15,8 @@ test("lists each upstream with new commits and each branch behind its Base, down
         remoteOnly: true,
         behind: 4,
     }
-    let local = { ...main!, upstreamRef: "refs/remotes/origin/main", behind: 1, behindBase: true }
-    let tip = { ...feature!, upstreamRef: "refs/remotes/origin/feature/laneway", behind: 2, behindBase: true }
+    let local = { ...main!, upstreamRef: "refs/remotes/origin/main", behind: 1, upstreamIncoming: true, behindBase: true }
+    let tip = { ...feature!, upstreamRef: "refs/remotes/origin/feature/laneway", behind: 2, upstreamIncoming: true, behindBase: true }
 
     expect(incoming({ ...graph, branches: [local, tip] }, tip, {})).toEqual([
         "origin/feature/laneway has 2 new commits",
@@ -36,4 +36,8 @@ test("lists each upstream with new commits and each branch behind its Base, down
         "feature/laneway is behind origin/main",
     ])
     expect(incoming(graph, feature!, {})).toEqual([])
+
+    // A restacked branch is behind its upstream only by the commits it replaced; it has publication pending instead.
+    let restacked = { ...tip, ahead: 3, upstreamIncoming: false }
+    expect(incoming({ ...graph, branches: [main!, restacked] }, restacked, {})).toEqual(["feature/laneway is behind main"])
 })

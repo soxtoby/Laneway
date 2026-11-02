@@ -58,6 +58,12 @@ export interface BranchGraphBranchNode {
     upstreamTip?: string
     ahead: number
     behind: number
+    /**
+     * Its upstream has commits Pull latest would bring in: the branch is strictly behind it, or a Laneway fetch moved
+     * it since the branch last pulled. A branch rewritten since its last pull, such as by restacking it, has nothing
+     * incoming from the commits it replaced; its publication is pending instead.
+     */
+    upstreamIncoming: boolean
     base: BranchGraphBase
     /** Its known Base's tip is outside its history: the Base moved on after it forked, so Pull latest would restack it. */
     behindBase: boolean

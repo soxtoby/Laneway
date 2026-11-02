@@ -115,3 +115,7 @@ Measured with `.tmp/diagnose/git-repeats.ts`, in-process, launches per operation
 | History | 21 | 2 | 2 |
 
 Linked worktrees no longer add to an operation that does not touch them, and the history read no longer fingerprints anything. Rewording a commit, editing a file, then undoing now reverses the reword and keeps the edit, where the checkpoint model refused.
+
+## Per-branch launches
+
+Planning a publish in BI, with about a hundred local branches and one retained conflict, took 9 seconds and 231 Git launches. Two loops made almost all of them, each launching Git once per branch at about 60 ms apiece. The Branch Graph checked every branch's tip against every retained conflict commit with `merge-base --is-ancestor`, which every graph read pays, not only Publish. Opening a conflict session also resolved each local branch with its own `rev-parse`. Now one `for-each-ref --contains` per retained commit answers the first loop, since the branches it checks sit at their refs' tips, and one `for-each-ref` answers the second. The same plan now takes 37 launches and under 2 seconds from source, most of it the ordinary graph read.

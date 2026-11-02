@@ -112,6 +112,11 @@ export async function projectConflictGraph(repo: RepositoryGit, graph: BranchGra
     }
 
     graph.branches = graph.branches.filter(b => !b.refs.some(ref => internal.has(ref)))
+    let retained = [
+        ...state.retainedConflicts,
+        ...state.stacks.flatMap(s => s.steps).filter(s => s.conflict).map(s => ({ commit: s.current, conflict: s.conflict! })),
+    ]
+    let containing = await branchTipsContaining(repo, retained.map(conflict => conflict.commit))
     for (let branch of graph.branches) {
         if (branch.base.status != "known")
             branch.base.candidates = branch.base.candidates.filter(candidate => !internal.has(candidate.ref))
@@ -121,15 +126,7 @@ export async function projectConflictGraph(repo: RepositoryGit, graph: BranchGra
             branch.unresolved = { ...branch.unresolved, subjects: [...(branch.unresolved?.subjects ?? []), ...subjects] }
 
         if (!branch.unresolved) {
-            let inherited: string[] = []
-            let retained = [
-                ...state.retainedConflicts,
-                ...state.stacks.flatMap(s => s.steps).filter(s => s.conflict).map(s => ({ commit: s.current, conflict: s.conflict! })),
-            ]
-            for (let conflict of retained) {
-                if (!(await repo.run(repo.descriptor.mainWorktree, ["merge-base", "--is-ancestor", conflict.commit, branch.tip])).exitCode)
-                    inherited.push(conflict.conflict.id)
-            }
+            let inherited = retained.filter(conflict => containing.get(conflict.commit)!.has(branch.tip)).map(conflict => conflict.conflict.id)
             if (inherited.length) {
                 branch.unresolved = {
                     subjects: [...new Set(inherited)],
@@ -152,6 +149,26 @@ export async function projectConflictGraph(repo: RepositoryGit, graph: BranchGra
     )
 
     return graph
+}
+
+/**
+ * The branch tips whose history holds each commit, by commit. Branches checked for inherited conflicts sit at their
+ * refs' tips, so one ref query per commit replaces a history comparison per branch, which cost a Git launch each.
+ */
+async function branchTipsContaining(repo: RepositoryGit, commits: string[]) {
+    let result = new Map<string, Set<string>>()
+    for (let commit of new Set(commits)) {
+        let output = await repo.run(repo.descriptor.mainWorktree, [
+            "for-each-ref",
+            "--format=%(objectname)",
+            `--contains=${commit}`,
+            "refs/heads/",
+            "refs/remotes/",
+        ])
+        // A commit Git no longer has is in no branch's history.
+        result.set(commit, new Set(output.exitCode ? [] : output.stdout.toString().split("\n").filter(Boolean)))
+    }
+    return result
 }
 
 export async function conflictHistoryRequest(repo: RepositoryGit, request: BranchHistoryRequest) {

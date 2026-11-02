@@ -115,6 +115,7 @@ export function branchGraph(repositoryId: string) {
         tip: "1".repeat(40),
         ahead: 0,
         behind: 0,
+        upstreamIncoming: false,
         base: { status: "unknown" as const, candidates: [] },
         behindBase: false,
         involvement: "uninvolved" as const,

@@ -51,6 +51,8 @@ interface GraphContext {
     authors: string
     email?: string
     shallow: boolean
+    /** The upstream tip each branch last pulled, by branch ref, kept only while a Laneway fetch has moved it since. */
+    pulledUpstreams: Map<string, string>
 }
 
 interface RefRecord {
@@ -314,7 +316,20 @@ async function readGraphContext(runner: GraphRunner, descriptor: RepositoryDescr
         authors,
         email: values.get("user.email") || undefined,
         shallow: Boolean(shallow.length),
+        pulledUpstreams: pulledUpstreams(values),
     }
+}
+
+// Pull latest records these in branch configuration (cli/src/pulled-upstreams.ts). Git lists the variable name in
+// lower case but keeps the branch name as written; an empty value records an upstream that had not been fetched.
+function pulledUpstreams(values: Map<string, string>) {
+    let records = new Map<string, string>()
+    for (let [key, value] of values) {
+        let name = /^branch\.(.+)\.lanewaypulledupstream$/.exec(key)?.[1]
+        if (name)
+            records.set(`refs/heads/${name}`, value)
+    }
+    return records
 }
 
 function digest(parts: Array<string | Buffer>) {
@@ -352,7 +367,7 @@ async function buildGraph(
     ])
     let topology = topologyCache.graph
     let verificationPromise = verify()
-    let branches = createBranches(evidence.refs, evidence.worktrees, primaryBranch.ref)
+    let branches = createBranches(evidence.refs, evidence.worktrees, evidence.context.pulledUpstreams, primaryBranch.ref)
     let summaries = new Map(
         evidence.refs.filter(ref =>
             (ref.ref.startsWith("refs/heads/") || ref.ref.startsWith("refs/remotes/"))
@@ -504,7 +519,12 @@ function equivalentBranchEnds(before: TopologyCache, after: TopologyCache, oldRe
     return true
 }
 
-function createBranches(refs: RefRecord[], worktrees: BranchGraphWorktree[], primaryRef?: string): MutableBranch[] {
+function createBranches(
+    refs: RefRecord[],
+    worktrees: BranchGraphWorktree[],
+    pulledUpstreams: Map<string, string>,
+    primaryRef?: string,
+): MutableBranch[] {
     let localRefs = refs.filter(ref => ref.ref.startsWith("refs/heads/"))
     let remoteRefs = refs.filter(ref => ref.ref.startsWith("refs/remotes/") && !ref.symbolicTarget)
     let remoteByName = new Map(remoteRefs.map(ref => [ref.ref, ref]))
@@ -566,6 +586,10 @@ function createBranches(refs: RefRecord[], worktrees: BranchGraphWorktree[], pri
             upstreamTip,
             ahead: preferred.ahead,
             behind: preferred.behind,
+            // As Pull latest decides: a diverged branch whose upstream is still the one it last pulled was rewritten
+            // locally, and has nothing new to bring in.
+            upstreamIncoming: preferred.behind > 0
+                && (preferred.ahead == 0 || pulledUpstreams.has(preferred.ref) && pulledUpstreams.get(preferred.ref) != upstreamTip),
             base: { status: "unknown", candidates: [] },
             behindBase: false,
             involvement: "unknown",
