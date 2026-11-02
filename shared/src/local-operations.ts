@@ -21,6 +21,8 @@ export let LocalRequestSchema = z.discriminatedUnion("action", [
     z.object({ action: z.literal("branch-delete"), name: z.string().min(1), confirmed: z.boolean().default(false) }),
     /** Moves the local branch `base` up to `branch`'s tip, so it holds the branch's commits as they are. */
     z.object({ action: z.literal("move-into-base"), branch: z.string().min(1), tip: oid, base: z.string().startsWith("refs/heads/"), baseTip: oid }),
+    /** Tags a commit, annotated when the tag has a message, and creates the tag on `remote` too; a refused push leaves no tag. */
+    z.object({ action: z.literal("tag-create"), name: z.string().min(1), commit: oid, message: z.string().default(""), remote: z.string().min(1).optional() }),
     z.object({ action: z.literal("stash-create"), path: z.string(), label: z.string().default("") }),
     z.object({ action: z.literal("stash-apply"), path: z.string(), objectId: oid }),
     z.object({ action: z.literal("stash-drop"), objectId: oid }),

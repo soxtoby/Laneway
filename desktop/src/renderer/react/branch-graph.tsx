@@ -333,6 +333,9 @@ function GraphRows(
                                             <MenuItem onAction={() => branches.createAt(repositoryId, branch.tip)}>
                                                 Create branch here…
                                             </MenuItem>
+                                            <MenuItem onAction={() => branches.tagAt(repositoryId, branch.tip)}>
+                                                Create tag here…
+                                            </MenuItem>
                                             {branch.localRefs.length > 0 && (
                                                 <MenuItem onAction={() => branches.rename(repositoryId, branch)}>Rename branch…</MenuItem>
                                             )}

@@ -236,6 +236,7 @@ export function createAppController(api: Api): AppController {
         api,
         notify,
         mutating,
+        remote: () => columns.snapshot().graph?.selectedRemote,
         completed: async (repositoryId, request, preview, result) => {
             if (request.action == "branch-rename") {
                 columns.renamed(`refs/heads/${request.name}`, `refs/heads/${request.newName}`)
@@ -250,6 +251,8 @@ export function createAppController(api: Api): AppController {
             }
             if (request.action == "move-into-base")
                 offerUndo(repositoryId, "branch.moved-into-base", result.message ?? "Moved the commits.")
+            if (request.action == "tag-create")
+                notify({ code: "tag.created", message: result.message ?? `Created tag ${request.name}.`, transient: true })
         },
     })
 

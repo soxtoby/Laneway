@@ -221,6 +221,35 @@ describe("React Commit Trail", () => {
         expect(document.querySelector("[data-column-id='branch:refs/heads/alias']")).not.toBeNull()
     })
 
+    test("Create tag here names the tag in a dialog and creates it at the commit, on the graph's remote too", async () => {
+        let scenario = inspectionScenario()
+        scenario.graph.selectedRemote = "origin"
+        let requests: LocalRequest[] = []
+        let app = await startReactApp({
+            ...scenario.api,
+            localOperation: async (id, request, token) => {
+                if (!token)
+                    return scenario.api.localOperation(id, request)
+                requests.push(request)
+                return { ok: true, result: { type: "result", command: "local", status: "performed", message: "Created tag v1 here and on origin." } }
+            },
+        })
+        await app.act(() => press(button(commitRows()[0]!, "Actions for commit Inspect changes")))
+        await app.act(() => press(menuItem("Create tag here…")))
+        let dialog = document.querySelector<HTMLElement>("[role=dialog]")!
+        expect(dialog.querySelector("h2")?.textContent).toBe("Create tag")
+        expect(dialog.textContent).toContain("Also created on origin.")
+
+        await app.act(() => type(dialog.querySelector<HTMLInputElement>("input")!, "v1"))
+        await app.act(() => type(dialog.querySelector<HTMLTextAreaElement>("textarea")!, "First release"))
+        await app.act(() => press(button(dialog, "Create tag")))
+
+        let tip = scenario.graph.branches[1]!.tip
+        expect(requests).toEqual([{ action: "tag-create", name: "v1", commit: tip, message: "First release", remote: "origin" }])
+        expect(document.querySelector("[role=dialog]") == null).toBe(true)
+        expect(toast()?.textContent).toContain("Created tag v1 here and on origin.")
+    })
+
     test("a commit's menu copies its full hash and its whole message", async () => {
         let scenario = inspectionScenario()
         let tip = scenario.graph.branches[1]!.tip

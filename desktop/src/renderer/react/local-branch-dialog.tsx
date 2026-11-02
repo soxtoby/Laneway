@@ -5,13 +5,13 @@ import { Button } from "./ui/Button"
 import { Dialog, Heading } from "./ui/Dialog"
 import { Form } from "./ui/Form"
 import { Modal } from "./ui/Modal"
-import { TextField } from "./ui/TextField"
+import { TextArea, TextField } from "./ui/TextField"
 import { useSnapshot } from "./use-snapshot"
 
-let titles = { "branch-create": "Create branch", "branch-rename": "Rename branch" }
-let submits = { "branch-create": "Create branch", "branch-rename": "Rename" }
+let titles = { "branch-create": "Create branch", "branch-rename": "Rename branch", "tag-create": "Create tag" }
+let submits = { "branch-create": "Create branch", "branch-rename": "Rename", "tag-create": "Create tag" }
 
-/** Creating or renaming a local branch; Escape and Cancel wait while Git runs. */
+/** Creating or renaming a local branch, or creating a tag; Escape and Cancel wait while Git runs. */
 export function LocalBranchDialog({ branches }: { branches: LocalBranches }) {
     let { dialog: open, busy, error } = useSnapshot(branches)
     // The closing dialog keeps its content while it animates away.
@@ -32,7 +32,8 @@ export function LocalBranchDialog({ branches }: { branches: LocalBranches }) {
                     >
                         <Heading slot="title">{titles[dialog.action]}</Heading>
                         <TextField
-                            label="Branch name"
+                            label={dialog.action == "tag-create" ? "Tag name" : "Branch name"}
+                            description={dialog.action == "tag-create" && dialog.remote ? `Also created on ${dialog.remote}.` : undefined}
                             value={dialog.name}
                             onChange={branches.setName}
                             isDisabled={busy}
@@ -40,6 +41,15 @@ export function LocalBranchDialog({ branches }: { branches: LocalBranches }) {
                             spellCheck="false"
                             autoFocus
                         />
+                        {dialog.action == "tag-create" && (
+                            <TextArea
+                                label="Message"
+                                description="Optional. A tag with a message is annotated."
+                                value={dialog.message}
+                                onChange={branches.setMessage}
+                                isDisabled={busy}
+                            />
+                        )}
                         <FormError message={error} />
                         <div className="dialog-actions">
                             <Button variant="secondary" isDisabled={busy} onPress={branches.close}>Cancel</Button>

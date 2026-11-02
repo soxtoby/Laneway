@@ -1,4 +1,4 @@
-import { normalize, pathExists, readRegisteredWorktrees, type RepositoryGit } from "@laneway/git"
+import { normalize, pathExists, readRegisteredWorktrees, redactGitText, type RepositoryGit } from "@laneway/git"
 import type { LocalPreview, LocalRequest, LocalResult } from "@laneway/shared"
 import { createHash } from "node:crypto"
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
@@ -79,6 +79,8 @@ export async function prepareLocal(
         }
     }
 
+    if (request.action == "tag-create")
+        await checkTag(repository, request)
     let commitCount = request.action == "move-into-base" ? await movableCommits(repository, request, worktrees) : undefined
 
     let affected = worktrees.filter(item => !item.missing).map(item => item.path)
@@ -209,6 +211,27 @@ export async function mutateLocal(
             await updateRefs(update)
         }
         result.message = `Moved ${preview.commitCount} commit${preview.commitCount == 1 ? "" : "s"} into ${base}.`
+    } else if (request.action == "tag-create") {
+        let ref = `refs/tags/${request.name}`
+        // Git makes the tag, so its tag signing and message cleanup apply; an editor it would open closes at once.
+        await repository.command(path, ["tag", ...(request.message.trim() ? ["-a", "-m", request.message] : []), request.name, request.commit], undefined, {
+            GIT_EDITOR: ":",
+        })
+        let tag = (await repository.resolveRef(ref))!
+        expectedRefs.set(ref, tag)
+        if (request.remote) {
+            let pushed = await repository.run(path, ["push", "--porcelain", "--no-follow-tags", "--recurse-submodules=no", request.remote, `${ref}:${ref}`])
+            // A tag the remote refused goes again, so trying later starts from nothing rather than a tag only here.
+            if (pushed.exitCode) {
+                await updateRefs([{ ref, before: tag, after: null }])
+                return {
+                    ...result,
+                    status: "failed",
+                    message: tagPushFailure(request.name, request.remote, pushed.stdout.toString(), pushed.stderr.toString()),
+                }
+            }
+        }
+        result.message = request.remote ? `Created tag ${request.name} here and on ${request.remote}.` : `Created tag ${request.name}.`
     } else if (request.action == "stash-create") {
         if (!preview.files.length)
             throw new Error("There are no Working Changes to stash.")
@@ -399,6 +422,33 @@ async function movableCommits(
     if (!ahead)
         throw new Error(`${base} already holds ${branch}'s commits.`)
     return ahead
+}
+/** A new tag needs an unused name, a commit, and, in a repository with remotes, the remote to create it on as well. */
+async function checkTag(repository: RepositoryGit, request: Extract<LocalRequest, { action: "tag-create" }>) {
+    let main = repository.descriptor.mainWorktree
+    if (
+        request.name.startsWith("-") || request.name.startsWith("refs/")
+        || (await repository.run(main, ["check-ref-format", `refs/tags/${request.name}`])).exitCode
+    ) {
+        throw new Error(`${request.name} isn't a valid tag name.`)
+    }
+    if (await repository.resolveRef(`refs/tags/${request.name}`))
+        throw new Error(`There's already a tag named ${request.name}.`)
+    await repository.command(main, ["cat-file", "-e", `${request.commit}^{commit}`])
+    let remotes = (await text(repository, main, ["remote"])).split("\n").filter(Boolean)
+    if (request.remote && !remotes.includes(request.remote))
+        throw new Error(`There is no remote named ${request.remote}.`)
+    if (!request.remote && remotes.length)
+        throw new Error("Choose a remote in the Branch Graph's settings to create the tag on.")
+}
+/** The remote's reason for refusing a tag, from Git's porcelain line for it and anything the remote said. */
+function tagPushFailure(name: string, remote: string, stdout: string, stderr: string) {
+    let refused = stdout.split("\n").map(line => line.split("\t")).find(parts => parts.length == 3 && parts[0] == "!")?.[2]
+    if (refused && /already exists/.test(refused))
+        return `${remote} already has a tag named ${name}.`
+    let said = stderr.split("\n").filter(line => line.startsWith("remote: ")).map(line => line.slice(8).trim()).filter(Boolean)
+    let reason = redactGitText((refused ? [refused, ...said] : [stderr]).join("\n")).trim()
+    return `Couldn't create tag ${name} on ${remote}${reason ? `: ${reason}` : "."}`
 }
 /** Hook files present in the worktree's hooks directory, honoring core.hooksPath like Git does. */
 async function installedHooks(repository: RepositoryGit, path: string, names: string[]) {

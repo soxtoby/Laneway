@@ -135,6 +135,7 @@ describe("React Branch Graph", () => {
             "Rebase onto…",
             "Move commits into main",
             "Create branch here…",
+            "Create tag here…",
             "Rename branch…",
             "Delete branch",
             "Copy branch name",

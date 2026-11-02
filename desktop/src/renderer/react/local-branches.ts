@@ -4,10 +4,12 @@ import { createStore, type Store } from "./store"
 
 type Api = Window["laneway"]
 
-/** The branch dialog open: creating a branch at a commit, or renaming one. */
+/** The dialog open: creating a branch or a tag at a commit, or renaming a branch. */
 export type BranchDialog =
     | { action: "branch-create"; name: string; commit: string }
     | { action: "branch-rename"; name: string; original: string }
+    /** A tag also goes to `remote`, the Branch Graph's remote when the dialog opened. */
+    | { action: "tag-create"; name: string; commit: string; message: string; remote?: string }
 
 export interface LocalBranchesSnapshot {
     repositoryId?: string
@@ -16,15 +18,19 @@ export interface LocalBranchesSnapshot {
     error?: string
 }
 
-/** Creating and renaming local branches, in a dialog or in place, and deleting them at once. */
+/** Creating and renaming local branches, in a dialog or in place, and deleting them at once; and creating tags. */
 export interface LocalBranches extends Store<LocalBranchesSnapshot> {
     createAt(repositoryId: string, objectId: string): void
+    /** Opens the dialog creating a tag at a commit, here and on the Branch Graph's remote. */
+    tagAt(repositoryId: string, objectId: string): void
     rename(repositoryId: string, branch: BranchGraphBranchNode): void
     /** Deletes a branch straight away, with any commits only it holds; a failure shows as a notice. */
     delete(repositoryId: string, branch: BranchGraphBranchNode): Promise<void>
     /** Moves a branch's Base Branch up to its tip straight away, when `movableBase` offers one; a failure shows as a notice. */
     moveIntoBase(repositoryId: string, branch: BranchGraphBranchNode): Promise<void>
     setName(name: string): void
+    /** Sets a new tag's message; a tag with one is annotated. */
+    setMessage(message: string): void
     submit(): Promise<void>
     /** Closes the dialog, unless an operation is under way. */
     close(): void
@@ -38,9 +44,11 @@ interface LocalBranchesOptions {
     completed(repositoryId: string, request: LocalRequest, preview: LocalPreview, result: LocalResult): Promise<void>
     mutating(busy: boolean): void
     notify(notice: Notice): void
+    /** The Branch Graph's remote, which new tags are created on too. */
+    remote(): string | undefined
 }
 
-export function createLocalBranches({ api, completed, mutating, notify }: LocalBranchesOptions): LocalBranches {
+export function createLocalBranches({ api, completed, mutating, notify, remote }: LocalBranchesOptions): LocalBranches {
     let store = createStore<LocalBranchesSnapshot>({ busy: false })
     let state = store.snapshot
     let set = (change: Partial<LocalBranchesSnapshot>) => store.publish({ ...state(), ...change })
@@ -85,6 +93,8 @@ export function createLocalBranches({ api, completed, mutating, notify }: LocalB
     function request(dialog: BranchDialog): LocalRequest {
         if (dialog.action == "branch-create")
             return { action: dialog.action, name: dialog.name.trim(), commit: dialog.commit }
+        if (dialog.action == "tag-create")
+            return { action: dialog.action, name: dialog.name.trim(), commit: dialog.commit, message: dialog.message, remote: dialog.remote }
         return { action: dialog.action, name: dialog.original, newName: dialog.name.trim() }
     }
 
@@ -93,6 +103,8 @@ export function createLocalBranches({ api, completed, mutating, notify }: LocalB
         snapshot: store.snapshot,
 
         createAt: (repositoryId, objectId) => open(repositoryId, { action: "branch-create", name: "", commit: objectId }),
+
+        tagAt: (repositoryId, objectId) => open(repositoryId, { action: "tag-create", name: "", commit: objectId, message: "", remote: remote() }),
 
         rename: (repositoryId, branch) => open(repositoryId, { action: "branch-rename", name: branch.name, original: branch.name }),
 
@@ -110,6 +122,12 @@ export function createLocalBranches({ api, completed, mutating, notify }: LocalB
             let dialog = state().dialog
             if (dialog)
                 set({ dialog: { ...dialog, name }, error: undefined })
+        },
+
+        setMessage(message) {
+            let dialog = state().dialog
+            if (dialog?.action == "tag-create")
+                set({ dialog: { ...dialog, message }, error: undefined })
         },
 
         async submit() {

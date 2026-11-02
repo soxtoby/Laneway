@@ -40,6 +40,8 @@ export interface CommitTrailProps {
     /** Renames the column's branch in place; a failure keeps the editor open with its message. */
     renameBranch(name: string): Promise<void>
     createBranchAt(commit: BranchHistoryCommit): void
+    /** Opens the dialog creating a tag at a commit, here and on the remote. */
+    createTagAt(commit: BranchHistoryCommit): void
     /** Moves a branch's Base Branch up to its tip, so the base holds its commits. */
     moveIntoBase(branch: BranchGraphBranchNode): void
     deleteBranch(branch: BranchGraphBranchNode): void
@@ -280,6 +282,7 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
                 {editFrom && rewordable && !branch.primary && <MenuItem onAction={() => editFrom(commit)}>Edit from here</MenuItem>}
                 {rewordable && <MenuItem onAction={() => onReword(commit.objectId)}>Reword commit…</MenuItem>}
                 <MenuItem onAction={() => props.createBranchAt(commit)}>Create branch here…</MenuItem>
+                <MenuItem onAction={() => props.createTagAt(commit)}>Create tag here…</MenuItem>
                 <Separator />
                 <CommitCopyItems commit={commit} />
             </>

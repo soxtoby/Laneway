@@ -146,7 +146,7 @@ Non-structural state attached to a branch in the graph, including pull-request s
 _Avoid_: Branch node, decoration
 
 **Tag Node**:
-A tag occupying its commit's position as a history waypoint when that commit is not a branch head; it is never a Target Branch. A tag on a branch head is shown on that Branch Node.
+A tag occupying its commit's position as a history waypoint when that commit is not a branch head; it is never a Target Branch. A tag on a branch head is shown on that Branch Node. Creating a tag, at a Branch Node's tip or at a commit from its menu, makes it locally and on the Branch Graph's remote together, annotated when it has a message; a tag the remote refuses isn't kept locally either. Undo removes only the local tag.
 _Avoid_: Tag branch
 
 **Virtual Branch**:

@@ -258,6 +258,61 @@ test("move into base refuses a base that moved on after the branch forked", asyn
     await expect(preview(path, moveIntoBase("refs/heads/feature", tip, git(path, "rev-parse", "main"))))
         .rejects.toThrow("main has commits feature doesn't. Rebase feature onto main first.")
 }, 60_000)
+test("a tag goes on the commit here and on the remote, annotated when it has a message", async () => {
+    let path = await fixture()
+    let remote = await bareRemote(path)
+    let commit = git(path, "rev-parse", "HEAD")
+
+    let light = await perform(path, { action: "tag-create", name: "v1", commit, message: "", remote: "origin" })
+    await perform(path, { action: "tag-create", name: "v2", commit, message: "Second release", remote: "origin" })
+
+    expect(light.message).toBe("Created tag v1 here and on origin.")
+    expect([git(path, "cat-file", "-t", "v1"), git(path, "cat-file", "-t", "v2")]).toEqual(["commit", "tag"])
+    expect(git(path, "tag", "-l", "--format=%(contents:subject)", "v2")).toBe("Second release")
+    expect(git(remote, "for-each-ref", "--format=%(refname) %(objectname)", "refs/tags"))
+        .toBe(`refs/tags/v1 ${commit}
+refs/tags/v2 ${git(path, "rev-parse", "v2")}`)
+}, 60_000)
+test("a tag the remote refuses isn't created here either", async () => {
+    let path = await fixture()
+    await bareRemote(path)
+    let first = git(path, "rev-parse", "HEAD")
+    await commitFile(path, "a.txt", "later")
+    git(path, "push", "-q", "origin", "HEAD:refs/tags/v1")
+
+    let result = await perform(path, { action: "tag-create", name: "v1", commit: first, message: "", remote: "origin" })
+
+    expect(result).toMatchObject({ status: "failed", message: "origin already has a tag named v1." })
+    expect(git(path, "tag", "-l")).toBe("")
+    expect(git(path, "for-each-ref", "refs/remotes")).toBe("")
+}, 60_000)
+test("a tag needs an unused name and, with remotes, the remote to go to", async () => {
+    let path = await fixture()
+    let commit = git(path, "rev-parse", "HEAD")
+    git(path, "tag", "v1")
+
+    await expect(preview(path, { action: "tag-create", name: "v1", commit, message: "" })).rejects.toThrow("There's already a tag named v1.")
+    await expect(preview(path, { action: "tag-create", name: "bad..name", commit, message: "" })).rejects.toThrow("bad..name isn't a valid tag name.")
+    await bareRemote(path)
+    await expect(preview(path, { action: "tag-create", name: "v2", commit, message: "" }))
+        .rejects.toThrow("Choose a remote in the Branch Graph's settings to create the tag on.")
+}, 60_000)
+test("a tag in a repository without remotes stays here, and undo removes it", async () => {
+    let path = await fixture()
+
+    let result = await perform(path, { action: "tag-create", name: "v1", commit: git(path, "rev-parse", "HEAD"), message: "" })
+
+    expect(result.message).toBe("Created tag v1.")
+    await transition(path, "undo")
+    expect(git(path, "tag", "-l")).toBe("")
+}, 60_000)
+async function bareRemote(path: string) {
+    let remote = await mkdtemp(join(tmpdir(), "laneway-local-remote-"))
+    temporary.push(remote)
+    git(remote, "init", "-q", "--bare")
+    git(path, "remote", "add", "origin", remote)
+    return remote
+}
 async function commitFile(path: string, file: string, content: string) {
     await writeFile(join(path, file), `${content}\n`)
     git(path, "add", file)
