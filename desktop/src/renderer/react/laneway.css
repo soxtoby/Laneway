@@ -4754,9 +4754,11 @@
     }
 }
 
-/* Conflict resolution, in place in a conflicted commit or a branch's Working Changes conflict. */
+/* Conflict resolution, in place in a conflicted commit or a branch's Working Changes conflict. Its column fits the
+   commit: a file list keeps the width it last measured, so an auto column would never narrow with it. */
 .conflict-resolution {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--spacing-1);
     min-width: 0;
 
@@ -4769,6 +4771,7 @@
 
 .conflict-files {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
 }
 
 .conflict-file-row {

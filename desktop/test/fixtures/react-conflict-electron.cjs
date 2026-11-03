@@ -84,6 +84,16 @@ app.on("browser-window-created", (_event, window) => {
                     await wait(() => clean.querySelector('.pierre-diff')?.shadowRoot?.textContent.includes('A clean file in the conflicted commit'));
                     clean.querySelector('.file-path').click();
                     await wait(() => !clean.querySelector('.pierre-diff'));
+                    // Narrowing the column after its file list has measured keeps each conflict's actions in view.
+                    const trail = resolution.closest('.commit-trail');
+                    const files = resolution.closest('.commit-files');
+                    trail.style.width = Math.round(trail.getBoundingClientRect().width * 0.6) + 'px';
+                    // The list measures its new width on an animation frame.
+                    for (let frame = 0; frame < 5; frame++) await new Promise(requestAnimationFrame);
+                    for (const actions of resolution.querySelectorAll('.conflict-file-actions')) {
+                        if (actions.getBoundingClientRect().right > files.getBoundingClientRect().right + 0.5) throw new Error('Conflict file actions overflow a narrowed column');
+                    }
+                    trail.style.width = '';
                     if (resolution.innerText.includes('<<<<<<<') || resolution.innerText.includes('Replayed commit ') || resolution.innerText.includes('Candidate')) throw new Error('Diagnostic conflict content is visible');
                     button('More actions for contact.ts', row('contact.ts')).click();
                     const menuItem = await wait(() => [...document.querySelectorAll('[role=menu] [role=menuitem]')].find(item => item.textContent == 'Use current file'));
