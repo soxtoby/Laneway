@@ -6,6 +6,10 @@
 
 - Create a tag at a branch's tip or at any commit, from its menu in the Branch Graph or a column. The tag is created on the Branch Graph's remote too, and gets a message if you give it one.
 
+### Changed
+
+- When a branch's column closes because the branch no longer exists, the notice names the branch.
+
 ### Fixed
 
 - Opening the diff of a file that was renamed without changes no longer leaves a blank window.

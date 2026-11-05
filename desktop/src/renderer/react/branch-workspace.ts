@@ -526,9 +526,12 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
         if (state.selectedId && !shownIds.includes(state.selectedId))
             state.selectedId = undefined
         if (removed.length > 0) {
+            let names = new Intl.ListFormat("en", { type: "conjunction" }).format(removed.map(removedColumnName))
             notify({
                 code: "branch.removed",
-                message: `${removed.length == 1 ? "An open branch" : `${removed.length} open branches`} no longer exists; its column was closed.`,
+                message: removed.length == 1
+                    ? `${names} no longer exists; its column was closed.`
+                    : `${names} no longer exist; their columns were closed.`,
             })
         }
         return layoutInitialized
@@ -840,6 +843,13 @@ function columnNode(graph: BranchGraph, state: RepositoryColumns, id: string): C
         return { kind: "recovery", recovery }
     let comparison = state.comparisons[id]
     return comparison && { kind: "comparison", comparison: comparisonNode(id, comparison, graph) }
+}
+
+/** Names a column whose branch or virtual worktree is gone, from its id alone. */
+function removedColumnName(id: string) {
+    if (id.startsWith("virtual:"))
+        return baseName(id.slice("virtual:".length))
+    return id.replace(/^branch:/, "").replace(/^refs\/(heads|remotes)\//, "")
 }
 
 // A worktree column is named for its worktree; a branch or comparison without one, for itself.

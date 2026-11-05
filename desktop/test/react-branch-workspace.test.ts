@@ -53,7 +53,7 @@ describe("branch workspace", () => {
         await columns.refresh()
 
         expect(savedIds(saved())).toEqual([])
-        expect(notices.map(notice => notice.message)).toEqual(["An open branch no longer exists; its column was closed."])
+        expect(notices.map(notice => notice.message)).toEqual(["other/team no longer exists; its column was closed."])
     })
 
     test("closing a branch's column removes it, but a worktree's column collapses instead", async () => {
