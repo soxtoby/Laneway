@@ -11,7 +11,7 @@ import { Hint, IconButton, MoreMenu } from "./controls"
 import { useRowMenu } from "./dense-row"
 import { EditableName } from "./editable-name"
 import { copyText } from "./file-paths"
-import { BranchIcon, DiffIcon, MoreIcon, WarningIcon } from "./icons"
+import { BranchIcon, DiffIcon, MoreIcon, TagIcon, WarningIcon } from "./icons"
 import { branchStack, type ColumnInspection, type Inspection } from "./inspection"
 import { movableBase, moveIntoBaseLabel } from "./local-branches"
 import { offersPublish, type Publish, publishRef } from "./publish"
@@ -69,6 +69,7 @@ export function CommitTrail(props: CommitTrailProps) {
     let { column, graph, inspected } = props
     let [rewording, setRewording] = useState<string>()
     let stack = branchStack(graph, column.branch, inspected?.bases ?? {})
+    let tags = commitTags(graph)
     return (
         <div className="commit-trail">
             {stack.map((branch, index) => (
@@ -81,10 +82,24 @@ export function CommitTrail(props: CommitTrailProps) {
                     below={stack[index + 1]}
                     rewording={rewording}
                     onReword={setRewording}
+                    tags={tags}
                 />
             ))}
         </div>
     )
+}
+
+/** The names of the tags at each commit, by object ID: those on Branch Nodes' tips and the graph's Tag Nodes. */
+function commitTags(graph: BranchGraph) {
+    let tags = new Map<string, string[]>()
+    let add = (objectId: string, names: string[]) => tags.set(objectId, [...new Set([...tags.get(objectId) ?? [], ...names])])
+    for (let branch of graph.branches) {
+        if (branch.tags.length > 0)
+            add(branch.tip, branch.tags)
+    }
+    for (let tag of graph.tags)
+        add(tag.objectId, [tag.name])
+    return tags
 }
 
 interface StackBranchProps extends CommitTrailProps {
@@ -97,6 +112,8 @@ interface StackBranchProps extends CommitTrailProps {
     /** The commit whose message is being edited, by object ID. */
     rewording?: string
     onReword(objectId?: string): void
+    /** The names of the tags at each commit, by object ID. */
+    tags: ReadonlyMap<string, string[]>
 }
 
 function StackBranch(props: StackBranchProps) {
@@ -275,6 +292,7 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
     let editFrom = props.editFrom
     let edit = column.worktree?.historicalEdit
     let editing = edit?.commit == commit.objectId
+    let tags = props.tags.get(commit.objectId)
     let menu = {
         label: `Actions for commit ${commit.subject}`,
         items: () => (
@@ -349,6 +367,13 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
                         <span className="commit-subject">{commit.subject}</span>
                     </Hint>
                     {commit.body && !open && <MoreIcon className="message-indicator" role="img" aria-label="Has message body" aria-hidden={false} />}
+                    {tags && (
+                        <Hint text={tags.join("\n")} delay={0}>
+                            <span className="commit-tag" role="img" aria-label={`Tagged ${tags.join(", ")}`}>
+                                <TagIcon />
+                            </span>
+                        </Hint>
+                    )}
                     {/* The developer's own commits stay plain, so other people's stand out. */}
                     {!authoredBy(props.graph.authorIdentities, commit.authorEmail) && (
                         <Hint text={`${commit.authorName} <${commit.authorEmail}>`}>

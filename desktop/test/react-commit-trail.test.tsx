@@ -109,6 +109,28 @@ describe("React Commit Trail", () => {
         ).toEqual([["Mine", undefined, undefined], ["Theirs", "AR", "Alex Rivera <alex@example.test>"]])
     })
 
+    test("marks tagged commits with a tag naming their tags on hover, whether at a branch's tip or further down", async () => {
+        let scenario = inspectionScenario()
+        let branch = scenario.graph.branches[1]!
+        let older = "4".repeat(40)
+        branch.tags = ["v2.0", "v2.0-rc"]
+        scenario.graph.tags = [{ kind: "tag", id: "tag:refs/tags/v1.0", name: "v1.0", objectId: older, parentBranchId: branch.id, tooltip: "Tag v1.0" }]
+        await startReactApp({
+            ...scenario.api,
+            readBranchHistory: async (_repositoryId, request) => {
+                let commits = [commit(branch.tip, "Tip"), commit(older, "Older"), commit("5".repeat(40), "Untagged")]
+                return { ok: true, page: { branchRef: request.branchRef, tip: request.tip, baseTips: request.baseTips, commits } }
+            },
+        })
+
+        expect(
+            commitRows().map(row => {
+                let tag = row.querySelector("[role=img][aria-label^='Tagged']")
+                return [tag?.getAttribute("aria-label"), tag?.getAttribute("aria-description")]
+            }),
+        ).toEqual([["Tagged v2.0, v2.0-rc", "v2.0\nv2.0-rc"], ["Tagged v1.0", "v1.0"], [undefined, undefined]])
+    })
+
     test("a commit unfolds to its message and files, and a merge compares the parent chosen", async () => {
         let scenario = inspectionScenario()
         let second = "6".repeat(40)

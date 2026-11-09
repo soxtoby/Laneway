@@ -1553,6 +1553,19 @@
     color: var(--text-color-placeholder);
 }
 
+/* A tagged commit shows a tag, naming its tags on hover. */
+.commit-tag {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    color: var(--text-color-placeholder);
+
+    svg {
+        width: var(--spacing-3);
+        height: var(--spacing-3);
+    }
+}
+
 /* A commit's age trails its subject, quiet and never squeezed; the subject gives way instead. */
 .commit-age {
     flex: 0 0 auto;

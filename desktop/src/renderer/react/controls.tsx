@@ -80,6 +80,8 @@ interface HintProps {
     placement?: TooltipProps["placement"]
     /** The hint is the wrapped control's own, shown over it even while it is disabled, which a control's tooltip isn't. */
     forControl?: boolean
+    /** React Aria's tooltip delay after the pointer settles, in milliseconds; a child that exists to be read shortens it. */
+    delay?: number
     children: ReactElement<HTMLAttributes<HTMLElement>>
 }
 
@@ -88,7 +90,7 @@ interface HintProps {
  * descendant without one, buttons included, so a hint shows only while the pointer rests on its child but not
  * on a control or another hint inside it, which shows its own.
  */
-export function Hint({ text, placement, forControl, children }: HintProps) {
+export function Hint({ text, placement, forControl, delay, children }: HintProps) {
     let triggerRef = useRef<HintTrigger>(null)
     let resting = useRef(false)
     let opened = useRef(false)
@@ -149,7 +151,7 @@ export function Hint({ text, placement, forControl, children }: HintProps) {
                     rest(false)
                 }}
             />
-            <TooltipTrigger>
+            <TooltipTrigger delay={delay}>
                 <HintState triggerRef={triggerRef} />
                 <Tooltip className="react-aria-Tooltip hint" placement={placement}>{text}</Tooltip>
             </TooltipTrigger>
