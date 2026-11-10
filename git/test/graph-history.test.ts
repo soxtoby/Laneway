@@ -53,6 +53,30 @@ test("connects open and merged branches and keeps tags on their history", () => 
     ])
 })
 
+test("connects a merged head that an unmerged branch is stacked on", () => {
+    let points = graphHistory([
+        { objectId: "main", parentIndexes: [2, 3] },
+        { objectId: "stacked", parentIndexes: [3] },
+        { objectId: "main-work", parentIndexes: [4] },
+        { objectId: "merged", parentIndexes: [4] },
+        { objectId: "base", parentIndexes: [] },
+    ], [{ objectId: "main", lineId: "main", connect: false }, { objectId: "stacked", lineId: "stacked" }, { objectId: "merged", lineId: "merged" }])
+
+    expect(points.find(point => point.objectId == "main")?.parentIds).toEqual(["base", "merged"])
+})
+
+test("returns a merged stack through its top branch alone", () => {
+    let points = graphHistory([
+        { objectId: "main", parentIndexes: [1, 2] },
+        { objectId: "main-work", parentIndexes: [4] },
+        { objectId: "stacked", parentIndexes: [3] },
+        { objectId: "lower", parentIndexes: [4] },
+        { objectId: "base", parentIndexes: [] },
+    ], [{ objectId: "main", lineId: "main", connect: false }, { objectId: "stacked", lineId: "stacked" }, { objectId: "lower", lineId: "lower" }])
+
+    expect(points.find(point => point.objectId == "main")?.parentIds).toEqual(["base", "stacked"])
+})
+
 test("compresses ordinary commits and omits merges without a retained side line", () => {
     let commits = [{ objectId: "tip", parentIndexes: [1, 2] }, { objectId: "main-work", parentIndexes: [3] }, { objectId: "hidden-work", parentIndexes: [3] }, {
         objectId: "base",

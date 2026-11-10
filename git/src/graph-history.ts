@@ -37,22 +37,37 @@ export function graphHistory(
 
     // Show one return for each branch head, preferring the first line supplied
     // (the Primary Branch). Its intermediate merge commits are not graph nodes.
+    // A head on a line that never returns (fast-forwarded into the Primary Branch)
+    // is already home; one on another branch's line returns through that line only
+    // when the same merge brings that line's head in too.
+    let headBits = new Map(branchHeads.map((index, bit) => [index, bit]))
+    let lineBits = new Map(heads.filter(head => head.connect != false).map(head => [head.lineId, headBits.get(indexes.get(head.objectId))]))
     let connected = new Set(
-        heads.filter(head => head.connect != false && owners.get(indexes.get(head.objectId)!) != head.lineId).map(head => indexes.get(head.objectId)),
+        heads.filter(head => {
+            let owner = owners.get(indexes.get(head.objectId)!)
+            return head.connect != false && owner != head.lineId && !lineBits.has(owner!)
+        }).map(head => indexes.get(head.objectId)),
     )
     for (let [index, owner] of owners) {
         for (let parent of commits[index].parentIndexes.slice(1)) {
             let firstParent = commits[index].parentIndexes[0]
+            let introduced = Array.from(
+                { length: wordCount },
+                (_, word) => (reachableHeads[parent * wordCount + word] & ~reachableHeads[firstParent * wordCount + word]) >>> 0,
+            )
+            let brought = (bit: number | undefined) => bit != undefined && (introduced[Math.floor(bit / 32)] & 1 << bit % 32) != 0
             for (let word = 0; word < wordCount; word++) {
-                let introduced = (reachableHeads[parent * wordCount + word] & ~reachableHeads[firstParent * wordCount + word]) >>> 0
-                while (introduced) {
-                    let bit = 31 - Math.clz32((introduced & -introduced) >>> 0)
+                let remaining = introduced[word]
+                while (remaining) {
+                    let bit = 31 - Math.clz32((remaining & -remaining) >>> 0)
                     let head = branchHeads[word * 32 + bit]
                     if (head != undefined && !connected.has(head) && owners.get(head) != owner) {
-                        parents.get(index)!.push(head)
+                        let headOwner = lineBits.get(owners.get(head)!)
+                        if (headOwner == word * 32 + bit || !brought(headOwner))
+                            parents.get(index)!.push(head)
                         connected.add(head)
                     }
-                    introduced = (introduced & (introduced - 1)) >>> 0
+                    remaining = (remaining & (remaining - 1)) >>> 0
                 }
             }
         }
