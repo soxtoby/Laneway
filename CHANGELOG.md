@@ -6,6 +6,7 @@
 
 - Create a tag at a branch's tip or at any commit, from its menu in the Branch Graph or a column. The tag is created on the Branch Graph's remote too, and gets a message if you give it one.
 - Tagged commits in a column show a tag icon; hover it to see the tags' names.
+- MDX files can switch to the rendered Markdown view, like other Markdown files.
 
 ### Changed
 

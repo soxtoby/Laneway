@@ -5,7 +5,7 @@ import type { FileDiffPage, FileVersion, FileVersionRequest } from "@laneway/sha
 /** How a Markdown file's diff shows: as its source lines, or as the documents they render. */
 export type MarkdownView = "source" | "rendered"
 
-let extensions = new Set(["md", "markdown", "mdown", "mkd", "mkdn", "mdwn"])
+let extensions = new Set(["md", "mdx", "markdown", "mdown", "mkd", "mkdn", "mdwn"])
 
 // Remembered for the session, so every Markdown diff opens the way the last one was chosen.
 let preferredView: MarkdownView = "source"
