@@ -14,6 +14,10 @@
 - The Staged divider in Working Changes has an arrow pointing up at the staged files above it.
 - Clicking a file in a column selects it, instead of opening its diff underneath it; Ctrl+click still adds files to the selection. Double-click a file, press Enter on it, or use the button that appears when you hover it to open the diff column beside the column. While the diff column is open, clicking a file also scrolls to it.
 - A column can only be maximized while its diff column is open, and closing the diff column restores the column's width.
+- Clicking a file in a branch comparison column opens the diff column, as double-clicking it does elsewhere.
+- Clicking a file in a commit diff column opens the commit's diff in a diff column beside it, scrolled to that file, instead of showing the file's diff under its row.
+- A commit diff column opens as wide as a branch column.
+- A diff column that opens scrolls into view beside the column it came from. If the two don't fit side by side, the column it came from stays in view.
 
 ### Fixed
 

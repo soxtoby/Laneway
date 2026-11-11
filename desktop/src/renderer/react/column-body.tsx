@@ -31,7 +31,7 @@ export function ColumnBody({ controller, repositoryId, graph, column, inspected,
     if (column.kind == "recovery")
         return null
     let { inspection, branches, conflicts } = controller
-    // A comparison only reads, so its files can't be chosen to move or discard.
+    // A comparison only reads, so its files can't be chosen to move or discard, and pressing one opens the diff column.
     if (column.kind == "comparison") {
         return (
             <ColumnScopes controller={controller} repositoryId={repositoryId} graph={graph} column={column}>
@@ -46,6 +46,7 @@ export function ColumnBody({ controller, repositoryId, graph, column, inspected,
                             inspection={inspection}
                             view={view}
                             comparison={column.comparison}
+                            openOnPress
                             empty="No differences"
                         />
                     </section>

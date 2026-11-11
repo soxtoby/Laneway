@@ -85,12 +85,12 @@ describe("React Branch Comparison", () => {
         let row = comparison()!.querySelector<HTMLElement>(".branch-comparison .file-row")!
         expect(comparison()!.querySelectorAll(".branch-comparison .file-row")).toHaveLength(1)
         expect(row.querySelector("[slot=selection], .transfer-grip") == null).toBe(true)
-        // Its diffs are read once its diff column opens, from the header's control or a file's own.
-        await app.act(() => press(row.querySelector<HTMLElement>(".file-path")!))
+        // Its diffs are read once its diff column opens: from the header's control, a file's own, or a press on a file.
         expect(patches).toBe(0)
         let openDiffColumn = () => button(header(), "Open diff column")
         expect(openDiffColumn().hasAttribute("disabled")).toBe(false)
-        for (let opener of [openDiffColumn, () => button(row, "Open src/file.txt in diff column")]) {
+        let openers = [openDiffColumn, () => button(row, "Open src/file.txt in diff column"), () => row.querySelector<HTMLElement>(".file-path")!]
+        for (let opener of openers) {
             await app.act(() => press(opener()))
             let diffColumn = document.querySelector<HTMLElement>(".diff-column")!
             expect(comparison()!.nextElementSibling?.nextElementSibling == diffColumn).toBe(true)

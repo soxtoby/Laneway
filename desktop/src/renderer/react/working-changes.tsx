@@ -14,7 +14,7 @@ import { type FileInspection, FileRowsLayout, FileTree, revealRow } from "./file
 import { applySelection } from "./historical-edit"
 import { applyTarget } from "./historical-edit-banner"
 import { ArchiveIcon, ChevronDownIcon, CloseIcon, DetachedIcon, FolderIcon, OpenColumnIcon, StagedAboveIcon, TreeIcon } from "./icons"
-import { type ColumnInspection, diffKey, type FilesState, type Inspection, matchesFilter } from "./inspection"
+import { type ColumnInspection, diffKey, type FilesState, hostedView, type Inspection, matchesFilter } from "./inspection"
 import { TransferGrip, TransferReview, transferSource, useTransferScope, useTransferTarget } from "./transfer"
 import { Button } from "./ui/Button"
 import { ChevronRight } from "./ui/icons"
@@ -413,8 +413,10 @@ interface FileListProps {
     empty?: string
     /** Files from the other Working Changes list land here to be staged or unstaged. */
     staging?: Landing
-    /** Whether files show their diffs in the column's diff column; auxiliary columns have none, and show them under their rows. */
+    /** Whether files show their diffs in the column's diff column; a File History column shows them under their rows instead. */
     diffColumn?: boolean
+    /** Whether pressing a file opens the diff column, rather than only scrolling an open one to it. */
+    openOnPress?: boolean
     /** A comparison's ends, whose histories its files open in. */
     comparison?: ComparisonColumnNode
 }
@@ -438,6 +440,7 @@ export const FileList = memo(function FileList(
         empty,
         staging,
         diffColumn: breaksOut = true,
+        openOnPress = false,
         comparison,
     }: FileListProps,
 ) {
@@ -480,11 +483,11 @@ export const FileList = memo(function FileList(
         }
         : undefined
     // A Workspace Column's files show their diffs only in its diff column: pressing a row scrolls an open one to its
-    // file, and a double-click, Enter, or the row's button opens it there. An auxiliary column's rows open their diffs
-    // under themselves, where a comparison's lines can't be chosen.
+    // file, and a double-click, Enter, or the row's button opens it there. A Commit Diff column's press opens it too.
+    // A File History column's rows open their diffs under themselves.
     let inspect: FileInspection | undefined = inspected && (breaksOut
         ? {
-            press: file => inspection.showInDiffColumn(columnId, group, file.path),
+            press: file => inspection.showInDiffColumn(columnId, group, file.path, openOnPress),
             open: (file, focus) =>
                 focus ? inspection.openDiffColumn(columnId, group, file.path) : inspection.showInDiffColumn(columnId, group, file.path, true),
         }
@@ -594,7 +597,9 @@ function ActiveRow({ list, layout, inspection, columnId, group }: {
     group: string
 }) {
     let shown = useSnapshotValue(inspection, snapshot => {
-        let diffColumn = snapshot.columns[columnId]?.diffColumn
+        let diffColumn = snapshot.columns[columnId]?.diffColumn ?? Object.values(snapshot.auxiliary)
+            .map(views => hostedView(views, columnId))
+            .find(Boolean)?.host.diffColumn
         return diffColumn?.group == group ? diffColumn.shown : undefined
     })
     useEffect(() => {

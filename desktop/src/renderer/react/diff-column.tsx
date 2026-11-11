@@ -19,6 +19,8 @@ interface DiffColumnProps {
     stacked: boolean
     /** What the column it came from shows, whose diffs this column draws. */
     inspected?: ColumnInspection
+    /** Whether its diffs' lines can be chosen, to move or discard. */
+    eligible: boolean
     /** How the source column lists its files, whose order and groups this column follows. */
     listView: FileListView
     inspection: Inspection
@@ -32,13 +34,14 @@ interface DiffColumnProps {
 }
 
 /**
- * One list's whole diff beside the column it came from: every file's diff, each under a toolbar that folds it.
+ * One list's whole diff beside the Workspace Column or Commit Diff column it came from: every file's diff, each under a
+ * toolbar that folds it.
  * Choosing a file in the source column scrolls its diff up under the header, and the file at the top is marked there
  * as the column scrolls.
  */
 export let minimumDiffColumnWidth = 380
 
-export function DiffColumn({ view, sourceName, stacked, inspected, listView, inspection, root, maximized, onMaximize, onClose }: DiffColumnProps) {
+export function DiffColumn({ view, sourceName, stacked, inspected, eligible, listView, inspection, root, maximized, onMaximize, onClose }: DiffColumnProps) {
     let scroller = useRef<HTMLDivElement>(null)
     let files = inspected?.files[view.group]
     // Its source column's filter narrows it as it does the source's own list.
@@ -132,8 +135,8 @@ export function DiffColumn({ view, sourceName, stacked, inspected, listView, ins
                                 {diff && (
                                     <DiffColumnFile
                                         columnId={view.id}
-                                        sourceId={view.sourceId}
-                                        group={view.group}
+                                        ownerId={view.ownerId}
+                                        eligible={eligible}
                                         entireFiles={view.entireFiles}
                                         collapsed={collapsed.has(file.path)}
                                         file={file}
@@ -268,9 +271,9 @@ function useNear(section: RefObject<HTMLElement | null>, eager: boolean) {
 interface DiffColumnFileProps {
     /** The diff column's ID. */
     columnId: string
-    /** The Workspace Column whose diffs it shows. */
-    sourceId: string
-    group: string
+    /** The column state whose diffs it shows. */
+    ownerId: string
+    eligible: boolean
     entireFiles: boolean
     collapsed: boolean
     file: ChangedFile
@@ -287,7 +290,7 @@ interface DiffColumnFileProps {
  * view; before then the file shows as they would leave it.
  */
 const DiffColumnFile = memo(function DiffColumnFile(props: DiffColumnFileProps & { eager: boolean }) {
-    let { sourceId, group, collapsed, file, id, diff, inspection, eager } = props
+    let { ownerId, eligible, collapsed, file, id, diff, inspection, eager } = props
     let section = useRef<HTMLDivElement>(null)
     let near = useNear(section, eager)
     return (
@@ -303,12 +306,12 @@ const DiffColumnFile = memo(function DiffColumnFile(props: DiffColumnFileProps &
                         </span>
                     </header>
                 )}
-            {!collapsed && <DiffPanel columnId={sourceId} id={id} diff={diff} inspection={inspection} eligible={group != "comparison"} />}
+            {!collapsed && <DiffPanel columnId={ownerId} id={id} diff={diff} inspection={inspection} eligible={eligible} />}
         </div>
     )
 })
 
-function DiffToolbar({ columnId, sourceId, entireFiles, collapsed, file, id, diff, inspection, root, onFold }: DiffColumnFileProps) {
+function DiffToolbar({ columnId, ownerId, entireFiles, collapsed, file, id, diff, inspection, root, onFold }: DiffColumnFileProps) {
     // The file's history reads from where the list was read: its worktree or its commit.
     let source = diff.page?.source
     let history = source?.kind == "working"
@@ -341,7 +344,7 @@ function DiffToolbar({ columnId, sourceId, entireFiles, collapsed, file, id, dif
             </AriaButton>
             <CopyPathButton path={file.path} />
             <DiffControls
-                columnId={sourceId}
+                columnId={ownerId}
                 id={id}
                 diff={diff}
                 inspection={inspection}

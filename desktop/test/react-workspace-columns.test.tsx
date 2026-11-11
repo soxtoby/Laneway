@@ -71,6 +71,46 @@ describe("React Workspace Columns", () => {
         expect(maximized()).toEqual([])
     })
 
+    test("a diff column that opens scrolls into view with its source column, which starts the view when both don't fit", async () => {
+        let app = await startReactApp(inspectionScenario().api)
+        let id = columnIds()[0]!
+        let row = document.querySelector<HTMLElement>(".column-row")!
+        let path = column(id).querySelector<HTMLElement>("[data-group='working-staged'] .file-row")!.dataset.rowKey!
+        let scrolled: (number | undefined)[] = []
+        row.scrollTo = ((options: ScrollToOptions) => scrolled.push(options.left)) as typeof row.scrollTo
+        // The source column sits at 300 to 680 of the row, and the diff column after it, 620 wide.
+        let viewWidth = 1200
+        let restoreLayout = layOutColumns(element =>
+            element == row
+                ? new DOMRect(0, 0, viewWidth, 800)
+                : element == column(id)
+                ? new DOMRect(300, 0, 380, 800)
+                : element.classList.contains("diff-column")
+                ? new DOMRect(690, 0, 620, 800)
+                : undefined
+        )
+        try {
+            // Opened from its button, it takes focus, and the row scrolls only as far as shows its end.
+            await openDiffColumn(app, id)
+            await app.act(() => frame())
+            let focusing = { scrolled: scrolled.splice(0), focused: document.activeElement?.classList.contains("diff-column") }
+            await app.act(() => press(button(document.querySelector<HTMLElement>(".diff-column")!, "Close diff column")))
+            await app.act(() => frame())
+
+            // Opened without focus where both don't fit, the source column starts the view.
+            viewWidth = 900
+            scrolled = []
+            await app.act(() => app.controller.inspection.showInDiffColumn(id, "working-staged", path, true))
+            await app.act(() => frame())
+
+            expect(focusing).toEqual({ scrolled: [110], focused: true })
+            expect(scrolled).toEqual([300])
+            expect(document.activeElement?.classList.contains("diff-column")).toBe(false)
+        } finally {
+            restoreLayout()
+        }
+    })
+
     test("double-clicking a column header toggles maximizing it, but not on its controls", async () => {
         let app = await startReactApp(inspectionScenario().api)
         let id = columnIds()[0]!
@@ -382,6 +422,18 @@ function layOutTooltips(place: (placement?: string) => DOMRect) {
             return this instanceof HTMLElement && this.classList.contains("react-aria-Tooltip")
                 ? place(this.dataset.placement)
                 : original.value.call(this)
+        },
+    })
+    return () => Object.defineProperty(Element.prototype, "getBoundingClientRect", original)
+}
+
+/** Places the elements `place` gives a box, as a window would lay them out. */
+function layOutColumns(place: (element: Element) => DOMRect | undefined) {
+    let original = Object.getOwnPropertyDescriptor(Element.prototype, "getBoundingClientRect")!
+    Object.defineProperty(Element.prototype, "getBoundingClientRect", {
+        configurable: true,
+        value(this: Element) {
+            return place(this) ?? original.value.call(this)
         },
     })
     return () => Object.defineProperty(Element.prototype, "getBoundingClientRect", original)

@@ -1,6 +1,6 @@
 import type { BranchGraph, FileListView, WorktreeRecovery, WorktreeRequest } from "@laneway/shared"
 import clsx from "clsx"
-import { type DragEvent, type KeyboardEvent, memo, type MouseEvent, useEffect, useMemo, useRef } from "react"
+import { type DragEvent, type KeyboardEvent, memo, type MouseEvent, type ReactNode, useEffect, useMemo, useRef } from "react"
 import { Button as AriaButton, ToggleButton, useDrop } from "react-aria-components"
 import type { AppController } from "./app-controller"
 import { defaultAuxiliaryColumnWidth } from "./auxiliary-columns"
@@ -13,9 +13,9 @@ import { ColumnFilter } from "./column-filter"
 import { navigationKeyDown } from "./column-navigation"
 import { Hint, IconButton } from "./controls"
 import { DiffColumn, minimumDiffColumnWidth } from "./diff-column"
-import { CommitDiffColumn, FileHistoryColumn } from "./file-history"
+import { CommitDiffColumn, FileHistoryColumn, HostedDiffScope } from "./file-history"
 import { BranchIcon, CloseIcon, CollapseColumnIcon, CompareIcon, ExpandColumnIcon, FolderIcon, MaximizeIcon, OpenColumnIcon, RestoreIcon, SearchIcon, WarningIcon } from "./icons"
-import type { AuxiliaryView, InspectionSnapshot } from "./inspection"
+import { type AuxiliaryView, type CommitDiffView, type FileHistoryView, hostedView, type Inspection, type InspectionSnapshot } from "./inspection"
 import { type Publish, publishBranches } from "./publish"
 import { ScriptButton } from "./script-button"
 import { Button } from "./ui/Button"
@@ -46,6 +46,7 @@ export const WorkspaceColumns = memo(function WorkspaceColumns({ controller, fil
     useReveal(snapshot.revealed)
     useMaximized(snapshot.maximizedId)
     useAuxiliaryFocus(current?.focused)
+    useAuxiliaryFocus(current?.revealed, false)
     usePublishReviews(controller.publish, snapshot, graph, current)
 
     // Escape restores a maximized column's width.
@@ -506,6 +507,8 @@ function AuxiliaryFrame({ view, column, inspected, graph, controller, fileListVi
     let stacked = column.worktree != undefined && column.kind != "recovery"
     let root = columnRoot(column)
     let { inspection } = controller
+    // A diff column opened from a Commit Diff column shows that column's files, laid out as it lays them out.
+    let host = view.kind == "diff" ? hostedView(inspected?.auxiliary[column.id] ?? [], view.ownerId) : undefined
     // Closing it returns focus to the column it was opened from.
     let returnFocus = () =>
         requestAnimationFrame(() => {
@@ -516,18 +519,21 @@ function AuxiliaryFrame({ view, column, inspected, graph, controller, fileListVi
         <ColumnScopes controller={controller} repositoryId={inspected?.repositoryId ?? ""} graph={graph} column={column}>
             {view.kind == "diff"
                 ? (
-                    <DiffColumn
-                        view={view}
-                        sourceName={column.name}
-                        stacked={stacked}
-                        inspected={inspected?.columns[column.id]}
-                        listView={fileListView}
-                        inspection={inspection}
-                        root={root}
-                        maximized={maximized}
-                        onMaximize={() => controller.columns.toggleMaximized(column.id)}
-                        onClose={returnFocus}
-                    />
+                    <MaybeHostedDiffScope host={host} inspection={inspection}>
+                        <DiffColumn
+                            view={view}
+                            sourceName={host?.kind == "commit" ? `commit ${host.entry.objectId.slice(0, 8)}` : column.name}
+                            stacked={stacked}
+                            inspected={host ? host.host : inspected?.columns[column.id]}
+                            eligible={host ? host.eligible.includes(view.group) : view.group != "comparison"}
+                            listView={fileListView}
+                            inspection={inspection}
+                            root={root}
+                            maximized={maximized}
+                            onMaximize={() => controller.columns.toggleMaximized(column.id)}
+                            onClose={returnFocus}
+                        />
+                    </MaybeHostedDiffScope>
                 )
                 : view.kind == "history"
                 ? (
@@ -543,6 +549,10 @@ function AuxiliaryFrame({ view, column, inspected, graph, controller, fileListVi
                 : <CommitDiffColumn commit={view} inspection={inspection} view={fileListView} root={root} stacked={stacked} onClose={returnFocus} />}
         </ColumnScopes>
     )
+}
+
+function MaybeHostedDiffScope({ host, inspection, children }: { host?: FileHistoryView | CommitDiffView; inspection: Inspection; children: ReactNode }) {
+    return host ? <HostedDiffScope column={host} inspection={inspection}>{children}</HostedDiffScope> : children
 }
 
 function RecoveryPanel({ recovery, busy, error, onResolve }: {
@@ -603,19 +613,43 @@ function showMaximized(id: string) {
     columnElement(id)?.closest(".column-group")?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" })
 }
 
-// An auxiliary column that opens, or is asked for again, takes focus once it shows, after any menu that opened it
-// has returned focus to its trigger.
-function useAuxiliaryFocus(focused?: { id: string; serial: number }) {
+// An auxiliary column that opens, or is asked for again, comes into view once it shows, and takes focus when it is to,
+// after any menu that opened it has returned focus to its trigger.
+function useAuxiliaryFocus(shown?: { id: string; serial: number }, focus = true) {
     useEffect(() => {
-        if (!focused)
+        if (!shown)
             return
         let frame = requestAnimationFrame(() => {
-            let element = document.querySelector<HTMLElement>(`[data-auxiliary-id="${focused.id}"]`)
-            element?.focus({ preventScroll: true })
-            element?.scrollIntoView({ behavior: "instant", block: "nearest", inline: "nearest" })
+            let element = document.querySelector<HTMLElement>(`[data-auxiliary-id="${shown.id}"]`)
+            if (focus)
+                element?.focus({ preventScroll: true })
+            if (element)
+                showBesideSource(element)
         })
         return () => cancelAnimationFrame(frame)
-    }, [focused])
+    }, [shown, focus])
+}
+
+/**
+ * Scrolls the row as little as shows an auxiliary column with the column it was opened from. When the two are wider
+ * than the view, the source column starts the view and the auxiliary column shows as much as fits after it.
+ */
+function showBesideSource(element: HTMLElement) {
+    let row = element.closest<HTMLElement>(".column-row")
+    let sourceId = element.dataset.sourceColumnId
+    let source = sourceId ? document.querySelector<HTMLElement>(`[data-auxiliary-id="${sourceId}"]`) ?? columnElement(sourceId) : undefined
+    if (!row)
+        return
+    // The row's scroll padding keeps its padding beside a column scrolled to its edge.
+    let style = getComputedStyle(row)
+    let view = row.getBoundingClientRect()
+    let left = view.left + (parseFloat(style.scrollPaddingLeft) || 0)
+    let right = view.right - (parseFloat(style.scrollPaddingRight) || 0)
+    let start = (source ?? element).getBoundingClientRect().left
+    let end = element.getBoundingClientRect().right
+    let distance = start < left || end - start > right - left ? start - left : Math.max(0, end - right)
+    if (distance)
+        row.scrollTo({ left: row.scrollLeft + distance, behavior: "smooth" })
 }
 
 // Ctrl+Z undoes and Ctrl+Y or Ctrl+Shift+Z redoes the latest operation; a discard still showing its Undo notice

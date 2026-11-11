@@ -166,11 +166,11 @@ A source-linked auxiliary column anchored to one file and either a mutable branc
 _Avoid_: File log column, History Workspace Column
 
 **Commit Diff Column**:
-A read-only auxiliary column for inspecting one commit's complete diff against one explicit parent without replacing its source column's selection. A merge commit initially uses its first parent, and the user may select another parent.
+A read-only auxiliary column for inspecting one commit's complete diff against one explicit parent without replacing its source column's selection. A merge commit initially uses its first parent, and the user may select another parent. Pressing one of its files opens the commit's whole diff in a diff column beside it, scrolled to that file; while that is open, pressing another file scrolls to it. Choosing another parent closes it.
 _Avoid_: Diff Workspace Column
 
 **Working Changes Diff Column**:
-A transient auxiliary column showing a worktree's whole Working Changes diff beside its source Workspace Column, scrolled to the chosen file; a Workspace Column shows diffs nowhere else. A double-click or Enter on a file's row, or the row's button, opens it; while it is open, pressing another file scrolls to it instead of replacing the column. Restarting Laneway closes it.
+A transient auxiliary column showing a worktree's whole Working Changes diff beside its source Workspace Column, scrolled to the chosen file; a Workspace Column shows diffs nowhere else. A double-click or Enter on a file's row, or the row's button, opens it, and in a read-only Branch Comparison Column so does pressing the row; while it is open, pressing another file scrolls to it instead of replacing the column. It scrolls into view as it opens, keeping its source column in view. Restarting Laneway closes it.
 _Avoid_: Diff Column, Commit Diff Column
 
 **Image Diff**:

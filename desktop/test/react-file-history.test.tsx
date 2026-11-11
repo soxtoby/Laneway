@@ -188,6 +188,52 @@ describe("React File History", () => {
         expect(commit.textContent).toContain("Find related files")
     })
 
+    test("a commit diff opens as wide as a branch column, and a file pressed there opens the commit in a diff column beside it", async () => {
+        let scenario = inspectionScenario()
+        let app = await startReactApp({
+            ...scenario.api,
+            readFileHistory: async (_repositoryId, _id, request) => {
+                let merge = { ...entry(2, "History commit", request), parentIds: ["1".repeat(40), "3".repeat(40)], followedParent: "1".repeat(40) }
+                return { ok: true, page: { tip: "2".repeat(40), entries: [merge] } }
+            },
+        })
+        await openFileHistory(app, workingRow())
+        await app.act(() => press(button(historyColumn()!, "Actions for History commit")))
+        await app.act(() => press(menuItem("Complete commit diff")))
+        let commit = document.querySelector<HTMLElement>(".commit-diff")!
+        let [first, second] = [...commit.querySelectorAll<HTMLElement>(".file-row")]
+        // It starts as wide as a branch column.
+        expect(commit.style.width).toBe("380px")
+
+        await app.act(() => press(second!.querySelector<HTMLElement>(".file-path")!))
+        let diffColumn = document.querySelector<HTMLElement>(".diff-column")!
+        let opened = {
+            inline: commit.querySelector(".diff-panel") != null,
+            source: diffColumn.dataset.sourceColumnId == commit.dataset.auxiliaryId,
+            besideIt: commit.nextElementSibling?.nextElementSibling == diffColumn,
+            title: diffColumn.querySelector("h2")?.textContent,
+            files: [...diffColumn.querySelectorAll<HTMLElement>("[data-diff-path]")].map(file => file.dataset.diffPath),
+            marked: [first!, second!].map(row => row.hasAttribute("data-active")),
+        }
+        // Pressing another file scrolls the diff column to it.
+        await app.act(() => press(first!.querySelector<HTMLElement>(".file-path")!))
+        let pressedAgain = { columns: document.querySelectorAll(".diff-column").length, marked: [first!, second!].map(row => row.hasAttribute("data-active")) }
+
+        expect(opened).toEqual({
+            inline: false,
+            source: true,
+            besideIt: true,
+            title: "Commit · History commit",
+            files: [first!, second!].map(row => row.dataset.rowKey),
+            marked: [false, true],
+        })
+        expect(pressedAgain).toEqual({ columns: 1, marked: [true, false] })
+
+        await app.act(() => press(button(commit, "Commit diff parent")))
+        await app.act(() => press([...document.querySelectorAll<HTMLElement>("[role=option]")].find(option => option.textContent?.startsWith("Parent 2"))!))
+        expect(document.querySelector(".diff-column") == null).toBe(true)
+    })
+
     test("opens from a commit's files and from the diff column, reading from where the file was listed", async () => {
         let scenario = inspectionScenario()
         let sources: FileHistoryRequest["source"][] = []

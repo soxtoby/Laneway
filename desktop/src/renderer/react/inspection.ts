@@ -1,6 +1,7 @@
 import type { BranchGraph, BranchGraphBranchNode, BranchHistoryPage, ChangedFile, ChangesInventory, ComparisonRef, DiffLayout, DiffSource, DiffView, FileDiffPage, FileHistoryEntry, FileHistoryPage, FileHistorySource, FileImagePage, FileVersion, RemoteImageResult } from "@laneway/shared"
 import type { FileDiffLoadedChangedFiles } from "@pierre/diffs"
 import { type AuxiliaryColumn, AuxiliaryColumns } from "./auxiliary-columns"
+import { defaultColumnWidth } from "./branch-workspace"
 import { comparisonKey } from "./comparison-columns"
 import { readDiffContext } from "./diff-context"
 import { createDiscards } from "./discard"
@@ -80,13 +81,15 @@ export function matchesFilter(filter: FileFilter, file: ChangedFile) {
     return status && path.includes(filter.text.toLowerCase())
 }
 
-/** A list's whole diff, in an auxiliary column beside the Workspace Column it came from. */
+/** A list's whole diff, in an auxiliary column beside the Workspace Column or Commit Diff column it came from. */
 export interface DiffColumnView {
     kind: "diff"
     /** The auxiliary column's ID. */
     id: string
-    /** The Workspace Column whose diffs it shows. */
+    /** The column it came from: a Workspace Column, or a Commit Diff column. */
     sourceId: string
+    /** The column state whose list and diffs it shows, which inspection calls take as their column. */
+    ownerId: string
     width: number
     /** The list whose files it shows. */
     group: string
@@ -142,6 +145,11 @@ export interface CommitDiffView extends HostedView {
 /** A column opened beside a Workspace Column; it closes with that column and isn't kept across restarts. */
 export type AuxiliaryView = DiffColumnView | FileHistoryView | CommitDiffView
 
+/** The File History or Commit Diff column among `views` whose files and diffs live in the column state `hostId`. */
+export function hostedView(views: AuxiliaryView[], hostId: string) {
+    return views.find((view): view is FileHistoryView | CommitDiffView => view.kind != "diff" && view.hostId == hostId)
+}
+
 export interface InspectionSnapshot {
     repositoryId?: string
     columns: Record<string, ColumnInspection>
@@ -149,6 +157,8 @@ export interface InspectionSnapshot {
     auxiliary: Record<string, AuxiliaryView[]>
     /** The auxiliary column that takes focus once it shows; `serial` rises each time one is to. */
     focused?: { id: string; serial: number }
+    /** An auxiliary column that comes into view once it shows, leaving focus where it is; `serial` rises each time one is to. */
+    revealed?: { id: string; serial: number }
     /** Whether every diff wraps its long lines rather than scrolling them sideways. */
     wrapLines: boolean
 }
@@ -191,7 +201,7 @@ export interface Inspection extends Store<InspectionSnapshot> {
     chooseBase(columnId: string, branchId: string, baseId?: string): void
     /** Drops choices that rewritten history made stale. */
     rewritten(): void
-    /** Shows or hides a file's diff under its row, in a File History or Commit Diff column. */
+    /** Shows or hides a file's diff under its row, in a File History column. */
     toggleDiff(columnId: string, group: string, path: string): void
     /** Closes the diffs of files a folded folder or group hides. */
     closeDiffs(columnId: string, group: string, paths: string[]): void
@@ -364,6 +374,7 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
     let historyHosts = new Map<FileHistoryState, ColumnState>()
     let activeId: string | undefined
     let focused: InspectionSnapshot["focused"]
+    let revealed: InspectionSnapshot["revealed"]
     let wrapLines = false
     let diffViews = new WeakMap<FileDiffState, FileDiffState>()
     let discards = createDiscards({
@@ -406,6 +417,7 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
             columns: Object.fromEntries([...columns?.values() ?? []].map(state => [state.id, inspected(state)])),
             auxiliary: Object.fromEntries([...columns?.keys() ?? []].map(id => [id, tree?.descendants(id).map(auxiliaryView) ?? []])),
             focused,
+            revealed,
             wrapLines,
         })
     }
@@ -443,6 +455,7 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
             return {
                 kind: "diff",
                 ...placed,
+                ownerId: value.owner.id,
                 group: value.group,
                 subject: value.subject,
                 collapsed: [...value.collapsed],
@@ -533,6 +546,10 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
 
     function focusAuxiliary(id: string) {
         focused = { id, serial: (focused?.serial ?? 0) + 1 }
+    }
+
+    function revealAuxiliary(id: string) {
+        revealed = { id, serial: (revealed?.serial ?? 0) + 1 }
     }
 
     // A column closed while its read was under way no longer shows anything.
@@ -672,7 +689,9 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
             return publish()
         }
         let tree = auxiliaryFor(state.repositoryId)
-        let previous = current && tree.descendants(state.id).find(node => node.value == current)
+        // A Commit Diff column's state opens it beside that column.
+        let sourceId = state.auxiliaryId ?? state.id
+        let previous = current && tree.descendants(sourceId).find(node => node.value == current)
         let column: DiffColumnState = {
             kind: "diff",
             id: "",
@@ -689,9 +708,11 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
         state.diffColumn = column
         if (previous)
             tree.close(previous.id)
-        column.id = tree.open(state.id, "diff", () => ({ value: column, dispose: () => disposeDiffColumn(column) }), previous?.width).id
+        column.id = tree.open(sourceId, "diff", () => ({ value: column, dispose: () => disposeDiffColumn(column) }), previous?.width).id
         if (focus)
             focusAuxiliary(column.id)
+        else
+            revealAuxiliary(column.id)
         publish()
         if (!state.files[group]?.inventory && !group.startsWith("working"))
             await read(state.repositoryId, state, group, { kind: "commit", objectId: group })
@@ -749,6 +770,9 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
     }
 
     function commitSubject(state: ColumnState, objectId: string) {
+        let hosted = state.auxiliaryId ? auxiliaryNode(state.auxiliaryId)?.node.value : undefined
+        if (hosted?.kind == "commit" && hosted.commit.entry.objectId == objectId)
+            return hosted.commit.entry.subject
         for (let history of Object.values(state.history)) {
             let commit = history.page?.commits.find(candidate => candidate.objectId == objectId)
             if (commit)
@@ -1290,7 +1314,7 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
                         dispose(hostsFor(root.repositoryId), host)
                     },
                 }
-            })
+            }, defaultColumnWidth)
             if (node.value.kind == "commit")
                 node.value.host.auxiliaryId = node.id
             focusAuxiliary(node.id)

@@ -263,7 +263,7 @@ export function CommitDiffColumn({ commit, inspection, view, root, stacked, onCl
                 view={view}
                 root={root}
                 selectable={commit.eligible.includes(objectId)}
-                diffColumn={false}
+                openOnPress
                 empty="No changes against this parent"
             />
             <section className="related-files" aria-label="Related files">
@@ -313,10 +313,8 @@ function AuxiliaryFrame({ column, className, label, title, from, close, onClose,
     stacked: boolean
     children: ReactNode
 }) {
-    let { layout, hostId } = column
-    let diffs = useMemo(() => ({ layout, setLayout: (chosen: typeof layout) => inspection.setLayout(hostId, chosen) }), [inspection, hostId, layout])
     return (
-        <DiffScopeContext value={diffs}>
+        <HostedDiffScope column={column} inspection={inspection}>
             <aside
                 className={clsx("auxiliary-column", className)}
                 data-auxiliary-id={column.id}
@@ -347,8 +345,15 @@ function AuxiliaryFrame({ column, className, label, title, from, close, onClose,
                 </header>
                 <div className="auxiliary-body">{children}</div>
             </aside>
-        </DiffScopeContext>
+        </HostedDiffScope>
     )
+}
+
+/** Lays out the diffs of a File History or Commit Diff column's files, and of the diff column opened from it, as it chooses. */
+export function HostedDiffScope({ column, inspection, children }: { column: FileHistoryView | CommitDiffView; inspection: Inspection; children: ReactNode }) {
+    let { layout, hostId } = column
+    let diffs = useMemo(() => ({ layout, setLayout: (chosen: typeof layout) => inspection.setLayout(hostId, chosen) }), [inspection, hostId, layout])
+    return <DiffScopeContext value={diffs}>{children}</DiffScopeContext>
 }
 
 /** Where a history was read from: a branch, a worktree, or a commit. */
