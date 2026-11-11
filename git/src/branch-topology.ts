@@ -25,6 +25,8 @@ export interface GraphTopology {
     mergeBases(branch: MutableBranch, candidates: MutableBranch[]): Array<{ candidate: MutableBranch; objectId: string }>
     exclusiveCommits(branches: MutableBranch[], candidates?: string[]): string[]
     hasExclusive(commits: Set<string>, tip: string, base: string): boolean
+    /** How many commits one branch tip reaches that another doesn't. */
+    exclusiveCount(tip: string, other: string): number
 }
 
 export async function readTopology(runner: GraphRunner, tips: string[], key: string, cached?: TopologyCache): Promise<TopologyCache> {
@@ -222,6 +224,22 @@ function createTopology(records: TopologyRecord[], tips: string[], commitIndexes
             }
             return false
         },
+        exclusiveCount(tip, other) {
+            let start = commitIndexes.get(tip)
+            let otherIndex = tipIndexes.get(other)
+            if (start == undefined || otherIndex == undefined)
+                return 0
+            // Only the commits counted are visited: the walk stops wherever the other tip reaches.
+            let counted = new Set<number>()
+            for (let pending = [start]; pending.length > 0;) {
+                let current = pending.pop()!
+                if (counted.has(current) || hasReach(current, otherIndex))
+                    continue
+                counted.add(current)
+                pending.push(...commits[current].parentIndexes)
+            }
+            return counted.size
+        },
     }
 }
 
@@ -257,5 +275,6 @@ function emptyTopology(): GraphTopology {
         mergeBases: () => [],
         exclusiveCommits: () => [],
         hasExclusive: () => false,
+        exclusiveCount: () => 0,
     }
 }

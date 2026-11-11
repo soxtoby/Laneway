@@ -10,6 +10,8 @@ export let PullRequestSchema = z.object({
     // so no open branch is left built on history the pull replaced.
     open: z.array(z.string().regex(/^refs\/heads\/.+/)).optional(),
     remote: z.string().min(1).optional(),
+    // Restack published branches onto a Base that only moved forward too; otherwise they wait for Restack.
+    restack: z.boolean().optional(),
 })
 export type PullRequest = z.infer<typeof PullRequestSchema>
 

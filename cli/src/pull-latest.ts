@@ -9,10 +9,13 @@ type Changes = ChangeRecorder
 export type PullProgressReporter = (message: string, completed: number, total: number) => void
 
 interface ScopedBranch {
+    /** Its Branch Node, which branches sharing its tip share. */
+    id: string
     ref: string
     name: string
     tip: string
     remoteOnly: boolean
+    primary: boolean
     upstream?: { ref: string; remote: string }
 }
 interface ScopedStack {
@@ -31,6 +34,12 @@ export type PullPreparation =
         stacks: ScopedStack[]
         blocked: PullStackOutcome[]
         remotesFor: (stack: ScopedStack) => string[]
+        /**
+         * Each local branch's upstream, with the Branch Node its stack rests on the Primary Branch by. While the
+         * upstream exists the branch is published, and a pull leaves that node where it is while the Primary Branch only
+         * moves forward. Empty when the pull was asked to restack those too.
+         */
+        anchors: Array<{ upstream: string; anchor: string }>
     }
 
 // Explains why a stack was left untouched; anything else is reported as a failure.
@@ -58,12 +67,33 @@ export async function preparePull(
     let remoteOf = (remoteRef: string) =>
         remotes.filter(remote => remoteRef.startsWith(`refs/remotes/${remote}/`)).sort((left, right) => right.length - left.length)[0]
     let scoped = (branch: BranchGraphBranchNode, ref: string): ScopedBranch => ({
+        id: branch.id,
         ref,
         name: shortName(ref),
         tip: branch.tip,
         remoteOnly: branch.remoteOnly,
+        primary: branch.primary,
         upstream: branch.remoteOnly ? undefined : upstreams.get(ref),
     })
+
+    // Read from the whole graph, so a published branch holds what it is built on whether or not its column is open.
+    let anchors: Array<{ upstream: string; anchor: string }> = []
+    let nodes = new Map(graph.branches.map(branch => [branch.id, branch]))
+    for (let branch of request.restack ? [] : graph.branches) {
+        let tracked = branch.localRefs.flatMap(ref => upstreams.get(ref)?.ref ?? [])
+        let seen = new Set<string>()
+        for (let current = branch; tracked.length && current.base.status == "known" && !seen.has(current.id);) {
+            seen.add(current.id)
+            let base = nodes.get(current.base.branchId)
+            if (!base || base.remoteOnly && !base.primary)
+                break
+            if (base.primary) {
+                anchors.push(...tracked.map(upstream => ({ upstream, anchor: current.id })))
+                break
+            }
+            current = base
+        }
+    }
 
     let candidates: Array<{ chain: ScopedBranch[]; ambiguous?: string }> = []
     for (let ref of [...new Set([...request.branches, ...request.open ?? []])]) {
@@ -127,7 +157,7 @@ export async function preparePull(
         progress(`Fetching ${remote}…`, index, total)
         fetches.push(await fetchRemote(repo, remote))
     }
-    return { kind: "prepared", fetches, trackingBefore, stacks, blocked, remotesFor }
+    return { kind: "prepared", fetches, trackingBefore, stacks, blocked, remotesFor, anchors }
 }
 
 export async function fetchRemote(repo: RepositoryGit, remote: string): Promise<PullFetch> {
@@ -155,6 +185,9 @@ export async function executePull(
     let held = heldBranches(prepared.stacks, editing)
     let failedRemotes = new Set(prepared.fetches.filter(fetch => fetch.status == "failed").map(fetch => fetch.remote))
     let pulled = await readPulledUpstreams(repo)
+    // An upstream the fetch pruned no longer publishes its branch.
+    let remoteTips = prepared.anchors.length ? await readRemoteTips(repo) : new Map<string, string>()
+    let anchors = new Set(prepared.anchors.filter(item => remoteTips.has(item.upstream)).map(item => item.anchor))
     let processed = new Map<string, { before: string; current: string }>()
     let outcomes: PullStackOutcome[] = [...prepared.blocked]
 
@@ -184,7 +217,7 @@ export async function executePull(
                 let messages = prepared.fetches.filter(fetch => failed.includes(fetch.remote)).map(fetch => `${fetch.remote}: ${fetch.message}`)
                 throw new PullSkip(`Fetching ${failed.join(", ")} failed, so this stack was not updated. ${messages.join(" ")}`)
             }
-            outcomes.push(await updateStack(repo, session, stack, pulled, processed, changes, cancelled, working))
+            outcomes.push(await updateStack(repo, session, stack, pulled, anchors, processed, changes, cancelled, working))
         } catch (error) {
             if ([...changes].some(([ref, value]) => !snapshot.has(ref) || snapshot.get(ref) != value))
                 throw error
@@ -233,6 +266,8 @@ async function updateStack(
     session: ConflictSession,
     stack: ScopedStack,
     pulled: Map<string, string | null>,
+    // The Branch Nodes that published branches rest on the Primary Branch by.
+    anchors: Set<string>,
     processed: Map<string, { before: string; current: string }>,
     changes: Changes,
     cancelled: () => boolean,
@@ -339,25 +374,46 @@ async function updateStack(
         sources: string[]
         existing: boolean
         incoming: boolean
+        /** The stack's anchor with nothing arriving: it stays as it is. */
+        held: boolean
+        /** The anchor's upstream tip, which its replay starts from in place of the Base's tip. */
+        onto?: string
     }
     let planned: Planned[] = []
+    // A branch that is published, or has a published branch built on it, stays where it is while the Primary Branch under
+    // it only moves forward, since moving it would rewrite published history; it still takes its own upstream's commits.
+    // Only the lowest branch can stay: the Primary Branch remains a branch's Base however far it moves on, but any other
+    // branch stops being one once it moves past the fork, so the branches above follow the one below them as ever.
+    let lowest = stack.branches[position + 1]
+    let anchored = position == 0 && base.primary && lowest != undefined && anchors.has(lowest.id)
+        && (baseOld == baseNew || await isAncestor(repo, baseOld, baseNew))
     for (let branch of stack.branches.slice(position + 1)) {
         let existing = Boolean(stackOf(branch.ref))
+        let stays = anchored && branch == lowest
         let local = await currentTip(branch)
         let upstream = await upstreamTip(branch)
         let previousUpstream = pulled.has(branch.ref) ? pulled.get(branch.ref)! : upstream
         // The provisional tip of an Unresolved Stack already carries its retained steps.
         let retainedTip = existing ? (await repo.resolveRef(stackOf(branch.ref)!.temporaryRef)) ?? local : local
-        let sources: string[]
+        let sources: string[] = []
         let incoming = false
-        if (!upstream || upstream == local || await isAncestor(repo, upstream, local))
-            sources = existing ? [] : await linear(repo, [local], placed)
-        else if (await isAncestor(repo, local, upstream)) {
-            sources = await linear(repo, [upstream], existing ? [...placed, local] : placed)
+        let held = false
+        let onto: string | undefined
+        let lacking = upstream != null && upstream != local && !(await isAncestor(repo, upstream, local))
+        let behind = lacking && await isAncestor(repo, local, upstream!)
+        if (!upstream || !lacking || !behind && upstream == previousUpstream) {
+            // Nothing arrived: the branch holds its upstream's commits, or its local history was rewritten since the
+            // last pull and its publication is pending.
+            if (stays)
+                held = true
+            else if (!existing)
+                sources = await linear(repo, [local], placed)
+        } else if (behind) {
+            if (stays && !existing)
+                onto = upstream
+            else
+                sources = await linear(repo, [upstream], existing ? [...placed, local] : placed)
             incoming = true
-        } else if (upstream == previousUpstream) {
-            // Local history was rewritten since the last pull and its publication is pending; nothing new arrived.
-            sources = existing ? [] : await linear(repo, [local], placed)
         } else {
             let rewritten = Boolean(previousUpstream) && !(await isAncestor(repo, previousUpstream!, upstream))
             if (rewritten) {
@@ -367,35 +423,55 @@ async function updateStack(
                             + "Laneway cannot identify which local commits to retain. Inspect both histories, reconcile explicitly, then pull again.",
                     )
                 }
-                sources = await linear(repo, [upstream], existing ? [...placed, local] : placed)
+                if (stays && !existing)
+                    onto = upstream
+                else
+                    sources = await linear(repo, [upstream], existing ? [...placed, local] : placed)
             } else if (existing) {
                 // Only upstream commits whose changes are not already retained in the provisional stack are incoming.
                 let novel = await cherryNovel(repo, retainedTip, upstream)
                 sources = (await linear(repo, [upstream], [...placed, local])).filter(commit => novel.has(commit))
             } else {
                 // Incoming history first, then local-only commits; patch-equivalent local commits already upstream are dropped.
-                let incomingCommits = await linear(repo, [upstream], placed)
                 let novel = await cherryNovel(repo, upstream, local)
                 let localOnly = (await linear(repo, [local], [...placed, upstream])).filter(commit => novel.has(commit))
-                sources = [...incomingCommits, ...localOnly]
+                if (stays) {
+                    onto = upstream
+                    sources = localOnly
+                } else {
+                    sources = [...await linear(repo, [upstream], placed), ...localOnly]
+                }
             }
             incoming = true
         }
-        planned.push({ branch, local, upstream, sources, existing, incoming })
+        planned.push({ branch, local, upstream, sources, existing, incoming, held, onto })
         placed.push(local)
         if (upstream)
             placed.push(upstream)
     }
+    // An Unresolved Stack updates as one unit, so one with a held anchor holds only while nothing arrives for any of its branches.
+    let heldUnit = planned[0]?.held ? stackOf(planned[0].branch.ref) : undefined
+    if (heldUnit) {
+        let unit = planned.filter(item => stackOf(item.branch.ref) == heldUnit)
+        let holds = unit.every(item => !item.incoming)
+        for (let item of unit)
+            item.held = holds
+    }
 
-    // Replay changes nothing only when each branch already sits on its parent's tip, however long ago the Base moved.
+    // The tip the next branch up is built on while this one stays as it is.
+    let ownTip = (item: Planned) => stackOf(item.branch.ref)?.branches.find(branch => branch.ref == item.branch.ref)!.current ?? item.local
+
+    // Replay changes nothing only when each branch that isn't held already sits on its parent's tip, however long ago
+    // the Base moved.
     let current = !changed && planned.every(item => !item.incoming)
     let parentTip = baseNew
     for (let item of planned) {
         let unresolved = stackOf(item.branch.ref)
-        current &&= unresolved
-            ? unresolved.branches[0]!.ref != item.branch.ref || unresolved.base == parentTip
-            : await isAncestor(repo, parentTip, item.local)
-        parentTip = unresolved?.branches.find(branch => branch.ref == item.branch.ref)!.current ?? item.local
+        current &&= item.held
+            || (unresolved
+                ? unresolved.branches[0]!.ref != item.branch.ref || unresolved.base == parentTip
+                : await isAncestor(repo, parentTip, item.local))
+        parentTip = ownTip(item)
     }
     if (current) {
         for (let item of planned)
@@ -403,10 +479,12 @@ async function updateStack(
         return { id: stack.id, branches: names, base: baseOutcome, status: "current", message: "Already current." }
     }
 
-    // Existing Unresolved Stacks update as one unit; other branches form new stacks per Active Stack.
-    let runs: Array<{ items: Planned[]; existing: boolean }> = []
+    // Existing Unresolved Stacks update as one unit; other branches form new stacks per Active Stack, starting from the
+    // anchor's upstream when it takes that. A held branch is in no run.
+    let runs: Array<{ items: Planned[]; held?: boolean; onto?: string }> = []
     for (let index = 0; index < planned.length;) {
-        let unresolved = stackOf(planned[index]!.branch.ref)
+        let first = planned[index]!
+        let unresolved = stackOf(first.branch.ref)
         if (unresolved) {
             let refs = unresolved.branches.map(branch => branch.ref)
             let items = planned.slice(index, index + refs.length)
@@ -416,22 +494,38 @@ async function updateStack(
                         + "Resolve or update that stack first.",
                 )
             }
-            runs.push({ items, existing: true })
+            runs.push({ items, held: first.held })
             index += refs.length
+        } else if (first.held) {
+            runs.push({ items: [first], held: true })
+            index++
         } else {
-            let items: Planned[] = []
-            while (index < planned.length && !stackOf(planned[index]!.branch.ref))
-                items.push(planned[index++]!)
-            runs.push({ items, existing: false })
+            let items = [first]
+            for (index++; index < planned.length; index++) {
+                let next = planned[index]!
+                if (stackOf(next.branch.ref) || next.held || next.onto)
+                    break
+                items.push(next)
+            }
+            runs.push({ items, onto: first.onto })
         }
     }
 
     let parent = baseNew
-    let completedRuns = 0
+    let rewrites = 0
+    let stopped = false
     for (let run of runs) {
-        if (cancelled())
+        if (run.held) {
+            for (let item of run.items)
+                processed.set(item.branch.ref, { before: item.local, current: ownTip(item) })
+            parent = ownTip(run.items.at(-1)!)
+            continue
+        }
+        if (cancelled()) {
+            stopped = true
             break
-        let plan: StackRewritePlan = { refs: run.items.map(item => item.branch.ref), base: parent, sources: run.items.map(item => item.sources) }
+        }
+        let plan: StackRewritePlan = { refs: run.items.map(item => item.branch.ref), base: run.onto ?? parent, sources: run.items.map(item => item.sources) }
         let result = await rewriteStack(repo, session, plan, changes, cancelled)
         for (let branch of result.branches)
             processed.set(branch.ref, { before: branch.before, current: branch.current })
@@ -439,20 +533,20 @@ async function updateStack(
         for (let item of run.items.filter(item => item.upstream))
             await forget(item.branch.ref)
         parent = result.branches.at(-1)!.current
-        completedRuns++
+        rewrites++
     }
 
     let refs = new Set(stack.branches.map(branch => branch.ref))
     let conflicts = state.stacks.filter(item => item.branches.some(branch => refs.has(branch.ref)))
         .flatMap(item => item.steps).filter(step => step.conflict).length
     let workingConflicts = Math.max(0, state.working.length - workingBefore)
-    if (completedRuns < runs.length) {
+    if (stopped) {
         return {
             id: stack.id,
             branches: names,
             base: baseOutcome,
             status: "cancelled",
-            message: `Cancelled after ${completedRuns == 0 && !changed ? "fetching" : "updating part of this stack"}. Pull again to continue.`,
+            message: `Cancelled after ${rewrites == 0 && !changed ? "fetching" : "updating part of this stack"}. Pull again to continue.`,
             conflicts,
             workingConflicts,
         }

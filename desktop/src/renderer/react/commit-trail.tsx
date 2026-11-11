@@ -2,6 +2,7 @@ import type { BranchGraph, BranchGraphBranchNode, BranchHistoryCommit, Compariso
 import clsx from "clsx"
 import { useState } from "react"
 import { Button as AriaButton } from "react-aria-components"
+import { plural } from "./branch-rebase"
 import type { ColumnView } from "./branch-workspace"
 import { CommitAge } from "./commit-age"
 import { authoredBy, authorInitials } from "./commit-authors"
@@ -17,7 +18,7 @@ import { movableBase, moveIntoBaseLabel } from "./local-branches"
 import { offersPublish, type Publish, publishRef } from "./publish"
 import { PublishButton } from "./publish-control"
 import { PullButton } from "./pull-control"
-import { incoming, type PullLatest } from "./pull-latest"
+import { incoming, type PullLatest, staysBehind } from "./pull-latest"
 import type { Reword } from "./reword"
 import { TransferGrip, TransferReview, TransferSeam, useTransferScope, useTransferTarget } from "./transfer"
 import { Button } from "./ui/Button"
@@ -44,6 +45,8 @@ export interface CommitTrailProps {
     createTagAt(commit: BranchHistoryCommit): void
     /** Moves a branch's Base Branch up to its tip, so the base holds its commits. */
     moveIntoBase(branch: BranchGraphBranchNode): void
+    /** Restacks a branch, and the branches built on it, onto its Base's tip. */
+    restack(branch: BranchGraphBranchNode): void
     deleteBranch(branch: BranchGraphBranchNode): void
     reword(branch: BranchGraphBranchNode, commit: BranchHistoryCommit, close: () => void): Reword
     /** Starts a Historical Edit from a commit; only a worktree-backed column outside one can. */
@@ -147,6 +150,11 @@ function StackBranch(props: StackBranchProps) {
         ),
     }
     let { row: menuRef, openMenu } = useRowMenu<HTMLHeadingElement>(menu)
+    // The local branch built on this one that it has moved on from, which Restack moves up onto it. An Unresolved
+    // Stack is already part-way through a rewrite.
+    let lagging = above?.behindBase && above.localRefs.length > 0 && !above.unresolved && above.base.status == "known" && above.base.branchId == branch.id
+        ? above
+        : undefined
     return (
         <section className={clsx("stack-branch", branch.published && "remote")} aria-label={`Branch ${branch.name}`}>
             {/* The seam at this branch's tip belongs to the branch built on it. */}
@@ -190,6 +198,25 @@ function StackBranch(props: StackBranchProps) {
                             {unresolved}
                         </AriaButton>
                     )}
+                {lagging && (
+                    <span className="stack-ahead">
+                        <Hint
+                            text={`${branch.name} has ${plural(lagging.baseAhead, "commit")} ${lagging.name} isn't built on.${
+                                staysBehind(props.graph, lagging, branch) ? " Pull latest leaves it there, since restacking rewrites what is published." : ""
+                            }`}
+                        >
+                            <span className="stack-ahead-count">{lagging.baseAhead} ahead</span>
+                        </Hint>
+                        <Button
+                            variant="quiet"
+                            aria-label={`Restack ${lagging.name} onto ${branch.name}`}
+                            isDisabled={props.busy}
+                            onPress={() => props.restack(lagging)}
+                        >
+                            Restack
+                        </Button>
+                    </span>
+                )}
                 {own && branch.preferredRef.startsWith("refs/heads/") && (
                     <PullButton
                         pull={props.pull}

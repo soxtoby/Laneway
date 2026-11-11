@@ -7,9 +7,12 @@
 - Create a tag at a branch's tip or at any commit, from its menu in the Branch Graph or a column. The tag is created on the Branch Graph's remote too, and gets a message if you give it one.
 - Tagged commits in a column show a tag icon; hover it to see the tags' names.
 - MDX files can switch to the rendered Markdown view, like other Markdown files.
+- When a branch is behind its Base, the Base's heading in the branch's column says how many commits ahead it is, with a Restack button. Restack moves the branch, and the branches built on it, onto the Base at once, with Undo.
+- `lane pull --restack` restacks published branches too, as every pull used to.
 
 ### Changed
 
+- Pull latest no longer restacks a published branch just because the Primary Branch moved forward, so a pull no longer leaves it needing a Force publish. The branch still gets the new commits from its own remote branch, and Restack moves it when you want it moved. A branch with a published branch built on it stays put too; branches with nothing published restack as before.
 - When a branch's column closes because the branch no longer exists, the notice names the branch.
 - The Staged divider in Working Changes has an arrow pointing up at the staged files above it.
 - Clicking a file in a column selects it, instead of opening its diff underneath it; Ctrl+click still adds files to the selection. Double-click a file, press Enter on it, or use the button that appears when you hover it to open the diff column beside the column. While the diff column is open, clicking a file also scrolls to it.

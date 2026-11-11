@@ -110,8 +110,12 @@ The ordered branch chain from an integration target through the branch shown in 
 _Avoid_: Active branch
 
 **Pull latest**:
-A fetch and local synchronization of a Workspace Column's Active Stack, together with every open Active Stack sharing a branch above its Base with it, including incoming changes from each branch's upstream and its Base Branch. Its scope includes intermediate branches without their own columns, excludes branches outside those stacks, and never includes publication. Background fetching fast-forwards branches outside every open stack instead.
+A fetch and local synchronization of a Workspace Column's Active Stack, together with every open Active Stack sharing a branch above its Base with it, including incoming changes from each branch's upstream and its Base Branch. Its scope includes intermediate branches without their own columns, excludes branches outside those stacks, and never includes publication. A branch that is published, or has a published branch built on it, takes its upstream's commits but stays behind a Primary Branch that only moved forward, until it is Restacked. Background fetching fast-forwards branches outside every open stack instead.
 _Avoid_: Git pull
+
+**Restack**:
+A Laneway Operation that moves a branch, and the branches built on it, onto its Base Branch's current tip. It is offered on the Base's heading in the branch's Workspace Column while the branch is behind that Base, beside how many commits ahead the Base is. It fetches and publishes nothing, so a published branch it rewrites has a Force publish pending. It runs at once, with Undo, asking only about conflicts and commits it would empty.
+_Avoid_: Update branch, sync, rebase onto Base
 
 **Publish**:
 An explicit remote update for a branch's Active Stack, up to and including that branch, excluding its Base Branch and unrelated stacks. Branches without upstream publish to same-named branches on the selected remote; the control identifies every destination and force-with-lease update before activation. The Primary Branch, having no Base Branch, publishes alone; the desktop asks first, warning when it would force.

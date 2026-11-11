@@ -197,6 +197,7 @@ export async function runCommandLine(argv: string[]): Promise<number | undefined
                 request: {
                     branches: branches.map(branch => branch.startsWith("refs/heads/") ? branch : `refs/heads/${branch}`),
                     remote: option(args, "remote"),
+                    restack: flag(args, "restack") || undefined,
                 },
                 graphOptions,
                 progress,
@@ -286,7 +287,9 @@ function workflowArguments(command: string, rest: string[]) {
         definitions = { branch: "string", message: "multiple", "message-file": "string", preview: "boolean", yes: "boolean", remote: "string" }
     else if (command == "rebase")
         definitions = { onto: "string", preview: "boolean", yes: "boolean", "allow-conflicts": "boolean", remote: "string" }
-    else if (command == "pull" || command == "fetch")
+    else if (command == "pull")
+        definitions = { remote: "string", restack: "boolean" }
+    else if (command == "fetch")
         definitions = { remote: "string" }
     else if (command == "publish")
         definitions = { remote: "string", preview: "boolean", resume: "string", restore: "string" }

@@ -186,7 +186,7 @@ describe("React Pull latest", () => {
         let repository = repositoryInfo("D:\\Source\\incoming")
         let graph = branchGraph(repository.id)
         let [main, feature, other] = graph.branches
-        let behind = { ...feature!, upstreamRef: "refs/remotes/origin/feature/laneway", behind: 2 }
+        let behind = { ...feature!, upstreamRef: "refs/remotes/origin/feature/laneway", behind: 2, upstreamIncoming: true }
         await startReactApp(fakeLaneway({
             getState: async () => ({ ...appState(), workspace: withColumns(repository, [behind, other!]) }),
             readBranchGraph: async () => ({ ok: true, graph: { ...graph, branches: [main!, behind, other!] } }),

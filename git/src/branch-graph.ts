@@ -592,6 +592,7 @@ function createBranches(
                 && (preferred.ahead == 0 || pulledUpstreams.has(preferred.ref) && pulledUpstreams.get(preferred.ref) != upstreamTip),
             base: { status: "unknown", candidates: [] },
             behindBase: false,
+            baseAhead: 0,
             involvement: "unknown",
             checkedOut: worktrees.filter(worktree => worktree.branchRef && local.some(ref => ref.ref == worktree.branchRef)),
             markers: [],
@@ -741,10 +742,12 @@ function enrichBranches(
     for (let branch of branches) {
         if (branch.base.status != "known") {
             branch.behindBase = false
+            branch.baseAhead = 0
             branch.involvement = "unknown"
             branch.lastUniqueCommit = undefined
         } else {
             branch.behindBase = !topology.isAncestor(branch.base.tip, branch.tip)
+            branch.baseAhead = branch.behindBase ? topology.exclusiveCount(branch.base.tip, branch.tip) : 0
             branch.lastUniqueCommit = summaries.get(branch.tip)
             branch.involvement = !hasIdentities
                 ? "unknown"

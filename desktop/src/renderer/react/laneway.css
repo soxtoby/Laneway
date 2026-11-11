@@ -1453,6 +1453,28 @@
     margin: var(--spacing-1) var(--spacing-2);
 }
 
+/* On the heading of a Base that moved on after the branch built on it forked: how far ahead it is, and Restack, which
+   moves that branch up onto it. */
+.stack-ahead {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-1);
+    font-size: var(--font-size-sm);
+    font-weight: 400;
+
+    .react-aria-Button {
+        height: var(--spacing-6);
+        padding-inline: var(--spacing-2);
+        font-size: inherit;
+    }
+}
+
+.stack-ahead-count {
+    color: var(--text-color-placeholder);
+    white-space: nowrap;
+}
+
 /* A commit: its node on the branch's line, its subject, and once unfolded its message and files. */
 .trail-commit {
     position: relative;

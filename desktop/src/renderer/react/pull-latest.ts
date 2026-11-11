@@ -110,7 +110,8 @@ function needsAttention(result: PullResult) {
 
 /**
  * What Pull latest would bring into a column's Active Stack, as far as the Branch Graph knows: each upstream with
- * commits its branch lacks, and each branch whose Base moved on after it forked.
+ * commits its branch lacks, and each branch the pull would restack because its Base moved on after it forked. A branch
+ * that `staysBehind` the Primary Branch isn't one of those; it waits for Restack.
  */
 export function incoming(graph: BranchGraph, branch: BranchGraphBranchNode, bases: Record<string, string>) {
     let trail = branchStack(graph, branch, bases)
@@ -122,8 +123,31 @@ export function incoming(graph: BranchGraph, branch: BranchGraphBranchNode, base
         if (!item.remoteOnly && item.upstreamRef && item.upstreamIncoming)
             reasons.push(`${item.upstreamRef.replace(/^refs\/remotes\//, "")} has ${plural(item.behind, "new commit")}`)
         let base = stack[index + 1]
-        if (base && item.behindBase)
+        if (base && item.behindBase && !staysBehind(graph, item, base))
             reasons.push(`${item.name} is behind ${base.name}`)
     }
     return reasons
+}
+
+/**
+ * Whether Pull latest leaves a branch behind its Base, as the Engine decides: the Base is the Primary Branch, and the
+ * branch is published or has a published branch built on it, whose history restacking would rewrite. A branch is
+ * published while its upstream exists.
+ */
+export function staysBehind(graph: BranchGraph, branch: BranchGraphBranchNode, base: BranchGraphBranchNode) {
+    if (!base.primary)
+        return false
+    return graph.branches.some(candidate => {
+        if (candidate.remoteOnly || !candidate.upstreamRef || !candidate.upstreamTip)
+            return false
+        let seen = new Set<string>()
+        for (let current: BranchGraphBranchNode | undefined = candidate; current && !seen.has(current.id);) {
+            if (current.id == branch.id)
+                return true
+            seen.add(current.id)
+            let baseId: string | undefined = current.base.status == "known" ? current.base.branchId : undefined
+            current = graph.branches.find(item => item.id == baseId && !item.primary && !item.remoteOnly)
+        }
+        return false
+    })
 }

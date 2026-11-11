@@ -111,7 +111,8 @@ Conflict commands similarly read current candidate versions automatically and
 reject concurrent changes. `-m` may be repeated for message paragraphs; `-F`
 reads a message file.
 
-`pull` defaults to the current branch's Active Stack and never publishes.
+`pull` defaults to the current branch's Active Stack and never publishes. A branch that is published, or has a
+published branch built on it, stays behind a Primary Branch that only moved forward; `--restack` moves it too.
 `fetch` fetches as the desktop does in the background: it fast-forwards each branch strictly behind its upstream
 except those a worktree holds, those in the Active Stack of one it holds, and those in an Unresolved Stack or
 Historical Edit. It is outside undo/redo.

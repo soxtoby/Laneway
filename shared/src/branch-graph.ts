@@ -65,8 +65,10 @@ export interface BranchGraphBranchNode {
      */
     upstreamIncoming: boolean
     base: BranchGraphBase
-    /** Its known Base's tip is outside its history: the Base moved on after it forked, so Pull latest would restack it. */
+    /** Its known Base's tip is outside its history: the Base moved on after it forked, so Restack would move it. */
     behindBase: boolean
+    /** How many commits its known Base holds that it isn't built on; none unless it is `behindBase`. */
+    baseAhead: number
     involvement: "involved" | "uninvolved" | "unknown"
     checkedOut: BranchGraphWorktree[]
     lastUniqueCommit?: BranchGraphCommitSummary

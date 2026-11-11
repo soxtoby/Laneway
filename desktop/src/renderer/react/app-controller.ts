@@ -332,6 +332,7 @@ export function createAppController(api: Api): AppController {
         notify,
         mutating,
         completed: rewritten,
+        offerUndo: (repositoryId, message) => offerUndo(repositoryId, "rebase.restacked", message),
         // The lowest unresolved branch's column shows every conflict above it.
         resolve(_repositoryId, names) {
             let branches = columns.snapshot().graph ? workspaceGraph(columns.snapshot().graph!).branches : []

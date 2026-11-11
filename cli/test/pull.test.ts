@@ -15,7 +15,7 @@ afterEach(async () => {
     }
 })
 
-test("fetches, fast-forwards the Base, restacks open stacks, preserves Working Changes, and undoes as one operation", async () => {
+test("fetches, fast-forwards the Base, restacks published stacks when asked, preserves Working Changes, and undoes as one operation", async () => {
     let { other, local } = await fixture()
     // Upstream main advances; a colleague also adds a commit to branch one.
     git(other, "switch", "-q", "main")
@@ -31,7 +31,7 @@ test("fetches, fast-forwards the Base, restacks open stacks, preserves Working C
     await writeFile(join(local, "two.txt"), "two edited\n")
     let before = { main: git(local, "rev-parse", "main"), one: git(local, "rev-parse", "one"), two: git(local, "rev-parse", "two") }
     let messages: string[] = []
-    let result = await pull(local, ["refs/heads/two"], message => messages.push(message))
+    let result = await pull(local, ["refs/heads/two"], message => messages.push(message), undefined, true)
 
     expect(result.status).toBe("updated")
     expect(result.fetches).toEqual([{ remote: "origin", status: "fetched" }])
@@ -67,7 +67,7 @@ test("fetches, fast-forwards the Base, restacks open stacks, preserves Working C
     // Already current: no new Undo entry.
 
     let total = (await history(local)).total
-    let again = await pull(local, ["refs/heads/two"])
+    let again = await pull(local, ["refs/heads/two"], undefined, undefined, true)
 
     expect(again.stacks[0]).toMatchObject({ status: "current" })
     expect(again.operation).toBeUndefined()
@@ -91,8 +91,10 @@ test("fast-forwards a stack consisting only of the primary branch", async () => 
     expect(again.stacks[0]).toMatchObject({ branches: ["main"], status: "current" })
 }, 120_000)
 
-test("restacks branches left behind a parent or Base that moved before the pull, including a remote-only Base", async () => {
+test("restacks unpublished branches left behind a parent or Base that moved before the pull, including a remote-only Base", async () => {
     let { other, local } = await fixture()
+    // Without their remote branches, one and two are unpublished, whatever upstreams they still name.
+    git(other, "push", "-q", "origin", "--delete", "one", "two")
     // A new commit on one leaves two behind its parent while the Base stays put.
     git(local, "switch", "-q", "one")
     let advanced = await commit(local, "more.txt", "more\n", "more on one")
@@ -135,6 +137,91 @@ test("pulling one column's stack carries open stacks sharing a branch above its 
     expect(git(local, "rev-parse", "main")).toBe(newMain)
     expect(git(local, "log", "--format=%s", "main..three").split("\n")).toEqual(["three", "mine on one", "colleague on one", "one"])
     expect(git(local, "rev-parse", "side")).toBe(side)
+}, 120_000)
+
+test("a published stack takes its upstreams' commits but stays off a Primary Branch that only moved forward, until asked to restack", async () => {
+    let { other, local } = await fixture()
+    // three is unpublished, on top of the published one and two.
+    git(local, "switch", "-qc", "three", "two")
+    await commit(local, "three.txt", "three\n", "three")
+    git(local, "switch", "-q", "main")
+    git(other, "switch", "-q", "main")
+    let newMain = await commit(other, "base.txt", "base updated\n", "upstream main")
+    git(other, "push", "-q", "origin", "main")
+    let tips = () => ["one", "two", "three"].map(branch => git(local, "rev-parse", branch))
+    let before = tips()
+    let moved = await pull(local, ["refs/heads/three"])
+
+    // Only the Base moves: nothing arrived for the stack, and its lowest branch stays where it was published.
+    expect(moved.stacks[0]).toMatchObject({ branches: ["main", "one", "two", "three"], status: "updated" })
+    expect(git(local, "rev-parse", "main")).toBe(newMain)
+    expect(tips()).toEqual(before)
+    // A colleague's commit on one arrives as it is, and the branches built on one follow it there.
+
+    git(other, "switch", "-qc", "one", "origin/one")
+    let colleague = await commit(other, "shared.txt", "from colleague\n", "colleague on one")
+    git(other, "push", "-q", "origin", "one")
+    let result = await pull(local, ["refs/heads/three"])
+
+    expect(result.stacks[0]).toMatchObject({ status: "updated" })
+    expect(git(local, "rev-parse", "one")).toBe(colleague)
+    expect(git(local, "log", "--format=%s", "one..three").split("\n")).toEqual(["three", "two"])
+    expect(ancestor(local, "main", "one")).toBe(false)
+    // Nothing is left for a pull to do, however far behind the Primary Branch the stack is.
+
+    let again = await pull(local, ["refs/heads/three"])
+
+    expect(again.stacks[0]).toMatchObject({ status: "current" })
+    expect(again.operation).toBeUndefined()
+
+    let restacked = await pull(local, ["refs/heads/three"], undefined, undefined, true)
+
+    expect(restacked.stacks[0]).toMatchObject({ status: "updated" })
+    expect(git(local, "log", "--format=%s", "main..three").split("\n")).toEqual(["three", "two", "colleague on one", "one"])
+    expect(ancestor(local, "main", "one")).toBe(true)
+}, 120_000)
+
+test("a published branch that diverged from its upstream replays onto it, and the branches built on it follow", async () => {
+    let { other, local } = await fixture()
+    git(local, "switch", "-q", "one")
+    await commit(local, "mine.txt", "mine\n", "mine on one")
+    git(local, "switch", "-q", "main")
+    git(other, "switch", "-q", "main")
+    await commit(other, "base.txt", "base updated\n", "upstream main")
+    git(other, "push", "-q", "origin", "main")
+    git(other, "switch", "-qc", "one", "origin/one")
+    let colleague = await commit(other, "shared.txt", "from colleague\n", "colleague on one")
+    git(other, "push", "-q", "origin", "one")
+    let result = await pull(local, ["refs/heads/two"])
+
+    expect(result.stacks[0]).toMatchObject({ branches: ["main", "one", "two"], status: "updated" })
+    // The local commit sits on the upstream's tip, which is still where the colleague left it.
+    expect(git(local, "rev-parse", "one~1")).toBe(colleague)
+    expect(git(local, "log", "--format=%s", "one..two").split("\n")).toEqual(["two"])
+    expect(ancestor(local, "one", "two")).toBe(true)
+    expect(ancestor(local, "main", "one")).toBe(false)
+}, 120_000)
+
+test("an unpublished branch under a published one stays with it, while a stack with nothing published restacks", async () => {
+    let { other, local } = await fixture()
+    // below is unpublished, and the published above is built on it; alone is unpublished and has nothing built on it.
+    git(local, "switch", "-qc", "below", "main")
+    let below = await commit(local, "below.txt", "below\n", "below")
+    git(local, "switch", "-qc", "above")
+    let above = await commit(local, "above.txt", "above\n", "above")
+    git(local, "push", "-q", "-u", "origin", "above")
+    git(local, "switch", "-qc", "alone", "main")
+    await commit(local, "alone.txt", "alone\n", "alone")
+    git(local, "switch", "-q", "main")
+    git(other, "switch", "-q", "main")
+    let newMain = await commit(other, "base.txt", "base updated\n", "upstream main")
+    git(other, "push", "-q", "origin", "main")
+    let result = await pull(local, ["refs/heads/above", "refs/heads/alone"])
+
+    expect(result.stacks.map(stack => stack.status)).toEqual(["updated", "updated"])
+    expect(git(local, "rev-parse", "below")).toBe(below)
+    expect(git(local, "rev-parse", "above")).toBe(above)
+    expect(git(local, "rev-parse", "alone~1")).toBe(newMain)
 }, 120_000)
 
 test("incorporates upstream commits an earlier fetch brought but no pull integrated, including after undoing the pull that did", async () => {
@@ -209,7 +296,7 @@ test("defers commit conflicts as an Unresolved Stack, skips a diverged Base, and
     git(other, "switch", "-q", "main")
     await commit(other, "one.txt", "upstream wins\n", "conflicting main")
     git(other, "push", "-q", "origin", "main")
-    let first = await pull(local, ["refs/heads/two", "refs/heads/one"])
+    let first = await pull(local, ["refs/heads/two", "refs/heads/one"], undefined, undefined, true)
 
     expect(first.stacks.map(stack => stack.status)).toEqual(["needs-resolution", "needs-resolution"])
     expect(first.stacks.map(stack => stack.branches)).toEqual([["main", "one", "two"], ["main", "one"]])
@@ -224,11 +311,18 @@ test("defers commit conflicts as an Unresolved Stack, skips a diverged Base, and
 
     expect(state.stacks).toHaveLength(1)
     expect(state.stacks[0].branches.map(branch => branch.ref)).toEqual(["refs/heads/one", "refs/heads/two"])
-    // A second upstream main commit updates the Unresolved Stack onto newer history while retaining the conflict.
+    // The Unresolved Stack's branches are published, so a Base that only moves forward leaves it where it is.
 
     let mainAgain = await commit(other, "extra.txt", "extra\n", "more main")
     git(other, "push", "-q", "origin", "main")
-    let second = await pull(local, ["refs/heads/two"])
+    let held = await pull(local, ["refs/heads/two"])
+
+    expect(held.stacks[0]).toMatchObject({ status: "needs-resolution", conflicts: 1 })
+    expect(git(local, "rev-parse", "main")).toBe(mainAgain)
+    expect((await readConflictState(await connectRepository(local))).stacks[0].base).toBe(state.stacks[0].base)
+    // Asked to restack, the pull updates the Unresolved Stack onto newer history while retaining the conflict.
+
+    let second = await pull(local, ["refs/heads/two"], undefined, undefined, true)
 
     expect(second.stacks[0]).toMatchObject({ status: "needs-resolution", conflicts: 1 })
 
@@ -401,10 +495,14 @@ function git(path: string, ...args: string[]) {
     return p.stdout.toString().trim()
 }
 
-async function pull(path: string, branches: string[], onProgress?: (message: string) => void, open?: string[]) {
+function ancestor(path: string, ancestor: string, descendant: string) {
+    return Bun.spawnSync(["git", "merge-base", "--is-ancestor", ancestor, descendant], { cwd: path }).exitCode == 0
+}
+
+async function pull(path: string, branches: string[], onProgress?: (message: string) => void, open?: string[], restack?: boolean) {
     return await executeOperationCommand({
         command: "pull",
-        request: { branches, open },
+        request: { branches, open, restack },
         noWait: false,
         graphOptions: () => ({ authorIdentities: { primary: "pull@example.invalid", secondary: [] }, remotePatterns: [] }),
         progress: message => onProgress?.(message),

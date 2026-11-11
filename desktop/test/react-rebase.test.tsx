@@ -112,6 +112,45 @@ describe("React Branch Graph rebase", () => {
         expect([...document.querySelectorAll(".column-row .column")].map(column => column.getAttribute("aria-label"))).toEqual(["child"])
     })
 
+    test("Restack moves a branch behind its Base onto it at once, published or not, and offers Undo", async () => {
+        let transitions: string[] = []
+        let { api, calls, review } = scenario(graph => {
+            Object.assign(graph.branches[1]!, { behindBase: true, baseAhead: 2 })
+        })
+        let app = await openGraph({
+            ...api,
+            transitionOperation: async (_id, action) => {
+                transitions.push(action)
+                return { ok: true }
+            },
+        })
+        await app.act(() => press(button(row("feature/laneway"), "Actions for feature/laneway")))
+        await app.act(() => press(menuItem("Open column")))
+        // The Base's heading in the column says how far ahead it is.
+        let base = () => document.querySelector<HTMLElement>(".commit-trail [aria-label='Branch main'] .stack-heading")!
+        expect(base().textContent).toContain("2 ahead")
+
+        review({ published: ["feature/laneway"] })
+        await app.act(() => press(button(base(), "Restack feature/laneway onto main")))
+
+        let main = { kind: "branch" as const, branch: "refs/heads/main", tip: "1".repeat(40) }
+        expect(dialog() == null).toBe(true)
+        expect(calls.map(call => [call.request.source, call.request.target, call.request.descendants, call.token])).toEqual([[feature, main, true, undefined], [
+            feature,
+            main,
+            true,
+            "reviewed-1",
+        ]])
+        expect(notice()).toContain("Restacked feature/laneway and child onto main.")
+        await app.act(() => press(button(document.querySelector<HTMLElement>("[role=alertdialog]")!, "Undo")))
+        expect(transitions).toEqual(["undo"])
+        // Conflicts still wait for a decision.
+
+        review({ conflicts: [{ subject: "commit 22222222", files: ["src/file.txt"] }] })
+        await app.act(() => press(button(base(), "Restack feature/laneway onto main")))
+        expect(dialog()!.textContent).toContain("Conflicts in commit 22222222: src/file.txt")
+    })
+
     test("chooses a destination by keyboard or from the row's menu, and Escape stops choosing", async () => {
         let { api, calls } = scenario()
         let app = await openGraph(api)

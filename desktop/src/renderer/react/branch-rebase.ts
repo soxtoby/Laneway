@@ -22,6 +22,8 @@ export interface PendingRebase {
     descendants: boolean
     /** Branches carried along by the rebase, as first reviewed with them included. */
     dependents: string[]
+    /** A Restack: onto the branch's own Base, which rewrites published history without asking first. */
+    restack?: boolean
     preview?: LocalPreview
     dialog: boolean
     error: string
@@ -43,6 +45,11 @@ export interface BranchRebase extends Store<RebaseSnapshot> {
     chooseDestination(repositoryId: string, graph: BranchGraph, targetId: string): void
     /** Reviews rebasing `sourceId` onto `targetId`; it runs at once unless something needs deciding. */
     start(repositoryId: string, graph: BranchGraph, sourceId: string, targetId: string): Promise<void>
+    /**
+     * Restacks a branch, and the branches built on it, onto its Base's tip. It runs at once with Undo, asking only
+     * about conflicts and commits it would empty.
+     */
+    restack(repositoryId: string, graph: BranchGraph, source: BranchGraphBranchNode): Promise<void>
     setDestination(destination: RebaseDestination): void
     setDescendants(descendants: boolean): void
     review(): Promise<void>
@@ -61,10 +68,12 @@ interface RebaseOptions {
     completed(repositoryId: string): Promise<void>
     /** Opens the rebased stack to resolve its conflicts now: the named branches, the rebased one first. */
     resolve?(repositoryId: string, branches: string[]): void
+    /** Confirms a Restack that went through cleanly, offering to undo it. */
+    offerUndo?(repositoryId: string, message: string): void
 }
 
 /** Rebasing a Branch Node's own commits onto another branch, by drag and drop or by keyboard. */
-export function createBranchRebase({ api, notify: show, mutating, completed, resolve }: RebaseOptions): BranchRebase {
+export function createBranchRebase({ api, notify: show, mutating, completed, resolve, offerUndo }: RebaseOptions): BranchRebase {
     let store = createStore<RebaseSnapshot>({ busy: false, executing: false })
     let state = store.snapshot
     let set = (change: Partial<RebaseSnapshot>) => store.publish({ ...state(), ...change })
@@ -103,8 +112,10 @@ export function createBranchRebase({ api, notify: show, mutating, completed, res
         let version = ++generation
         current = { ...current, preview: undefined, error: "" }
         set({ pending: current })
-        if (!current.dialog)
-            notify({ code: "rebase.progress", message: `Rebasing ${current.source.name} onto ${current.destination.name}…` })
+        if (!current.dialog) {
+            let verb = current.restack ? "Restacking" : "Rebasing"
+            notify({ code: "rebase.progress", message: `${verb} ${current.source.name} onto ${current.destination.name}…` })
+        }
         setBusy(true)
         try {
             let response = await api.localOperation(current.repositoryId, request(current))
@@ -135,8 +146,9 @@ export function createBranchRebase({ api, notify: show, mutating, completed, res
                 notify({ code: "rebase.current", message: `${current.source.name} is already on top of ${current.destination.name}.`, transient: true })
                 return finish()
             }
-            // Conflicts, rewritten published history, and emptied commits each need a decision first.
-            if (reviewed.conflicts.length > 0 || reviewed.published.length > 0 || reviewed.removed.length > 0) {
+            // Conflicts, rewritten published history, and emptied commits each need a decision first. A Restack is
+            // already the decision to rewrite what its branches published.
+            if (reviewed.conflicts.length > 0 || reviewed.published.length > 0 && !current.restack || reviewed.removed.length > 0) {
                 dismiss()
                 update(Object.assign(current, { dialog: true }))
             } else {
@@ -164,16 +176,19 @@ export function createBranchRebase({ api, notify: show, mutating, completed, res
                 throw new Error(response.result.message)
             let moved = current.descendants ? current.dependents : []
             let hook = response.result.hookFailure
-            notify({
-                code: "rebase.completed",
-                message: `Rebased ${current.source.name}${moved.length ? ` and ${moved.join(", ")}` : ""} onto ${current.destination.name}${
-                    reviewed.conflicts.length ? ", with conflicts to resolve before publishing." : "."
-                }${hook ? ` ${hook.message}` : ""}`,
-                output: hook?.output,
-                transient: !reviewed.conflicts.length && !hook,
-            })
+            let branches = `${current.source.name}${moved.length ? ` and ${moved.join(", ")}` : ""}`
+            let ending = reviewed.conflicts.length ? ", with conflicts to resolve before publishing." : "."
+            let message = `${current.restack ? "Restacked" : "Rebased"} ${branches} onto ${current.destination.name}${ending}${hook ? ` ${hook.message}` : ""}`
+            let undoable = current.restack && offerUndo && !reviewed.conflicts.length && !hook
+            if (!undoable)
+                notify({ code: "rebase.completed", message, output: hook?.output, transient: !reviewed.conflicts.length && !hook })
             set({ pending: undefined })
+            // The Undo notice goes when an operation starts, so it shows once this one has finished.
             await completed(current.repositoryId)
+            if (undoable) {
+                dismiss()
+                offerUndo!(current.repositoryId, message)
+            }
             if (resolveNow)
                 resolve?.(current.repositoryId, [shortName(current.source.preferredRef), ...moved])
         } catch (error) {
@@ -189,7 +204,7 @@ export function createBranchRebase({ api, notify: show, mutating, completed, res
             // A failed or changed rebase is reviewed again before it can run.
             update(Object.assign(current, { error: errorMessage(error), preview: undefined }))
         } else {
-            notify({ code: "rebase.failed", message: `Couldn't rebase ${current.source.name}: ${errorMessage(error)}` })
+            notify({ code: "rebase.failed", message: `Couldn't ${current.restack ? "restack" : "rebase"} ${current.source.name}: ${errorMessage(error)}` })
             set({ pending: undefined })
         }
     }
@@ -250,6 +265,31 @@ export function createBranchRebase({ api, notify: show, mutating, completed, res
             })
             if (choices.length > 1)
                 dismiss()
+            await prepare()
+        },
+
+        async restack(repositoryId, graph, source) {
+            let baseId = source.base.status == "known" ? source.base.branchId : undefined
+            let target = graph.branches.find(branch => branch.id == baseId)
+            if (state().busy || state().pending || !target || !canRebaseOnto(graph, source, target))
+                return
+            // The Base's own tip: pulling brings in what its upstream holds.
+            let [destination] = destinations(target)
+            set({
+                choosing: undefined,
+                pending: {
+                    repositoryId,
+                    source,
+                    destinations: [destination!],
+                    destination: destination!,
+                    selectedRemote: graph.selectedRemote,
+                    descendants: true,
+                    dependents: [],
+                    restack: true,
+                    dialog: false,
+                    error: "",
+                },
+            })
             await prepare()
         },
 

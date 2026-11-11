@@ -96,6 +96,7 @@ export function ColumnBody({ controller, repositoryId, graph, column, inspected,
                         createBranchAt={commit => branches.createAt(repositoryId, commit.objectId)}
                         createTagAt={commit => branches.tagAt(repositoryId, commit.objectId)}
                         moveIntoBase={branch => void branches.moveIntoBase(repositoryId, branch)}
+                        restack={branch => void controller.rebase.restack(repositoryId, graph, branch)}
                         deleteBranch={branch => void branches.delete(repositoryId, branch)}
                         reword={(branch, commit, close) => controller.reword(repositoryId, branch.preferredRef, commit, close)}
                         editFrom={path && !column.worktree?.historicalEdit

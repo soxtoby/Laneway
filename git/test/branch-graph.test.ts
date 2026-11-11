@@ -379,6 +379,7 @@ describe("Branch Graph and lazy history", () => {
         let behindBase = Object.fromEntries(graph.branches.map(branch => [branch.name, branch.behindBase]))
 
         expect(behindBase).toEqual({ main: false, one: true, two: false })
+        expect(Object.fromEntries(graph.branches.map(branch => [branch.name, branch.baseAhead]))).toEqual({ main: 0, one: 1, two: 0 })
     })
 
     test("marks an upstream with commits to pull, but not one a restacked branch replaced", async () => {
