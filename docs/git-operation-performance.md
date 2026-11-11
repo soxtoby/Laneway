@@ -67,7 +67,7 @@ Rewording the second-to-last commit of a three-commit fixture took 5 to 7 second
 Changes:
 
 - `local-transfer` accepts rewords and applies an uncontentious one in the same invocation. Published history, removed commits, and conflicts still return a preview that a confirmed `local` call applies. The immediate path skips the preparation's own checkpoint verification, because mutation re-verifies before changing refs.
-- Composed commits share one per-operation read of configuration, hooks, signing, and cleanup settings instead of re-reading them for every commit, and raw commit objects are read once per process.
+- Composed commits share one per-operation read of signing and cleanup settings instead of re-reading them for every commit, and raw commit objects are read once per process. They run no commit hooks, so no commit needs a checkout of its own.
 - Replay skips `merge-tree` when the new parent's tree equals the old parent's, which is every descendant of a reword, and worktree restoration skips it when the moved HEAD has the same tree. Draft commits remember their trees. A step's conflict-source draft is created only when an unresolved stack records the step. Checkouts are skipped for worktrees whose files and index are unchanged.
 
 Measured with `.tmp/diagnose/reword-bench.ts` on a fresh fixture with the compiled engine: Git launches per reword fell from 96 across two invocations to 56 in one, and wall time from 5–7 s to about 2 s, interleaved on the same machine while it was otherwise loaded. With three extra linked worktrees: 6.1 s to 4.1 s. The remaining cost is three checkpoint captures per call (preparation, pre-mutation verification, and the post-mutation expected state), the graph read, and about twenty sequential planning launches.

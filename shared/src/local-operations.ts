@@ -56,6 +56,8 @@ export let LocalResultSchema = z.object({
     message: z.string().optional(),
     changedFiles: z.array(z.string()).optional(),
     hookToken: z.string().optional(),
+    /** A pre-commit hook that failed when it checked an operation's result, and what it printed. */
+    hookFailure: z.object({ message: z.string(), output: z.string() }).optional(),
 })
 export type LocalResult = z.infer<typeof LocalResultSchema>
 export type LocalActionResult = { ok: true; result: LocalResult } | { ok: false; error: { message: string; code?: string } }

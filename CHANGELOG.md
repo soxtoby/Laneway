@@ -21,6 +21,7 @@
 - Publish works out what it would push much faster in repositories with many branches, and the Branch Graph loads faster there too, after a commit conflict.
 - A conflicted commit's file actions stay in view when its column is narrowed, instead of being cut off at the column's edge.
 - The Branch Graph now shows a merged branch joining the Primary Branch even when another branch is stacked on top of it.
+- Rewording a commit, rebasing a branch, moving changes between commits, and applying a Historical Edit no longer fail when a commit hook needs installed tools such as `node_modules`. Commit hooks no longer run on each rewritten commit. Instead, the pre-commit hook checks the result afterwards in each worktree whose files changed. If it fails, the notice stays open with the hook's output, and Undo reverses the change.
 
 ## v0.1.0-alpha.1
 

@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test"
-import { chmod, readFile, rm, writeFile } from "node:fs/promises"
+import { chmod, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { executeOperationCommand } from "../src/operations/operation-runtime"
 import { git } from "./composition-fixture"
@@ -37,25 +37,27 @@ test("apply rewrites the edited commit with its author and the current committer
     expect(git(path, "rev-parse", "HEAD")).toBe(rewritten)
 }, 90_000)
 
-test("apply runs commit hooks and signing; their failure leaves the session and its changes as they were", async () => {
+test("a signing failure leaves the session as it was; pre-commit checks the applied result in the session's worktree", async () => {
     let { path, greeting } = await stack()
     await edit(path, { action: "enter", path, commit: greeting })
     await writeFile(join(path, "greet.txt"), "hello, world\nthere\nfriend\n")
-    let hook = join(path, ".git", "hooks", "pre-commit")
-    await writeFile(hook, "#!/bin/sh\nexit 1\n")
-    await chmod(hook, 0o755)
-
-    await expect(apply(path)).rejects.toThrow("Saved checkout")
-    expect(git(path, "rev-parse", "HEAD")).toBe(greeting)
-    expect(git(path, "status", "--porcelain")).toBe("M greet.txt")
-
-    await rm(hook)
     git(path, "config", "commit.gpgsign", "true")
     git(path, "config", "gpg.program", "laneway-missing-signing-program")
 
     await expect(apply(path)).rejects.toThrow()
     expect(git(path, "rev-parse", "HEAD")).toBe(greeting)
+    expect(git(path, "status", "--porcelain")).toBe("M greet.txt")
     expect(await session(path)).toMatchObject({ commit: greeting, state: "active" })
+
+    git(path, "config", "commit.gpgsign", "false")
+    let hook = join(path, ".git", "hooks", "pre-commit")
+    await writeFile(hook, "#!/bin/sh\ngrep -q friend greet.txt && echo 'no friends allowed' >&2 && exit 1\nexit 0\n")
+    await chmod(hook, 0o755)
+
+    let applied = await apply(path)
+
+    expect(applied.hookFailure?.output).toBe("no friends allowed")
+    expect(git(path, "show", "HEAD:greet.txt")).toBe("hello, world\nthere\nfriend")
 }, 60_000)
 
 test("a descendant conflict pauses the session at the rewritten commit until the Unresolved Stack resolves", async () => {

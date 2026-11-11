@@ -163,12 +163,14 @@ export function createBranchRebase({ api, notify: show, mutating, completed, res
             if (response.result.status == "failed")
                 throw new Error(response.result.message)
             let moved = current.descendants ? current.dependents : []
+            let hook = response.result.hookFailure
             notify({
                 code: "rebase.completed",
                 message: `Rebased ${current.source.name}${moved.length ? ` and ${moved.join(", ")}` : ""} onto ${current.destination.name}${
                     reviewed.conflicts.length ? ", with conflicts to resolve before publishing." : "."
-                }`,
-                transient: !reviewed.conflicts.length,
+                }${hook ? ` ${hook.message}` : ""}`,
+                output: hook?.output,
+                transient: !reviewed.conflicts.length && !hook,
             })
             set({ pending: undefined })
             await completed(current.repositoryId)

@@ -22,6 +22,8 @@ export interface CommitPlan {
 
 export interface WorkingPlan {
     path: string
+    /** HEAD before the rewrite, so pre-commit checks only a worktree whose checked-out content changed. */
+    beforeHead: string
     head: string
     ref: string | null
     tree: string
@@ -65,6 +67,7 @@ let PlanSchema = z.object({
     refs: z.array(z.object({ ref: z.string(), before: z.string().nullable(), after: z.string().nullable() })),
     working: z.array(z.object({
         path: z.string(),
+        beforeHead: z.string(),
         head: z.string(),
         ref: z.string().nullable(),
         tree: z.string(),

@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { type ChangeRecorder, worktreeTrees } from "../operations/change-recorder"
 import { readRecordedRefs } from "../operations/repository-snapshot"
-import { commitAuthor, compositionCommit, prepareCommitContext, rawCommit } from "./composition-commits"
+import { commitAuthor, compositionCommit, hasPreCommit, prepareCommitContext, rawCommit } from "./composition-commits"
 import { type CommitPlan, type Plan, readPlan, type RefsBefore, type WorkingPlan, writePlan } from "./composition-plan"
 import { selectionTrees, workingTree } from "./composition-source"
 import { extractFiles, isFileExtraction, prepareFileExtraction } from "./file-extraction"
@@ -451,6 +451,7 @@ export async function prepareComposition(
         let nextRef = ref ? stackByBranch.get(ref)?.temporaryRef ?? ref : null
         working.push({
             path: holder.path,
+            beforeHead: head,
             head: newHead,
             ref: nextRef,
             tree: files.tree,
@@ -869,7 +870,7 @@ export async function mutateComposition(
                 await repo.command(working.path, ["update-ref", "--no-deref", "HEAD", working.head, head])
         }
     }
-    return {
+    let result: LocalResult = {
         type: "result",
         command: "local",
         status: "performed",
@@ -879,6 +880,25 @@ export async function mutateComposition(
             ? "Commit reworded."
             : "Changes transferred.",
     }
+    // Composed commits run no commit hooks, so pre-commit checks the result in each worktree whose checked-out
+    // content changed, where the tools it uses are installed. The commits already exist, so it can only report a
+    // failure; the files it edits belong to this operation, and Undo reverses them with it.
+    let failed: Array<{ path: string; output: string }> = []
+    if (!plan.preview.conflicts.length) {
+        for (let working of plan.working) {
+            if (await readTree(repo, working.beforeHead) == await readTree(repo, working.head) || !await hasPreCommit(repo, working.path))
+                continue
+            let hook = await changes.worktree(working.path, () => repo.run(working.path, ["hook", "run", "--ignore-missing", "pre-commit"]))
+            if (hook.exitCode)
+                failed.push({ path: working.path, output: `${hook.stdout}${hook.stderr}`.trim() })
+        }
+    }
+    if (failed.length) {
+        let message = `The pre-commit hook failed afterwards in ${failed.map(f => f.path).join(", ")}. Undo reverses this operation.`
+        result.message += ` ${message}`
+        result.hookFailure = { message, output: failed.map(f => f.output).join("\n\n") }
+    }
+    return result
 
     async function finalize(value: string): Promise<string> {
         if (final.has(value))
@@ -887,7 +907,7 @@ export async function mutateComposition(
         if (!commit)
             return value
         let parent = await finalize(commit.parent)
-        let created = await compositionCommit(context!, parent, commit.tree, commit.source, commit.message, cancelled)
+        let created = await compositionCommit(context!, { ...commit, parent }, cancelled)
         final.set(value, created)
         return created
     }

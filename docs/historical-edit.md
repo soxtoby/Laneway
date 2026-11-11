@@ -16,7 +16,7 @@ The settled behavior for [SOX-139](https://linear.app/soxtoby/issue/SOX-139/impl
 - **Composition.**
   - New Historical Working Changes use every normal composition target: the materialized commit, other eligible commits, branches, Working Changes, and new-commit seams.
   - Apply changes is the default action. It moves the current selection, or every committable change, into the materialized commit. It doesn't end the session.
-  - The rewritten commit keeps its original author, authored time, and message. It uses the current committer and time, and the current hooks and signing.
+  - The rewritten commit keeps its original author, authored time, and message. It uses the current committer and time, and the current signing. Like other composed commits, it runs no commit hooks; pre-commit checks the worktree afterwards ([commit composition](commit-composition.md)).
   - Each Apply or drag is its own Workbench Operation.
 
 ### Conflicts and return

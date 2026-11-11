@@ -1,6 +1,6 @@
 import { connectRepository } from "@laneway/git"
 import { afterEach, expect, test } from "bun:test"
-import { chmod, readFile, rm, writeFile } from "node:fs/promises"
+import { chmod, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { mutateComposition, prepareComposition } from "../src/composition/composition"
 import { ChangeRecorder } from "../src/operations/change-recorder"
@@ -159,7 +159,7 @@ test("moving untracked additions removes them from the source and leaves incomin
     expect(git(destination, "diff", "--cached", "--name-only")).toBe("staged.txt")
 }, 120_000)
 
-test("composition honors filters and preserves author; signing and hook failure leave source untouched", async () => {
+test("composition honors filters and preserves author; signing failure leaves source untouched", async () => {
     let { path, base } = await fixture("sha256")
     git(path, "config", "filter.upper.clean", "tr a-z A-Z")
     git(path, "config", "filter.upper.smudge", "cat")
@@ -170,16 +170,6 @@ test("composition honors filters and preserves author; signing and hook failure 
         target: { kind: "seam", branch: "feature", parentId: base },
         files: [{ path: "a.txt" }, { path: ".gitattributes" }],
     })
-    let hook = join(path, ".git", "hooks", "pre-commit")
-    await writeFile(hook, "#!/bin/sh\nexit 1\n")
-    await chmod(hook, 0o755)
-    let before = git(path, "status", "--porcelain")
-
-    await expect(perform(path, r)).rejects.toThrow("Saved checkout")
-    expect(git(path, "rev-parse", "HEAD")).toBe(base)
-    expect(git(path, "status", "--porcelain")).toBe(before)
-
-    await rm(hook)
     git(path, "config", "commit.gpgsign", "true")
     git(path, "config", "gpg.program", "laneway-missing-signing-program")
 
@@ -198,6 +188,48 @@ test("composition honors filters and preserves author; signing and hook failure 
 
     expect(git(path, "show", "-s", "--format=%an|%cn", "destination")).toBe("Test|New committer")
 }, 180_000)
+
+test("composed commits run no commit hooks; pre-commit then checks each checked-out branch whose content changed", async () => {
+    let { path, base } = await fixture()
+    await writeFile(join(path, "feature.txt"), "feature\n")
+    git(path, "add", ".")
+    git(path, "commit", "-qm", "feature")
+    for (let name of ["prepare-commit-msg", "commit-msg"])
+        await writeFile(join(path, ".git", "hooks", name), "#!/bin/sh\nexit 1\n", { mode: 0o755 })
+    let hook = join(path, ".git", "hooks", "pre-commit")
+    await writeFile(hook, "#!/bin/sh\nprintf 'checked\\n' > checked.txt\necho 'lint failed' >&2\nexit 1\n")
+    await chmod(hook, 0o755)
+
+    // A reword leaves every file as it was, so there is nothing for pre-commit to check.
+    let reworded = await perform(path, { action: "reword", objectId: git(path, "rev-parse", "HEAD"), branch: "feature", title: "Renamed", message: "" })
+
+    expect(reworded.hookFailure).toBeUndefined()
+    expect(git(path, "log", "-1", "--format=%s", "feature")).toBe("Renamed")
+    expect(git(path, "status", "--porcelain")).toBe("")
+
+    // Moving the commit away changes the checked-out feature branch; the destination has no worktree to check.
+    git(path, "branch", "destination", base)
+    let moved = await perform(
+        path,
+        request({
+            source: { kind: "commit", objectId: git(path, "rev-parse", "feature"), branch: "feature" },
+            target: { kind: "branch", branch: "destination", tip: base },
+        }),
+    )
+
+    expect(git(path, "log", "-1", "--format=%s", "destination")).toBe("Renamed")
+    expect(git(path, "rev-parse", "feature")).toBe(base)
+    expect(moved.hookFailure).toEqual({ message: expect.stringContaining(path), output: "lint failed" })
+    expect(moved.message).toContain(moved.hookFailure!.message)
+    expect(git(path, "status", "--porcelain")).toBe("?? checked.txt")
+
+    // The hook's edits belong to the operation, so Undo reverses them with it.
+    await executeOperationCommand({ command: "undo", noWait: false }, path)
+
+    expect(git(path, "log", "-1", "--format=%s", "feature")).toBe("Renamed")
+    expect(git(path, "rev-parse", "destination")).toBe(base)
+    expect(git(path, "status", "--porcelain")).toBe("")
+}, 120_000)
 
 test("working files become a new commit, preserving remaining files and exact undo/redo", async () => {
     let { path, base } = await fixture()

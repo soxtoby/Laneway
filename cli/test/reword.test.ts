@@ -1,6 +1,6 @@
 import type { LocalRequest, LocalResult } from "@laneway/shared"
 import { afterEach, expect, test } from "bun:test"
-import { chmod, readFile, writeFile } from "node:fs/promises"
+import { readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { executeOperationCommand } from "../src/operations/operation-runtime"
 import { createCompositionFixtures, git, perform, preview } from "./composition-fixture"
@@ -56,7 +56,7 @@ test("rewording keeps the commit's tree and author, restacks its dependents, and
     expect(git(path, "rev-parse", "child^")).toBe(reworded)
 }, 60_000)
 
-test("unchanged messages, published history, uneditable commits, and rejecting hooks are reported before any rewrite", async () => {
+test("unchanged messages, published history, and uneditable commits are reported before any rewrite", async () => {
     let { path, base } = await fixture()
     await writeFile(join(path, "feature.txt"), "feature\n")
     git(path, "add", ".")
@@ -89,12 +89,4 @@ test("unchanged messages, published history, uneditable commits, and rejecting h
     expect(git(path, "rev-parse", "feature")).toBe(feature)
     await expect(preview(path, { ...request, objectId: base, branch: "main" })).rejects.toThrow("root or merge")
     await expect(preview(path, { ...request, branch: "main" })).rejects.toThrow("not in the selected branch")
-
-    let hook = join(path, ".git", "hooks", "commit-msg")
-    await writeFile(hook, "#!/bin/sh\nexit 1\n")
-    await chmod(hook, 0o755)
-
-    await expect(perform(path, request)).rejects.toThrow()
-    expect(git(path, "rev-parse", "feature")).toBe(feature)
-    expect(git(path, "status", "--porcelain")).toBe("")
 }, 60_000)

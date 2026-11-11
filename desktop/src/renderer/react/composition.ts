@@ -1,5 +1,5 @@
 import { draggable, dropTargetForElements, monitorForElements } from "@atlaskit/pragmatic-drag-and-drop/adapter/element-adapter"
-import type { CompositionRequest, CompositionSource, CompositionTarget, LocalPreview } from "@laneway/shared"
+import type { CompositionRequest, CompositionSource, CompositionTarget, LocalPreview, LocalResult } from "@laneway/shared"
 import { errorMessage, type Notice } from "./notice"
 import { createStore, type Store } from "./store"
 
@@ -180,8 +180,9 @@ export function createComposition({ api, notify, changed, mutating, resolve }: C
             await prepare()
     }
 
-    async function completed(repositoryId: string, message?: string) {
-        notify({ code: "composition.transferred", message: message ?? "Changes transferred.", transient: true })
+    async function completed(repositoryId: string, result: LocalResult) {
+        let output = result.hookFailure?.output
+        notify({ code: "composition.transferred", message: result.message ?? "Changes transferred.", output, transient: output == undefined })
         store.publish({ mode: "move", busy: true })
         await changed(repositoryId)
     }
@@ -202,7 +203,7 @@ export function createComposition({ api, notify, changed, mutating, resolve }: C
             if (response.result.status == "failed")
                 throw new Error(response.result.message)
             if (response.result.command == "local" && response.result.status == "performed")
-                await completed(current.selection.repositoryId, response.result.message)
+                await completed(current.selection.repositoryId, response.result)
             else
                 set({ pending: { ...current, preview: response.result.preview }, notice: undefined })
         } catch (error) {
@@ -234,7 +235,7 @@ export function createComposition({ api, notify, changed, mutating, resolve }: C
                 throw new Error(result.error.message)
             if (result.result.status == "failed")
                 throw new Error(result.result.message)
-            await completed(current.selection.repositoryId, result.result.message)
+            await completed(current.selection.repositoryId, result.result)
             if (resolveNow)
                 resolve?.(current.selection.repositoryId)
         } catch (error) {

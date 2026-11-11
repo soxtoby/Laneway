@@ -1,4 +1,4 @@
-import type { CompositionPreview, CompositionRequest, ConflictResult, LocalActionResult, LocalRequest } from "@laneway/shared"
+import type { CompositionPreview, CompositionRequest, ConflictResult, LocalActionResult, LocalRequest, LocalResult } from "@laneway/shared"
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
 import type { Window as HappyWindow } from "happy-dom"
 import { button, installReactDom, press, startReactApp, stopReactApps, type } from "./react-dom"
@@ -79,6 +79,23 @@ describe("React composition", () => {
         expect(calls[0]!.request).toMatchObject({ source: { kind: "commit", objectId: scenario.graph.branches[1]!.tip, branch: "refs/heads/feature/laneway" } })
         expect(toast()?.textContent).toContain("Changes transferred.")
         expect(trail().querySelector("[aria-label='Review transfer']") == null).toBe(true)
+    })
+
+    test("a pre-commit hook that fails when checking the transfer's result shows what it printed", async () => {
+        let scenario = inspectionScenario()
+        let { api, finish } = composing(scenario)
+        let message = "The pre-commit hook failed afterwards in D:\\Source\\inspection. Undo reverses this operation."
+        finish({ message: `Changes transferred. ${message}`, hookFailure: { message, output: "lint failed" } })
+        let app = await startReactApp(api)
+        let commit = trail().querySelector<HTMLElement>(".trail-commit")!
+
+        await app.act(() => key(button(commit, "Move or copy Inspect changes"), "m"))
+        await app.act(() => key(document.activeElement!, "ArrowDown"))
+        await app.act(() => key(document.activeElement!, "ArrowDown"))
+        await app.act(() => key(document.activeElement!, "Enter"))
+
+        expect(toast()?.textContent).toContain(`Changes transferred. ${message}`)
+        expect(toast()?.textContent).toContain("lint failed")
     })
 
     test("chosen commit files move to Working Changes, and published history waits behind a warning", async () => {
@@ -230,6 +247,7 @@ function conflictView(id: string): NonNullable<ConflictResult["view"]> {
 function composing(scenario: ReturnType<typeof inspectionScenario>) {
     let calls: { request: CompositionRequest; token?: string }[] = []
     let changes: Partial<CompositionPreview> = {}
+    let outcome: Partial<LocalResult> = {}
     let api: Window["laneway"] = {
         ...scenario.api,
         localOperation: async (id, request, token) => {
@@ -237,13 +255,13 @@ function composing(scenario: ReturnType<typeof inspectionScenario>) {
                 return scenario.api.localOperation(id, request, token)
             calls.push({ request, token })
             if (token)
-                return { ok: true, result: { type: "result", command: "local", status: "performed", message: "Changes transferred." } }
+                return { ok: true, result: { type: "result", command: "local", status: "performed", message: "Changes transferred.", ...outcome } }
             let preview = (await scenario.api.localOperation(id, { action: "stage", path: "", unstage: false })) as Extract<LocalActionResult, { ok: true }>
             let composition = { branches: ["feature/laneway"], removed: [], conflicts: [], published: [], skipped: [], noop: false, ...changes }
             return { ok: true, result: { ...preview.result, preview: { ...preview.result.preview!, token: `reviewed-${calls.length}`, composition } } }
         },
     }
-    return { api, calls, review: (value: Partial<CompositionPreview>) => changes = value }
+    return { api, calls, review: (value: Partial<CompositionPreview>) => changes = value, finish: (value: Partial<LocalResult>) => outcome = value }
 }
 
 function performed(): LocalActionResult {
