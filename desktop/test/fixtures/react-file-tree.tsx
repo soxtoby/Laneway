@@ -31,19 +31,21 @@ Object.assign(window, { mountFileTree: mount, fileTreeChecks: checks })
 
 function render() {
     let inspect: FileInspection = {
-        isOpen: file => open.has(file.path),
-        toggle: file => {
+        press: file => {
             if (!open.delete(file.path))
                 open.add(file.path)
             render()
         },
-        close: hidden => {
-            for (let file of hidden)
-                open.delete(file.path)
-            render()
+        inline: {
+            isOpen: file => open.has(file.path),
+            close: hidden => {
+                for (let file of hidden)
+                    open.delete(file.path)
+                render()
+            },
+            controls: () => null,
+            diff: file => <div className="fixture-diff" style={{ height: tall.has(file.path) ? 600 : 40 }}>Diff for {file.path}</div>,
         },
-        controls: () => null,
-        diff: file => <div className="fixture-diff" style={{ height: tall.has(file.path) ? 600 : 40 }}>Diff for {file.path}</div>,
     }
     root.render(
         <div className="fixture-column" style={{ height: "100vh", overflow: "auto", padding: "0 8px" }}>

@@ -1,10 +1,9 @@
 import type { ChangedFile, DiffLayout, DiffView } from "@laneway/shared"
 import { createContext, type ReactNode, useContext, useRef } from "react"
 import { ToggleButton } from "react-aria-components"
-import { IconButton } from "./controls"
 import { DiffLines } from "./diff-lines"
 import { holdLine } from "./diff-renderer"
-import { BreakoutDiffIcon, EntireFileIcon, ImageModeIcon, RenderedMarkdownIcon, SplitDiffIcon, UnifiedDiffIcon, WhitespaceIcon, WrapLinesIcon } from "./icons"
+import { EntireFileIcon, ImageModeIcon, RenderedMarkdownIcon, SplitDiffIcon, UnifiedDiffIcon, WhitespaceIcon, WrapLinesIcon } from "./icons"
 import { ImageDiff, imageKey } from "./image-diff"
 import { type ImageDiffMode, imageModes, isComparableImage, isImagePath, preferredImageMode, visibleSummary } from "./image-files"
 import type { FileDiffState, Inspection } from "./inspection"
@@ -39,8 +38,6 @@ interface DiffProps {
 }
 
 interface DiffControlsProps extends DiffProps {
-    /** Opens the diff in the column's diff column. */
-    breakout?(): void
     /** Whether the diff column shows files whole, which only its toolbars switch. */
     entireFiles?: { shown: boolean; toggle(): void }
 }
@@ -49,7 +46,7 @@ interface DiffControlsProps extends DiffProps {
  * A diff's controls in its file's row: unified or side by side, wrapping every diff's lines, and showing whitespace.
  * A Markdown file's diff can show the rendered documents instead, where wrapping and whitespace don't apply.
  */
-export function DiffControls({ columnId, id, diff, inspection, breakout, entireFiles }: DiffControlsProps) {
+export function DiffControls({ columnId, id, diff, inspection, entireFiles }: DiffControlsProps) {
     let { layout, setLayout } = useContext(DiffScopeContext)
     let wrapLines = useSnapshotValue(inspection, snapshot => snapshot.wrapLines)
     let holdRow = useContext(HeldRowContext)
@@ -58,19 +55,13 @@ export function DiffControls({ columnId, id, diff, inspection, breakout, entireF
         if (chosen != layout)
             holdPlace(layoutToggle.current, () => setLayout(chosen), holdRow)
     }
-    let breakoutButton = breakout && (
-        <IconButton label="Break out diff" small onPress={breakout}>
-            <BreakoutDiffIcon />
-        </IconButton>
-    )
     // Pictures swap the line layouts for their comparison modes; added and deleted ones have nothing to compare.
     if (isImagePath(diff.path)) {
         let mode = diff.imageMode ?? preferredImageMode()
         let comparable = diff.page ? isComparableImage(diff.page.file) : true
-        return (comparable || breakoutButton) && (
+        return comparable && (
             <div className="diff-controls">
-                {comparable && <ImageModeToggle mode={mode} onChange={chosen => inspection.setImageMode(columnId, id, chosen)} />}
-                {breakoutButton}
+                <ImageModeToggle mode={mode} onChange={chosen => inspection.setImageMode(columnId, id, chosen)} />
             </div>
         )
     }
@@ -134,7 +125,6 @@ export function DiffControls({ columnId, id, diff, inspection, breakout, entireF
                     </TooltipTrigger>
                 </>
             )}
-            {breakoutButton}
         </div>
     )
 }

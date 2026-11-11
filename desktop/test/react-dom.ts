@@ -110,6 +110,13 @@ export function press(element: HTMLElement, keys: { ctrlKey?: boolean; shiftKey?
     element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, detail: 1, ...keys }))
 }
 
+/** Two presses, and the double-click they make. */
+export function doubleClick(element: HTMLElement) {
+    press(element)
+    press(element)
+    element.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true, button: 0, detail: 2 }))
+}
+
 // The pointer moves, which tells React Aria a mouse is in use, and leaves where it was as it arrives: React
 // reads entering and leaving from pointerout and pointerover.
 export function hover(element: Element, from?: Element) {

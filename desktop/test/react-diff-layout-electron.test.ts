@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
 
 test(
-    "switching a diff between unified and side by side keeps the line under its pinned row in place",
+    "switching a diff column between unified and side by side keeps the line under its pinned toolbar in place",
     async () => {
         let directory = await mkdtemp(join(tmpdir(), "laneway-react-diff-layout-"))
         let root = resolve(import.meta.dir, "../..")
@@ -73,9 +73,9 @@ test(
             let result = await readFile(join(directory, "result.json"), "utf8").catch(() => errors || "Electron exited before writing its result.")
             expect(exitCode, result).toBe(0)
 
-            // The line just under the pinned row of below.ts stays there while both diffs redraw, and switching back
-            // returns to the line rather than to its side by side row's deletion. With the row partway down the view,
-            // the row and its first line stay put, though the file list moves the row up only a frame or more later.
+            // The line just under the pinned toolbar of below.ts stays there while both diffs redraw, and switching
+            // back returns to the line rather than to its side by side row's deletion. With the toolbar partway down
+            // the view, the toolbar and its first line stay put.
             expect(JSON.parse(result)).toEqual({ pinned: { under: 0, split: 0, unified: 0 }, partway: { split: 0, unified: 0 } })
         } finally {
             if (!resolve(directory).startsWith(resolve(tmpdir()) + sep))

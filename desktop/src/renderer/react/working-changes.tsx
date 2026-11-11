@@ -270,7 +270,9 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
                             <>
                                 {list("working-staged", "Staged files")}
                                 <div className="staged-divider" role="separator" aria-label="Staged changes">
-                                    <span><StagedAboveIcon />Staged · {staged.length}</span>
+                                    <span>
+                                        <StagedAboveIcon />Staged · {staged.length}
+                                    </span>
                                 </div>
                             </>
                         )}
@@ -411,7 +413,7 @@ interface FileListProps {
     empty?: string
     /** Files from the other Working Changes list land here to be staged or unstaged. */
     staging?: Landing
-    /** Whether diffs break out into the column's diff column; auxiliary columns have none. */
+    /** Whether files show their diffs in the column's diff column; auxiliary columns have none, and show them under their rows. */
     diffColumn?: boolean
     /** A comparison's ends, whose histories its files open in. */
     comparison?: ComparisonColumnNode
@@ -477,33 +479,32 @@ export const FileList = memo(function FileList(
             )
         }
         : undefined
-    // A file's row opens its diff, under it or in the diff column while there is one; a comparison's lines can't be chosen.
-    let diffColumn = inspected?.diffColumn
-    let inspect: FileInspection | undefined = inspected && {
-        isOpen: file => !diffColumn && inspected.diffs[diffKey(group, file.path)] != undefined,
-        toggle: file => inspection.toggleDiff(columnId, group, file.path),
-        close: hidden => inspection.closeDiffs(columnId, group, hidden.map(file => file.path)),
-        controls: file => {
-            let id = diffKey(group, file.path)
-            let diff = inspected.diffs[id]
-            return diff && (
-                <DiffControls
-                    columnId={columnId}
-                    id={id}
-                    diff={diff}
-                    inspection={inspection}
-                    breakout={breaksOut
-                        ? () => inspection.openDiffColumn(columnId, group, file.path)
-                        : undefined}
-                />
-            )
-        },
-        diff: file => {
-            let id = diffKey(group, file.path)
-            let diff = inspected.diffs[id]
-            return diff && <DiffPanel columnId={columnId} id={id} diff={diff} inspection={inspection} eligible={selectable && group != "comparison"} />
-        },
-    }
+    // A Workspace Column's files show their diffs only in its diff column: pressing a row scrolls an open one to its
+    // file, and a double-click, Enter, or the row's button opens it there. An auxiliary column's rows open their diffs
+    // under themselves, where a comparison's lines can't be chosen.
+    let inspect: FileInspection | undefined = inspected && (breaksOut
+        ? {
+            press: file => inspection.showInDiffColumn(columnId, group, file.path),
+            open: (file, focus) =>
+                focus ? inspection.openDiffColumn(columnId, group, file.path) : inspection.showInDiffColumn(columnId, group, file.path, true),
+        }
+        : {
+            press: file => inspection.toggleDiff(columnId, group, file.path),
+            inline: {
+                isOpen: file => inspected.diffs[diffKey(group, file.path)] != undefined,
+                close: hidden => inspection.closeDiffs(columnId, group, hidden.map(file => file.path)),
+                controls: file => {
+                    let id = diffKey(group, file.path)
+                    let diff = inspected.diffs[id]
+                    return diff && <DiffControls columnId={columnId} id={id} diff={diff} inspection={inspection} />
+                },
+                diff: file => {
+                    let id = diffKey(group, file.path)
+                    let diff = inspected.diffs[id]
+                    return diff && <DiffPanel columnId={columnId} id={id} diff={diff} inspection={inspection} eligible={selectable && group != "comparison"} />
+                },
+            },
+        })
     // A file's history reads from where the list was read; a comparison's file has one at either end.
     let history = historySource(files.source)
     let histories = (file: ChangedFile) =>
@@ -548,7 +549,7 @@ export const FileList = memo(function FileList(
                     group={group}
                     selected={inspected?.selected ?? []}
                     onSelect={selectable
-                        ? (chosenFiles, add) => inspection.select(columnId, group, chosenFiles, add)
+                        ? (chosenFiles, how) => inspection.select(columnId, group, chosenFiles, how)
                         : undefined}
                     root={root}
                     hideStagedBadge={working}
@@ -569,8 +570,7 @@ export const FileList = memo(function FileList(
     )
 }, sameList)
 
-// A list shows its column's filter and chosen files, and its open diffs only while the column has no diff column;
-// with one, they open there instead.
+// A list shows its column's filter and chosen files, and, in an auxiliary column, the diffs open under its rows.
 function sameList({ inspected: before, ...props }: FileListProps, { inspected: after, ...next }: FileListProps) {
     let keys = new Set([...Object.keys(props), ...Object.keys(next)]) as Set<keyof typeof props>
     if ([...keys].some(key => props[key] !== next[key]))
@@ -578,8 +578,7 @@ function sameList({ inspected: before, ...props }: FileListProps, { inspected: a
     if (before == after)
         return true
     return before != undefined && after != undefined && before.filter == after.filter && before.selected == after.selected
-        && before.diffColumn?.group == after.diffColumn?.group
-        && (before.diffColumn != undefined && after.diffColumn != undefined || before.diffs == after.diffs)
+        && (props.diffColumn != false || before.diffs == after.diffs)
 }
 
 /**

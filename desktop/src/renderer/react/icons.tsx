@@ -135,14 +135,6 @@ export function SplitDiffIcon() {
     )
 }
 
-export function BreakoutDiffIcon() {
-    return (
-        <DiffStroke>
-            <path d="M9 2h5v5M14 2 7 9M7 3H2v11h11V9" />
-        </DiffStroke>
-    )
-}
-
 export function WhitespaceIcon() {
     return (
         <DiffStroke strokeWidth={1.5}>

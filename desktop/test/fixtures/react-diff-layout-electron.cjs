@@ -3,12 +3,12 @@ let { writeFileSync } = require("node:fs")
 let { join } = require("node:path")
 let { pathToFileURL } = require("node:url")
 
-// Opens two files' diffs in the built app's Working Changes, scrolls until the lower file's row pins over its lines,
-// and switches its layout to side by side and back, reporting where the line under the row went each time;
+// Opens the diff column on the built app's Working Changes, scrolls until the lower file's toolbar pins over its
+// lines, and switches its layout to side by side and back, reporting where the line under the toolbar went each time;
 // react-diff-layout-electron.test.ts checks the report.
 let [directory, productionMain] = process.argv.slice(2)
 app.setPath("userData", join(directory, "profile"))
-// The diffs draw, and the column's file list moves its rows, on animation frames, which a hidden window would hold.
+// The diffs draw on animation frames, which a hidden window would hold.
 app.commandLine.appendSwitch("disable-backgrounding-occluded-windows")
 app.commandLine.appendSwitch("disable-renderer-backgrounding")
 app.on("browser-window-created", (_event, window) => {
@@ -30,25 +30,26 @@ app.on("browser-window-created", (_event, window) => {
                         await new Promise(resolve => requestAnimationFrame(resolve));
                 };
                 const row = name => document.querySelector('[aria-label="Working Changes"] .file-row[aria-label="' + name + '"]');
-                const lines = name => [...(row(name)?.querySelector('.pierre-diff')?.shadowRoot?.querySelectorAll('[data-line][data-line-index]') ?? [])];
+                const file = name => [...document.querySelectorAll('.diff-column [data-diff-path]')].find(section => section.dataset.diffPath == name);
+                const lines = name => [...(file(name)?.querySelector('.pierre-diff')?.shadowRoot?.querySelectorAll('[data-line][data-line-index]') ?? [])];
                 // A line's index is its row in the unified layout, then in the side by side one.
                 const half = (line, split) => line.dataset.lineIndex.split(',')[split ? 1 : 0];
                 const find = (name, index, split) => lines(name).find(line => half(line, split) == index.split(',')[split ? 1 : 0]);
 
-                // below.ts opens first, since opening above.ts pushes its row past those the list draws.
-                for (const name of ['below.ts', 'above.ts']) {
-                    (await wait(() => row(name), name + "'s row")).querySelector('.file-path').click();
-                    await wait(() => lines(name).length, name + "'s diff");
-                }
-                const body = row('above.ts').closest('.column-body');
-                // The list draws only the rows near the view, so the column scrolls until it draws that of below.ts.
-                for (let i = 0; i < 100 && !row('below.ts'); i++) {
+                // The row of above.ts opens the diff column at the top of its files.
+                (await wait(() => row('above.ts'), "the row of above.ts")).querySelector('[aria-label="Open above.ts in diff column"]').click();
+                const body = await wait(() => document.querySelector('.diff-column-files'), 'the diff column');
+                await wait(() => lines('above.ts').length, "the diff of above.ts");
+                // Scrolled as the user scrolls it, the column stops holding the chosen file at its top.
+                body.dispatchEvent(new WheelEvent('wheel', { bubbles: true }));
+                // The column draws only the diffs near the view, so it scrolls until it draws that of below.ts.
+                for (let i = 0; i < 100 && !lines('below.ts').length; i++) {
                     body.scrollTop += 1000;
                     await frames(2);
                 }
-                const header = () => row('below.ts').querySelector('.file-content').getBoundingClientRect();
+                const header = () => file('below.ts').querySelector('.diff-toolbar').getBoundingClientRect();
 
-                // An addition sharing its side by side row with a deletion goes under the pinned row, so switching back
+                // An addition sharing its side by side row with a deletion goes under the pinned toolbar, so switching back
                 // has to return to the addition rather than to its row's deletion. A diff draws its lines once it nears
                 // the view, after the column scrolls.
                 const additions = await wait(() => {
@@ -63,9 +64,9 @@ app.on("browser-window-created", (_event, window) => {
                 }
                 const top = (await held()).getBoundingClientRect().top;
 
-                // Switches the layout from the row of below.ts, and reports how far the line with this index moved.
+                // Switches the layout from the toolbar of below.ts, and reports how far the line with this index moved.
                 const place = async (label, split, index, top) => {
-                    row('below.ts').querySelector('[aria-label="' + label + '"]').click();
+                    file('below.ts').querySelector('[aria-label="' + label + '"]').click();
                     await frames(30);
                     const line = find('below.ts', index, split);
                     return line ? Math.round(line.getBoundingClientRect().top - top) : 'not drawn';
@@ -76,9 +77,8 @@ app.on("browser-window-created", (_event, window) => {
                     unified: await place('Unified', false, index, top),
                 };
 
-                // Partway down the view, under the diff of above.ts, the row stays put with its first line, though the
-                // file list moves the row only once it has measured the diff above at its new height.
-                body.scrollTop += row('below.ts').getBoundingClientRect().top - body.getBoundingClientRect().top - 300;
+                // Partway down the view, under the diff of above.ts, the toolbar stays put with its first line.
+                body.scrollTop += file('below.ts').getBoundingClientRect().top - body.getBoundingClientRect().top - 300;
                 await frames(4);
                 const first = await wait(() => lines('below.ts')[0], 'the first line of below.ts');
                 const firstIndex = first.dataset.lineIndex;

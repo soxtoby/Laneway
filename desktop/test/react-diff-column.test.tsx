@@ -1,7 +1,7 @@
 import type { FileDiffResult } from "@laneway/shared"
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
 import type { Window as HappyWindow } from "happy-dom"
-import { button, installReactDom, press, startReactApp, stopReactApps } from "./react-dom"
+import { button, doubleClick, installReactDom, press, startReactApp, stopReactApps } from "./react-dom"
 import { inspectionScenario } from "./renderer-fixtures"
 
 let browserWindow: HappyWindow
@@ -21,10 +21,9 @@ describe("React diff column", () => {
         let app = await startReactApp(scenario.api)
         let [source, next] = columns()
         let row = fileRows(source!, "working-staged")[0]!
-        await app.act(() => openRow(row))
 
         for (let opening = 0; opening < 2; opening++) {
-            await app.act(() => press(button(row, "Break out diff")))
+            await app.act(() => press(openButton(row)))
             expect(order()).toEqual(["column", "column-divider", "auxiliary-column", "column-divider", "column", "column-divider"])
             // Elements compare as booleans; a failed comparison of two elements would serialize the whole document.
             expect(columns()[0] == source && columns()[1] == next).toBe(true)
@@ -35,7 +34,7 @@ describe("React diff column", () => {
 
         // Maximizing from the diff column maximizes its source column, which shares the row's view with it; the
         // next column stays beside them.
-        await app.act(() => press(button(row, "Break out diff")))
+        await app.act(() => press(openButton(row)))
         await app.act(() => press(button(diffColumn()!, "Maximize column")))
         expect(order()).toEqual(["column", "column-divider", "auxiliary-column", "column", "column-divider"])
         expect(source!.classList.contains("split")).toBe(true)
@@ -48,22 +47,24 @@ describe("React diff column", () => {
         expect(order()).toEqual(["column", "column", "column-divider"])
     })
 
-    test("shows a commit's whole diff, takes the files chosen in its source column, and gives the inline diffs back", async () => {
+    test("opens on a file double-clicked in its source column, shows its list's whole diff, and takes the files pressed there", async () => {
         let scenario = inspectionScenario()
         let app = await startReactApp(scenario.api)
         await app.act(() => press(button(trail(), "Inspect changes")))
         let [first, second] = commitFileRows()
+        // A single press on a file opens nothing.
         await app.act(() => openRow(first!))
-        await app.act(() => openRow(second!))
-        await settle(app)
-        await app.act(() => gutter(second!, "Select deletion line 1").click())
+        expect(diffColumn() == null).toBe(true)
+        expect(document.querySelectorAll(".diff-panel")).toHaveLength(0)
 
-        await app.act(() => press(button(second!, "Break out diff")))
+        await app.act(() => doubleClick(second!.querySelector<HTMLElement>(".file-path")!))
         let column = diffColumn()!
         expect(document.querySelectorAll(".column .diff-panel")).toHaveLength(0)
         expect(diffPaths(column)).toEqual(["src/file.txt", "other.txt"])
         expect(column.querySelector("header")!.textContent).toContain("Commit · Inspect changes")
         expect(marked()).toEqual([false, true])
+        await settle(app)
+        await app.act(() => gutter(file(column, "other.txt"), "Select deletion line 1").click())
 
         // Each file folds to its toolbar, keeping its chosen lines.
         let toggle = button(column, "Collapse other.txt")
@@ -96,14 +97,25 @@ describe("React diff column", () => {
         expect(marked()).toEqual([false, true])
         expect(files.scrollTop).toBe(300)
 
-        // Closing it gives back the diffs that were open under their rows, and the source column takes focus.
+        // Closing it closes its diffs, and the source column takes focus; pressing a file again opens nothing.
         await app.act(() => press(button(column, "Close diff column")))
         await app.act(frame)
         expect(diffColumn() == null).toBe(true)
         expect(document.activeElement == columns()[0]).toBe(true)
-        expect(first!.querySelector(".diff-panel")).not.toBeNull()
-        await settle(app)
-        expect(diffRoot(second!).querySelectorAll(".diff-line.selected")).toHaveLength(1)
+        expect(document.querySelectorAll(".diff-panel")).toHaveLength(0)
+        await app.act(() => openRow(first!))
+        expect(diffColumn() == null).toBe(true)
+
+        // Enter on a file's row opens it there too, leaving focus on the row.
+        first!.focus()
+        await app.act(() => {
+            first!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+            first!.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", bubbles: true, cancelable: true }))
+        })
+        expect(diffColumn()).not.toBeNull()
+        expect(marked()).toEqual([true, false])
+        expect(document.activeElement == first).toBe(true)
+        await app.act(() => press(button(diffColumn()!, "Close diff column")))
 
         await app.act(() => press(button(trail(), "Show full diff for commit Inspect changes")))
         expect(diffColumn()!.textContent).toContain("Commit · Inspect changes")
@@ -251,15 +263,10 @@ describe("React diff column", () => {
         expect(shownFile([{ path: "a", top: 20 }, { path: "b", top: 300 }])).toBe("a")
     })
 
-    test("Working Changes open it on the diff opened last, focused, in the column's saved layout and not restored", async () => {
+    test("Working Changes open it on the staged files, focused, in the column's saved layout and not restored", async () => {
         let scenario = inspectionScenario()
         let app = await startReactApp(scenario.api)
         let [staged] = fileRows(columns()[0]!, "working-staged")
-        let [unstaged] = fileRows(columns()[0]!, "working-unstaged")
-        await app.act(() => openRow(staged!))
-        await app.act(() => openRow(unstaged!))
-        await app.act(() => openRow(unstaged!))
-        await app.act(() => press(button(staged!, "Side by side")))
 
         await app.act(() => press(button(workingChanges(), "Open diff column")))
         await app.act(frame)
@@ -268,6 +275,7 @@ describe("React diff column", () => {
         expect(column.querySelector("header")!.textContent).toContain("Staged · ")
         expect(column.querySelector(".auxiliary-source")!.textContent).toBe("From inspection")
         expect(column.dataset.sourceColumnId).toBe(columns()[0]!.dataset.columnId)
+        await app.act(() => press(button(file(column, "src/file.txt"), "Side by side")))
         expect(column.querySelector(".diff-lines.split")).not.toBeNull()
         let auxiliaryId = column.dataset.auxiliaryId
         columns()[0]!.focus()
@@ -311,8 +319,7 @@ describe("React diff column", () => {
             },
         })
         let row = fileRows(columns()[0]!, "working-staged")[0]!
-        await app.act(() => openRow(row))
-        await app.act(() => press(button(row, "Break out diff")))
+        await app.act(() => press(openButton(row)))
         let column = diffColumn()!
         let toggle = () => button(file(column, "src/file.txt"), "Show entire files")
         let finish = () => app.act(() => pending.splice(0).forEach(resolve => resolve()))
@@ -333,22 +340,13 @@ describe("React diff column", () => {
         await settle(app)
         expect(toggle().getAttribute("aria-pressed")).toBe("false")
         expect(diffRoot(file(column, "src/file.txt")).textContent).not.toContain("outside changes")
-
-        // The diffs left under their rows show only around their changes once the diff column closes.
-        await app.act(() => press(toggle()))
-        await finish()
-        await app.act(() => press(button(column, "Close diff column")))
-        expect(requests.at(-1)?.entireFile).toBeFalsy()
-        await settle(app)
-        expect(diffRoot(row).textContent).not.toContain("outside changes")
     })
 
     test("resizes from its own divider and keeps its width when it moves to another list, for the session only", async () => {
         let scenario = inspectionScenario()
         let app = await startReactApp(scenario.api)
         let row = fileRows(columns()[0]!, "working-staged")[0]!
-        await app.act(() => openRow(row))
-        await app.act(() => press(button(row, "Break out diff")))
+        await app.act(() => press(openButton(row)))
         let divider = () => diffColumn()!.nextElementSibling as HTMLElement
         let key = (init: KeyboardEventInit) => app.act(() => divider().dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, ...init })))
 
@@ -450,9 +448,13 @@ function commitFileRows() {
     return [...document.querySelectorAll<HTMLElement>(".commit-files .file-row")]
 }
 
-// Pressing the file's name presses its row, which opens its diff, or shows it in the diff column.
+// Pressing the file's name presses its row, which shows it in the diff column while that is open.
 function openRow(row: HTMLElement) {
     press(row.querySelector<HTMLElement>(".file-path")!)
+}
+
+function openButton(row: HTMLElement) {
+    return button(row, `Open ${row.getAttribute("aria-label")} in diff column`)
 }
 
 // Focus moves to a column that opens on the next frame, after any menu that opened it has returned focus.

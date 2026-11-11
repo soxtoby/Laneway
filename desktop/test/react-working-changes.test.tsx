@@ -69,9 +69,26 @@ describe("React Working Changes", () => {
         expect(selectionSummary()).toContain("2 of 3 selected")
         await app.act(() => press(row("Implementation"), { ctrlKey: true }))
         expect(selectionSummary()).toBeUndefined()
+
+        // Choosing a group's files one by one leaves the group unmarked; choosing it then marks it without clearing them.
+        await app.act(() => press(row("src/file.txt"), { ctrlKey: true }))
+        await app.act(() => press(row("other.txt"), { ctrlKey: true }))
+        expect(selectionSummary()).toContain("2 of 3 selected")
+        expect(chosen(row("Implementation"))).toBe(false)
+        await app.act(() => press(row("Implementation"), { ctrlKey: true }))
+        expect(chosen(row("Implementation"))).toBe(true)
+        expect(selectionSummary()).toContain("2 of 3 selected")
+        // A click on a file chooses only it, unmarking the group.
+        await app.act(() => press(row("src/file.txt")))
+        expect(chosen(row("Implementation"))).toBe(false)
+        // Shift+click marks the groups in its range.
+        await app.act(() => press(row("test/unit/file.test.ts"), { shiftKey: true }))
+        expect(chosen(row("Tests"))).toBe(true)
+        expect(chosen(row("Implementation"))).toBe(false)
+        expect(selectionSummary()).toContain("3 of 3 selected")
     })
 
-    test("Ctrl+click and Space choose files, Shift+click adds the rows between, and a plain click still opens a diff", async () => {
+    test("a click chooses only its file, Ctrl+click and Space add or take away files, and Shift+click adds the rows between", async () => {
         let scenario = inspectionScenario()
         let files = [changedFile("src/file.txt"), changedFile("other.txt"), changedFile("test/unit/file.test.ts")]
         let app = await startReactApp({
@@ -84,15 +101,19 @@ describe("React Working Changes", () => {
         await app.act(() => press(row(third!), { shiftKey: true }))
         let ranged = chosenNames()
         await app.act(() => press(row(second!)))
-        let opened = row(second!).classList.contains("inspected")
-        let afterOpening = chosenNames()
-        await app.act(() => row(second!).dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true })))
+        let opened = document.querySelector(".diff-panel, .diff-column") != null
+        let clicked = chosenNames()
+        await app.act(() => row(third!).dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true })))
         let spaced = chosenNames()
+        await app.act(() => press(row(second!), { ctrlKey: true }))
+        let toggled = chosenNames()
 
         expect(ranged).toEqual([first, second, third])
-        expect(opened).toBe(true)
-        expect(afterOpening).toEqual([first, second, third])
-        expect(spaced).toEqual([first, third])
+        // A click chooses without opening anything.
+        expect(opened).toBe(false)
+        expect(clicked).toEqual([second])
+        expect(spaced).toEqual([second, third])
+        expect(toggled).toEqual([third])
     })
 
     test("a clean worktree's Working Changes card has nothing to unfold or act on", async () => {

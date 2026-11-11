@@ -101,15 +101,19 @@ app.on("browser-window-created", (_event, window) => {
                 document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
                 await wait(() => !document.querySelector('[role=dialog]'), 'Git settings to close');
 
-                // The diff column joins its source column's card across a seam, with the header band running on.
-                document.querySelector(fileRow + ' .file-path').click();
-                const breakOut = await wait(() => document.querySelector('.column .pierre-diff') && document.querySelector('[aria-label="Break out diff"]'), 'the inline diff');
-                // An inline diff's long lines scroll within it.
-                fits.inlineDiff = columnBody.scrollWidth <= columnBody.clientWidth;
+                // A file's own button opens the diff column, which joins its source column's card across a seam, with
+                // the header band running on.
+                document.querySelector(fileRow + ' button[aria-label$=" in diff column"]').click();
+                const aside = await wait(() => document.querySelector('.diff-column .pierre-diff') && document.querySelector('.diff-column'), 'the diff column');
+                await wait(() => document.getAnimations().length == 0, 'the diff column to settle');
+                const diffBody = aside.querySelector('.diff-column-files');
+                // A diff's long lines scroll within it.
+                fits.diff = diffBody.scrollWidth <= diffBody.clientWidth;
                 // Its pinned scrollbar takes room, where the window's overlay scrollbar would have none, and with the
                 // diff running past the column it sits on the column's bottom edge, with no lines showing beneath it.
-                const scrollbar = await wait(() => document.querySelector('.column .diff-scrollbar:not([hidden])'), 'the inline diff scrollbar');
-                const diffBody = scrollbar.closest('.column-body');
+                const scrollbar = await wait(() => aside.querySelector('.diff-scrollbar:not([hidden])'), 'the diff scrollbar');
+                // Scrolled as the user scrolls it, the column stops holding the chosen file at its top.
+                diffBody.dispatchEvent(new WheelEvent('wheel', { bubbles: true }));
                 diffBody.scrollTop += scrollbar.parentElement.querySelector('.pierre-diff').getBoundingClientRect().top - diffBody.getBoundingClientRect().top;
                 await new Promise(resolve => requestAnimationFrame(resolve));
                 const bodyBottom = diffBody.getBoundingClientRect().top + diffBody.clientTop + diffBody.clientHeight;
@@ -118,9 +122,6 @@ app.on("browser-window-created", (_event, window) => {
                     onColumnEdge: Math.abs(scrollbar.getBoundingClientRect().bottom - bodyBottom) <= 0.5,
                 };
                 diffBody.scrollTop = 0;
-                breakOut.click();
-                const aside = await wait(() => document.querySelector('.diff-column .pierre-diff') && document.querySelector('.diff-column'), 'the diff column');
-                await wait(() => document.getAnimations().length == 0, 'the diff column to settle');
                 const seam = aside.previousElementSibling;
                 const source = seam.previousElementSibling;
                 const diffColumn = {

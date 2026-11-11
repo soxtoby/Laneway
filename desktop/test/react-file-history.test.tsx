@@ -206,8 +206,7 @@ describe("React File History", () => {
         await app.act(() => press(button(historyColumn()!, "Close file history")))
 
         let row = workingRow()
-        await app.act(() => press(row.querySelector<HTMLElement>(".file-path")!))
-        await app.act(() => press(button(row, "Break out diff")))
+        await app.act(() => press(button(row, "Open src/file.txt in diff column")))
         let toolbar = document.querySelector<HTMLElement>(".diff-column [data-diff-path='src/file.txt'] .diff-toolbar")!
         await app.act(() => toolbar.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: 20, clientY: 20 })))
         await app.act(() => press(menuItem("File history")))

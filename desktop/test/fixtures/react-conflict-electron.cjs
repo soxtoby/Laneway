@@ -78,12 +78,14 @@ app.on("browser-window-created", (_event, window) => {
                             if (Math.abs(control.getBoundingClientRect().height - commitControl) > 0.5) throw new Error('File action size differs from commit controls');
                         }
                     }
-                    // The commit's clean files list below its conflicts, and open their diffs as any commit's do.
+                    // The commit's clean files list below its conflicts, and a double-click opens them in the diff column
+                    // as any commit's files open.
                     const clean = await wait(() => [...resolution.querySelectorAll('.file-row')].find(item => item.textContent.includes('notes.txt')));
-                    clean.querySelector('.file-path').click();
-                    await wait(() => clean.querySelector('.pierre-diff')?.shadowRoot?.textContent.includes('A clean file in the conflicted commit'));
-                    clean.querySelector('.file-path').click();
-                    await wait(() => !clean.querySelector('.pierre-diff'));
+                    clean.querySelector('.file-path').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+                    const shown = () => [...document.querySelectorAll('.diff-column [data-diff-path]')].find(item => item.dataset.diffPath.endsWith('notes.txt'));
+                    await wait(() => shown()?.querySelector('.pierre-diff')?.shadowRoot?.textContent.includes('A clean file in the conflicted commit'));
+                    document.querySelector('.diff-column [aria-label="Close diff column"]').click();
+                    await wait(() => !document.querySelector('.diff-column'));
                     // Narrowing the column after its file list has measured keeps each conflict's actions in view.
                     const trail = resolution.closest('.commit-trail');
                     const files = resolution.closest('.commit-files');

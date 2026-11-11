@@ -48,16 +48,18 @@ describe("React column navigation", () => {
         expect(focused(input())).toBe(true)
     })
 
-    test("a filter closes the diffs of the files it hides", async () => {
+    test("a filter narrows the diff column as it does the column's lists", async () => {
         let app = await startReactApp(inspectionScenario().api)
         let row = column().querySelector<HTMLElement>("[data-group='working-staged'] .file-row")!
-        await app.act(() => press(row.querySelector<HTMLElement>(".file-path")!))
-        expect(column().querySelectorAll(".diff-panel")).toHaveLength(1)
+        let shown = () => [...document.querySelectorAll<HTMLElement>(".diff-column [data-diff-path]")].map(section => section.dataset.diffPath)
+        await app.act(() => press(button(row, "Open src/file.txt in diff column")))
+        expect(shown()).toEqual(["src/file.txt", "other.txt"])
 
         await app.act(() => press(button(column(), "Filter files")))
         await app.act(() => type(column().querySelector<HTMLInputElement>("[aria-label='Filter changed files']")!, "other"))
+        expect(shown()).toEqual(["other.txt"])
         await app.act(() => press(button(column(), "Close file filter")))
-        expect(column().querySelectorAll(".diff-panel")).toHaveLength(0)
+        expect(shown()).toEqual(["src/file.txt", "other.txt"])
     })
 
     test("arrow keys move between commits and files, unfold and fold them, and drive the diff column", async () => {
@@ -73,11 +75,9 @@ describe("React column navigation", () => {
         let first = commitFile("file.txt")
         expect(focused(first)).toBe(true)
 
-        // Right opens a file's diff beneath it, Left closes it, and Left again returns to the commit.
+        // A file has nothing to unfold, so Right leaves it be, and Left returns to the commit.
         await app.act(() => key(first, "ArrowRight"))
-        expect(first.querySelector(".diff-panel")).not.toBeNull()
-        await app.act(() => key(first, "ArrowLeft"))
-        expect(first.querySelector(".diff-panel") == null).toBe(true)
+        expect(document.querySelector(".diff-panel, .diff-column") == null).toBe(true)
         expect(focused(first)).toBe(true)
         await app.act(() => key(first, "ArrowLeft"))
         expect(focused(commit)).toBe(true)

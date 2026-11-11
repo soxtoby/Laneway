@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
 
 test(
-    "a diff open in a maximized column shows its scrollbar when the column is restored, without a ResizeObserver loop",
+    "a diff in a maximized diff column shows its scrollbar when the column is restored, without a ResizeObserver loop",
     async () => {
         let directory = await mkdtemp(join(tmpdir(), "laneway-react-maximized-diff-"))
         let root = resolve(import.meta.dir, "../..")
@@ -16,7 +16,7 @@ test(
             git("config", "user.name", "Desktop Test")
             git("config", "user.email", "test@example.invalid")
             git("config", "commit.gpgsign", "false")
-            // Its lines fit a maximized column, and run past a column at its own width.
+            // Its lines fit a maximized diff column, and run past a diff column at its own width.
             await writeFile(join(directory, "repository", "long.ts"), lines("before"))
             git("add", ".")
             git("commit", "-q", "-m", "Add the file")
@@ -66,7 +66,7 @@ test(
             expect(exitCode, result).toBe(0)
 
             // Restoring the column narrows the diff past its lines, so its pinned scrollbar shows; showing it inside the
-            // diff's own resize callback would resize the column's file list within the browser's ResizeObserver loop.
+            // diff's own resize callback would resize the column within the browser's ResizeObserver loop.
             expect(JSON.parse(result)).toEqual({ maximized: { scrollbar: false }, restored: { scrollbar: true }, errors: [] })
         } finally {
             if (!resolve(directory).startsWith(resolve(tmpdir()) + sep))

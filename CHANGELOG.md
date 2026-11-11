@@ -12,6 +12,7 @@
 
 - When a branch's column closes because the branch no longer exists, the notice names the branch.
 - The Staged divider in Working Changes has an arrow pointing up at the staged files above it.
+- Clicking a file in a column selects it, instead of opening its diff underneath it; Ctrl+click still adds files to the selection. Double-click a file, press Enter on it, or use the button that appears when you hover it to open the diff column beside the column. While the diff column is open, clicking a file also scrolls to it.
 
 ### Fixed
 

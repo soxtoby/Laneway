@@ -15,7 +15,7 @@ afterEach(stopReactApps)
 afterAll(() => browserWindow.close())
 
 describe("React diffs", () => {
-    test("a file's diff opens beneath its row on its own read, and closing one leaves the other with its chosen lines", async () => {
+    test("each file's diff in the diff column arrives on its own read, and lines chosen in one stay as another arrives", async () => {
         let scenario = inspectionScenario()
         let pending = new Map<string, { id: string; finish(result: FileDiffResult): void; request: Parameters<Window["laneway"]["readFileDiff"]>[2] }>()
         let app = await startReactApp({
@@ -23,34 +23,30 @@ describe("React diffs", () => {
             readFileDiff: async (_repositoryId, id, request) => new Promise<FileDiffResult>(finish => pending.set(request.path, { id, request, finish })),
         })
         await app.act(() => press(button(trail(), "Inspect changes")))
-        let [first, second] = commitFileRows()
         let complete = async (path: string) => {
             let read = pending.get(path)!
             await app.act(async () => read.finish(await scenario.api.readFileDiff("repository", read.id, read.request)))
         }
 
-        await app.act(() => openRow(first!))
-        await app.act(() => openRow(second!))
+        await app.act(() => openDiff(commitFileRows()[1]!))
         expect(pending.size).toBe(2)
         expect(pending.get("src/file.txt")!.id).not.toBe(pending.get("other.txt")!.id)
-        expect(diffPanel(first!)?.getAttribute("aria-label")).toBe("Diff for src/file.txt")
-        expect(diffPanel(second!)?.getAttribute("aria-label")).toBe("Diff for other.txt")
+        expect(diffPanel(shown("src/file.txt"))?.getAttribute("aria-label")).toBe("Diff for src/file.txt")
+        expect(diffPanel(shown("other.txt"))?.getAttribute("aria-label")).toBe("Diff for other.txt")
         await complete("other.txt")
         await drawn(app)
-        let secondViewer = second!.querySelector(".pierre-diff")
-        await app.act(() => gutter(second!, "Select deletion line 1").click())
-        expect(second!.querySelector(".line-selection")?.textContent).toContain("1 line selected")
+        let viewer = shown("other.txt").querySelector(".pierre-diff")
+        await app.act(() => gutter(shown("other.txt"), "Select deletion line 1").click())
+        expect(shown("other.txt").querySelector(".line-selection")?.textContent).toContain("1 line selected")
 
-        // Closing the first while its read is still out drops that read's result.
-        await app.act(() => openRow(first!))
         await complete("src/file.txt")
-        expect(diffPanel(first!) == null).toBe(true)
-        expect(second!.querySelector(".pierre-diff")).toBe(secondViewer)
-        expect(diffRoot(second!).querySelectorAll(".diff-line.selected")).toHaveLength(1)
+        await drawn(app)
+        expect(shown("other.txt").querySelector(".pierre-diff")).toBe(viewer)
+        expect(diffRoot(shown("other.txt")).querySelectorAll(".diff-line.selected")).toHaveLength(1)
     })
 
-    test("reopening a file reuses its diff page, and a changed list reads it again", async () => {
-        let scenario = inspectionScenario()
+    test("reopening the diff column reuses its diff pages, and a changed list reads them again", async () => {
+        let scenario = inspectionScenario(["src/file.txt"])
         let reads = 0
         let version = "one"
         let app = await startReactApp({
@@ -67,15 +63,15 @@ describe("React diffs", () => {
         })
         let row = () => fileRows("working-staged")[0]!
 
-        await app.act(() => openRow(row()))
-        await app.act(() => openRow(row()))
-        await app.act(() => openRow(row()))
+        await app.act(() => openDiff(row()))
+        await app.act(closeDiffColumn)
+        await app.act(() => openDiff(row()))
         expect(reads).toBe(1)
-        expect(diffPanel(row())).not.toBeNull()
-        await app.act(() => openRow(row()))
+        expect(diffPanel(shown("src/file.txt"))).not.toBeNull()
+        await app.act(closeDiffColumn)
         version = "two"
         await app.act(() => app.controller.columns.refresh())
-        await app.act(() => openRow(row()))
+        await app.act(() => openDiff(row()))
         expect(reads).toBe(2)
     })
 
@@ -91,25 +87,27 @@ describe("React diffs", () => {
         })
         let [staged] = fileRows("working-staged")
         let [unstaged] = fileRows("working-unstaged")
+        let file = () => shown("src/file.txt")
 
-        await app.act(() => openRow(staged!))
-        expect(views).toEqual(["staged"])
+        await app.act(() => openDiff(staged!))
+        await drawn(app)
+        expect(views).toEqual(["staged", "staged"])
         expect(document.querySelector(".diff-views") == null).toBe(true)
-        await app.act(() => gutter(staged!, "Select deletion line 1").click())
-        expect(diffRoot(staged!).querySelectorAll(".diff-line.selected")).toHaveLength(1)
-        expect(diffRoot(staged!).querySelector(".diff-line.addition.selected") == null).toBe(true)
-        await app.act(() => openRow(unstaged!))
-        expect(views).toEqual(["staged", "unstaged"])
-        await app.act(() => gutter(unstaged!, "Select addition line 1").click())
-        expect(document.querySelectorAll(".diff-panel")).toHaveLength(2)
-        expect(diffRoot(staged!).querySelectorAll(".diff-line.selected")).toHaveLength(1)
-        expect(diffRoot(unstaged!).querySelectorAll(".diff-line.selected")).toHaveLength(1)
+        await app.act(() => gutter(file(), "Select deletion line 1").click())
+        expect(diffRoot(file()).querySelectorAll(".diff-line.selected")).toHaveLength(1)
+        expect(diffRoot(file()).querySelector(".diff-line.addition.selected") == null).toBe(true)
+        await app.act(() => openDiff(unstaged!))
+        await drawn(app)
+        expect(views).toEqual(["staged", "staged", "unstaged", "unstaged"])
+        await app.act(() => gutter(file(), "Select addition line 1").click())
+        expect(diffRoot(file()).querySelectorAll(".diff-line.selected")).toHaveLength(1)
+        expect(diffRoot(file()).querySelector(".diff-line.deletion.selected") == null).toBe(true)
 
-        await app.act(() => press(button(staged!, "Side by side")))
+        await app.act(() => press(button(file(), "Side by side")))
         expect(scenario.saved().repositories[0]!.columns[0]!.diffLayout).toBe("split")
-        expect(staged!.querySelector(".diff-lines.split")).not.toBeNull()
-        expect(button(staged!, "Side by side").getAttribute("aria-pressed")).toBe("true")
-        expect(diffRoot(staged!).querySelectorAll(".diff-line.selected").length).toBeGreaterThan(0)
+        expect(file().querySelector(".diff-lines.split")).not.toBeNull()
+        expect(button(file(), "Side by side").getAttribute("aria-pressed")).toBe("true")
+        expect(diffRoot(file()).querySelectorAll(".diff-line.selected").length).toBeGreaterThan(0)
     })
 
     test("wrapping lines from one diff wraps every diff in every column, including those opened later, until it is turned off", async () => {
@@ -130,18 +128,20 @@ describe("React diffs", () => {
         await app.act(() => press(menuItem("File history")))
         await app.act(() => press(button(history(), "History commit")))
 
-        await app.act(() => openRow(staged!))
-        await app.act(() => press(button(staged!, "Wrap lines")))
-        await app.act(() => openRow(unstaged!))
-        expect(wraps(staged!)).toBe(true)
+        await app.act(() => openDiff(staged!))
+        await drawn(app)
+        await app.act(() => press(button(shown("src/file.txt"), "Wrap lines")))
+        expect(wraps(shown("other.txt"))).toBe(true)
         expect(wraps(history())).toBe(true)
-        expect(wraps(unstaged!)).toBe(true)
-        expect(button(unstaged!, "Wrap lines").getAttribute("aria-pressed")).toBe("true")
+        // The diff column's diffs of another list are opened later.
+        await app.act(() => openDiff(unstaged!))
+        await drawn(app)
+        expect(wraps(shown("src/file.txt"))).toBe(true)
+        expect(button(shown("src/file.txt"), "Wrap lines").getAttribute("aria-pressed")).toBe("true")
 
         await app.act(() => press(button(history(), "Wrap lines")))
-        expect(wraps(staged!)).toBe(false)
+        expect(wraps(shown("src/file.txt"))).toBe(false)
         expect(wraps(history())).toBe(false)
-        expect(wraps(unstaged!)).toBe(false)
     })
 
     test("hidden-line counts reveal each gap from the whole file, keeping the chosen lines across layouts", async () => {
@@ -191,35 +191,36 @@ describe("React diffs", () => {
                 return result
             },
         })
-        let row = fileRows("working-staged")[0]!
-        let show = (count: number) => gutter(row, `Show ${count} hidden lines`)
-        await app.act(() => openRow(row))
+        let row = () => shown("src/file.txt")
+        let show = (count: number) => gutter(row(), `Show ${count} hidden lines`)
+        await app.act(() => openDiff(fileRows("working-staged")[0]!))
+        await drawn(app)
 
         expect(show(3).textContent).toBe("3 hidden lines")
         expect(show(5).textContent).toBe("5 hidden lines")
         expect(fullReads).toBe(0)
-        await app.act(() => gutter(row, "Select addition line 5").click())
+        await app.act(() => gutter(row(), "Select addition line 5").click())
         await app.act(async () => {
             show(3).click()
             await new Promise(resolve => setTimeout(resolve, 20))
         })
-        expect(diffRoot(row).querySelector("[data-line='1']")?.textContent?.trimEnd()).toBe("line 1")
-        expect(diffRoot(row).querySelector("[data-line='8']") == null).toBe(true)
-        expect(diffRoot(row).querySelector(".addition.selected")?.textContent?.trimEnd()).toBe("new 5")
-        await app.act(() => press(button(row, "Side by side")))
+        expect(diffRoot(row()).querySelector("[data-line='1']")?.textContent?.trimEnd()).toBe("line 1")
+        expect(diffRoot(row()).querySelector("[data-line='8']") == null).toBe(true)
+        expect(diffRoot(row()).querySelector(".addition.selected")?.textContent?.trimEnd()).toBe("new 5")
+        await app.act(() => press(button(row(), "Side by side")))
         await app.act(async () => {
             show(5).click()
             await new Promise(resolve => setTimeout(resolve, 20))
         })
-        expect(diffRoot(row).querySelector("[data-line='8']")?.textContent?.trimEnd()).toBe("line 8")
-        expect(diffRoot(row).querySelector("[data-line='16']") == null).toBe(true)
+        expect(diffRoot(row()).querySelector("[data-line='8']")?.textContent?.trimEnd()).toBe("line 8")
+        expect(diffRoot(row()).querySelector("[data-line='16']") == null).toBe(true)
         await app.act(async () => {
             show(4).click()
             await new Promise(resolve => setTimeout(resolve, 20))
         })
-        expect(diffRoot(row).querySelector("[data-line='18']")?.textContent?.trimEnd()).toBe("line 18")
+        expect(diffRoot(row()).querySelector("[data-line='18']")?.textContent?.trimEnd()).toBe("line 18")
         expect(fullReads).toBe(2)
-        expect(diffRoot(row).querySelector(".addition.selected")?.textContent?.trimEnd()).toBe("new 5")
+        expect(diffRoot(row()).querySelector(".addition.selected")?.textContent?.trimEnd()).toBe("new 5")
     })
 
     test("a changed file clears its chosen lines with a notice, and reopening a file starts with none chosen", async () => {
@@ -237,23 +238,25 @@ describe("React diffs", () => {
                 return result.ok ? { ...result, page: { ...result.page, version } } : result
             },
         })
-        let [file, other] = fileRows("working-staged")
-        await app.act(() => openRow(other!))
-        await app.act(() => gutter(other!, "Select deletion line 1").click())
+        let row = () => fileRows("working-staged")[0]!
+        await app.act(() => openDiff(row()))
+        await drawn(app)
+        await app.act(() => gutter(shown("other.txt"), "Select deletion line 1").click())
 
         version = "two"
         await app.act(() => app.controller.columns.refresh())
-        expect(other!.textContent).toContain("File changed. Change Selection cleared.")
-        expect(diffRoot(other!).querySelector(".diff-line.selected") == null).toBe(true)
+        await drawn(app)
+        expect(shown("other.txt").textContent).toContain("File changed. Change Selection cleared.")
+        expect(diffRoot(shown("other.txt")).querySelector(".diff-line.selected") == null).toBe(true)
 
-        await app.act(() => openRow(file!))
-        await app.act(() => gutter(file!, "Select deletion line 1").click())
-        await app.act(() => openRow(file!))
-        await app.act(() => openRow(file!))
-        expect(diffRoot(file!).querySelector(".diff-line.selected") == null).toBe(true)
+        await app.act(() => gutter(shown("src/file.txt"), "Select deletion line 1").click())
+        await app.act(closeDiffColumn)
+        await app.act(() => openDiff(row()))
+        await drawn(app)
+        expect(diffRoot(shown("src/file.txt")).querySelector(".diff-line.selected") == null).toBe(true)
     })
 
-    test("a large patch draws only the lines in view, and folding its commit closes its diffs", async () => {
+    test("a large patch draws only the lines in view", async () => {
         let scenario = inspectionScenario()
         let app = await startReactApp({
             ...scenario.api,
@@ -264,14 +267,11 @@ describe("React diffs", () => {
             },
         })
         await app.act(() => press(button(trail(), "Inspect changes")))
-        await app.act(() => openRow(commitFileRows()[0]!))
+        await app.act(() => openDiff(commitFileRows()[0]!))
+        await drawn(app)
 
-        expect(diffRoot(commitFileRows()[0]!).querySelectorAll(".diff-line").length).toBeLessThanOrEqual(80)
+        expect(diffRoot(shown("src/file.txt")).querySelectorAll(".diff-line").length).toBeLessThanOrEqual(80)
         expect(document.querySelector(".diff-views") == null).toBe(true)
-        await app.act(() => press(button(trail(), "Inspect changes")))
-        expect(document.querySelector(".commit-files") == null).toBe(true)
-        await app.act(() => press(button(trail(), "Inspect changes")))
-        expect(document.querySelector(".diff-panel") == null).toBe(true)
     })
 
     test("chosen lines discard from the unstaged side only, with Undo in the notice", async () => {
@@ -287,12 +287,14 @@ describe("React diffs", () => {
         let [staged] = fileRows("working-staged")
         let [unstaged] = fileRows("working-unstaged")
 
-        await app.act(() => openRow(staged!))
-        await app.act(() => gutter(staged!, "Select deletion line 1").click())
-        expect(staged!.querySelector(".discard-lines") == null).toBe(true)
-        await app.act(() => openRow(unstaged!))
-        await app.act(() => gutter(unstaged!, "Select addition line 1").click())
-        await app.act(() => press(button(unstaged!, "Discard selected")))
+        await app.act(() => openDiff(staged!))
+        await drawn(app)
+        await app.act(() => gutter(shown("src/file.txt"), "Select deletion line 1").click())
+        expect(shown("src/file.txt").querySelector(".discard-lines") == null).toBe(true)
+        await app.act(() => openDiff(unstaged!))
+        await drawn(app)
+        await app.act(() => gutter(shown("src/file.txt"), "Select addition line 1").click())
+        await app.act(() => press(button(shown("src/file.txt"), "Discard selected")))
 
         expect(requests.at(-1)).toMatchObject({ kind: "lines", worktreePath: "D:\\Source\\inspection", path: "src/file.txt", lineIds: [2] })
         expect((requests.at(-1) as { lines: unknown[] }).lines).toHaveLength(3)
@@ -327,23 +329,24 @@ describe("React diffs", () => {
             },
         })
         let row = fileRows("working-staged")[0]!
+        let file = () => shown("art/logo.png")
 
         await app.act(async () => {
-            openRow(row)
+            openDiff(row)
             await new Promise(resolve => setTimeout(resolve, 20))
         })
         expect(imageReads).toEqual(["art/logo.png"])
-        expect(row.querySelector(".pierre-diff") == null).toBe(true)
-        expect(row.querySelector(".diff-summary") == null).toBe(true)
-        expect(row.querySelector(".image-diff [role=alert]")?.textContent).toBe("Pictures unavailable here")
-        expect(button(row, "Side by side").getAttribute("aria-pressed")).toBe("true")
-        await app.act(() => press(button(row, "Swipe")))
-        expect(button(row, "Swipe").getAttribute("aria-pressed")).toBe("true")
+        expect(file().querySelector(".pierre-diff") == null).toBe(true)
+        expect(file().querySelector(".diff-summary") == null).toBe(true)
+        expect(file().querySelector(".image-diff [role=alert]")?.textContent).toBe("Pictures unavailable here")
+        expect(button(file(), "Side by side").getAttribute("aria-pressed")).toBe("true")
+        await app.act(() => press(button(file(), "Swipe")))
+        expect(button(file(), "Swipe").getAttribute("aria-pressed")).toBe("true")
 
         // A picture opened next starts in the mode chosen last.
-        await app.act(() => openRow(row))
-        await app.act(() => openRow(row))
-        expect(button(row, "Swipe").getAttribute("aria-pressed")).toBe("true")
+        await app.act(closeDiffColumn)
+        await app.act(() => openDiff(row))
+        expect(button(file(), "Swipe").getAttribute("aria-pressed")).toBe("true")
     })
 
     test("a Markdown file's diff shows its rendered documents when chosen, with their pictures and links, for every Markdown diff after", async () => {
@@ -389,43 +392,31 @@ describe("React diffs", () => {
             openLink: async url => void opened.push(url),
         })
         let row = fileRows("working-staged")[0]!
-        await app.act(() => openRow(row))
+        let file = () => shown("docs/README.md")
+        await app.act(() => openDiff(row))
 
         await app.act(async () => {
-            press(button(row, "Show rendered Markdown"))
+            press(button(file(), "Show rendered Markdown"))
             await new Promise(resolve => setTimeout(resolve, 20))
         })
-        let rendered = row.querySelector(".markdown-diff")!
+        let rendered = file().querySelector(".markdown-diff")!
         expect([...rendered.querySelectorAll("del[data-diff]")].map(element => element.textContent)).toEqual(["old"])
         expect([...rendered.querySelectorAll("ins[data-diff]")].map(element => element.textContent)).toEqual(["new"])
         expect(rendered.querySelector("[data-diff='added'] a")?.textContent).toBe("the site")
         expect(rendered.querySelector("img")?.getAttribute("src")?.startsWith("blob:")).toBe(true)
         expect(pictureReads).toEqual(["new docs/images/logo.png"])
-        expect(row.querySelector("[aria-label='Wrap lines']") == null).toBe(true)
+        expect(file().querySelector("[aria-label='Wrap lines']") == null).toBe(true)
 
         await app.act(() => rendered.querySelector<HTMLElement>("a")!.click())
         expect(opened).toEqual(["https://example.com/"])
 
-        await app.act(() => press(button(row, "Side by side")))
-        expect(row.querySelector(".markdown-diff")?.getAttribute("data-layout")).toBe("split")
+        await app.act(() => press(button(file(), "Side by side")))
+        expect(file().querySelector(".markdown-diff")?.getAttribute("data-layout")).toBe("split")
 
         // A Markdown diff opened next starts rendered too.
-        await app.act(() => openRow(row))
-        await app.act(() => openRow(row))
-        expect(button(row, "Show rendered Markdown").getAttribute("aria-pressed")).toBe("true")
-    })
-
-    test("folding a folder closes the diffs of the files it hides", async () => {
-        let scenario = inspectionScenario()
-        let app = await startReactApp(scenario.api)
-        await app.act(() => app.controller.setFileListView({ layout: "tree", grouping: "none" }))
-        let row = fileRows("working-staged").find(candidate => candidate.textContent?.includes("file.txt"))!
-        await app.act(() => openRow(row))
-        expect(document.querySelectorAll(".diff-panel")).toHaveLength(1)
-
-        let folder = document.querySelector<HTMLElement>("[data-group='working-staged'] .folder-row")!
-        await app.act(() => press(button(folder, "Fold src")))
-        expect(document.querySelectorAll(".diff-panel")).toHaveLength(0)
+        await app.act(closeDiffColumn)
+        await app.act(() => openDiff(row))
+        expect(button(file(), "Show rendered Markdown").getAttribute("aria-pressed")).toBe("true")
     })
 })
 
@@ -441,9 +432,21 @@ function commitFileRows() {
     return [...document.querySelectorAll<HTMLElement>(".commit-files .file-row")]
 }
 
-// Pressing the file's name presses its row, which opens or closes its diff.
-function openRow(row: HTMLElement) {
-    press(row.querySelector<HTMLElement>(".file-path")!)
+// The row's own button opens its list's whole diff in the diff column.
+function openDiff(row: HTMLElement) {
+    press(button(row, `Open ${row.getAttribute("aria-label")} in diff column`))
+}
+
+function closeDiffColumn() {
+    press(button(document.querySelector<HTMLElement>(".diff-column")!, "Close diff column"))
+}
+
+// A file's diff in the diff column, under its toolbar.
+function shown(path: string) {
+    let found = [...document.querySelectorAll<HTMLElement>(".diff-column [data-diff-path]")].find(section => section.dataset.diffPath == path)
+    if (!found)
+        throw new Error(`No ${path} in the diff column`)
+    return found
 }
 
 function menuItem(label: string) {

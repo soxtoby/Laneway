@@ -3,12 +3,14 @@ let { writeFileSync } = require("node:fs")
 let { join } = require("node:path")
 let { pathToFileURL } = require("node:url")
 
-// Opens a file's diff in the built app's maximized branch column, restores the column, and reports what the window
-// reported meanwhile; react-maximized-diff-electron.test.ts checks the report.
+// Opens a file's diff in the built app's diff column, maximizes it beside its branch column, restores it, and reports
+// what the window reported meanwhile; react-maximized-diff-electron.test.ts checks the report.
 let [directory, productionMain] = process.argv.slice(2)
 app.setPath("userData", join(directory, "profile"))
 app.on("browser-window-created", (_event, window) => {
     window.hide()
+    // Wide enough that a maximized diff column is wider than the diff column at its own width.
+    window.setContentSize(1800, 760)
     // The diff measures its new width, and React Aria its list, on animation frames, which a hidden window would hold.
     window.webContents.setBackgroundThrottling(false)
     window.webContents.once("did-finish-load", async () => {
@@ -34,12 +36,12 @@ app.on("browser-window-created", (_event, window) => {
                     await frames(10);
                 };
                 const fileRow = '[aria-label="Working Changes"] [role=row]';
-                const column = (await wait(() => document.querySelector(fileRow), 'the file row')).closest('.column');
+                (await wait(() => document.querySelector(fileRow), 'the file row')).querySelector('[aria-label="Open long.ts in diff column"]').click();
+                const column = await wait(() => document.querySelector('.diff-column'), 'the diff column');
 
                 column.querySelector('[aria-label="Maximize column"]').click();
                 await wait(() => document.querySelector('.column-group.maximized'), 'the maximized column');
                 await settled();
-                document.querySelector(fileRow + ' .file-path').click();
                 const host = await wait(() => column.querySelector('.pierre-diff')?.shadowRoot?.querySelector('[data-code]') && column.querySelector('.pierre-diff'), 'the diff');
                 await settled();
                 const scrollbar = host.parentElement.querySelector('.diff-scrollbar');

@@ -2,9 +2,9 @@ import type { KeyboardEvent } from "react"
 
 /**
  * Arrow-key movement through a Workspace Column's rows: base branch headings, commit headings, and file and folder
- * rows, in the order they show. Up and Down move across the column's lists. Right unfolds a commit or opens a file's
- * diff, and Left folds it or moves to the row it belongs to; folders fold as their tree folds them. With the diff
- * column open, moving onto a file shows it there.
+ * rows, in the order they show. Up and Down move across the column's lists. Right unfolds a commit, and Left folds it
+ * or moves to the row it belongs to; folders fold as their tree folds them, and a file has nothing to unfold. With the
+ * diff column open, moving onto a file shows it there.
  */
 export function navigationKeyDown(event: KeyboardEvent<HTMLElement>, diffColumn: boolean) {
     let column = event.currentTarget
@@ -31,21 +31,20 @@ export function navigationKeyDown(event: KeyboardEvent<HTMLElement>, diffColumn:
     // A folder row folds and unfolds as its tree does.
     if (!item || item.matches(".folder-row"))
         return
-    let expanded = isFile(item) ? item.matches(".inspected, [data-active]") : item.getAttribute("aria-expanded") == "true"
-    // A file shown in the diff column has nothing of its own to fold, so Left moves up from it.
-    let folds = expanded && !(diffColumn && isFile(item))
-    let up = event.key == "ArrowLeft" && !folds ? parent(item) : undefined
+    let file = isFile(item)
+    let expanded = !file && item.getAttribute("aria-expanded") == "true"
+    let up = event.key == "ArrowLeft" && !expanded ? parent(item) : undefined
     // A long list draws only the rows near the view; when a row's folder isn't drawn, its tree moves to it instead.
-    if (event.key == "ArrowLeft" && !folds && !up && Number(item.getAttribute("aria-level") ?? 1) > 1)
+    if (event.key == "ArrowLeft" && !expanded && !up && Number(item.getAttribute("aria-level") ?? 1) > 1)
         return
     event.preventDefault()
     event.stopPropagation()
     if (event.key == "ArrowRight") {
-        if (!expanded)
+        if (!expanded && !file)
             item.click()
         return
     }
-    if (folds)
+    if (expanded)
         item.click()
     else
         up?.focus()

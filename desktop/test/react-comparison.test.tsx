@@ -85,14 +85,12 @@ describe("React Branch Comparison", () => {
         let row = comparison()!.querySelector<HTMLElement>(".branch-comparison .file-row")!
         expect(comparison()!.querySelectorAll(".branch-comparison .file-row")).toHaveLength(1)
         expect(row.querySelector("[slot=selection], .transfer-grip") == null).toBe(true)
+        // Its diffs are read once its diff column opens, from the header's control or a file's own.
         await app.act(() => press(row.querySelector<HTMLElement>(".file-path")!))
-        expect(patches).toBe(1)
-        expect(row.querySelector(".pierre-diff")).not.toBeNull()
-
-        // The header's control and a file's own open the comparison's whole diff.
+        expect(patches).toBe(0)
         let openDiffColumn = () => button(header(), "Open diff column")
         expect(openDiffColumn().hasAttribute("disabled")).toBe(false)
-        for (let opener of [openDiffColumn, () => button(row, "Break out diff")]) {
+        for (let opener of [openDiffColumn, () => button(row, "Open src/file.txt in diff column")]) {
             await app.act(() => press(opener()))
             let diffColumn = document.querySelector<HTMLElement>(".diff-column")!
             expect(comparison()!.nextElementSibling?.nextElementSibling == diffColumn).toBe(true)
@@ -101,6 +99,7 @@ describe("React Branch Comparison", () => {
             await app.act(() => press(button(diffColumn, "Close diff column")))
             expect(document.querySelector(".diff-column") == null).toBe(true)
         }
+        expect(patches).toBe(1)
 
         let saved = scenario.saved().repositories[0]!.columns
         expect(saved.map(saved => saved.kind)).toEqual(["branch", "comparison"])
@@ -111,6 +110,7 @@ describe("React Branch Comparison", () => {
         expect(inventories).toBe(1)
 
         // A compared branch that moves reads the comparison again, and its open diff with it.
+        await app.act(() => press(openDiffColumn()))
         main!.tip = "a".repeat(40)
         await app.act(() => app.controller.columns.refresh())
         expect(inventories).toBe(2)

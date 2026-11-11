@@ -52,7 +52,10 @@ export interface ColumnInspection {
     history: Record<string, HistoryState>
     /** The base chosen for a branch whose base is ambiguous, by branch ID. */
     bases: Record<string, string>
-    /** Open diffs by `diffKey`; each shows under its file's row, or in the diff column while there is one. */
+    /**
+     * Open diffs by `diffKey`: a Workspace Column's show in its diff column, and a File History or Commit Diff
+     * column's under their files' rows.
+     */
     diffs: Record<string, FileDiffState>
     /** The list the column's diff column shows, while it has one, and the file at its top, whose row is marked. */
     diffColumn?: { group: string; shown?: string }
@@ -61,6 +64,9 @@ export interface ColumnInspection {
     /** The Commit Trail shows only commits with conflicts to resolve. */
     conflictsOnly?: boolean
 }
+
+/** How choosing files changes the files already chosen. */
+export type FileChoice = "toggle" | "add" | "only"
 
 /** Narrows every list in a column to the files whose path contains `text`, with the chosen status or any. */
 export interface FileFilter {
@@ -185,13 +191,18 @@ export interface Inspection extends Store<InspectionSnapshot> {
     chooseBase(columnId: string, branchId: string, baseId?: string): void
     /** Drops choices that rewritten history made stale. */
     rewritten(): void
-    /** Shows or hides a file's diff under its row; with a diff column open, shows the file there instead. */
+    /** Shows or hides a file's diff under its row, in a File History or Commit Diff column. */
     toggleDiff(columnId: string, group: string, path: string): void
     /** Closes the diffs of files a folded folder or group hides. */
     closeDiffs(columnId: string, group: string, paths: string[]): void
     /** Shows a list's whole diff in the column's diff column, scrolled to `path` when given, and focuses it. */
     openDiffColumn(columnId: string, group: string, path?: string, subject?: string): void
-    /** Opens the diff column on the Working Changes diff opened last, or else the first changed file. */
+    /**
+     * Scrolls the column's diff column to a file without taking focus, moving it to the file's list when it shows
+     * another. With no diff column, `open` opens one there; otherwise nothing happens.
+     */
+    showInDiffColumn(columnId: string, group: string, path: string, open?: boolean): void
+    /** Opens the diff column on the Working Changes, staged first. */
     openWorkingDiffColumn(columnId: string): void
     /** Closes an auxiliary column and the ones opened from it. */
     closeAuxiliary(id: string): void
@@ -265,8 +276,11 @@ export interface Inspection extends Store<InspectionSnapshot> {
     readRemoteImage(url: string): Promise<RemoteImageResult>
     /** Opens a rendered Markdown document's web or email link outside Laneway. */
     openLink(url: string): void
-    /** Toggles whole files together: all already chosen clears them, otherwise all become chosen; `add` only chooses them. */
-    select(columnId: string, group: string, files: ChangedFile[], add?: boolean): void
+    /**
+     * Chooses whole files together. `toggle` clears them when all are already chosen and otherwise chooses them all,
+     * `add` only chooses them, and `only` chooses them in place of every other file.
+     */
+    select(columnId: string, group: string, files: ChangedFile[], how?: FileChoice): void
     clearSelection(columnId: string): void
     setShowIgnored(columnId: string, showIgnored: boolean): void
     /** What discarding `file` from `group` would discard, and the menu label for it; nothing for lists that don't discard. */
@@ -711,18 +725,12 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
 
     function disposeDiffColumn(column: DiffColumnState) {
         let state = column.owner
-        let replaced = state.diffColumn != column
-        if (!replaced)
+        if (state.diffColumn == column)
             state.diffColumn = undefined
         for (let key of column.created) {
             let diff = state.diffs[key]
             if (diff)
                 closeDiff(state, diff)
-        }
-        // The diffs left open under their rows go back to showing only the lines around their changes.
-        if (column.entireFiles && !replaced && alive(state)) {
-            for (let diff of Object.values(state.diffs))
-                rereadDiff(state, diff)
         }
     }
 
@@ -1093,11 +1101,8 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
 
         toggleDiff(columnId, group, path) {
             let state = columnState(columnId)
-            if (!state)
-                return
-            if (state.diffColumn)
-                return void showDiffColumn(state, group, path, undefined, false)
-            toggleDiffIn(state, group, path)
+            if (state)
+                toggleDiffIn(state, group, path)
         },
 
         closeDiffs(columnId, group, paths) {
@@ -1119,6 +1124,12 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
                 void showDiffColumn(state, group, path, subject, true)
         },
 
+        showInDiffColumn(columnId, group, path, open = false) {
+            let state = columnState(columnId)
+            if (state && (state.diffColumn || open))
+                void showDiffColumn(state, group, path, undefined, false)
+        },
+
         openWorkingDiffColumn(columnId) {
             let state = columnState(columnId)
             if (!state)
@@ -1127,12 +1138,11 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
                 focusAuxiliary(state.diffColumn.id)
                 return publish()
             }
-            let shown = Object.values(state.diffs).findLast(diff => diff.group.startsWith("working"))
-            let group = shown?.group ?? (state.files["working-staged"]?.inventory?.files.some(file => !file.ignored) ? "working-staged" : "working-unstaged")
-            // Without a diff open it starts at the top, which the file list's view may give to any of its files.
-            let listed = shown != undefined || state.files[group]?.inventory?.files.some(file => !file.ignored)
-            if (listed)
-                void showDiffColumn(state, group, shown?.path, undefined, true)
+            let listed = (group: string) => state.files[group]?.inventory?.files.some(file => !file.ignored) == true
+            let group = listed("working-staged") ? "working-staged" : "working-unstaged"
+            // It starts at the top, which the file list's view may give to any of its files.
+            if (listed(group))
+                void showDiffColumn(state, group, undefined, undefined, true)
         },
 
         closeAuxiliary(id) {
@@ -1466,12 +1476,14 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
 
         openLink: url => void api.openLink(url),
 
-        select(columnId, group, files, add) {
+        select(columnId, group, files, how = "toggle") {
             let state = columnState(columnId)
             if (!state)
                 return
             let ids = files.map(file => `${group}:${file.path}`)
-            state.selected = !add && ids.every(id => state.selected.includes(id))
+            state.selected = how == "only"
+                ? ids
+                : how == "toggle" && ids.every(id => state.selected.includes(id))
                 ? state.selected.filter(id => !ids.includes(id))
                 : [...state.selected.filter(id => id.startsWith(`${group}:`)), ...ids.filter(id => !state.selected.includes(id))]
             publish()

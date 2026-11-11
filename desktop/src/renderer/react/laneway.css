@@ -1158,9 +1158,10 @@
         margin-inline-start: auto;
     }
 
-    /* Its copy and menu buttons take room only while they show, leaving the path the row's width otherwise;
-       an open menu keeps its button where the menu is anchored. An open file always shows them. */
+    /* Its copy, diff column, and menu buttons take room only while they show, leaving the path the row's width
+       otherwise; an open menu keeps its button where the menu is anchored. An open file always shows them. */
     .dense-row:not([data-hovered], [data-focus-visible-within], .inspected) & .copy-path:not([data-copied], [data-focus-visible]),
+    .dense-row:not([data-hovered], [data-focus-visible-within]) & .open-diff:not([data-focus-visible]),
     .dense-row:not(.inspected) & .row-actions:not([data-visible], :has([aria-expanded="true"])) {
         display: none;
     }
@@ -1720,7 +1721,8 @@
     font-weight: 600;
 }
 
-/* Diffs: a file's row opens its diff under it, the row sticking above its lines while they scroll past. */
+/* Diffs: in a File History or Commit Diff column, a file's row opens its diff under it, the row sticking above its
+   lines while they scroll past. */
 
 .file-row.inspected {
     height: auto;

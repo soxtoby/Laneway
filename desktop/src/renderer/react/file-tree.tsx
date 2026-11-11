@@ -7,7 +7,8 @@ import { DenseTreeItem } from "./dense-row"
 import { DiffRegion, HeldRowContext } from "./diff-panel"
 import { type FileTreeNode, fileTreeNodes } from "./file-list-view"
 import { copyText, fileName, fullPath } from "./file-paths"
-import { CheckIcon, CopyIcon, FileStatusIcon, FolderIcon } from "./icons"
+import { CheckIcon, CopyIcon, DiffIcon, FileStatusIcon, FolderIcon } from "./icons"
+import type { FileChoice } from "./inspection"
 import { ChevronRight } from "./ui/icons"
 import { MenuItem, Separator } from "./ui/Menu"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
@@ -20,8 +21,8 @@ interface FileTreeProps {
     /** The list's group, which prefixes its files in `selected`. */
     group: string
     selected: string[]
-    /** Chooses or clears files together, or with `add` only chooses them; without it rows can't be chosen. */
-    onSelect?(files: ChangedFile[], add?: boolean): void
+    /** Chooses files as `how` says, toggling them by default; without it rows can't be chosen. */
+    onSelect?(files: ChangedFile[], how?: FileChoice): void
     /** The worktree the files live in, enabling "Copy full path". */
     root?: string
     /** A file's own menu items, shown above the copy actions. */
@@ -30,7 +31,7 @@ interface FileTreeProps {
     hideStagedBadge?: boolean
     /** What leads a row: a grip moving the row's files, named by the file's path or the folder's or group's label. */
     leading?(files: ChangedFile[], label: string): ReactNode
-    /** Opens a file's diff under its row when the row is pressed; without it rows don't open. */
+    /** What pressing and opening a file's row does; without it rows don't open. */
     inspect?: FileInspection
     /** Text the column's filter looks for, marked where it shows in file names and folders. */
     highlight?: string
@@ -38,10 +39,22 @@ interface FileTreeProps {
     layout: FileRowsLayout
 }
 
-/** A list's diffs: which files show one, and what the row draws for it. */
+/** How a list's files show their diffs: in their column's diff column, or under their rows. */
 export interface FileInspection {
+    /** What a plain press on a file's row does. */
+    press(file: ChangedFile): void
+    /**
+     * Opens the file in the column's diff column, from a double-click or Enter, which leave focus on the row, or from
+     * the row's button, which gives it to the diff column with `focus`.
+     */
+    open?(file: ChangedFile, focus?: boolean): void
+    /** Diffs shown under their rows, in a column with no diff column of its own. */
+    inline?: InlineDiffs
+}
+
+/** A list's diffs shown under their rows: which files show one, and what the row draws for it. */
+export interface InlineDiffs {
     isOpen(file: ChangedFile): boolean
-    toggle(file: ChangedFile): void
     /** Closes the diffs of files a folded folder or group hides. */
     close(files: ChangedFile[]): void
     /** The diff's controls, drawn in the open row. */
@@ -88,9 +101,10 @@ let rowsReach = 200
 let rowsLayout = { estimatedRowHeight: 28 }
 
 /**
- * A list of changed files, flat or in folders and optionally grouped, as React Aria's Tree. Ctrl+click or Space
- * chooses a file for bulk actions, or every file a folder or group holds, and Shift adds the rows from the last
- * one pressed; a plain press still opens the row. Only the rows near the view are drawn.
+ * A list of changed files, flat or in folders and optionally grouped, as React Aria's Tree. A click chooses a file for
+ * bulk actions in place of the files chosen before, and acts on it as `inspect` says. Ctrl+click or Space adds a file
+ * or takes it away, or every file a folder or group holds, and Shift adds the rows from the last one pressed. A
+ * double-click or Enter opens a file. Only the rows near the view are drawn.
  */
 export function FileTree(
     { label, files, view, group, selected, onSelect, root, menuItems, hideStagedBadge, leading, inspect, highlight, layout }: FileTreeProps,
@@ -101,25 +115,43 @@ export function FileTree(
     let [folded, setFolded] = useState<Set<string>>(new Set())
     let expandedKeys = new Set([...folders.keys()].filter(key => !folded.has(key)))
     let isChosen = (file: ChangedFile) => selected.includes(`${group}:${file.path}`)
+    // Folders and groups chosen as rows, by key. One shows as chosen only while every file it holds still is, so
+    // choosing its files one by one leaves it unmarked.
+    let [chosenFolders, setChosenFolders] = useState<Set<string>>(new Set())
+    let isFolderChosen = (key: string) => chosenFolders.has(key) && folders.get(key)?.files.every(isChosen) == true
     let tree = useRef<HTMLDivElement>(null)
     // Where a Shift range starts: the row last pressed or chosen on its own.
     let anchor = useRef<string>(undefined)
-    // Ctrl or Shift held as a row is pressed, so React Aria's action for the press chooses the row instead.
-    let held = useRef<{ toggle: boolean; range: boolean }>(undefined)
+    // Ctrl or Shift held as a row is pressed, so React Aria's action for the press chooses the row instead, or Enter,
+    // whose action opens the row's file.
+    let held = useRef<{ toggle: boolean; range: boolean; enter?: boolean }>(undefined)
 
     let rowFiles = (key: string) => folders.get(key)?.files ?? files.filter(file => file.path == key)
     let choose = (key: string, range: boolean) => {
         let rows = rowKeys(nodes, folded)
         let from = range && anchor.current != undefined ? rows.indexOf(anchor.current) : -1
         let to = rows.indexOf(key)
+        // A folder whose files were taken away since it was chosen isn't chosen anymore.
+        let stillChosen = new Set([...chosenFolders].filter(isFolderChosen))
         if (from < 0 || to < 0) {
             anchor.current = key
-            onSelect?.(rowFiles(key))
+            if (!folders.has(key)) {
+                setChosenFolders(stillChosen)
+                onSelect?.(rowFiles(key))
+            } else if (stillChosen.delete(key)) {
+                setChosenFolders(stillChosen)
+                onSelect?.(rowFiles(key))
+            } else {
+                // A folder that isn't marked chooses its files, even when they are all chosen already.
+                setChosenFolders(stillChosen.add(key))
+                onSelect?.(rowFiles(key), "add")
+            }
             return
         }
         // An open folder's files are rows of their own; a folded one brings the files it hides.
         let between = rows.slice(Math.min(from, to), Math.max(from, to) + 1)
-        onSelect?.(between.flatMap(row => folders.has(row) && !folded.has(row) ? [] : rowFiles(row)), true)
+        setChosenFolders(new Set([...stillChosen, ...between.filter(row => folders.has(row))]))
+        onSelect?.(between.flatMap(row => folders.has(row) && !folded.has(row) ? [] : rowFiles(row)), "add")
     }
 
     // Native capturing listeners see a press's modifiers and a Space before React Aria's own handlers.
@@ -127,7 +159,7 @@ export function FileTree(
         held.current = { toggle: event.ctrlKey || event.metaKey, range: event.shiftKey }
     })
     let keyDown = useEffectEvent((event: KeyboardEvent) => {
-        held.current = undefined
+        held.current = event.key == "Enter" ? { toggle: false, range: false, enter: true } : undefined
         let row = event.target as HTMLElement
         if (event.key != " " || !onSelect || !row.dataset.rowKey)
             return
@@ -135,17 +167,30 @@ export function FileTree(
         event.stopPropagation()
         choose(row.dataset.rowKey, event.shiftKey)
     })
+    // A double-click on a file's row opens it, unless it lands on one of the row's controls.
+    let doubleClick = useEffectEvent((event: MouseEvent) => {
+        let target = event.target as Element
+        let row = target.closest<HTMLElement>("[data-row-key]")
+        if (!inspect?.open || !row || event.ctrlKey || event.metaKey || event.shiftKey || target.closest("button, a, input, .file-diff"))
+            return
+        let file = files.find(candidate => candidate.path == row.dataset.rowKey)
+        if (file)
+            inspect.open(file)
+    })
     useEffect(() => {
         let element = tree.current
         if (!element)
             return
         let onPointerDown = (event: PointerEvent) => pointerDown(event)
         let onKeyDown = (event: KeyboardEvent) => keyDown(event)
+        let onDoubleClick = (event: MouseEvent) => doubleClick(event)
         element.addEventListener("pointerdown", onPointerDown, true)
         element.addEventListener("keydown", onKeyDown, true)
+        element.addEventListener("dblclick", onDoubleClick)
         return () => {
             element.removeEventListener("pointerdown", onPointerDown, true)
             element.removeEventListener("keydown", onKeyDown, true)
+            element.removeEventListener("dblclick", onDoubleClick)
         }
     }, [])
 
@@ -153,11 +198,12 @@ export function FileTree(
     let fold = (keys: Set<string>) => {
         let hidden = [...keys].filter(key => !folded.has(key)).flatMap(key => folders.get(key)?.files ?? [])
         if (hidden.length)
-            inspect?.close(hidden)
+            inspect?.inline?.close(hidden)
         setFolded(keys)
     }
 
-    // A folder's row folds it; a file's row shows or hides its diff. With Ctrl or Shift held, the row is chosen.
+    // A folder's row folds it; a file's row is pressed, or opened with Enter. With Ctrl or Shift held, the row is chosen,
+    // and a click without them chooses only its file. Arrow keys that press a row choose nothing.
     let act = (key: Key) => {
         let modifiers = held.current
         held.current = undefined
@@ -174,8 +220,15 @@ export function FileTree(
             return
         }
         let file = files.find(candidate => candidate.path == key)
-        if (file)
-            inspect?.toggle(file)
+        if (file && modifiers?.enter && inspect?.open)
+            inspect.open(file)
+        else if (file) {
+            if (modifiers && !modifiers.enter && onSelect) {
+                setChosenFolders(new Set())
+                onSelect([file], "only")
+            }
+            inspect?.press(file)
+        }
     }
 
     return (
@@ -195,7 +248,7 @@ export function FileTree(
                             node={node}
                             flat={view.layout == "flat"}
                             nested={folders.size > 0}
-                            props={{ isChosen, root, menuItems, hideStagedBadge, leading, inspect, highlight }}
+                            props={{ isChosen, isFolderChosen, root, menuItems, hideStagedBadge, leading, inspect, highlight }}
                         />
                     ))}
                 </Tree>
@@ -241,12 +294,13 @@ function FileTreeRow(
         nested: boolean
         props: Pick<FileTreeProps, "root" | "menuItems" | "hideStagedBadge" | "leading" | "inspect" | "highlight"> & {
             isChosen(file: ChangedFile): boolean
+            isFolderChosen(key: string): boolean
         }
     },
 ) {
     if (node.kind == "file") {
         let file = node.file
-        let open = props.inspect?.isOpen(file) == true
+        let open = props.inspect?.inline?.isOpen(file) == true
         return (
             <DenseTreeItem
                 id={node.key}
@@ -265,10 +319,13 @@ function FileTreeRow(
                             <CopyPathButton path={file.path} />
                             {file.staged && !props.hideStagedBadge && <span className="file-badge">staged</span>}
                             {file.submodule && <span className="file-badge">submodule</span>}
-                            {open && props.inspect?.controls(file)}
+                            {open && props.inspect?.inline?.controls(file)}
+                            {props.inspect?.open && (
+                                <OpenDiffButton path={file.path} onPress={() => props.inspect?.open?.(file, true)} />
+                            )}
                             {actions}
                         </div>
-                        {open && <DiffRegion>{props.inspect?.diff(file)}</DiffRegion>}
+                        {open && <DiffRegion>{props.inspect?.inline?.diff(file)}</DiffRegion>}
                     </>
                 )}
             />
@@ -280,7 +337,7 @@ function FileTreeRow(
             textValue={node.label}
             className="compact folder-row"
             data-row-key={node.key}
-            data-chosen={node.files.every(props.isChosen) || undefined}
+            data-chosen={props.isFolderChosen(node.key) || undefined}
             content={({ isExpanded }) => (
                 // Shaped like a file row, its chevron where a file keeps a space, so icons line up.
                 <div className="row-content folder-content">
@@ -396,6 +453,18 @@ export function CopyPathButton({ path }: { path: string }) {
                 {copied ? <CheckIcon /> : <CopyIcon />}
             </AriaButton>
             <Tooltip>{copied ? "Copied" : "Copy relative path"}</Tooltip>
+        </TooltipTrigger>
+    )
+}
+
+/** Opens the file in its column's diff column; it shows while the row is hovered or focused. */
+function OpenDiffButton({ path, onPress }: { path: string; onPress(): void }) {
+    return (
+        <TooltipTrigger>
+            <AriaButton className="open-diff icon-button small" aria-label={`Open ${path} in diff column`} onPress={onPress}>
+                <DiffIcon />
+            </AriaButton>
+            <Tooltip>Open in diff column</Tooltip>
         </TooltipTrigger>
     )
 }
