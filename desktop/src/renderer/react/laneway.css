@@ -285,11 +285,6 @@
         outline-offset: -2px;
     }
 
-    .maximized > & {
-        flex: 1 1 auto;
-        width: auto;
-    }
-
     &.collapsed {
         width: 52px;
     }
@@ -301,8 +296,7 @@
     }
 
     /* A maximized column keeps its own width beside its auxiliary columns, leaving room for one. */
-    .maximized > &.split {
-        flex: 0 0 auto;
+    .maximized > & {
         max-width: calc(100% - 310px - var(--spacing-2));
     }
 }

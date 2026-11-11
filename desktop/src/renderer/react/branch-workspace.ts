@@ -123,8 +123,9 @@ export interface BranchWorkspace extends Store<ColumnsSnapshot> {
     /** A worktree's column collapses instead, as it stays while the worktree does. */
     close(id: string): void
     /**
-     * Maximizes a column, sizing it with its auxiliary columns to fill the row's view while the others stay beside
-     * it, or restores its width when it is already maximized. Only one column is maximized at a time.
+     * Maximizes a column showing a diff column: the column keeps its width and its auxiliary columns fill the rest of
+     * the row's view, with the other columns beside them. Restores it when it is already maximized. Only one column
+     * is maximized at a time.
      */
     toggleMaximized(id: string): void
     restore(): void

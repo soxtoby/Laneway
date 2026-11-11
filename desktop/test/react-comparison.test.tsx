@@ -139,7 +139,6 @@ describe("React Branch Comparison", () => {
         expect(compares.map(control => control.getAttribute("aria-label"))).toEqual([`Compare ${feature!.name} with ${main!.name}`])
         await app.act(() => press(compares[0]!))
         expect(comparison()!.querySelector(".column-kind")?.getAttribute("aria-description")).toBe(`Changes on ${feature!.name} since it left ${main!.name}`)
-        expect(comparison()!.querySelector("[aria-label='Maximize column']")).not.toBeNull()
         expect(comparison()!.querySelector(".column-path") == null).toBe(true)
     })
 

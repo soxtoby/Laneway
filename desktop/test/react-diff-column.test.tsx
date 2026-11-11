@@ -37,14 +37,14 @@ describe("React diff column", () => {
         await app.act(() => press(openButton(row)))
         await app.act(() => press(button(diffColumn()!, "Maximize column")))
         expect(order()).toEqual(["column", "column-divider", "auxiliary-column", "column", "column-divider"])
-        expect(source!.classList.contains("split")).toBe(true)
+        expect(source!.closest(".column-group")!.classList.contains("maximized")).toBe(true)
         await app.act(() => press(button(diffColumn()!, "Restore column")))
         expect(order()).toHaveLength(6)
         await app.act(() => diffColumn()!.querySelector("header")!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })))
         expect(order()).toEqual(["column", "column-divider", "auxiliary-column", "column", "column-divider"])
-        // Closing it leaves the source column maximized on its own.
+        // Closing it restores the source column.
         await app.act(() => press(button(diffColumn()!, "Close diff column")))
-        expect(order()).toEqual(["column", "column", "column-divider"])
+        expect(order()).toEqual(["column", "column-divider", "column", "column-divider"])
     })
 
     test("opens on a file double-clicked in its source column, shows its list's whole diff, and takes the files pressed there", async () => {

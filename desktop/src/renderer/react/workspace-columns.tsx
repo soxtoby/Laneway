@@ -117,9 +117,10 @@ export const WorkspaceColumns = memo(function WorkspaceColumns({ controller, fil
                 // A collapsed column hides its auxiliary columns, and a column without its files has none to show.
                 let auxiliary = column.collapsed || column.kind == "recovery" || column.worktree?.missing ? [] : current?.auxiliary[column.id] ?? []
                 let attached = auxiliary.length > 0
-                let maximized = snapshot.maximizedId == column.id
-                // A maximized column shares the row's view with its auxiliary columns, split at its own width.
-                let split = maximized && attached
+                // Only a column showing a diff column maximizes, sharing the row's view with its auxiliary columns at
+                // its own width.
+                let maximizable = auxiliary.some(view => view.kind == "diff")
+                let maximized = maximizable && snapshot.maximizedId == column.id
                 // Every column has its group, so maximizing one changes only its class and nothing in it mounts again.
                 return (
                     <div key={column.id} className={clsx("column-group", maximized && "maximized")}>
@@ -132,9 +133,10 @@ export const WorkspaceColumns = memo(function WorkspaceColumns({ controller, fil
                             fileListView={fileListView}
                             header={header}
                             attached={attached}
-                            split={split}
+                            maximizable={maximizable}
+                            maximized={maximized}
                         />
-                        {!column.collapsed && (!maximized || split) && (
+                        {!column.collapsed && (
                             <ColumnDivider
                                 label="Resize branch column"
                                 width={column.width}
@@ -183,7 +185,7 @@ interface HeaderDrag {
     end(): void
 }
 
-function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListView, header, attached, split }: {
+function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListView, header, attached, maximizable, maximized }: {
     column: ColumnView
     snapshot: ColumnsSnapshot
     /** The active repository's files, once the inspection has them. */
@@ -195,15 +197,16 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
     header: HeaderDrag
     /** Whether auxiliary columns join onto its card. */
     attached: boolean
+    /** Whether it shows a diff column, which it can maximize with. */
+    maximizable: boolean
     /** Whether it is maximized beside its auxiliary columns, keeping its own width. */
-    split: boolean
+    maximized: boolean
 }) {
     let { columns } = controller
     let worktreeBusy = useSnapshot(controller.worktrees).busy
     let busy = snapshot.busy || worktreeBusy
     let prepare = (request: WorktreeRequest) => void controller.worktrees.prepare(snapshot.repositoryId!, request, column.id)
     let files = inspected?.columns[column.id]
-    let maximized = snapshot.maximizedId == column.id
     let headerRef = useRef<HTMLElement>(null)
     // A branch dragged from the Branch Graph onto a worktree column's header switches that worktree to it, unless
     // it is in a Historical Edit.
@@ -268,16 +271,16 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
     }
     // Like a window's title bar, a double-click maximizes; the header's own controls keep theirs.
     let toggleMaximized = (event: MouseEvent) => {
-        if (!(event.target instanceof Element && event.target.closest("button, input, select, textarea, a, [role=menu]")))
+        if (maximizable && !(event.target instanceof Element && event.target.closest("button, input, select, textarea, a, [role=menu]")))
             columns.toggleMaximized(column.id)
     }
     return (
         <article
-            className={clsx("column", column.collapsed && "collapsed", column.worktree?.missing && "missing", attached && "attached", split && "split")}
+            className={clsx("column", column.collapsed && "collapsed", column.worktree?.missing && "missing", attached && "attached")}
             data-column-id={column.id}
             aria-label={column.name}
             tabIndex={-1}
-            style={column.collapsed || maximized && !split ? undefined : { width: column.width }}
+            style={column.collapsed ? undefined : { width: column.width }}
             onFocus={() => columns.focus(column.id)}
             onKeyDown={keyDown}
             onKeyDownCapture={event => filterable && navigationKeyDown(event, files?.diffColumn != undefined)}
@@ -380,9 +383,14 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                             </TooltipTrigger>
                                         </>
                                     )}
-                                    <IconButton label={maximized ? "Restore column" : "Maximize column"} onPress={() => columns.toggleMaximized(column.id)}>
-                                        {maximized ? <RestoreIcon /> : <MaximizeIcon />}
-                                    </IconButton>
+                                    {maximizable && (
+                                        <IconButton
+                                            label={maximized ? "Restore column" : "Maximize column"}
+                                            onPress={() => columns.toggleMaximized(column.id)}
+                                        >
+                                            {maximized ? <RestoreIcon /> : <MaximizeIcon />}
+                                        </IconButton>
+                                    )}
                                     {!column.worktree && column.kind != "recovery" && (
                                         <IconButton label="Close column" onPress={() => columns.close(column.id)}>
                                             <CloseIcon />

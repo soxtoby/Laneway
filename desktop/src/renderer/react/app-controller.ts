@@ -206,6 +206,14 @@ export function createAppController(api: Api): AppController {
         },
     })
 
+    // A column maximizes only with its diff column, so closing that diff column restores it.
+    unsubscribe.push(inspection.subscribe(() => {
+        let { repositoryId, maximizedId } = columns.snapshot()
+        let inspected = inspection.snapshot()
+        if (maximizedId && inspected.repositoryId == repositoryId && !inspected.auxiliary[maximizedId]?.some(view => view.kind == "diff"))
+            columns.restore()
+    }))
+
     // History rewrites leave chosen files stale and move commits that the graph and every worktree show.
     async function rewritten() {
         inspection.rewritten()

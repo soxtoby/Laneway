@@ -40,7 +40,7 @@ describe("React Workspace Columns", () => {
         expect(tabs()).toEqual(["main *", "feature/laneway"])
         expect(columnHeaders()).not.toContain("refs/heads/")
 
-        await app.act(() => key(button(column(main.id), "Maximize column"), ">", { ctrlKey: true, shiftKey: true }))
+        await app.act(() => key(button(column(main.id), "Filter files"), ">", { ctrlKey: true, shiftKey: true }))
         await app.act(() => frame())
         expect(savedColumns(saved).map(column => column.id)).toEqual([feature.id, main.id])
         expect(document.activeElement?.getAttribute("data-column-id")).toBe(main.id)
@@ -49,19 +49,39 @@ describe("React Workspace Columns", () => {
         expect(savedColumns(saved).find(column => column.id == main.id)?.width).toBe(390)
     })
 
+    test("only a column showing a diff column maximizes, and closing the diff column restores it", async () => {
+        let app = await startReactApp(inspectionScenario().api)
+        let id = columnIds()[0]!
+        let header = () => column(id).querySelector("header")!
+
+        await app.act(() => dblclick(header()))
+        let alone = { maximized: maximized(), offered: header().querySelector("[aria-label='Maximize column']") != null }
+
+        await openDiffColumn(app, id)
+        await app.act(() => press(button(header(), "Maximize column")))
+        expect(maximized()).toEqual([id])
+
+        await app.act(() => press(button(document.querySelector<HTMLElement>(".diff-column")!, "Close diff column")))
+        expect(alone).toEqual({ maximized: [], offered: false })
+        expect(maximized()).toEqual([])
+        expect(document.querySelector(".column-group.maximized") == null).toBe(true)
+
+        // Opening it again leaves the column at its own width.
+        await openDiffColumn(app, id)
+        expect(maximized()).toEqual([])
+    })
+
     test("double-clicking a column header toggles maximizing it, but not on its controls", async () => {
-        let scenario = inspectionScenario()
-        scenario.graph.branches[0]!.checkedOut = [{ path: "D:/other", name: "other", head: scenario.graph.branches[0]!.tip, main: false }]
-        let app = await startReactApp(scenario.api)
-        let opened = columnIds()
-        expect(opened.length).toBeGreaterThan(1)
-        let header = () => column(opened[1]!).querySelector("header")!
+        let app = await startReactApp(inspectionScenario().api)
+        let id = columnIds()[0]!
+        let header = () => column(id).querySelector("header")!
+        await openDiffColumn(app, id)
 
         await app.act(() => dblclick(button(header(), "Maximize column")))
         expect(maximized()).toEqual([])
 
         await app.act(() => dblclick(header()))
-        expect(maximized()).toEqual([opened[1]])
+        expect(maximized()).toEqual([id])
 
         await app.act(() => dblclick(header()))
         expect(maximized()).toEqual([])
@@ -73,6 +93,8 @@ describe("React Workspace Columns", () => {
         let app = await startReactApp(scenario.api)
         let opened = columnIds()
         let chosen = column(opened[1]!).getAttribute("aria-label")!
+        await openDiffColumn(app, opened[0]!)
+        await app.act(() => frame())
         let scrolled: string[] = []
         let original = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView")!
         // A maximized column scrolls into view with its group, which holds its card.
@@ -135,23 +157,23 @@ describe("React Workspace Columns", () => {
         let app = await startReactApp(inspectionScenario().api)
         let header = column(columnIds()[0]!).querySelector("header")!
         let actions = header.querySelector(".column-actions")!
-        let maximize = button(header, "Maximize column")
+        let filter = button(header, "Filter files")
 
         // The pointer rests on the header on its way to a button, then moves over the button's tooltip and the gap beside it.
         await app.act(() => hover(header))
         await app.act(() => wait(300))
-        await app.act(() => hover(maximize, header))
+        await app.act(() => hover(filter, header))
         await app.act(() => wait(1600))
         let overButton = tooltips()
         let tooltip = document.querySelector("[role=tooltip]")!
-        await app.act(() => hover(tooltip, maximize))
+        await app.act(() => hover(tooltip, filter))
         await app.act(() => wait(300))
         let overItsTooltip = tooltips()
         await app.act(() => hover(actions, tooltip))
         await app.act(() => wait(300))
         let betweenButtons = tooltips()
 
-        expect(overButton).toEqual(["Maximize column"])
+        expect(overButton).toEqual(["Filter files (Ctrl+F)"])
         expect(overItsTooltip).not.toContain(dragHint)
         expect(betweenButtons).not.toContain(dragHint)
     })
@@ -285,7 +307,6 @@ describe("React worktree recovery", () => {
             expect(recoveryColumn.textContent).toContain(recovery.path)
             expect(recoveryColumn.textContent).toContain("Remove deletes leftover files and keeps only the saved Git state for Undo.")
 
-            await app.act(() => press(button(recoveryColumn, "Maximize column")))
             await app.act(() => press(button(recoveryColumn, action == "restore" ? "Recover" : "Remove")))
 
             expect(requests).toEqual([{ operationId: recovery.operationId, action }])
@@ -379,6 +400,12 @@ function tabs() {
 
 function tab(name: string) {
     return [...document.querySelectorAll<HTMLElement>("[aria-label='Open columns'] [role=tab]")].find(tab => tab.textContent == name)!
+}
+
+/** Opens the column's first Working Changes file in its diff column. */
+async function openDiffColumn(app: { act(action: () => unknown): Promise<void> }, id: string) {
+    let row = column(id).querySelector<HTMLElement>("[data-group^='working-'] .file-row")!
+    await app.act(() => press(button(row, `Open ${row.getAttribute("aria-label")} in diff column`)))
 }
 
 /** The columns offering to restore their width, which only a maximized one does. */

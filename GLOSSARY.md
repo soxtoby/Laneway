@@ -266,5 +266,5 @@ An ordered live diff from one Comparison Ref to another, recomputed when a branc
 _Avoid_: Three-dot diff
 
 **Branch Comparison Column**:
-A read-only Workspace Column showing a Branch Comparison. It is filtered, maximized, and broken out into a diff column like any Workspace Column, and persists in Workspace State by its refs. Unique commits remain part of the compared branch's Active Stack.
+A read-only Workspace Column showing a Branch Comparison. It is filtered, broken out into a diff column, and maximized with it like any Workspace Column, and persists in Workspace State by its refs. Unique commits remain part of the compared branch's Active Stack.
 _Avoid_: Comparison auxiliary column, Three-dot Diff Column
