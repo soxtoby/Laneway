@@ -927,6 +927,18 @@
         height: 1px;
         background: var(--border-color);
     }
+
+    /* The arrow points up at the staged files, since a centred label could name either side. */
+    span {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--spacing-1);
+    }
+
+    svg {
+        width: 12px;
+        height: 12px;
+    }
 }
 
 .change-file-list {

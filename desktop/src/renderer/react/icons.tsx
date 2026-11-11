@@ -1,4 +1,4 @@
-import { createReactComponent, IconAdjustmentsHorizontal, IconAlertTriangle, IconArchive, IconArrowBackUp, IconArrowBarToDown, IconArrowBarToUp, IconArrowBarToUpDashed, IconArrowForwardUp, IconArrowRight, IconArrowsDiagonal, IconArrowsDiagonalMinimize2, IconCheck, IconChevronDown, IconChevronsLeft, IconChevronsRight, IconCircleArrowUp, IconCopy, IconDots, IconExternalLink, IconFileDiff, IconFolder, IconFolderOpen, IconGitBranch, IconGitCompare, IconGitMerge, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconLetterT, IconListTree, IconMarkdown, IconMinus, IconMoodSmile, IconMoon, IconPencil, IconPhoto, IconPhotoOff, IconPhotoPlus, IconPlus, IconRefresh, IconRefreshAlert, IconSearch, IconSelector, IconSettings, IconSun, IconTag, IconTextWrap, IconX } from "@tabler/icons-react"
+import { createReactComponent, IconAdjustmentsHorizontal, IconAlertTriangle, IconArchive, IconArrowBackUp, IconArrowBarToDown, IconArrowBarToUp, IconArrowBarToUpDashed, IconArrowForwardUp, IconArrowRight, IconArrowsDiagonal, IconArrowUp, IconArrowsDiagonalMinimize2, IconCheck, IconChevronDown, IconChevronsLeft, IconChevronsRight, IconCircleArrowUp, IconCopy, IconDots, IconExternalLink, IconFileDiff, IconFolder, IconFolderOpen, IconGitBranch, IconGitCompare, IconGitMerge, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconLetterT, IconListTree, IconMarkdown, IconMinus, IconMoodSmile, IconMoon, IconPencil, IconPhoto, IconPhotoOff, IconPhotoPlus, IconPlus, IconRefresh, IconRefreshAlert, IconSearch, IconSelector, IconSettings, IconSun, IconTag, IconTextWrap, IconX } from "@tabler/icons-react"
 import { createElement, type ReactNode } from "react"
 import type { CatalogNode } from "./icon-catalog"
 import { collapseAllNode, customIconPaths, forcePublishNode } from "./icon-nodes"
@@ -51,6 +51,7 @@ export let CollapseAllIcon = tablerIcon(createReactComponent("outline", "chevron
 export let GraphIcon = tablerIcon(IconGitMerge)
 export let TagIcon = tablerIcon(IconTag)
 export let WrapLinesIcon = tablerIcon(IconTextWrap)
+export let StagedAboveIcon = tablerIcon(IconArrowUp)
 export let RenderedMarkdownIcon = tablerIcon(IconMarkdown)
 export let BrokenPictureIcon = tablerIcon(IconPhotoOff)
 

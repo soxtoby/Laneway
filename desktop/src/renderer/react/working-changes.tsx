@@ -13,7 +13,7 @@ import { fileListViewOptions } from "./file-list-view"
 import { type FileInspection, FileRowsLayout, FileTree, revealRow } from "./file-tree"
 import { applySelection } from "./historical-edit"
 import { applyTarget } from "./historical-edit-banner"
-import { ArchiveIcon, ChevronDownIcon, CloseIcon, DetachedIcon, FolderIcon, OpenColumnIcon, TreeIcon } from "./icons"
+import { ArchiveIcon, ChevronDownIcon, CloseIcon, DetachedIcon, FolderIcon, OpenColumnIcon, StagedAboveIcon, TreeIcon } from "./icons"
 import { type ColumnInspection, diffKey, type FilesState, type Inspection, matchesFilter } from "./inspection"
 import { TransferGrip, TransferReview, transferSource, useTransferScope, useTransferTarget } from "./transfer"
 import { Button } from "./ui/Button"
@@ -270,7 +270,7 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
                             <>
                                 {list("working-staged", "Staged files")}
                                 <div className="staged-divider" role="separator" aria-label="Staged changes">
-                                    <span>Staged · {staged.length}</span>
+                                    <span><StagedAboveIcon />Staged · {staged.length}</span>
                                 </div>
                             </>
                         )}

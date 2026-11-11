@@ -11,6 +11,7 @@
 ### Changed
 
 - When a branch's column closes because the branch no longer exists, the notice names the branch.
+- The Staged divider in Working Changes has an arrow pointing up at the staged files above it.
 
 ### Fixed
 
