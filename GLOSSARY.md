@@ -182,7 +182,7 @@ The picture view of a changed raster image inside any file diff, in place of tex
 _Avoid_: Binary diff, image preview
 
 **Rendered Markdown Diff**:
-The view of a Markdown file's diff as the documents it renders, which its row may choose over source lines for every Markdown diff in the session. Aligned blocks show deleted and inserted words, formatting that alone changed, and changed code lines, unified or side by side; unchanged blocks away from changes fold unless whole files show, and an added or deleted document renders as it is ([ADR 0028](docs/adr/0028-diff-rendered-markdown-with-an-extractable-engine.md)).
+The view of a Markdown file's diff as the documents it renders, which it shows by default; its row may choose source lines instead for every Markdown diff in the session. Aligned blocks show deleted and inserted words, formatting that alone changed, and changed code lines, unified or side by side; unchanged blocks away from changes fold unless whole files show, and an added or deleted document renders as it is ([ADR 0028](docs/adr/0028-diff-rendered-markdown-with-an-extractable-engine.md)).
 _Avoid_: Markdown preview, rich diff, prose diff
 
 **Working Changes**:

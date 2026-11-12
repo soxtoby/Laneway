@@ -349,7 +349,7 @@ describe("React diffs", () => {
         expect(button(file(), "Swipe").getAttribute("aria-pressed")).toBe("true")
     })
 
-    test("a Markdown file's diff shows its rendered documents when chosen, with their pictures and links, for every Markdown diff after", async () => {
+    test("a Markdown file's diff shows its rendered documents, with their pictures and links, until source is chosen for every Markdown diff after", async () => {
         let scenario = inspectionScenario()
         let readme = { path: "docs/README.md", status: "modified", staged: true, unstaged: false, untracked: false, ignored: false, conflicted: false }
         let documents = {
@@ -394,11 +394,10 @@ describe("React diffs", () => {
         let row = fileRows("working-staged")[0]!
         let file = () => shown("docs/README.md")
         await app.act(() => openDiff(row))
-
-        await app.act(async () => {
-            press(button(file(), "Show rendered Markdown"))
-            await new Promise(resolve => setTimeout(resolve, 20))
-        })
+        // The diff engine loads with the first rendered diff, which can take a while.
+        for (let tries = 0; tries < 100 && file().querySelector(".markdown-diff [data-diff]") == null; tries++)
+            await app.act(() => new Promise(resolve => setTimeout(resolve, 20)))
+        expect(button(file(), "Show rendered Markdown").getAttribute("aria-pressed")).toBe("true")
         let rendered = file().querySelector(".markdown-diff")!
         expect([...rendered.querySelectorAll("del[data-diff]")].map(element => element.textContent)).toEqual(["old"])
         expect([...rendered.querySelectorAll("ins[data-diff]")].map(element => element.textContent)).toEqual(["new"])
@@ -413,10 +412,14 @@ describe("React diffs", () => {
         await app.act(() => press(button(file(), "Side by side")))
         expect(file().querySelector(".markdown-diff")?.getAttribute("data-layout")).toBe("split")
 
-        // A Markdown diff opened next starts rendered too.
+        await app.act(() => press(button(file(), "Show rendered Markdown")))
+        expect(file().querySelector(".markdown-diff") == null).toBe(true)
+
+        // A Markdown diff opened next starts as source too.
         await app.act(closeDiffColumn)
         await app.act(() => openDiff(row))
-        expect(button(file(), "Show rendered Markdown").getAttribute("aria-pressed")).toBe("true")
+        expect(button(file(), "Show rendered Markdown").getAttribute("aria-pressed")).toBe("false")
+        expect(file().querySelector(".markdown-diff") == null).toBe(true)
     })
 })
 

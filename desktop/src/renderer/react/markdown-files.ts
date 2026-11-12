@@ -7,8 +7,9 @@ export type MarkdownView = "source" | "rendered"
 
 let extensions = new Set(["md", "mdx", "markdown", "mdown", "mkd", "mkdn", "mdwn"])
 
-// Remembered for the session, so every Markdown diff opens the way the last one was chosen.
-let preferredView: MarkdownView = "source"
+// Rendered until a Markdown diff chooses otherwise, then remembered for the session, so every Markdown diff opens the
+// way the last one was chosen.
+let preferredView: MarkdownView = "rendered"
 
 export function isMarkdownPath(path: string) {
     let dot = path.lastIndexOf(".")
