@@ -12,6 +12,7 @@
 
 ### Changed
 
+- Diffs wrap long lines by default. Turning wrapping off still applies to every diff until Laneway restarts.
 - Markdown files' diffs show the rendered documents by default. Switching a diff to its source lines still applies to every Markdown diff until Laneway restarts.
 - Worktree columns and their tabs are named for the branch checked out in them, rather than the worktree's folder, whose path still shows under the name. A detached worktree's column keeps its folder's name. Rename a worktree from its column's actions menu.
 - Check out in, and choosing where to apply a stash, list each worktree by its branch first.

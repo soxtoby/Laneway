@@ -110,7 +110,7 @@ describe("React diffs", () => {
         expect(diffRoot(file()).querySelectorAll(".diff-line.selected").length).toBeGreaterThan(0)
     })
 
-    test("wrapping lines from one diff wraps every diff in every column, including those opened later, until it is turned off", async () => {
+    test("diffs wrap lines by default, and unwrapping one diff unwraps every diff in every column, including those opened later, until it is turned back on", async () => {
         let scenario = inspectionScenario()
         let app = await startReactApp({
             ...scenario.api,
@@ -130,18 +130,21 @@ describe("React diffs", () => {
 
         await app.act(() => openDiff(staged!))
         await drawn(app)
-        await app.act(() => press(button(shown("src/file.txt"), "Wrap lines")))
-        expect(wraps(shown("other.txt"))).toBe(true)
+        expect(wraps(shown("src/file.txt"))).toBe(true)
         expect(wraps(history())).toBe(true)
+
+        await app.act(() => press(button(shown("src/file.txt"), "Wrap lines")))
+        expect(wraps(shown("other.txt"))).toBe(false)
+        expect(wraps(history())).toBe(false)
         // The diff column's diffs of another list are opened later.
         await app.act(() => openDiff(unstaged!))
         await drawn(app)
-        expect(wraps(shown("src/file.txt"))).toBe(true)
-        expect(button(shown("src/file.txt"), "Wrap lines").getAttribute("aria-pressed")).toBe("true")
+        expect(wraps(shown("src/file.txt"))).toBe(false)
+        expect(button(shown("src/file.txt"), "Wrap lines").getAttribute("aria-pressed")).toBe("false")
 
         await app.act(() => press(button(history(), "Wrap lines")))
-        expect(wraps(shown("src/file.txt"))).toBe(false)
-        expect(wraps(history())).toBe(false)
+        expect(wraps(shown("src/file.txt"))).toBe(true)
+        expect(wraps(history())).toBe(true)
     })
 
     test("hidden-line counts reveal each gap from the whole file, keeping the chosen lines across layouts", async () => {

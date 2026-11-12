@@ -364,7 +364,7 @@ interface InspectionOptions {
 
 /** The files and commits each Workspace Column shows, read from Git as the column needs them. */
 export function createInspection({ api, notify, displayOrder }: InspectionOptions): Inspection {
-    let store = createStore<InspectionSnapshot>({ columns: {}, auxiliary: {}, wrapLines: false })
+    let store = createStore<InspectionSnapshot>({ columns: {}, auxiliary: {}, wrapLines: true })
     let repositories = new Map<string, Map<string, ColumnState>>()
     let graphs = new Map<string, BranchGraph>()
     let auxiliaries = new Map<string, AuxiliaryColumns<AuxiliaryValue>>()
@@ -375,7 +375,7 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
     let activeId: string | undefined
     let focused: InspectionSnapshot["focused"]
     let revealed: InspectionSnapshot["revealed"]
-    let wrapLines = false
+    let wrapLines = true
     let diffViews = new WeakMap<FileDiffState, FileDiffState>()
     let discards = createDiscards({
         api,
