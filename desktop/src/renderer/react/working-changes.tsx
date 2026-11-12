@@ -21,7 +21,7 @@ import { ChevronRight } from "./ui/icons"
 import { Menu, MenuItem, MenuSection, MenuTrigger, Separator } from "./ui/Menu"
 import { TextArea, TextField } from "./ui/TextField"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
-import { useSnapshot, useSnapshotValue } from "./use-snapshot"
+import { useScopedSnapshotValue, useSnapshot } from "./use-snapshot"
 
 interface WorkingChangesProps {
     column: Extract<ColumnView, { kind: "branch" | "virtual" }>
@@ -596,7 +596,7 @@ function ActiveRow({ list, layout, inspection, columnId, group }: {
     columnId: string
     group: string
 }) {
-    let shown = useSnapshotValue(inspection, snapshot => {
+    let shown = useScopedSnapshotValue(inspection, snapshot => {
         let diffColumn = snapshot.columns[columnId]?.diffColumn ?? Object.values(snapshot.auxiliary)
             .map(views => hostedView(views, columnId))
             .find(Boolean)?.host.diffColumn

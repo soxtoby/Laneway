@@ -4,7 +4,7 @@ import { Button as AriaButton, GridList, GridListItem, ListLayout, useDragAndDro
 import type { AppController } from "./app-controller"
 import { graphRowHeight, type GraphRowLayout, layoutBranchGraph } from "./branch-graph-layout"
 import { canRebaseOnto, rebaseable } from "./branch-rebase"
-import type { GraphView } from "./branch-workspace"
+import type { ColumnsSnapshot, GraphView } from "./branch-workspace"
 import { ColumnDivider } from "./column-divider"
 import { Hint, IconButton, SplitMenuItem } from "./controls"
 import { useRowMenu } from "./dense-row"
@@ -35,15 +35,20 @@ interface GraphPanelProps {
 }
 
 /**
- * The active repository's Branch Graph: its branches, tags, and detached worktrees on the rails of their verified
+ * A repository's Branch Graph: its branches, tags, and detached worktrees on the rails of their verified
  * history. Choosing a row only selects it; a double-click or Enter checks its branch out, and its menu, from a
  * right-click or the button showing on hover and focus, checks it out there or elsewhere, or opens its column.
  * The divider after it resizes it, up to half the work area, so the columns always keep room beside it.
  */
-export function BranchGraphPanel({ width, onResize, ...props }: GraphPanelProps & { width: number; onResize(width: number): void }) {
+export function BranchGraphPanel({ snapshot, width, onResize, ...props }: GraphPanelProps & {
+    /** The repository's own snapshot, which stays put while another repository shows. */
+    snapshot: ColumnsSnapshot
+    width: number
+    onResize(width: number): void
+}) {
     return (
         <>
-            <GraphPanel {...props} width={width} />
+            <GraphPanel {...props} snapshot={snapshot} width={width} />
             <ColumnDivider
                 className="graph-divider"
                 label="Resize Branch Graph"
@@ -57,9 +62,8 @@ export function BranchGraphPanel({ width, onResize, ...props }: GraphPanelProps 
     )
 }
 
-function GraphPanel({ controller, repositoryId, mainWorktree, width }: GraphPanelProps & { width: number }) {
+function GraphPanel({ controller, repositoryId, mainWorktree, snapshot, width }: GraphPanelProps & { snapshot: ColumnsSnapshot; width: number }) {
     let { columns } = controller
-    let snapshot = useSnapshot(columns)
     let { graph, graphView: view } = snapshot
     let rows = useMemo(() => graph && graphRows(graph, view.foldedIds), [graph, view.foldedIds])
     return (

@@ -10,7 +10,8 @@ import { type ImageDiffMode, readDiffImage, rememberImageMode } from "./image-fi
 import { createDiffSession, type FileDiffState } from "./inspection-diff-session"
 import { type MarkdownVersions, type MarkdownView, readFileVersion, readMarkdownVersions, rememberMarkdownView } from "./markdown-files"
 import { errorMessage, type Notice } from "./notice"
-import { createStore, type Store } from "./store"
+import { sharedSnapshot } from "./shared-snapshot"
+import { createStore, type RepositoryStore } from "./store"
 
 type Api = Window["laneway"]
 
@@ -175,7 +176,7 @@ export interface InspectedColumn {
     comparison?: { from: ComparisonRef; to: ComparisonRef }
 }
 
-export interface Inspection extends Store<InspectionSnapshot> {
+export interface Inspection extends RepositoryStore<InspectionSnapshot> {
     /**
      * Keeps lists for these columns of the active repository, reading Working Changes for any new worktree and
      * the history of any new branch; histories whose branch moved in `graph` are read again.
@@ -365,6 +366,7 @@ interface InspectionOptions {
 /** The files and commits each Workspace Column shows, read from Git as the column needs them. */
 export function createInspection({ api, notify, displayOrder }: InspectionOptions): Inspection {
     let store = createStore<InspectionSnapshot>({ columns: {}, auxiliary: {}, wrapLines: true })
+    let published = new Map<string, InspectionSnapshot>()
     let repositories = new Map<string, Map<string, ColumnState>>()
     let graphs = new Map<string, BranchGraph>()
     let auxiliaries = new Map<string, AuxiliaryColumns<AuxiliaryValue>>()
@@ -373,8 +375,9 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
     let hostSerial = 0
     let historyHosts = new Map<FileHistoryState, ColumnState>()
     let activeId: string | undefined
-    let focused: InspectionSnapshot["focused"]
-    let revealed: InspectionSnapshot["revealed"]
+    // The auxiliary columns asked to show, by repository: one opened in another repository doesn't change this one's.
+    let focused = new Map<string, NonNullable<InspectionSnapshot["focused"]>>()
+    let revealed = new Map<string, NonNullable<InspectionSnapshot["revealed"]>>()
     let wrapLines = true
     let diffViews = new WeakMap<FileDiffState, FileDiffState>()
     let discards = createDiscards({
@@ -412,14 +415,19 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
     function publish() {
         let columns = activeId ? repositories.get(activeId) : undefined
         let tree = activeId ? auxiliaryFor(activeId) : undefined
-        store.publish({
+        let snapshot: InspectionSnapshot = {
             repositoryId: activeId,
             columns: Object.fromEntries([...columns?.values() ?? []].map(state => [state.id, inspected(state)])),
             auxiliary: Object.fromEntries([...columns?.keys() ?? []].map(id => [id, tree?.descendants(id).map(auxiliaryView) ?? []])),
-            focused,
-            revealed,
+            focused: activeId ? focused.get(activeId) : undefined,
+            revealed: activeId ? revealed.get(activeId) : undefined,
             wrapLines,
-        })
+        }
+        if (activeId) {
+            snapshot = sharedSnapshot(published.get(activeId), snapshot)
+            published.set(activeId, snapshot)
+        }
+        store.publish(snapshot)
     }
 
     function inspected(state: ColumnState): ColumnInspection {
@@ -545,11 +553,13 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
     }
 
     function focusAuxiliary(id: string) {
-        focused = { id, serial: (focused?.serial ?? 0) + 1 }
+        if (activeId)
+            focused.set(activeId, { id, serial: (focused.get(activeId)?.serial ?? 0) + 1 })
     }
 
     function revealAuxiliary(id: string) {
-        revealed = { id, serial: (revealed?.serial ?? 0) + 1 }
+        if (activeId)
+            revealed.set(activeId, { id, serial: (revealed.get(activeId)?.serial ?? 0) + 1 })
     }
 
     // A column closed while its read was under way no longer shows anything.
@@ -963,6 +973,7 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
     return {
         subscribe: store.subscribe,
         snapshot: store.snapshot,
+        snapshotFor: repositoryId => published.get(repositoryId),
 
         retain(repositoryId, columns, graph) {
             // The Workspace Columns retain on every change of theirs, so only a change here publishes.

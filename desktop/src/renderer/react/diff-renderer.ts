@@ -102,14 +102,18 @@ let diffCSS = `:host { --diffs-font-family: var(--font-family-mono); --diffs-fon
  * Draws a diff page with Pierre into a shadow root on `host`, only the lines near the scrolling column's viewport,
  * and keeps one scrollbar pinned under the visible diff in step with every pane. Gutter buttons choose lines, and a
  * gap between hunks shows its hidden lines once the whole file is read.
+ *
+ * It follows the page only while connected. A diff hidden with its repository disconnects, keeping what it drew, so
+ * showing the repository again draws nothing it doesn't have to.
  */
 export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, initial: DiffLinesProps, onContextError: (message?: string) => void) {
     let props = initial
-    let lifetime = new AbortController()
+    // What the diff follows outside its own elements while connected, which disconnecting lets go of.
+    let connection: AbortController | undefined
     let shadow = host.attachShadow({ mode: "open" })
     let sheet = new CSSStyleSheet()
     shadow.adoptedStyleSheets = [sheet]
-    let viewer: DiffHunksRenderer | undefined = new DiffHunksRenderer(undefined, undefined, () => render(true))
+    let viewer = new DiffHunksRenderer(undefined, undefined, () => render(true))
     let scrollbarTrack = scrollbar.firstElementChild as HTMLElement
     let start = 0
     let scrollContainer: HTMLElement | null = null
@@ -143,6 +147,7 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
     // going away for any reason, such as the files above it folding, and measures every diff in the column at once
     // after layout, where measuring each here would lay out the column again for each diff.
     let approach: IntersectionObserver | undefined
+    let following: AbortController | undefined
     let near = false
     let dark = matchMedia("(prefers-color-scheme: dark)")
 
@@ -151,15 +156,14 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
         let pane = event.target
         if (pane instanceof HTMLElement && pane.hasAttribute("data-code"))
             syncHorizontal(pane)
-    }, { capture: true, passive: true, signal: lifetime.signal })
+    }, { capture: true, passive: true })
     scrollbar.hidden = true
     scrollbar.addEventListener("scroll", () => {
         if (scrollbar.scrollLeft == horizontalOffset)
             return
         horizontalOffset = scrollbar.scrollLeft
         syncHorizontal()
-    }, { passive: true, signal: lifetime.signal })
-    dark.addEventListener("change", () => render(), { signal: lifetime.signal })
+    }, { passive: true })
     // A narrower host changes how far the panes overflow, which only this measurement notices. It measures on the next
     // frame: showing the pinned scrollbar or drawing other lines here resizes the column's file list inside the
     // browser's ResizeObserver loop, which reports it as undelivered notifications.
@@ -171,12 +175,28 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
             measureScrollbar()
         })
     })
-    resize.observe(host)
-    render()
+
+    function connect() {
+        connection = new AbortController()
+        dark.addEventListener("change", () => render(), { signal: connection.signal })
+        resize.observe(host)
+        // Shown again, it keeps the lines it drew; the observer's first report, which comes after layout, draws others
+        // if the diff has moved.
+        if (scrollContainer?.isConnected && scrollContainer.contains(host))
+            follow(scrollContainer)
+        else
+            render()
+    }
+
+    function disconnect() {
+        connection?.abort()
+        unfollow()
+        resize.disconnect()
+        cancelAnimationFrame(resizeFrame)
+        contextRead?.abort()
+    }
 
     function render(force = false) {
-        if (!viewer)
-            return
         // Follow the actual vertical viewport. The ancestor walk reads computed styles, so it only repeats once
         // the host has moved into another scrolling container.
         if (!scrollContainer?.isConnected || !scrollContainer.contains(host)) {
@@ -184,19 +204,11 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
             while (container && !["auto", "scroll", "overlay"].includes(getComputedStyle(container).overflowY))
                 container = container.parentElement
             if (container != scrollContainer) {
-                scrollContainer?.removeEventListener("scroll", scroll)
-                approach?.disconnect()
-                approach = undefined
                 scrollContainer = container
-                scrollContainer?.addEventListener("scroll", scroll, { signal: lifetime.signal, passive: true })
                 near = false
-                if (scrollContainer) {
-                    approach = new IntersectionObserver(entries => {
-                        near = entries.at(-1)?.isIntersecting ?? near
-                        render()
-                    }, { root: scrollContainer, rootMargin: "100% 0px" })
-                    approach.observe(host)
-                }
+                // A diff drawn again once it has gone, as when a highlight finishes late, follows nothing.
+                if (connection && !connection.signal.aborted)
+                    follow(container)
             }
         }
         let { page, layout, wrap } = props
@@ -318,6 +330,27 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
         syncHorizontal()
     }
 
+    // Follows the column that scrolls the diff: scrolling it moves the drawn lines, and its observer notices the diff
+    // coming near its view or going away.
+    function follow(container: HTMLElement | null) {
+        unfollow()
+        if (!container)
+            return
+        following = new AbortController()
+        container.addEventListener("scroll", scroll, { signal: following.signal, passive: true })
+        approach = new IntersectionObserver(entries => {
+            near = entries.at(-1)?.isIntersecting ?? near
+            render()
+        }, { root: container, rootMargin: "100% 0px" })
+        approach.observe(host)
+    }
+
+    function unfollow() {
+        following?.abort()
+        approach?.disconnect()
+        approach = undefined
+    }
+
     // Stands in for undrawn lines at their unwrapped height, without the scrollbar of lines that aren't there.
     function hold(height: number) {
         if (shadow.childNodes.length != 1 || shadow.firstChild != spacer)
@@ -369,7 +402,7 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
     }
 
     async function expandContext(position: number, count: number) {
-        if (!viewer || !diff || contextRead || !props.readContext)
+        if (!diff || contextRead || !props.readContext)
             return
         let page = props.page
         let controller = new AbortController()
@@ -378,7 +411,7 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
         render(true)
         try {
             if (!contextFiles) {
-                let files = await props.readContext(page, AbortSignal.any([lifetime.signal, controller.signal]))
+                let files = await props.readContext(page, controller.signal)
                 controller.signal.throwIfAborted()
                 if (props.page.version != page.version || props.page.lines != page.lines)
                     controller.abort()
@@ -576,7 +609,7 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
     // Scrolls the column to put the line back where it was, and returns how far. Lines are drawn only near the view, so
     // a line that isn't drawn is scrolled to by its row first, then by where it's drawn.
     function showLine(line: HeldLine) {
-        if (!viewer || !diff || !scrollContainer)
+        if (!diff || !scrollContainer)
             return 0
         placed = line
         let split = props.layout == "split"
@@ -597,19 +630,14 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
 
     let renderer = {
         update(next: DiffLinesProps) {
+            // The same props come again as the diff shows again, or just after it first draws.
+            if (next == props)
+                return
             props = next
             render()
         },
-        dispose() {
-            renderers.delete(host)
-            lifetime.abort()
-            contextRead?.abort()
-            resize.disconnect()
-            cancelAnimationFrame(resizeFrame)
-            approach?.disconnect()
-            viewer?.cleanUp()
-            viewer = undefined
-        },
+        connect,
+        disconnect,
         lineAt,
         showLine,
     }

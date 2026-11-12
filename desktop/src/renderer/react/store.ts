@@ -5,6 +5,12 @@ export interface Store<T> {
     snapshot(): T
 }
 
+/** A store whose snapshot is the active repository's, which keeps each repository's last one while others are active. */
+export interface RepositoryStore<T> extends Store<T> {
+    /** The last snapshot published while the repository was active: the same object until it is active again. */
+    snapshotFor(repositoryId: string): T | undefined
+}
+
 export function createStore<T>(initial: T) {
     let snapshot = initial
     let listeners = new Set<() => void>()

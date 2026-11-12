@@ -8,13 +8,11 @@ export function DiffLines(props: DiffLinesProps) {
     let rendererRef = useRef<ReturnType<typeof createDiffRenderer>>(undefined)
     let [contextError, setContextError] = useState<string>()
     let initial = useEffectEvent(() => props)
+    // Hidden with its repository, the diff keeps its renderer, and what it drew, until it shows again.
     useEffect(() => {
-        let renderer = createDiffRenderer(hostRef.current!, scrollbarRef.current!, initial(), setContextError)
-        rendererRef.current = renderer
-        return () => {
-            renderer.dispose()
-            rendererRef.current = undefined
-        }
+        let renderer = rendererRef.current ??= createDiffRenderer(hostRef.current!, scrollbarRef.current!, initial(), setContextError)
+        renderer.connect()
+        return () => renderer.disconnect()
     }, [])
     useEffect(() => rendererRef.current?.update(props))
     return (

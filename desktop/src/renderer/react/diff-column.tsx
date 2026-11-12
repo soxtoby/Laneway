@@ -212,11 +212,21 @@ function useNearby(scroller: RefObject<HTMLElement | null>) {
                 promote(element)
             passed.clear()
         }
+        // Files observe from their effects, between diffs drawing their spacers, so asking each time whether the column
+        // has layout would lay it out again for each file. One answer serves every file observed in the same pass.
+        let laidOut: boolean | undefined
+        let hasLayout = (root: HTMLElement) => {
+            if (laidOut == undefined) {
+                laidOut = root.clientHeight > 0
+                queueMicrotask(() => laidOut = undefined)
+            }
+            return laidOut
+        }
         return {
             observe(element, near) {
                 let root = scroller.current
                 // Without layout, as in tests, every file is near.
-                if (!root || root.clientHeight == 0) {
+                if (!root || !hasLayout(root)) {
                     near()
                     return () => {}
                 }

@@ -1,4 +1,5 @@
-import { type ReactNode, useEffect } from "react"
+import type { AvailableOpenRepository, FileListView } from "@laneway/shared"
+import { Activity, type ReactNode, useEffect } from "react"
 import type { AppController, AppSnapshot } from "./app-controller"
 import type { BackgroundFetch } from "./background-fetch"
 import { BranchGraphPanel, defaultGraphWidth } from "./branch-graph"
@@ -25,7 +26,7 @@ import { StashesDialog } from "./stashes-dialog"
 import { Button } from "./ui/Button"
 import { ToggleButton } from "./ui/ToggleButton"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
-import { useSnapshot } from "./use-snapshot"
+import { RepositoryScope, useRepositorySnapshot, useSnapshot } from "./use-snapshot"
 import { Welcome } from "./welcome"
 import { ColumnTabs, WorkspaceColumns } from "./workspace-columns"
 import { WorktreeDialog } from "./worktree-dialog"
@@ -92,30 +93,28 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
                             onClose={id => void controller.closeRepository(id)}
                             onAdd={entry.openAdd}
                         />
-                        {active.status == "available" && graphView.shown && (
-                            <BranchGraphPanel
-                                controller={controller}
-                                repositoryId={active.id}
-                                mainWorktree={active.info.mainWorktree}
-                                width={snapshot.graphWidth ?? defaultGraphWidth}
-                                onResize={width => void controller.setGraphWidth(width)}
-                            />
-                        )}
-                        <main className="columns">
-                            {active.status == "missing"
-                                ? (
-                                    <MissingRepository
-                                        repository={active}
-                                        onLocate={() => void controller.locateRepository(active.id)}
-                                        onClose={() => void controller.closeRepository(active.id)}
+                        {workspace.repositories.map(repository =>
+                            repository.status == "available" && (
+                                <Activity key={repository.id} mode={repository.id == active.id ? "visible" : "hidden"}>
+                                    <RepositoryWork
+                                        controller={controller}
+                                        repository={repository}
+                                        graphWidth={snapshot.graphWidth ?? defaultGraphWidth}
+                                        fileListView={snapshot.fileListView}
+                                        showCommitAges={snapshot.showCommitAges}
                                     />
-                                )
-                                : (
-                                    <CommitAgesShown value={snapshot.showCommitAges}>
-                                        <WorkspaceColumns controller={controller} fileListView={snapshot.fileListView} />
-                                    </CommitAgesShown>
-                                )}
-                        </main>
+                                </Activity>
+                            )
+                        )}
+                        {active.status == "missing" && (
+                            <main className="columns">
+                                <MissingRepository
+                                    repository={active}
+                                    onLocate={() => void controller.locateRepository(active.id)}
+                                    onClose={() => void controller.closeRepository(active.id)}
+                                />
+                            </main>
+                        )}
                     </div>
                 )
                 : (
@@ -148,6 +147,42 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
             <ScriptDialog scripts={controller.scripts} workspace={workspace} />
             <Notices controller={controller} notice={notice} />
         </div>
+    )
+}
+
+/**
+ * A repository's Branch Graph and Workspace Columns. Every open repository keeps its own, hidden while another shows,
+ * so switching back shows them as they were, scrolled where they were, without drawing them again.
+ */
+function RepositoryWork({ controller, repository, graphWidth, fileListView, showCommitAges }: {
+    controller: AppController
+    repository: AvailableOpenRepository
+    graphWidth: number
+    fileListView: FileListView
+    showCommitAges: boolean
+}) {
+    let snapshot = useRepositorySnapshot(controller.columns, repository.id)
+    // A repository that hasn't shown yet has nothing to draw.
+    if (!snapshot)
+        return null
+    return (
+        <RepositoryScope value={repository.id}>
+            {snapshot.graphView.shown && (
+                <BranchGraphPanel
+                    controller={controller}
+                    repositoryId={repository.id}
+                    mainWorktree={repository.info.mainWorktree}
+                    snapshot={snapshot}
+                    width={graphWidth}
+                    onResize={width => void controller.setGraphWidth(width)}
+                />
+            )}
+            <main className="columns">
+                <CommitAgesShown value={showCommitAges}>
+                    <WorkspaceColumns controller={controller} repositoryId={repository.id} snapshot={snapshot} fileListView={fileListView} />
+                </CommitAgesShown>
+            </main>
+        </RepositoryScope>
     )
 }
 

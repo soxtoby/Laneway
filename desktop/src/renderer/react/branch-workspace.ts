@@ -3,7 +3,8 @@ import { comparisonColumnId, type ComparisonColumnNode, comparisonNode, renameCo
 import type { ColumnInspection, Inspection } from "./inspection"
 import { errorMessage, type Notice } from "./notice"
 import { baseName } from "./repositories"
-import { createStore, type Store } from "./store"
+import { sharedSnapshot } from "./shared-snapshot"
+import { createStore, type RepositoryStore } from "./store"
 import { branchNodeFor, columnWorktree, reconcileWorktreeColumns, recoveryColumnId, recoveryWorkspaceColumn, workspaceGraph } from "./worktree-columns"
 
 type Api = Window["laneway"]
@@ -71,7 +72,7 @@ export interface GraphView {
     revealed?: { id: string; serial: number }
 }
 
-export interface BranchWorkspace extends Store<ColumnsSnapshot> {
+export interface BranchWorkspace extends RepositoryStore<ColumnsSnapshot> {
     activate(repositoryId: string): void
     deactivate(): void
     /** Reads the active repository again; a quiet read changes nothing on screen unless something changed. */
@@ -195,6 +196,7 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
         graphView: { shown: false, showAll: false, foldedIds: [] },
     })
     let states = new Map<string, RepositoryColumns>()
+    let published = new Map<string, ColumnsSnapshot>()
     let activeId: string | undefined
     // A disk change that lands mid-read is replayed once that read settles, asking the remote too if it was asked to.
     let changedWhileReading = false
@@ -251,39 +253,42 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
                 workspaceGraph(state.graph),
             )
         }
-        store.publish(
-            !activeId || !state
-                ? {
-                    loading: false,
-                    columns: [],
-                    recoveryErrors: {},
-                    blocked: false,
-                    busy: mutations > 0,
-                    graphView: { shown: false, showAll: false, foldedIds: [] },
-                }
-                : {
-                    repositoryId: activeId,
-                    graph: state.graph,
-                    loading: state.loading,
-                    error: state.error,
-                    columns,
-                    focusedId: state.focusedId,
-                    maximizedId: state.maximizedId,
-                    recoveryBusy: state.recoveryBusy,
-                    recoveryErrors: state.recoveryErrors,
-                    blocked: state.recoveries.length > 0,
-                    busy: mutations > 0,
-                    revealed: state.revealed,
-                    graphView: {
-                        shown: state.graphShown,
-                        showAll: state.showAll,
-                        selectedId: state.selectedId,
-                        foldedIds: state.foldedIds,
-                        marker: state.marker,
-                        revealed: state.graphRevealed,
-                    },
+        let snapshot: ColumnsSnapshot = !activeId || !state
+            ? {
+                loading: false,
+                columns: [],
+                recoveryErrors: {},
+                blocked: false,
+                busy: mutations > 0,
+                graphView: { shown: false, showAll: false, foldedIds: [] },
+            }
+            : {
+                repositoryId: activeId,
+                graph: state.graph,
+                loading: state.loading,
+                error: state.error,
+                columns,
+                focusedId: state.focusedId,
+                maximizedId: state.maximizedId,
+                recoveryBusy: state.recoveryBusy,
+                recoveryErrors: state.recoveryErrors,
+                blocked: state.recoveries.length > 0,
+                busy: mutations > 0,
+                revealed: state.revealed,
+                graphView: {
+                    shown: state.graphShown,
+                    showAll: state.showAll,
+                    selectedId: state.selectedId,
+                    foldedIds: state.foldedIds,
+                    marker: state.marker,
+                    revealed: state.graphRevealed,
                 },
-        )
+            }
+        if (activeId) {
+            snapshot = sharedSnapshot(published.get(activeId), snapshot)
+            published.set(activeId, snapshot)
+        }
+        store.publish(snapshot)
     }
 
     function columnViews(repositoryId: string, state: RepositoryColumns): ColumnView[] {
@@ -587,6 +592,7 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
     return {
         subscribe: store.subscribe,
         snapshot: store.snapshot,
+        snapshotFor: repositoryId => published.get(repositoryId),
 
         activate(repositoryId) {
             if (activeId == repositoryId)

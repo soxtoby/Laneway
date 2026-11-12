@@ -21,7 +21,7 @@ import { ScriptButton } from "./script-button"
 import { Button } from "./ui/Button"
 import { Tab, TabList, Tabs } from "./ui/Tabs"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
-import { useSnapshot } from "./use-snapshot"
+import { useRepositorySnapshot, useSnapshot } from "./use-snapshot"
 import { FileListViewMenu } from "./working-changes"
 import { workspaceGraph } from "./worktree-columns"
 import { MissingWorktree, WorktreeMenu, WorktreeTitle } from "./worktree-controls"
@@ -30,23 +30,26 @@ import { MissingWorktree, WorktreeMenu, WorktreeTitle } from "./worktree-control
 let pollInterval = 5_000
 
 /**
- * The active repository's Workspace Columns, side by side, each resizable, collapsible, and movable.
- * They follow their own controllers, so the app's snapshot, which changes with each Workspace State
- * update such as a repository's new icon, doesn't re-render every row.
+ * A repository's Workspace Columns, side by side, each resizable, collapsible, and movable. They follow their own
+ * controllers, so the app's snapshot, which changes with each Workspace State update such as a repository's new icon,
+ * doesn't re-render every row. `snapshot` is the repository's own, which stays put while another repository shows.
  */
-export const WorkspaceColumns = memo(function WorkspaceColumns({ controller, fileListView }: { controller: AppController; fileListView: FileListView }) {
+export const WorkspaceColumns = memo(function WorkspaceColumns({ controller, repositoryId, snapshot, fileListView }: {
+    controller: AppController
+    repositoryId: string
+    snapshot: ColumnsSnapshot
+    fileListView: FileListView
+}) {
     let { columns, inspection } = controller
-    let snapshot = useSnapshot(columns)
-    let inspected = useSnapshot(inspection)
+    let current = useRepositorySnapshot(inspection, repositoryId)
     let dragging = useRef<{ id: string; dropped: boolean }>(undefined)
     let graph = useMemo(() => snapshot.graph && workspaceGraph(snapshot.graph), [snapshot.graph])
-    let current = inspected.repositoryId == snapshot.repositoryId ? inspected : undefined
     useRefreshes(columns)
-    useUndo(controller, snapshot.repositoryId)
-    useReveal(snapshot.revealed)
-    useMaximized(snapshot.maximizedId)
-    useAuxiliaryFocus(current?.focused)
-    useAuxiliaryFocus(current?.revealed, false)
+    useUndo(controller, repositoryId)
+    useReveal(repositoryId, snapshot.revealed)
+    useMaximized(repositoryId, snapshot.maximizedId)
+    useAuxiliaryFocus(repositoryId, current?.focused)
+    useAuxiliaryFocus(repositoryId, current?.revealed, false)
     usePublishReviews(controller.publish, snapshot, graph, current)
 
     // Escape restores a maximized column's width.
@@ -113,7 +116,7 @@ export const WorkspaceColumns = memo(function WorkspaceColumns({ controller, fil
         columns.drop(dragging.current.id)
     }
     return (
-        <section className="column-row" onDragEnterCapture={rowDrag} onDragOverCapture={rowDrag} onDropCapture={rowDrop}>
+        <section className="column-row" data-repository-id={repositoryId} onDragEnterCapture={rowDrag} onDragOverCapture={rowDrag} onDropCapture={rowDrop}>
             {snapshot.columns.map(column => {
                 // A collapsed column hides its auxiliary columns, and a column without its files has none to show.
                 let auxiliary = column.collapsed || column.kind == "recovery" || column.worktree?.missing ? [] : current?.auxiliary[column.id] ?? []
@@ -153,6 +156,7 @@ export const WorkspaceColumns = memo(function WorkspaceColumns({ controller, fil
                             return [
                                 <AuxiliaryFrame
                                     key={view.id}
+                                    repositoryId={repositoryId}
                                     view={view}
                                     column={column}
                                     inspected={current}
@@ -265,7 +269,7 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
         event.preventDefault()
         columns.move(column.id, event.key == "<" ? -1 : 1)
         requestAnimationFrame(() => {
-            let element = columnElement(column.id)
+            let element = columnElement(snapshot.repositoryId!, column.id)
             element?.focus({ preventScroll: true })
             element?.scrollIntoView({ block: "nearest", inline: "nearest" })
         })
@@ -464,9 +468,9 @@ export function ColumnTabs({ columns }: { columns: BranchWorkspace }) {
         return null
     let show = (id: string, focus: boolean) => {
         columns.focus(id)
-        let element = columnElement(id)
+        let element = columnElement(snapshot.repositoryId!, id)
         if (id == snapshot.maximizedId)
-            showMaximized(id)
+            showMaximized(snapshot.repositoryId!, id)
         else
             element?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" })
         if (focus)
@@ -495,7 +499,8 @@ export function ColumnTabs({ columns }: { columns: BranchWorkspace }) {
 }
 
 /** An auxiliary column beside the Workspace Column it descends from, sharing that column's scopes. */
-function AuxiliaryFrame({ view, column, inspected, graph, controller, fileListView, maximized }: {
+function AuxiliaryFrame({ repositoryId, view, column, inspected, graph, controller, fileListView, maximized }: {
+    repositoryId: string
     view: AuxiliaryView
     column: ColumnView
     inspected?: InspectionSnapshot
@@ -512,11 +517,11 @@ function AuxiliaryFrame({ view, column, inspected, graph, controller, fileListVi
     // Closing it returns focus to the column it was opened from.
     let returnFocus = () =>
         requestAnimationFrame(() => {
-            let source = document.querySelector<HTMLElement>(`[data-auxiliary-id="${view.sourceId}"]`) ?? columnElement(view.sourceId)
+            let source = auxiliaryElement(repositoryId, view.sourceId) ?? columnElement(repositoryId, view.sourceId)
             source?.focus({ preventScroll: true })
         })
     return (
-        <ColumnScopes controller={controller} repositoryId={inspected?.repositoryId ?? ""} graph={graph} column={column}>
+        <ColumnScopes controller={controller} repositoryId={repositoryId} graph={graph} column={column}>
             {view.kind == "diff"
                 ? (
                     <MaybeHostedDiffScope host={host} inspection={inspection}>
@@ -585,49 +590,49 @@ function RecoveryPanel({ recovery, busy, error, onResolve }: {
 
 // A column an operation opened, such as a newly created branch's, comes into view with focus once it shows,
 // after any dialog that opened it has returned focus.
-function useReveal(revealed?: { id: string; serial: number }) {
+function useReveal(repositoryId: string, revealed?: { id: string; serial: number }) {
     useEffect(() => {
         if (!revealed)
             return
         let frame = requestAnimationFrame(() => {
-            let element = columnElement(revealed.id)
+            let element = columnElement(repositoryId, revealed.id)
             element?.focus({ preventScroll: true })
             element?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" })
         })
         return () => cancelAnimationFrame(frame)
-    }, [revealed])
+    }, [repositoryId, revealed])
 }
 
 // A column that is maximized comes into view once it has grown to fill it.
-function useMaximized(id?: string) {
+function useMaximized(repositoryId: string, id?: string) {
     useEffect(() => {
         if (!id)
             return
-        let frame = requestAnimationFrame(() => showMaximized(id))
+        let frame = requestAnimationFrame(() => showMaximized(repositoryId, id))
         return () => cancelAnimationFrame(frame)
-    }, [id])
+    }, [repositoryId, id])
 }
 
 /** Scrolls a maximized column into view with its auxiliary columns, which together fill the row's view. */
-function showMaximized(id: string) {
-    columnElement(id)?.closest(".column-group")?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" })
+function showMaximized(repositoryId: string, id: string) {
+    columnElement(repositoryId, id)?.closest(".column-group")?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" })
 }
 
 // An auxiliary column that opens, or is asked for again, comes into view once it shows, and takes focus when it is to,
 // after any menu that opened it has returned focus to its trigger.
-function useAuxiliaryFocus(shown?: { id: string; serial: number }, focus = true) {
+function useAuxiliaryFocus(repositoryId: string, shown?: { id: string; serial: number }, focus = true) {
     useEffect(() => {
         if (!shown)
             return
         let frame = requestAnimationFrame(() => {
-            let element = document.querySelector<HTMLElement>(`[data-auxiliary-id="${shown.id}"]`)
+            let element = auxiliaryElement(repositoryId, shown.id)
             if (focus)
                 element?.focus({ preventScroll: true })
             if (element)
                 showBesideSource(element)
         })
         return () => cancelAnimationFrame(frame)
-    }, [shown, focus])
+    }, [repositoryId, shown, focus])
 }
 
 /**
@@ -637,9 +642,9 @@ function useAuxiliaryFocus(shown?: { id: string; serial: number }, focus = true)
 function showBesideSource(element: HTMLElement) {
     let row = element.closest<HTMLElement>(".column-row")
     let sourceId = element.dataset.sourceColumnId
-    let source = sourceId ? document.querySelector<HTMLElement>(`[data-auxiliary-id="${sourceId}"]`) ?? columnElement(sourceId) : undefined
     if (!row)
         return
+    let source = sourceId ? row.querySelector<HTMLElement>(`[data-auxiliary-id="${sourceId}"]`) ?? columnIn(row, sourceId) : undefined
     // The row's scroll padding keeps its padding beside a column scrolled to its edge.
     let style = getComputedStyle(row)
     let view = row.getBoundingClientRect()
@@ -702,6 +707,20 @@ function useRefreshes(columns: BranchWorkspace) {
     }, [columns])
 }
 
-function columnElement(id: string) {
-    return [...document.querySelectorAll<HTMLElement>("[data-column-id]")].find(element => element.dataset.columnId == id)
+// Every open repository keeps its columns, hidden while another shows, so elements are found in the repository's own row.
+function columnElement(repositoryId: string, id: string) {
+    let row = repositoryRow(repositoryId)
+    return row && columnIn(row, id)
+}
+
+function columnIn(row: Element, id: string) {
+    return [...row.querySelectorAll<HTMLElement>("[data-column-id]")].find(element => element.dataset.columnId == id)
+}
+
+function auxiliaryElement(repositoryId: string, id: string) {
+    return repositoryRow(repositoryId)?.querySelector<HTMLElement>(`[data-auxiliary-id="${id}"]`) ?? undefined
+}
+
+function repositoryRow(repositoryId: string) {
+    return [...document.querySelectorAll<HTMLElement>(".column-row")].find(row => row.dataset.repositoryId == repositoryId)
 }

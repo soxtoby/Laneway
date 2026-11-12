@@ -180,6 +180,31 @@ describe("React repository panel", () => {
         expect(selected).toEqual([infos[2]!.id])
     })
 
+    test("switching repositories hides the one left behind as it was, and switching back shows the same columns", async () => {
+        let infos = ["alpha", "beta"].map(name => repositoryInfo(`D:\\Source\\${name}`))
+        let saved: Workspace = {
+            repositories: infos.map(info => ({ ...openedWorkspace(info).repositories[0]!, columns: [mainColumn()], layoutInitialized: true })),
+            activeRepositoryId: infos[0]!.id,
+        }
+        let app = await startReactApp(fakeLaneway({
+            getState: async () => ({ ...appState(), workspace: saved }),
+            readBranchGraph: async repositoryId => ({ ok: true, graph: branchGraph(repositoryId) }),
+            selectRepository: async id => saved = { ...saved, activeRepositoryId: id },
+            updateWorkspace: async next => saved = structuredClone(next),
+        }))
+        let alpha = repositoryColumn(infos[0]!.id)!
+
+        await app.act(() => press(repositoryRow("beta")))
+        await app.act(() => pause(0))
+        expect(isShown(alpha)).toBe(false)
+        expect(isShown(repositoryColumn(infos[1]!.id)!)).toBe(true)
+
+        await app.act(() => press(repositoryRow("alpha")))
+        expect(repositoryColumn(infos[0]!.id) == alpha).toBe(true)
+        expect(isShown(alpha)).toBe(true)
+        expect(isShown(repositoryColumn(infos[1]!.id)!)).toBe(false)
+    })
+
     test("a missing repository explains itself and can be located", async () => {
         let repository = repositoryInfo("D:\\Source\\moved")
         let missing: Workspace = {
@@ -224,6 +249,20 @@ function repositoryNames() {
 
 function repositoryRow(name?: string) {
     return repositoryRows().find(row => name == undefined || row.getAttribute("aria-label") == name)!
+}
+
+function mainColumn() {
+    return { kind: "branch" as const, id: "branch:refs/heads/main", ref: "refs/heads/main", lastSeenObjectId: "1".repeat(40), width: 380, collapsed: false }
+}
+
+// Each open repository's columns sit in a row of their own, which stays while the repository is hidden.
+function repositoryColumn(repositoryId: string) {
+    let row = [...document.querySelectorAll<HTMLElement>(".column-row")].find(candidate => candidate.dataset.repositoryId == repositoryId)
+    return row?.querySelector<HTMLElement>("[data-column-id='branch:refs/heads/main']")
+}
+
+function isShown(element: HTMLElement) {
+    return element.closest<HTMLElement>("main")?.style.display != "none"
 }
 
 function dragHandle(name: string) {

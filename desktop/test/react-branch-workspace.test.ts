@@ -56,6 +56,20 @@ describe("branch workspace", () => {
         expect(notices.map(notice => notice.message)).toEqual(["other/team no longer exists; its column was closed."])
     })
 
+    test("a repository's snapshot stays the same object while another is active, and follows it once active again", async () => {
+        let { columns, repositoryId } = setUp(() => {})
+        await activate(columns)
+        let shown = columns.snapshotFor(repositoryId)
+
+        columns.activate(repositoryInfo("D:\\Source\\other").id)
+        await settle()
+        columns.toggleGraph()
+        expect(columns.snapshotFor(repositoryId)).toBe(shown!)
+
+        columns.activate(repositoryId)
+        expect(columns.snapshotFor(repositoryId)).toBe(columns.snapshot())
+    })
+
     test("closing a branch's column removes it, but a worktree's column collapses instead", async () => {
         let { columns, saved } = setUp(graph => {
             graph.branches[1]!.checkedOut = [{ path: "D:\\Source\\linked", name: "linked", head: graph.branches[1]!.tip, main: false }]
