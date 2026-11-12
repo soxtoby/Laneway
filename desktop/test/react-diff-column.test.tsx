@@ -273,7 +273,7 @@ describe("React diff column", () => {
         let column = diffColumn()!
         expect(document.activeElement == column).toBe(true)
         expect(column.querySelector("header")!.textContent).toContain("Staged · ")
-        expect(column.querySelector(".auxiliary-source")!.textContent).toBe("From inspection")
+        expect(column.querySelector(".auxiliary-source")!.textContent).toBe("From feature/laneway")
         expect(column.dataset.sourceColumnId).toBe(columns()[0]!.dataset.columnId)
         await app.act(() => press(button(file(column, "src/file.txt"), "Side by side")))
         expect(column.querySelector(".diff-lines.split")).not.toBeNull()

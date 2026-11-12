@@ -138,7 +138,7 @@ describe("app controller", () => {
 
         refresh.resolve()
         await settle()
-        expect(columnNames(controller)).toEqual(["inspection"])
+        expect(columnNames(controller)).toEqual(["feature/laneway"])
         expect(controller.columns.snapshot()).not.toBe(shown)
     })
 

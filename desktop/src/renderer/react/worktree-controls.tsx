@@ -4,35 +4,24 @@ import { Autocomplete, Button as AriaButton, useFilter } from "react-aria-compon
 import type { ColumnView } from "./branch-workspace"
 import { CommitAgesShown } from "./commit-age"
 import { Hint } from "./controls"
-import { EditableName } from "./editable-name"
 import { copyText } from "./file-paths"
 import { MoreIcon } from "./icons"
 import { Button } from "./ui/Button"
 import { Text } from "./ui/Content"
 import { Dialog, Heading } from "./ui/Dialog"
+import { Form } from "./ui/Form"
 import { Menu, MenuItem, MenuSection, MenuTrigger, Separator } from "./ui/Menu"
 import { Modal } from "./ui/Modal"
 import { SearchField } from "./ui/SearchField"
+import { TextField } from "./ui/TextField"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 
-/** A worktree column's title: the worktree's name, renamed in place, over its path, marked when missing or locked. */
-export function WorktreeTitle({ worktree, busy, onPrepare }: { worktree: BranchGraphWorktree; busy: boolean; onPrepare(request: WorktreeRequest): void }) {
-    let fixed = worktree.main ? "Main worktree" : worktree.locked ? "Unlock worktree to rename" : worktree.missing ? "Locate worktree to rename" : undefined
+/** A worktree column's title: the column's name over the worktree's path, marked when missing or locked. */
+export function WorktreeTitle({ name, worktree }: { name: string; worktree: BranchGraphWorktree }) {
     return (
         <div className="column-title">
             <div className="column-title-row">
-                {/* A worktree that can't be renamed says why over its name. */}
-                <Hint text={fixed} forControl>
-                    <h2 className="column-name">
-                        <EditableName
-                            name={worktree.name}
-                            label="worktree"
-                            isDisabled={busy || fixed != undefined}
-                            saveOnBlur
-                            onCommit={basename => onPrepare({ action: "rename", path: worktree.path, basename })}
-                        />
-                    </h2>
-                </Hint>
+                <h2 className="column-name">{name}</h2>
                 {worktree.missing && <span className="state-chip">Missing</span>}
                 {worktree.locked && (
                     <Hint text={worktree.lockReason ?? "Locked"}>
@@ -57,13 +46,14 @@ interface WorktreeMenuProps {
 }
 
 /**
- * A worktree column's actions: switching its branch, unlocking, repairing, or removing it. A branch column
+ * A worktree column's actions: switching its branch, renaming, unlocking, repairing, or removing it. A branch column
  * without a worktree offers checking the branch out instead, in an existing worktree or a new one. Either
  * ends with copying the branch name and worktree path, then showing or hiding every commit row's age. A
  * worktree in a Historical Edit neither switches branch nor goes away until it returns.
  */
 export function WorktreeMenu({ column, graph, busy, onPrepare, chooseDirectory, onShowCommitAges }: WorktreeMenuProps) {
     let [choosing, setChoosing] = useState(false)
+    let [renaming, setRenaming] = useState(false)
     let showCommitAges = useContext(CommitAgesShown)
     let worktree = column.worktree
     let editing = worktree?.historicalEdit != undefined
@@ -85,6 +75,12 @@ export function WorktreeMenu({ column, graph, busy, onPrepare, chooseDirectory, 
                     {worktree && !worktree.missing && !editing && (
                         <MenuItem aria-label="Switch worktree branch" onAction={() => setChoosing(true)}>
                             Switch branch…
+                        </MenuItem>
+                    )}
+                    {/* The Main Worktree never moves; a locked or missing one is unlocked or located first, just below. */}
+                    {worktree && !worktree.main && (
+                        <MenuItem isDisabled={worktree.locked || worktree.missing} onAction={() => setRenaming(true)}>
+                            Rename worktree…
                         </MenuItem>
                     )}
                     {!worktree && column.kind == "branch" && <CheckoutItems graph={graph} branch={column.branch} onPrepare={onPrepare} />}
@@ -125,7 +121,65 @@ export function WorktreeMenu({ column, graph, busy, onPrepare, chooseDirectory, 
                     }}
                 />
             )}
+            {worktree && (
+                <WorktreeRename
+                    worktree={worktree}
+                    isOpen={renaming}
+                    onClose={() => setRenaming(false)}
+                    onRename={basename => {
+                        setRenaming(false)
+                        onPrepare({ action: "rename", path: worktree.path, basename })
+                    }}
+                />
+            )}
         </>
+    )
+}
+
+/** Asks for a worktree directory's new name; the rename is then reviewed like any other worktree operation. */
+function WorktreeRename({ worktree, isOpen, onClose, onRename }: {
+    worktree: BranchGraphWorktree
+    isOpen: boolean
+    onClose(): void
+    onRename(basename: string): void
+}) {
+    let [name, setName] = useState(worktree.name)
+    // Each opening starts from the worktree's current name.
+    let [opened, setOpened] = useState(isOpen)
+    if (isOpen != opened) {
+        setOpened(isOpen)
+        if (isOpen)
+            setName(worktree.name)
+    }
+    let next = name.trim()
+    return (
+        <Modal isOpen={isOpen} isDismissable onOpenChange={open => open || onClose()}>
+            <Dialog className="react-aria-Dialog worktree-dialog">
+                <Form
+                    className="react-aria-Form entry-form"
+                    onSubmit={event => {
+                        event.preventDefault()
+                        if (next && next != worktree.name)
+                            onRename(next)
+                    }}
+                >
+                    <Heading slot="title">Rename worktree</Heading>
+                    <TextField
+                        label="Directory name"
+                        description={worktree.path}
+                        value={name}
+                        onChange={setName}
+                        autoComplete="off"
+                        spellCheck="false"
+                        autoFocus
+                    />
+                    <div className="dialog-actions">
+                        <Button variant="secondary" onPress={onClose}>Cancel</Button>
+                        <Button type="submit" variant="accent" isDisabled={!next || next == worktree.name}>Rename</Button>
+                    </div>
+                </Form>
+            </Dialog>
+        </Modal>
     )
 }
 
@@ -144,7 +198,7 @@ export function CheckoutItems({ graph, branch, onPrepare }: { graph: BranchGraph
                     isDisabled={item.missing || branch.checkedOut.some(holder => holder.path == item.path)}
                     onAction={() => onPrepare({ action: "switch", path: item.path, branch: ref, move: true })}
                 >
-                    <Text slot="label">{`${item.name} · ${worktreeBranch(graph, item)}`}</Text>
+                    <Text slot="label">{`${worktreeBranch(graph, item)} · ${item.name}`}</Text>
                     <Text slot="description">{item.path}</Text>
                 </MenuItem>
             ))}

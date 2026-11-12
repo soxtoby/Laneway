@@ -12,6 +12,8 @@
 
 ### Changed
 
+- Worktree columns and their tabs are named for the branch checked out in them, rather than the worktree's folder, whose path still shows under the name. A detached worktree's column keeps its folder's name. Rename a worktree from its column's actions menu.
+- Check out in, and choosing where to apply a stash, list each worktree by its branch first.
 - Pull latest no longer restacks a published branch just because the Primary Branch moved forward, so a pull no longer leaves it needing a Force publish. The branch still gets the new commits from its own remote branch, and Restack moves it when you want it moved. A branch with a published branch built on it stays put too; branches with nothing published restack as before.
 - When a branch's column closes because the branch no longer exists, the notice names the branch.
 - The Staged divider in Working Changes has an arrow pointing up at the staged files above it.

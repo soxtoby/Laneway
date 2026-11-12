@@ -13,7 +13,7 @@ describe("branch workspace", () => {
 
         await activate(columns)
 
-        expect(columns.snapshot().columns.map(column => column.name)).toEqual(["linked", "project"])
+        expect(columns.snapshot().columns.map(column => column.worktree?.path)).toEqual(["D:\\Source\\linked", "D:\\Source\\project"])
         expect(columns.snapshot().focusedId).toBe("branch:refs/heads/feature/laneway")
         expect(saved().repositories[0]).toMatchObject({ layoutInitialized: true })
     })

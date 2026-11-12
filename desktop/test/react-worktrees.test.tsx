@@ -71,7 +71,7 @@ describe("React worktree actions", () => {
         expect(executions).toEqual([{ action: "remove", path: worktree.path, preserve: true }])
         expect(document.querySelector("[role=dialog]") == null).toBe(true)
 
-        await app.act(() => press(button(column, "Collapse missing")))
+        await app.act(() => press(button(column, "Collapse other/team")))
         expect(column.textContent).toContain("Missing")
         expect(workingReads).not.toContain(worktree.path)
     })
@@ -145,7 +145,7 @@ describe("React worktree actions", () => {
         })
 
         await app.act(() => press(button(columnElement(main.id), "Check out branch")))
-        expect(menuLabels()).toEqual(["inspection · feature/laneway", "New worktree", "Copy branch name"])
+        expect(menuLabels()).toEqual(["feature/laneway · inspection", "New worktree", "Copy branch name"])
         await app.act(() => press(menuItem("New worktree")))
 
         // The engine reviews a checkout as it runs it, so nothing is previewed or confirmed first.
@@ -272,7 +272,7 @@ describe("React worktree actions", () => {
         expect(transitions).toEqual(["undo"])
     })
 
-    test("a worktree renames in place, switches branch by search at once, and asks before removing its Working Changes", async () => {
+    test("a worktree renames from its actions, switches branch by search at once, and asks before removing its Working Changes", async () => {
         let scenario = inspectionScenario()
         scenario.graph.branches[1]!.checkedOut[0]!.main = false
         let requests: WorktreeRequest[] = []
@@ -291,18 +291,22 @@ describe("React worktree actions", () => {
             },
         })
         let header = () => columnElement("branch:refs/heads/feature/laneway").querySelector<HTMLElement>("header")!
-        let field = () => header().querySelector<HTMLInputElement>("input")!
+        let field = () => dialog().querySelector<HTMLInputElement>("input")!
+        let rename = async () => {
+            await app.act(() => press(button(header(), "Worktree actions")))
+            await app.act(() => press(menuItem("Rename worktree…")))
+        }
 
-        await app.act(() => press(button(header(), "Rename worktree")))
-        expect(field().getAttribute("aria-label")).toBe("New name for worktree")
+        await rename()
         expect(field().value).toBe("inspection")
         await app.act(() => type(field(), "cancelled"))
-        await app.act(() => key(field(), "Escape"))
+        await app.act(() => press(button(dialog(), "Cancel")))
         expect(requests).toEqual([])
-        expect(header().querySelector("input") == null).toBe(true)
-        await app.act(() => press(button(header(), "Rename worktree")))
+        expect(document.querySelector("[role=dialog]") == null).toBe(true)
+        await rename()
+        expect(field().value).toBe("inspection")
         await app.act(() => type(field(), "renamed"))
-        await app.act(() => key(field(), "Enter"))
+        await app.act(() => press(button(dialog(), "Rename")))
         expect(requests).toEqual([{ action: "rename", path: "D:\\Source\\inspection", basename: "renamed" }])
         expect(dialog().querySelector("[role=alert]")?.textContent).toBe("Preview requested")
         await app.act(() => press(button(dialog(), "Cancel")))
@@ -392,7 +396,7 @@ describe("React worktree actions", () => {
         expect(entries().map(entry => entry.querySelector(".stash-entry-label")?.textContent)).toEqual(["stash@{0}feature/laneway", "stash@{1}Unassigned"])
         await app.act(() => press(button(entries()[0]!, "Apply…")))
         await app.act(() => press(dialog().querySelector<HTMLElement>(".react-aria-Select button")!))
-        await app.act(() => press(option("other · detached")))
+        await app.act(() => press(option("detached · other")))
         await app.act(() => press(button(dialog(), "Apply stash")))
         await app.act(() => press(button(entries()[1]!, "Drop")))
 
@@ -477,8 +481,4 @@ function option(label: string) {
     if (!item)
         throw new Error(`No ${label} option`)
     return item
-}
-
-function key(target: Element, key: string) {
-    target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }))
 }

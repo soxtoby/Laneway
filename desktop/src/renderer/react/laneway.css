@@ -379,11 +379,6 @@
 .auxiliary-header {
     box-shadow: inset 0 -1px var(--border-color);
 
-    .column-name {
-        display: block;
-        flex: 0 1 auto;
-    }
-
     .column-title-row > .auxiliary-source {
         flex: 0 0 auto;
         color: var(--text-color-placeholder);
@@ -630,23 +625,17 @@
     margin-inline-start: var(--spacing-1);
 }
 
-/* A worktree column's name, which renames in place, beside its missing or locked mark. */
+/* A worktree column's name beside its missing or locked mark. */
 .column-title-row {
     min-width: 0;
     display: flex;
     align-items: center;
     gap: var(--spacing-2);
 
-    /* Every level shrinks, so a long name ellipsizes instead of pushing the chips out. */
+    /* The name shrinks, so a long one ellipsizes instead of pushing the chips out. */
     .column-name {
         flex: 0 1 auto;
         min-width: 0;
-        display: flex;
-        margin: 0;
-    }
-
-    .editable-name-button[data-disabled] {
-        cursor: inherit;
     }
 }
 
@@ -663,14 +652,9 @@
 
 .column-name {
     margin: 0;
+    padding-block: 3px;
     font-weight: 600;
     font-size: var(--font-size-lg);
-}
-
-/* A plain title line is as tall as a renamable one, whose button pads its name, so headers line up. */
-.column-title > .column-name,
-.auxiliary-header .column-name {
-    padding-block: 3px;
 }
 
 .column-path,

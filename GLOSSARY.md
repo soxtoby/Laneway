@@ -29,7 +29,7 @@ The global keyboard-first search and navigation surface. Selecting a branch loca
 _Avoid_: Command palette, branch switcher
 
 **Workspace Column**:
-A resizable view of an Active Stack ending at one branch, or a Branch Comparison Column. A stack column may be branch-only, or worktree-backed with Working Changes; every Registered Worktree retains a column that can be collapsed in place; branch-only and comparison columns can be closed. Removing a worktree removes its column. Collapsing preserves column order and expanded width.
+A resizable view of an Active Stack ending at one branch, or a Branch Comparison Column. A stack column may be branch-only, or worktree-backed with Working Changes, and is named for its branch, or, backed by a detached worktree, for the worktree's directory. Every Registered Worktree retains a column that can be collapsed in place; branch-only and comparison columns can be closed. Removing a worktree removes its column. Collapsing preserves column order and expanded width.
 _Avoid_: Worktree column
 
 **Workspace State**:

@@ -43,7 +43,7 @@ export function StashesDialog({ stashes }: { stashes: Stashes }) {
                         isDisabled={busy}
                     >
                         {preview.worktrees.map(worktree => (
-                            <SelectItem key={worktree.path} id={worktree.path}>{`${worktree.name} · ${worktree.branch ?? "detached"}`}</SelectItem>
+                            <SelectItem key={worktree.path} id={worktree.path}>{`${worktree.branch ?? "detached"} · ${worktree.name}`}</SelectItem>
                         ))}
                     </Select>
                 )}

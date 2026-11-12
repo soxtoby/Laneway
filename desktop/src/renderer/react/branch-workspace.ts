@@ -853,16 +853,18 @@ function removedColumnName(id: string) {
     return id.replace(/^branch:/, "").replace(/^refs\/(heads|remotes)\//, "")
 }
 
-// A worktree column is named for its worktree; a branch or comparison without one, for itself.
+// A column is named for its branch, worktree-backed or not, since a worktree's directory name often says little; a
+// detached worktree has no branch yet, so its column is named for its directory.
 function identity(node: ColumnNode, worktree?: BranchGraphWorktree): { name: string; description: string; identity: ColumnIdentity } {
     if (node.kind == "recovery")
         return { name: baseName(node.recovery.path), description: "Worktree recovery", identity: "recovery" }
     if (node.kind == "comparison")
         return { name: node.comparison.name, description: node.comparison.description, identity: "comparison" }
     if (worktree) {
+        let name = node.kind == "virtual" ? worktree.name : node.branch.name
         return worktree.main
-            ? { name: worktree.name, description: "Main worktree", identity: "main" }
-            : { name: worktree.name, description: node.kind == "virtual" ? "Virtual worktree" : "Worktree", identity: "worktree" }
+            ? { name, description: "Main worktree", identity: "main" }
+            : { name, description: node.kind == "virtual" ? "Virtual worktree" : "Worktree", identity: "worktree" }
     }
     let description = node.kind == "branch" ? node.branch.remoteOnly ? "Remote branch" : "Branch" : "Virtual branch"
     return { name: node.branch.name, description, identity: "branch" }

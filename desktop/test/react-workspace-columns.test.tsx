@@ -244,21 +244,21 @@ describe("React Workspace Columns", () => {
         }
     })
 
-    test("a column header's hint shows over the header, and its name's own over the name", async () => {
+    test("a worktree column is named for its branch, and its header's hint gives way to its path's", async () => {
         let app = await startReactApp(inspectionScenario().api)
         let header = column(columnIds()[0]!).querySelector("header")!
-        let name = header.querySelector(".column-name")!
+        let path = header.querySelector(".column-path")!
 
         await app.act(() => hover(header))
         await app.act(() => wait(1800))
         let overHeader = tooltips()
-        await app.act(() => hover(name, header))
+        await app.act(() => hover(path, header))
         await app.act(() => wait(300))
-        let overName = tooltips()
+        let overPath = tooltips()
 
+        expect(header.querySelector(".column-name")!.textContent).toBe("feature/laneway")
         expect(overHeader).toEqual([dragHint])
-        // The Main Worktree's name can't be renamed, and says why.
-        expect(overName).toEqual(["Main worktree"])
+        expect(overPath).toEqual(["D:\\Source\\inspection"])
     })
 
     test("worktree columns stay open, collapse in place across restart, and close when their worktree goes", async () => {
@@ -272,7 +272,7 @@ describe("React Workspace Columns", () => {
         expect(divider(branch.id).getAttribute("aria-label")).toBe("Resize branch column")
 
         await app.act(() => key(divider(branch.id), "ArrowRight"))
-        await app.act(() => press(button(first, "Collapse inspection")))
+        await app.act(() => press(button(first, "Collapse feature/laneway")))
         expect(first.classList.contains("collapsed")).toBe(true)
         expect(first.textContent).toContain("2 changed files")
         expect(savedColumns(scenario.saved()).map(column => column.id)).toEqual([branch.id, main.id])
@@ -282,7 +282,7 @@ describe("React Workspace Columns", () => {
         app = await startReactApp(scenario.api)
         let restored = column(branch.id)
         expect(restored.classList.contains("collapsed")).toBe(true)
-        await app.act(() => press(button(restored, "Expand inspection")))
+        await app.act(() => press(button(restored, "Expand feature/laneway")))
         expect(column(branch.id).classList.contains("collapsed")).toBe(false)
         expect(column(branch.id).style.width).toBe("390px")
         await app.act(() => dblclick(divider(branch.id)))

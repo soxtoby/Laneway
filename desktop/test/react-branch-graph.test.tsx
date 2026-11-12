@@ -146,8 +146,8 @@ describe("React Branch Graph", () => {
         expect(executions).toHaveLength(3)
         await app.act(() => rightClick(row(feature!.id)))
         await app.act(() => press(menuItem("Check out in")))
-        expect(menuLabels(submenu())).toEqual(["graph-project · main", "team · other/team", "New worktree"])
-        await app.act(() => press(menuItem("team · other/team", submenu())))
+        expect(menuLabels(submenu())).toEqual(["main · graph-project", "other/team · team", "New worktree"])
+        await app.act(() => press(menuItem("other/team · team", submenu())))
         expect(executions.at(-1)).toEqual(checkedOut(linked.path))
         expect(document.querySelector("[role=menu]") == null).toBe(true)
 
@@ -155,7 +155,7 @@ describe("React Branch Graph", () => {
         await app.act(() => rightClick(row(team!.id)))
         expect(menuItem("Check out").getAttribute("aria-disabled")).toBe("true")
         await app.act(() => press(menuItem("Check out in")))
-        expect(menuItem("team · other/team", submenu()).getAttribute("aria-disabled")).toBe("true")
+        expect(menuItem("other/team · team", submenu()).getAttribute("aria-disabled")).toBe("true")
 
         await app.act(() => rightClick(row(feature!.id)))
         await app.act(() => press(menuItem("Copy branch name")))

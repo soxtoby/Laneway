@@ -314,7 +314,7 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                 </IconButton>
                                 <ColumnKind column={column} />
                                 {column.worktree && column.kind != "recovery"
-                                    ? <WorktreeTitle worktree={column.worktree} busy={busy} onPrepare={prepare} />
+                                    ? <WorktreeTitle name={column.name} worktree={column.worktree} />
                                     : (
                                         <div className="column-title">
                                             <h2 className="column-name">{column.name}</h2>
