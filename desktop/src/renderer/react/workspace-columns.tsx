@@ -274,6 +274,11 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
             element?.scrollIntoView({ block: "nearest", inline: "nearest" })
         })
     }
+    // An expanded column scrolls into view once it has its width.
+    let expand = () => {
+        columns.toggleCollapsed(column.id)
+        requestAnimationFrame(() => columnElement(snapshot.repositoryId!, column.id)?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" }))
+    }
     // Like a window's title bar, a double-click maximizes; the header's own controls keep theirs.
     let toggleMaximized = (event: MouseEvent) => {
         if (maximizable && !(event.target instanceof Element && event.target.closest("button, input, select, textarea, a, [role=menu]")))
@@ -293,7 +298,7 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
             {column.collapsed
                 ? (
                     <Hint text={column.worktree?.path ?? column.name} placement="end">
-                        <button type="button" className="expand-column" aria-label={`Expand ${column.name}`} onClick={() => columns.toggleCollapsed(column.id)}>
+                        <button type="button" className="expand-column" aria-label={`Expand ${column.name}`} onClick={expand}>
                             <ExpandColumnIcon className="expand-column-icon" />
                             <span className="expand-column-name">{column.name}</span>
                             <span className="expand-column-summary">{workingSummary(column, files)}</span>

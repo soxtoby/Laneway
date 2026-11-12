@@ -26,6 +26,7 @@
 - A commit diff column opens as wide as a branch column.
 - A diff column that opens scrolls into view beside the column it came from. If the two don't fit side by side, the column it came from stays in view.
 - Switching repositories is faster, especially to one with a diff column open. Each repository you switch back to shows its columns, diffs, and scroll positions as you left them.
+- Expanding a collapsed column scrolls it into view.
 
 ### Fixed
 
