@@ -3,7 +3,7 @@ import type { BranchGraphBranchNode, BranchGraphReadOptions, PullFetch, PullRequ
 import { isAncestor, readActiveStack } from "./active-stack"
 import { type ConflictSession, gitHead, openConflictSession, rewriteStack, type StackRewritePlan } from "./conflicts/conflict-operations"
 import type { ChangeRecorder } from "./operations/change-recorder"
-import { forgetPulledUpstream, readPulledUpstreams, readRemoteTips } from "./pulled-upstreams"
+import { forgetPulledUpstream, laneFetch, readPulledUpstreams, readRemoteTips, savePulledUpstream } from "./pulled-upstreams"
 
 type Changes = ChangeRecorder
 export type PullProgressReporter = (message: string, completed: number, total: number) => void
@@ -161,7 +161,7 @@ export async function preparePull(
 }
 
 export async function fetchRemote(repo: RepositoryGit, remote: string): Promise<PullFetch> {
-    let result = await repo.run(main(repo), ["fetch", "--prune", "--no-write-fetch-head", "--", remote])
+    let result = await repo.run(main(repo), [...laneFetch, "--", remote])
     return result.exitCode == 0
         ? { remote, status: "fetched" }
         : { remote, status: "failed", message: result.stderr.toString().trim() || `Git could not fetch ${remote}.` }
@@ -295,6 +295,15 @@ async function updateStack(
     let forget = async (ref: string) => {
         if (pulled.delete(ref))
             await forgetPulledUpstream(repo, ref)
+    }
+    // A branch replayed onto another Base holds copies of its upstream's commits, so only the record says it pulled them.
+    let settle = async (ref: string, upstream: string, tip: string) => {
+        if (!pulled.has(ref))
+            return
+        if (await isAncestor(repo, upstream, tip))
+            return forget(ref)
+        pulled.set(ref, upstream)
+        await savePulledUpstream(repo, ref, upstream)
     }
 
     // Branches already synchronized by an overlapping stack in this pull form the effective Base.
@@ -529,9 +538,12 @@ async function updateStack(
         let result = await rewriteStack(repo, session, plan, changes, cancelled)
         for (let branch of result.branches)
             processed.set(branch.ref, { before: branch.before, current: branch.current })
-        // Each branch with an upstream now holds its tip, or deliberately replaces it; a vanished one keeps its record.
-        for (let item of run.items.filter(item => item.upstream))
-            await forget(item.branch.ref)
+        // Each branch with an upstream has now pulled its tip, or deliberately replaces it; a vanished one keeps its record.
+        for (let item of run.items) {
+            let tip = result.branches.find(branch => branch.ref == item.branch.ref)?.current
+            if (item.upstream && tip)
+                await settle(item.branch.ref, item.upstream, tip)
+        }
         parent = result.branches.at(-1)!.current
         rewrites++
     }

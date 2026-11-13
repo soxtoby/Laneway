@@ -5,9 +5,12 @@ import { isAncestor } from "./active-stack"
 // records it, so undoing a pull restores the records the pull cleared.
 let variable = "lanewaypulledupstream"
 
+/** How Laneway fetches a remote, which the reflog of each remote-tracking branch it moves remembers. */
+export let laneFetch = ["fetch", "--prune", "--no-write-fetch-head"]
+
 /**
- * The upstream tip each branch last pulled, by branch ref, recorded only while a Laneway fetch has moved the upstream
- * since; otherwise its remote-tracking tip is the one last pulled. Null when the upstream had not been fetched, or when
+ * The upstream tip each branch last pulled, by branch ref, recorded while a fetch has moved the upstream since or a pull
+ * left the branch with copies of its commits; otherwise its remote-tracking tip is the one last pulled. Null when the upstream had not been fetched, or when
  * its tip is no longer in the repository.
  */
 export async function readPulledUpstreams(repo: RepositoryGit) {
@@ -50,23 +53,70 @@ export async function recordFetchedUpstreams(repo: RepositoryGit, before: Map<st
     let [records, after, branches] = await Promise.all([
         readPulledUpstreams(repo),
         readRemoteTips(repo),
-        repo.command(main, ["for-each-ref", "--format=%(refname)%00%(objectname)%00%(upstream)", "refs/heads/"]),
+        repo.command(main, ["for-each-ref", "--format=%(refname)%00%(objectname)%00%(upstream)%00%(upstream:trackshort)", "refs/heads/"]),
     ])
     for (let line of branches.toString().split("\n").filter(Boolean)) {
-        let [ref, local, upstream] = line.split("\0") as [string, string, string]
+        let [ref, local, upstream, track] = line.split("\0") as [string, string, string, string]
         if (!upstream.startsWith("refs/remotes/"))
             continue
         let tip = after.get(upstream) ?? null
         let previous = before.get(upstream) ?? null
-        let pulled = records.has(ref) ? records.get(ref)! : previous != tip ? previous : undefined
+        let lacking = track.includes("<")
+        let pulled = records.has(ref)
+            ? records.get(ref)!
+            // Another tool's fetch may have moved the upstream before this one did, or instead of it.
+            : (lacking && previous ? await heldUpstream(repo, ref, upstream, local, previous) : undefined) ?? (previous != tip ? previous : undefined)
         if (pulled === undefined)
             continue
+        // Published since, by any tool, and then rewritten: the upstream's tip was the branch's own.
+        if (records.has(ref) && lacking && tip && tip != pulled && await heldUpstream(repo, ref, upstream, local, tip) == tip) {
+            await forgetPulledUpstream(repo, ref)
+            continue
+        }
         let current = await caughtUp(repo, local, tip, pulled)
-        if (current && records.has(ref))
+        // A pull that replayed the upstream's commits keeps its record until the branch's history holds the tip.
+        if (current && records.has(ref) && !lacking)
             await forgetPulledUpstream(repo, ref)
         else if (!current && !records.has(ref))
             await repo.command(main, ["config", "--local", key(ref), pulled ?? ""])
     }
+}
+
+/**
+ * The newest tip in an upstream's reflog that the branch's history has held, going by the branch's own reflog: the tip
+ * it last pulled, whichever tool fetched since. Undefined when the reflogs can't say.
+ */
+async function heldUpstream(repo: RepositoryGit, ref: string, upstream: string, local: string, tip: string) {
+    let [entries, held] = await Promise.all([reflog(repo, upstream, 50), reflog(repo, ref, 200)])
+    let start = entries.findIndex(entry => entry.tip == tip)
+    // A tip Laneway fetched has its record already, or was pulled; one it replayed is in no history the branch held.
+    if (start < 0 || !held.length || entries[start]!.subject.startsWith(laneFetch.join(" ")))
+        return undefined
+    for (let entry of entries.slice(start)) {
+        let lacking = await repo.run(repo.descriptor.mainWorktree, [
+            "rev-list",
+            "--max-count=1",
+            entry.tip,
+            "--not",
+            local,
+            ...new Set(held.map(item => item.tip)),
+        ])
+        if (lacking.exitCode == 0 && !lacking.stdout.toString().trim())
+            return entry.tip
+    }
+    return undefined
+}
+
+/** What a ref's reflog remembers, newest first. */
+async function reflog(repo: RepositoryGit, ref: string, limit: number) {
+    let result = await repo.run(repo.descriptor.mainWorktree, ["log", "--walk-reflogs", `--max-count=${limit}`, "--format=%H %gs", ref, "--"])
+    let lines = result.exitCode == 0 ? result.stdout.toString().split("\n").filter(Boolean) : []
+    return lines.map(line => ({ tip: line.slice(0, line.indexOf(" ")), subject: line.slice(line.indexOf(" ") + 1) }))
+}
+
+/** Records the upstream tip a branch last pulled while its history doesn't hold that tip. */
+export async function savePulledUpstream(repo: RepositoryGit, ref: string, tip: string) {
+    await repo.command(repo.descriptor.mainWorktree, ["config", "--local", key(ref), tip])
 }
 
 /** Whether a branch holds everything its upstream does, or its upstream is back at the tip the branch last pulled. */

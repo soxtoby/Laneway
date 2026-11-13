@@ -5,7 +5,7 @@ import { executeConflict } from "./conflicts/conflict-operations"
 import { ChangeRecorder } from "./operations/change-recorder"
 import { OperationRuntimeError } from "./operations/operation-contracts"
 import { latestReceipt, type MutationLock, openReceipt, readReceipt, receiptId, saveReceipt } from "./publish-receipts"
-import { caughtUp, readPulledUpstreams } from "./pulled-upstreams"
+import { caughtUp, forgetPulledUpstream, readPulledUpstreams } from "./pulled-upstreams"
 
 export type PublishProgressReporter = (message: string, completed: number, total: number) => void
 export interface PublishContext {
@@ -366,6 +366,9 @@ async function recordPublished(repo: RepositoryGit, receipt: PublishReceipt) {
     for (let update of published) {
         let tracking = `refs/remotes/${update.remote}/${update.branch}`
         await repo.run(main, update.target ? ["update-ref", tracking, update.target, update.expected ?? ""] : ["update-ref", "-d", tracking, update.expected!])
+        // The upstream is now the branch's own tip, so what it last pulled no longer matters.
+        if (update.target && update.target == await repo.resolveRef(`refs/heads/${update.branch}`))
+            await forgetPulledUpstream(repo, `refs/heads/${update.branch}`)
     }
 
     let recording = published.filter(update => update.setUpstream)

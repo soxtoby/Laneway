@@ -249,6 +249,61 @@ test("incorporates upstream commits an earlier fetch brought but no pull integra
     expect(git(local, "log", "--format=%s", "main..one").split("\n")).toEqual(["mine on one", "colleague on one", "one"])
 }, 120_000)
 
+test("incorporates upstream commits another tool's fetch brought, and leaves a branch rewritten since it last pulled", async () => {
+    let { other, local } = await fixture()
+    // The upstream is rewritten and fetched outside Laneway; local one has no commits of its own, so it adopts the rewrite.
+    git(other, "switch", "-qc", "one", "origin/one")
+    git(other, "commit", "-q", "--amend", "-m", "one rewritten")
+    let rewritten = git(other, "rev-parse", "HEAD")
+    git(other, "push", "-q", "--force", "origin", "one")
+    git(local, "fetch", "-q", "origin")
+    let adopted = await pull(local, ["refs/heads/one"])
+
+    expect(adopted.stacks[0]).toMatchObject({ status: "updated" })
+    expect(git(local, "rev-parse", "one")).toBe(rewritten)
+
+    // The upstream and the branch both advance before a fetch outside Laneway.
+    await commit(other, "shared.txt", "from colleague\n", "colleague on one")
+    git(other, "push", "-q", "origin", "one")
+    git(local, "switch", "-q", "one")
+    await commit(local, "mine.txt", "mine\n", "mine on one")
+    git(local, "switch", "-q", "main")
+    git(local, "fetch", "-q", "origin")
+    let replayed = await pull(local, ["refs/heads/one"])
+
+    expect(replayed.stacks[0]).toMatchObject({ status: "updated" })
+    expect(git(local, "log", "--format=%s", "main..one").split("\n")).toEqual(["mine on one", "colleague on one", "one rewritten"])
+
+    // Replayed onto a Base that moved, the branch holds copies of those commits, and a later pull still knows it pulled them.
+    git(local, "push", "-q", "origin", "one")
+    git(other, "fetch", "-q", "origin")
+    git(other, "switch", "-q", "main")
+    await commit(other, "base.txt", "base updated\n", "upstream main")
+    git(other, "push", "-q", "origin", "main")
+    git(other, "switch", "-q", "one")
+    git(other, "reset", "-q", "--hard", "origin/one")
+    await commit(other, "shared.txt", "from colleague again\n", "colleague on one again")
+    git(other, "push", "-q", "origin", "one")
+    git(local, "fetch", "-q", "origin")
+    let restacked = await pull(local, ["refs/heads/one"], undefined, undefined, true)
+
+    expect(restacked.stacks[0]).toMatchObject({ status: "updated" })
+    expect(git(local, "log", "--format=%s", "main..one").split("\n")).toEqual(["colleague on one again", "mine on one", "colleague on one", "one rewritten"])
+    expect((await pull(local, ["refs/heads/one"], undefined, undefined, true)).stacks[0]).toMatchObject({ status: "current" })
+
+    // A branch rewritten after pulling its upstream has nothing incoming, whoever fetches.
+    git(local, "push", "-q", "--force", "origin", "one")
+    git(local, "switch", "-q", "one")
+    git(local, "commit", "-q", "--amend", "-m", "mine on one, reworded")
+    let reworded = git(local, "rev-parse", "HEAD")
+    git(local, "switch", "-q", "main")
+    git(local, "fetch", "-q", "origin")
+    let kept = await pull(local, ["refs/heads/one"])
+
+    expect(kept.stacks[0]).toMatchObject({ status: "current" })
+    expect(git(local, "rev-parse", "one")).toBe(reworded)
+}, 120_000)
+
 test("fetching fast-forwards only branches outside every open or checked-out stack, and leaves the rest for Pull latest", async () => {
     let { other, local } = await fixture()
     git(other, "switch", "-qc", "side", "main")
