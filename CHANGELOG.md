@@ -31,6 +31,7 @@
 
 ### Fixed
 
+- An open diff no longer says "File changed. Change Selection cleared." when its file changes with no lines selected, and the message goes away once you select lines again.
 - Opening the diff of a file that was renamed without changes no longer leaves a blank window.
 - Pull latest no longer stays highlighted after a pull restacks a branch onto its Base. The commits the restack replaced on the remote branch aren't new; the branch is ready to publish instead.
 - Publish works out what it would push much faster in repositories with many branches, and the Branch Graph loads faster there too, after a commit conflict.

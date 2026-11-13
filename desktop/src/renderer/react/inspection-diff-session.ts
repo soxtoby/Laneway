@@ -96,8 +96,9 @@ export function createDiffSession(options: Options) {
                 }
 
                 if (previous && previous.version != page.version) {
+                    // Only a diff with lines chosen has lost anything worth reporting.
+                    diff.notice = diff.selection?.lineIds.length ? "File changed. Change Selection cleared." : undefined
                     diff.selection = undefined
-                    diff.notice = "File changed. Change Selection cleared."
                 }
                 diff.page = more && previous
                     ? { ...page, lines: [...previous.lines, ...page.lines] }
@@ -139,6 +140,7 @@ export function createDiffSession(options: Options) {
                 current.add(id)
         }
         diff.selection = { ...selection, lineIds: [...current].sort((a, b) => a - b) }
+        diff.notice = undefined
         options.update()
     }
 }

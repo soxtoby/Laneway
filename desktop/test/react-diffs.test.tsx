@@ -244,13 +244,23 @@ describe("React diffs", () => {
         let row = () => fileRows("working-staged")[0]!
         await app.act(() => openDiff(row()))
         await drawn(app)
-        await app.act(() => gutter(shown("other.txt"), "Select deletion line 1").click())
 
+        // With no lines chosen there is nothing to clear, so the change goes unremarked.
         version = "two"
+        await app.act(() => app.controller.columns.refresh())
+        await drawn(app)
+        expect(shown("other.txt").textContent).not.toContain("Change Selection cleared.")
+
+        await app.act(() => gutter(shown("other.txt"), "Select deletion line 1").click())
+        version = "three"
         await app.act(() => app.controller.columns.refresh())
         await drawn(app)
         expect(shown("other.txt").textContent).toContain("File changed. Change Selection cleared.")
         expect(diffRoot(shown("other.txt")).querySelector(".diff-line.selected") == null).toBe(true)
+
+        // Choosing lines again withdraws the notice.
+        await app.act(() => gutter(shown("other.txt"), "Select deletion line 1").click())
+        expect(shown("other.txt").textContent).not.toContain("Change Selection cleared.")
 
         await app.act(() => gutter(shown("src/file.txt"), "Select deletion line 1").click())
         await app.act(closeDiffColumn)
