@@ -471,7 +471,14 @@
     }
 }
 
+/* In the menu of every open column, the kind takes the item's icon place. */
+.react-aria-MenuItem > .column-kind {
+    grid-area: icon;
+    margin-inline-end: var(--spacing-2);
+}
+
 .column-tab {
+    flex: none;
     display: flex;
     align-items: center;
     gap: var(--spacing-1);

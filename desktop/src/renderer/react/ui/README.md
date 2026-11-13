@@ -15,5 +15,6 @@ Local changes:
 - `TextField.tsx`'s `TextArea` leaves out its label when it has none, as `TextField` does, so an `aria-label` names it alone.
 - `Popover.css` sizes a menu's popover to its content, within the window. Sized by the space to its right, a menu near the window's right edge wrapped, and each move React Aria made to fit it widened it again, logging "ResizeObserver loop completed with undelivered notifications" for every step.
 - `Tooltip.tsx` shows a tooltip below its trigger when its placement would put it under the window's controls, which Electron draws over a top corner of the page.
+- `Tabs.tsx`'s `TabList` takes a `ref` to its element, which the header's column tabs measure and scroll.
 
 Laneway's colours and density are set in `../theme.css` by overriding the starter's variables, not by editing `theme.css` here.

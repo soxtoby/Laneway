@@ -193,6 +193,44 @@ describe("React Workspace Columns", () => {
         expect(document.activeElement?.getAttribute("data-column-id")).toBe(opened[0])
     })
 
+    test("tabs that don't fit scroll with the wheel, and a menu of every column shows the one chosen", async () => {
+        let scenario = inspectionScenario()
+        scenario.graph.branches[0]!.checkedOut = [{ path: "D:/other", name: "other", head: scenario.graph.branches[0]!.tip, main: false }]
+        // The tabs run 900 wide in a strip of 400.
+        let widths = { scrollWidth: 900, clientWidth: 400 }
+        for (let [name, width] of Object.entries(widths)) {
+            Object.defineProperty(HTMLElement.prototype, name, {
+                configurable: true,
+                get(this: Element) {
+                    return this.getAttribute("role") == "tablist" ? width : 0
+                },
+            })
+        }
+        let listed: string[]
+        let scrolled: number
+        try {
+            let app = await startReactApp(scenario.api)
+            let opened = columnIds()
+            await app.act(() => app.controller.columns.focus(opened[1]!))
+            await app.act(() => frame())
+            let list = document.querySelector<HTMLElement>("[role=tablist][aria-label='Open columns']")!
+            list.dispatchEvent(new WheelEvent("wheel", { deltaY: 120 }))
+            scrolled = list.scrollLeft
+            await app.act(() => press(button(document.body, "All open columns")))
+            let items = [...document.querySelectorAll<HTMLElement>("[role=menuitemradio]")]
+            listed = items.map(item => item.textContent + (item.getAttribute("aria-checked") == "true" ? " *" : ""))
+            await app.act(() => press(items[0]!))
+        } finally {
+            for (let name of Object.keys(widths))
+                delete (HTMLElement.prototype as unknown as Record<string, unknown>)[name]
+        }
+
+        let names = tabs().map(name => name.replace(/ \*$/, ""))
+        expect(scrolled).toBe(120)
+        expect(listed).toEqual([names[0]!, `${names[1]} *`])
+        expect(tabs()).toEqual([`${names[0]} *`, names[1]!])
+    })
+
     test("a column header's buttons show their tooltips, and the header's hint stays away from them", async () => {
         let app = await startReactApp(inspectionScenario().api)
         let header = column(columnIds()[0]!).querySelector("header")!

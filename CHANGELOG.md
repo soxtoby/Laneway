@@ -9,6 +9,7 @@
 - MDX files can switch to the rendered Markdown view, like other Markdown files.
 - When a branch is behind its Base, the Base's heading in the branch's column says how many commits ahead it is, with a Restack button. Restack moves the branch, and the branches built on it, onto the Base at once, with Undo.
 - `lane pull --restack` restacks published branches too, as every pull used to.
+- When the header's column tabs don't all fit, the mouse wheel scrolls along them, the focused column's tab scrolls into view, and a menu beside them lists every open column.
 
 ### Changed
 

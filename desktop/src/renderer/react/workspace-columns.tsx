@@ -1,6 +1,6 @@
 import type { BranchGraph, FileListView, WorktreeRecovery, WorktreeRequest } from "@laneway/shared"
 import clsx from "clsx"
-import { type DragEvent, type KeyboardEvent, memo, type MouseEvent, type ReactNode, useEffect, useMemo, useRef } from "react"
+import { type DragEvent, type KeyboardEvent, memo, type MouseEvent, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from "react"
 import { Button as AriaButton, ToggleButton, useDrop } from "react-aria-components"
 import type { AppController } from "./app-controller"
 import { defaultAuxiliaryColumnWidth } from "./auxiliary-columns"
@@ -14,11 +14,12 @@ import { navigationKeyDown } from "./column-navigation"
 import { Hint, IconButton } from "./controls"
 import { DiffColumn, minimumDiffColumnWidth } from "./diff-column"
 import { CommitDiffColumn, FileHistoryColumn, HostedDiffScope } from "./file-history"
-import { BranchIcon, CloseIcon, CollapseColumnIcon, CompareIcon, ExpandColumnIcon, FolderIcon, MaximizeIcon, OpenColumnIcon, RestoreIcon, SearchIcon, WarningIcon } from "./icons"
+import { BranchIcon, ChevronDownIcon, CloseIcon, CollapseColumnIcon, CompareIcon, ExpandColumnIcon, FolderIcon, MaximizeIcon, OpenColumnIcon, RestoreIcon, SearchIcon, WarningIcon } from "./icons"
 import { type AuxiliaryView, type CommitDiffView, type FileHistoryView, hostedView, type Inspection, type InspectionSnapshot } from "./inspection"
 import { type Publish, publishBranches } from "./publish"
 import { ScriptButton } from "./script-button"
 import { Button } from "./ui/Button"
+import { Menu, MenuItem, MenuTrigger, Text } from "./ui/Menu"
 import { Tab, TabList, Tabs } from "./ui/Tabs"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 import { useRepositorySnapshot, useSnapshot } from "./use-snapshot"
@@ -449,7 +450,7 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
 }
 
 /** The column's kind as an icon: a worktree's folder, a branch, a recovery, or a comparison. */
-export function ColumnKind({ column }: { column: ColumnView }) {
+export function ColumnKind({ column, plain }: { column: ColumnView; plain?: boolean }) {
     let Icon = column.identity == "branch"
         ? BranchIcon
         : column.identity == "recovery"
@@ -457,18 +458,22 @@ export function ColumnKind({ column }: { column: ColumnView }) {
         : column.identity == "comparison"
         ? CompareIcon
         : FolderIcon
-    return (
-        <Hint text={column.description}>
-            <span className="column-kind" data-identity={column.identity}>
-                <Icon />
-            </span>
-        </Hint>
+    let icon = (
+        <span className="column-kind" data-identity={column.identity}>
+            <Icon />
+        </span>
     )
+    return plain ? icon : <Hint text={column.description}>{icon}</Hint>
 }
 
-/** The header's tabs: one per open column, the focused one selected; choosing one brings its column into view. */
+/**
+ * The header's tabs: one per open column, the focused one selected; choosing one brings its column into view. Tabs
+ * that don't fit scroll, with the wheel or to the focused one, and a menu beside them lists every column.
+ */
 export function ColumnTabs({ columns }: { columns: BranchWorkspace }) {
     let snapshot = useSnapshot(columns)
+    let list = useRef<HTMLDivElement>(null)
+    let overflowing = useTabScrolling(list, snapshot.columns, snapshot.focusedId)
     if (snapshot.columns.length == 0 || !snapshot.focusedId)
         return null
     let show = (id: string, focus: boolean) => {
@@ -485,22 +490,88 @@ export function ColumnTabs({ columns }: { columns: BranchWorkspace }) {
     // on its tab: the browser focuses the tab after the press, and React Aria would take that focus, following one
     // moved during the press, as programmatic, re-rendering every list that shows focus, twice per click.
     return (
-        <Tabs aria-label="Open columns" keyboardActivation="manual" selectedKey={snapshot.focusedId}>
-            <TabList aria-label="Open columns" className="react-aria-TabList column-tabs">
-                {snapshot.columns.map(column => (
-                    <Tab
-                        key={column.id}
-                        id={column.id}
-                        className={clsx("react-aria-Tab column-tab", column.collapsed && "collapsed")}
-                        onPressStart={event => show(column.id, event.pointerType == "keyboard" || event.pointerType == "virtual")}
-                    >
-                        <ColumnKind column={column} />
-                        <span className="column-tab-name">{column.name}</span>
-                    </Tab>
-                ))}
-            </TabList>
-        </Tabs>
+        <>
+            <Tabs aria-label="Open columns" keyboardActivation="manual" selectedKey={snapshot.focusedId}>
+                <TabList ref={list} aria-label="Open columns" className="react-aria-TabList column-tabs">
+                    {snapshot.columns.map(column => (
+                        <Tab
+                            key={column.id}
+                            id={column.id}
+                            className={clsx("react-aria-Tab column-tab", column.collapsed && "collapsed")}
+                            onPressStart={event => show(column.id, event.pointerType == "keyboard" || event.pointerType == "virtual")}
+                        >
+                            <ColumnKind column={column} />
+                            <span className="column-tab-name">{column.name}</span>
+                        </Tab>
+                    ))}
+                </TabList>
+            </Tabs>
+            {overflowing && (
+                <MenuTrigger>
+                    <TooltipTrigger>
+                        <Button variant="quiet" aria-label="All open columns">
+                            <ChevronDownIcon />
+                        </Button>
+                        <Tooltip>All open columns</Tooltip>
+                    </TooltipTrigger>
+                    <Menu aria-label="All open columns" selectionMode="single" selectedKeys={[snapshot.focusedId]} onAction={id => show(String(id), false)}>
+                        {snapshot.columns.map(column => (
+                            <MenuItem key={column.id} id={column.id} textValue={column.name}>
+                                <ColumnKind column={column} plain />
+                                <Text slot="label">{column.name}</Text>
+                            </MenuItem>
+                        ))}
+                    </Menu>
+                </MenuTrigger>
+            )}
+        </>
     )
+}
+
+/**
+ * Scrolls the header's tabs when they don't all fit: the wheel moves along them, and the focused column's tab comes
+ * into view. Returns whether they overflow, which is when the menu of every column shows.
+ */
+function useTabScrolling(list: RefObject<HTMLDivElement | null>, columns: readonly ColumnView[], focusedId?: string) {
+    let [overflowing, setOverflowing] = useState(false)
+    useEffect(() => {
+        let element = list.current
+        if (!element)
+            return
+        // Measured on the next frame, since showing the menu's button narrows the tabs. Once shown, the button stays
+        // until the tabs fit beside it, so it can't flicker at the width where they only fit without it.
+        let frame = 0
+        let measure = () => {
+            cancelAnimationFrame(frame)
+            frame = requestAnimationFrame(() => setOverflowing(element.scrollWidth > element.clientWidth))
+        }
+        let resize = new ResizeObserver(measure)
+        resize.observe(element)
+        measure()
+        // A mouse's wheel turns vertically, and the tabs have nowhere to go but sideways.
+        let wheel = (event: WheelEvent) => {
+            if (!event.deltaX && !event.shiftKey)
+                element.scrollLeft += event.deltaY
+        }
+        element.addEventListener("wheel", wheel, { passive: true })
+        return () => {
+            cancelAnimationFrame(frame)
+            resize.disconnect()
+            element.removeEventListener("wheel", wheel)
+        }
+    }, [list, columns])
+    // The tabs scroll themselves rather than through scrollIntoView, which would scroll the columns' row too.
+    useEffect(() => {
+        let element = list.current
+        let tab = element?.querySelector("[role=tab][aria-selected=true]")
+        if (!element || !tab)
+            return
+        let [view, box] = [element.getBoundingClientRect(), tab.getBoundingClientRect()]
+        let left = box.left < view.left ? box.left - view.left : Math.max(0, box.right - view.right)
+        if (left)
+            element.scrollBy({ left, behavior: "smooth" })
+    }, [list, focusedId, overflowing])
+    return overflowing
 }
 
 /** An auxiliary column beside the Workspace Column it descends from, sharing that column's scopes. */
