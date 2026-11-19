@@ -8,7 +8,7 @@ import { GitError } from "./git-error"
 import { selectGit } from "./git-installation"
 import { commandEffect, commandFailure, type GitRunResult, redactGitText, runGitProcess, startGitProcess } from "./git-process"
 import { projectHistoricalEdits } from "./historical-edit"
-import { readRegisteredWorktrees } from "./worktrees"
+import { readRegisteredWorktrees, workingFilesTree } from "./worktrees"
 
 export { GitError, type GitErrorCode } from "./git-error"
 export { parseGitVersion, selectGit } from "./git-installation"
@@ -146,13 +146,31 @@ export class RepositoryGit {
                 await task?.cancel()
             },
             result: (async () => {
-                let prepared = await conflictComparisonSource(this, source)
+                let prepared = await conflictComparisonSource(this, await this.workingComparisonSource(source))
                 if (cancelled)
                     throw new GitError("git.cancelled", "Comparison loading cancelled.")
                 task = start({ ...request, source: prepared })
                 return task.result
             })(),
         }
+    }
+
+    /**
+     * A comparison ending at a worktree's files compares with a tree of them, untracked files included, so the lists,
+     * diffs, and versions read from it work as they do between commits, which take any tree.
+     */
+    private async workingComparisonSource(source: Extract<DiffSource, { kind: "refs" }>): Promise<Extract<DiffSource, { kind: "refs" }>> {
+        let { worktreePath, ...refs } = source
+        if (!worktreePath)
+            return source
+
+        let worktree = (await readRegisteredWorktrees(this)).find(candidate => samePath(candidate.path, resolve(worktreePath)))
+        if (!worktree || worktree.missing)
+            throw new GitError("git.command-failed", "The compared worktree is unavailable.")
+        if (refs.to.kind != "branch" || worktree.branchRef != refs.to.ref)
+            throw new GitError("git.command-failed", "The compared branch is no longer checked out in that worktree.")
+
+        return { ...refs, to: { kind: "commit", objectId: await workingFilesTree(this, worktree.path, "HEAD") } }
     }
 
     async hashObject(value: string) {

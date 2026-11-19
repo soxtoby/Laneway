@@ -54,6 +54,8 @@ export interface ComparisonWorkspaceColumn {
     id: string
     from: ComparisonRef
     to: ComparisonRef
+    /** Ends at the worktree's files, its Working Changes included, while `to` is a branch checked out in one. */
+    includeWorking?: boolean
     width: number
 }
 

@@ -25,8 +25,11 @@ export type ComparisonRef =
 export type DiffSource =
     | { kind: "working"; worktreePath: string }
     | { kind: "commit"; objectId: string; parentId?: string }
-    /** Resolves to a `comparison` between the refs' current object IDs. */
-    | { kind: "refs"; from: ComparisonRef; to: ComparisonRef }
+    /**
+     * Resolves to a `comparison` between the refs' current object IDs. With `worktreePath`, `to` is a branch checked
+     * out there and ends at that worktree's files instead, its Working Changes included.
+     */
+    | { kind: "refs"; from: ComparisonRef; to: ComparisonRef; worktreePath?: string }
     | { kind: "comparison"; fromObjectId: string; toObjectId: string }
 
 export interface ChangedFile {
@@ -159,7 +162,7 @@ export let ComparisonRefSchema = z.discriminatedUnion("kind", [
 ])
 
 export let DiffSourceSchema = z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("refs"), from: ComparisonRefSchema, to: ComparisonRefSchema }),
+    z.object({ kind: z.literal("refs"), from: ComparisonRefSchema, to: ComparisonRefSchema, worktreePath: z.string().min(1).optional() }),
     z.object({ kind: z.literal("comparison"), fromObjectId: objectIdSchema, toObjectId: objectIdSchema }),
     z.object({ kind: z.literal("working"), worktreePath: z.string().min(1) }),
     z.object({ kind: z.literal("commit"), objectId: objectIdSchema, parentId: objectIdSchema.optional() }),

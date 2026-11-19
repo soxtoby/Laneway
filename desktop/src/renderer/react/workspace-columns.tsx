@@ -14,7 +14,7 @@ import { navigationKeyDown } from "./column-navigation"
 import { Hint, IconButton } from "./controls"
 import { DiffColumn, minimumDiffColumnWidth } from "./diff-column"
 import { CommitDiffColumn, FileHistoryColumn, HostedDiffScope } from "./file-history"
-import { BranchIcon, ChevronDownIcon, CloseIcon, CollapseColumnIcon, CompareIcon, ExpandColumnIcon, FolderIcon, MaximizeIcon, OpenColumnIcon, RestoreIcon, SearchIcon, WarningIcon } from "./icons"
+import { BranchIcon, ChevronDownIcon, CloseIcon, CollapseColumnIcon, CompareIcon, ExpandColumnIcon, FolderIcon, MaximizeIcon, OpenColumnIcon, RestoreIcon, SearchIcon, WarningIcon, WorkingChangesIcon } from "./icons"
 import { type AuxiliaryView, type CommitDiffView, type FileHistoryView, hostedView, type Inspection, type InspectionSnapshot } from "./inspection"
 import { type Publish, publishBranches } from "./publish"
 import { ScriptButton } from "./script-button"
@@ -278,7 +278,9 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
     // An expanded column scrolls into view once it has its width.
     let expand = () => {
         columns.toggleCollapsed(column.id)
-        requestAnimationFrame(() => columnElement(snapshot.repositoryId!, column.id)?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" }))
+        requestAnimationFrame(() =>
+            columnElement(snapshot.repositoryId!, column.id)?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" })
+        )
     }
     // Like a window's title bar, a double-click maximizes; the header's own controls keep theirs.
     let toggleMaximized = (event: MouseEvent) => {
@@ -373,8 +375,22 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                     )}
                                     {column.kind == "comparison" && (
                                         // Mirrors Working Changes' controls: its file list view, and a control that opens the
-                                        // comparison's whole diff, or focuses it.
+                                        // comparison's whole diff, or focuses it. While its branch is checked out, it can end
+                                        // at the worktree's files instead.
                                         <>
+                                            {column.comparison.worktree && (
+                                                <TooltipTrigger>
+                                                    <ToggleButton
+                                                        className="icon-button"
+                                                        aria-label="Include Working Changes"
+                                                        isSelected={column.comparison.includeWorking}
+                                                        onChange={include => columns.setIncludeWorking(column.id, include)}
+                                                    >
+                                                        <WorkingChangesIcon />
+                                                    </ToggleButton>
+                                                    <Tooltip>Include Working Changes</Tooltip>
+                                                </TooltipTrigger>
+                                            )}
                                             <FileListViewMenu
                                                 label={`File list view for ${column.name}`}
                                                 view={fileListView}

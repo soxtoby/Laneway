@@ -11,6 +11,7 @@
 - When a branch is behind its Base, the Base's heading in the branch's column says how many commits ahead it is, with a Restack button. Restack moves the branch, and the branches built on it, onto the Base at once, with Undo.
 - `lane pull --restack` restacks published branches too, as every pull used to.
 - When the header's column tabs don't all fit, the mouse wheel scrolls along them, the focused column's tab scrolls into view, and a menu beside them lists every open column.
+- A branch comparison column can include the compared branch's Working Changes while it's checked out in a worktree: turn on Include Working Changes in the column's header. The comparison follows your edits as you make them, untracked files included, and remembers the choice.
 
 ### Changed
 

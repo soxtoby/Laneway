@@ -1,4 +1,4 @@
-import { createReactComponent, IconAdjustmentsHorizontal, IconAlertOctagon, IconAlertTriangle, IconArchive, IconArrowBackUp, IconArrowBarToDown, IconArrowBarToUp, IconArrowBarToUpDashed, IconArrowForwardUp, IconArrowRight, IconArrowsDiagonal, IconArrowsDiagonalMinimize2, IconArrowUp, IconBulb, IconCheck, IconChevronDown, IconChevronsLeft, IconChevronsRight, IconCircleArrowUp, IconCopy, IconDots, IconExternalLink, IconFileDiff, IconFlame, IconFolder, IconFolderOpen, IconGitBranch, IconGitCompare, IconGitMerge, IconInfoCircle, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconLetterT, IconListTree, IconMarkdown, IconMessageReport, IconMinus, IconMoodSmile, IconMoon, IconPencil, IconPhoto, IconPhotoOff, IconPhotoPlus, IconPlus, IconRefresh, IconRefreshAlert, IconSearch, IconSelector, IconSettings, IconSun, IconTag, IconTextWrap, IconX } from "@tabler/icons-react"
+import { createReactComponent, IconAdjustmentsHorizontal, IconAlertOctagon, IconAlertTriangle, IconArchive, IconArrowBackUp, IconArrowBarToDown, IconArrowBarToUp, IconArrowBarToUpDashed, IconArrowForwardUp, IconArrowRight, IconArrowsDiagonal, IconArrowsDiagonalMinimize2, IconArrowUp, IconBulb, IconCheck, IconChevronDown, IconChevronsLeft, IconChevronsRight, IconCircleArrowUp, IconCopy, IconDots, IconExternalLink, IconFileDiff, IconFlame, IconFolder, IconFolderOpen, IconGitBranch, IconGitCompare, IconGitMerge, IconInfoCircle, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconLetterT, IconListTree, IconMarkdown, IconMessageReport, IconMinus, IconMoodSmile, IconMoon, IconPencil, IconPencilPlus, IconPhoto, IconPhotoOff, IconPhotoPlus, IconPlus, IconRefresh, IconRefreshAlert, IconSearch, IconSelector, IconSettings, IconSun, IconTag, IconTextWrap, IconX } from "@tabler/icons-react"
 import { createElement, type ReactNode } from "react"
 import type { CatalogNode } from "./icon-catalog"
 import { collapseAllNode, customIconPaths, forcePublishNode } from "./icon-nodes"
@@ -24,6 +24,7 @@ export let MoonIcon = tablerIcon(IconMoon)
 export let CollapsePanelIcon = tablerIcon(IconLayoutSidebarLeftCollapse)
 export let ExpandPanelIcon = tablerIcon(IconLayoutSidebarLeftExpand)
 export let ModifiedIcon = tablerIcon(IconPencil)
+export let WorkingChangesIcon = tablerIcon(IconPencilPlus)
 export let AddIcon = tablerIcon(IconPlus)
 export let RedoIcon = tablerIcon(IconArrowForwardUp)
 export let SearchIcon = tablerIcon(IconSearch)

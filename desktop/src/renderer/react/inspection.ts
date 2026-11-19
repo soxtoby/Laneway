@@ -172,8 +172,8 @@ export interface InspectedColumn {
     worktreeMissing?: boolean
     /** A branch column's branch, whose history the column shows. */
     branch?: BranchGraphBranchNode
-    /** A Branch Comparison Column's ends, whose differences it lists. */
-    comparison?: { from: ComparisonRef; to: ComparisonRef }
+    /** A Branch Comparison Column's ends, whose differences it lists, and the worktree whose files `to` ends at, if any. */
+    comparison?: { from: ComparisonRef; to: ComparisonRef; worktreePath?: string }
 }
 
 export interface Inspection extends RepositoryStore<InspectionSnapshot> {
@@ -316,6 +316,8 @@ interface ColumnState extends ColumnInspection {
     branchId?: string
     /** The compared tips a comparison was read at; when a compared branch moves, it is read again. */
     comparisonKey?: string
+    /** A comparison ending at a worktree's files, read again with its Working Changes. */
+    comparisonSource?: DiffSource
     /** A conflicted commit to open once its history shows it. */
     openConflict?: string
     /** For an auxiliary column's state, the Workspace Column it descends from, and its own auxiliary column. */
@@ -801,7 +803,9 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
         let files = state.files[group] ?? { source, loading: false, open: true }
         let generation = (state.generations[group] ?? 0) + 1
         state.generations[group] = generation
-        let keep = quiet && files.inventory != undefined && JSON.stringify(files.source) == JSON.stringify(source)
+        // A comparison's list holds the source its refs resolved to, so a quiet read of the same column's refs keeps it too.
+        let keep = quiet && files.inventory != undefined
+            && (JSON.stringify(files.source) == JSON.stringify(source) || group == "comparison" && source.kind == "refs")
         state.files[group] = keep ? files : { ...files, source, loading: true, error: undefined, open: true }
         if (!keep)
             publishFor(repositoryId, state)
@@ -1002,16 +1006,19 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
                     if (column.branch)
                         void readHistory(repositoryId, state, column.branch)
                     if (column.comparison) {
-                        state.comparisonKey = comparisonKey(graph, column.comparison.from, column.comparison.to)
-                        void read(repositoryId, state, "comparison", { kind: "refs", ...column.comparison })
+                        state.comparisonKey = inspectedComparisonKey(graph, column.comparison)
+                        state.comparisonSource = { kind: "refs", ...column.comparison }
+                        void read(repositoryId, state, "comparison", state.comparisonSource)
                     }
                     continue
                 }
                 state.branchId = column.branch?.id
-                // A moved branch at either end changes the comparison; its list and open diffs read again quietly.
-                if (column.comparison && state.comparisonKey != comparisonKey(graph, column.comparison.from, column.comparison.to)) {
-                    state.comparisonKey = comparisonKey(graph, column.comparison.from, column.comparison.to)
-                    void read(repositoryId, state, "comparison", { kind: "refs", ...column.comparison }, true)
+                // A moved branch at either end, or Working Changes included or left out, changes the comparison; its list
+                // and open diffs read again quietly.
+                if (column.comparison && state.comparisonKey != inspectedComparisonKey(graph, column.comparison)) {
+                    state.comparisonKey = inspectedComparisonKey(graph, column.comparison)
+                    state.comparisonSource = { kind: "refs", ...column.comparison }
+                    void read(repositoryId, state, "comparison", state.comparisonSource, true)
                 }
                 // A moved branch, base, or remote tip shows different commits.
                 for (let [branchId, current] of Object.entries(state.history)) {
@@ -1031,8 +1038,11 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
         refreshWorking() {
             if (!activeId)
                 return
-            for (let state of allStates(activeId))
+            for (let state of allStates(activeId)) {
                 void readWorkingFor(activeId, state, true)
+                if (state.comparisonSource?.kind == "refs" && state.comparisonSource.worktreePath)
+                    void read(activeId, state, "comparison", state.comparisonSource, true)
+            }
             histories.refresh(activeId)
         },
 
@@ -1580,6 +1590,10 @@ function baseTips(branch: BranchGraphBranchNode) {
 }
 
 // Any remote branch can publish this branch's commits, so moving any of them reads its history again.
+function inspectedComparisonKey(graph: BranchGraph, comparison: NonNullable<InspectedColumn["comparison"]>) {
+    return JSON.stringify([comparisonKey(graph, comparison.from, comparison.to), comparison.worktreePath])
+}
+
 function historyKey(graph: BranchGraph, branch: BranchGraphBranchNode) {
     return JSON.stringify([branch.tip, baseTips(branch), graph.remoteTips, branch.unresolved])
 }

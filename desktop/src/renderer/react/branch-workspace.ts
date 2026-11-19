@@ -1,5 +1,5 @@
 import type { BranchGraph, BranchGraphBranchNode, BranchGraphMarker, BranchGraphWorktree, ComparisonRef, DiffLayout, RecoveryRequest, RepositoryGraphSettings, Workspace, WorkspaceColumn, WorktreeRecovery } from "@laneway/shared"
-import { comparisonColumnId, type ComparisonColumnNode, comparisonNode, renameComparisonRef } from "./comparison-columns"
+import { type Comparison, comparisonColumnId, type ComparisonColumnNode, comparisonNode, comparisonWorktreePath, renameComparisonRef } from "./comparison-columns"
 import type { ColumnInspection, Inspection } from "./inspection"
 import { errorMessage, type Notice } from "./notice"
 import { baseName } from "./repositories"
@@ -104,6 +104,8 @@ export interface BranchWorkspace extends RepositoryStore<ColumnsSnapshot> {
     reveal(repositoryId: string, nodeId: string): void
     /** Opens the Branch Comparison Column from `from` to `to` beside `sourceId`, or brings the open one into view. */
     openComparison(sourceId: string, from: ComparisonRef, to: ComparisonRef): void
+    /** Ends a Branch Comparison Column at the files of the worktree its branch is checked out in, or at the branch again. */
+    setIncludeWorking(id: string, include: boolean): void
     /**
      * Follows a branch rename: its column, and any comparison naming it, keep their place, width, and state
      * under the new name. The saved layout follows at once, so the next read reconciles against it.
@@ -157,7 +159,7 @@ interface RepositoryColumns {
     maximizedId?: string
     focusedId?: string
     diffLayouts: Record<string, DiffLayout>
-    comparisons: Record<string, { from: ComparisonRef; to: ComparisonRef }>
+    comparisons: Record<string, Comparison>
     /** The order before a header drag began, restored if it ends without a drop. */
     dragOrigin?: string[]
     /** The remote's default branch has been asked for once, after the first read. */
@@ -219,7 +221,11 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
                 focusedId: saved?.focusedColumnId,
                 diffLayouts: Object.fromEntries(columns.map(column => [column.id, column.diffLayout ?? "unified"])),
                 comparisons: Object.fromEntries(
-                    columns.flatMap(column => column.kind == "comparison" ? [[column.id, { from: column.from, to: column.to }]] : []),
+                    columns.flatMap(column =>
+                        column.kind == "comparison"
+                            ? [[column.id, { from: column.from, to: column.to, ...(column.includeWorking ? { includeWorking: true } : {}) }]]
+                            : []
+                    ),
                 ),
                 remoteRefreshed: false,
                 showAll: false,
@@ -248,7 +254,7 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
                     worktreePath: view.worktree?.path,
                     worktreeMissing: view.worktree?.missing,
                     branch: view.kind == "branch" ? view.branch : undefined,
-                    comparison: view.kind == "comparison" ? { from: view.comparison.from, to: view.comparison.to } : undefined,
+                    comparison: view.kind == "comparison" ? inspectedComparison(view.comparison) : undefined,
                 })),
                 workspaceGraph(state.graph),
             )
@@ -332,7 +338,7 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
         let state = stateFor(repositoryId)
         let ids = new Map([[`branch:${oldRef}`, `branch:${newRef}`]])
         for (let [id, comparison] of comparisons ? Object.entries(state.comparisons) : []) {
-            let renamed = { from: renameComparisonRef(comparison.from, oldRef, newRef), to: renameComparisonRef(comparison.to, oldRef, newRef) }
+            let renamed = { ...comparison, from: renameComparisonRef(comparison.from, oldRef, newRef), to: renameComparisonRef(comparison.to, oldRef, newRef) }
             let newId = comparisonColumnId(renamed.from, renamed.to)
             if (newId != id) {
                 delete state.comparisons[id]
@@ -692,13 +698,20 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
         openComparison(sourceId, from, to) {
             let id = comparisonColumnId(from, to)
             change(activeId, state => {
-                state.comparisons[id] = { from, to }
+                state.comparisons[id] ??= { from, to }
                 if (!state.openedIds.includes(id))
                     state.openedIds.splice(state.openedIds.indexOf(sourceId) + 1, 0, id)
                 state.collapsedIds = state.collapsedIds.filter(candidate => candidate != id)
                 state.focusedId = id
                 state.widths[id] ??= defaultColumnWidth
                 state.revealed = { id, serial: (state.revealed?.serial ?? 0) + 1 }
+            })
+        },
+        setIncludeWorking(id, include) {
+            change(activeId, state => {
+                let comparison = state.comparisons[id]
+                if (comparison)
+                    state.comparisons[id] = { from: comparison.from, to: comparison.to, ...(include ? { includeWorking: true } : {}) }
             })
         },
         switched(columnId, worktreePath) {
@@ -836,6 +849,12 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
             await read(repositoryId, false)
         },
     }
+}
+
+// A comparison including Working Changes reads them from the worktree its branch is checked out in, while there is one.
+function inspectedComparison(comparison: ComparisonColumnNode) {
+    let worktreePath = comparisonWorktreePath(comparison)
+    return { from: comparison.from, to: comparison.to, ...(worktreePath ? { worktreePath } : {}) }
 }
 
 function columnNode(graph: BranchGraph, state: RepositoryColumns, id: string): ColumnNode | undefined {

@@ -257,7 +257,7 @@ function parseColumn(value: unknown, restoring = false): WorkspaceColumn | undef
     }
     if (record.kind == "comparison") {
         let from = parseComparisonRef(record.from), to = parseComparisonRef(record.to)
-        return from && to ? { kind: "comparison", ...presentation, from, to } : undefined
+        return from && to ? { kind: "comparison", ...presentation, from, to, ...(record.includeWorking === true ? { includeWorking: true } : {}) } : undefined
     } else if (!nonEmptyString(record.lastSeenObjectId))
         return undefined
     else if (record.kind == "branch" && nonEmptyString(record.ref)) {

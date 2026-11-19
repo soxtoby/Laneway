@@ -4,7 +4,7 @@ import { memo, type ReactNode, type RefObject, useCallback, useEffect, useState 
 import { Button as AriaButton, Form } from "react-aria-components"
 import type { ColumnView } from "./branch-workspace"
 import { type CommitComposer, defaultBranchName } from "./commit-composer"
-import { type ComparisonColumnNode, comparisonHistorySource } from "./comparison-columns"
+import { type ComparisonColumnNode, comparisonHistorySource, comparisonWorktreePath } from "./comparison-columns"
 import type { Landing, TransferSelection } from "./composition"
 import { Hint, IconButton } from "./controls"
 import { DiffControls, DiffPanel } from "./diff-panel"
@@ -514,7 +514,7 @@ export const FileList = memo(function FileList(
         comparison
             ? [{ label: `History in ${comparison.fromName}`, source: comparisonHistorySource(comparison.from), path: file.oldPath ?? file.path }, {
                 label: `History in ${comparison.toName}`,
-                source: comparisonHistorySource(comparison.to),
+                source: comparisonHistorySource(comparison.to, comparisonWorktreePath(comparison)),
                 path: file.path,
             }]
             : history

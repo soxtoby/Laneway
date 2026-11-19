@@ -113,6 +113,45 @@ describe("branch tip comparisons", () => {
         expect(empty.files).toEqual([])
         await expect(api.startReadChanges({ source: branches("refs/heads/main~1", "refs/heads/main") }).result).rejects.toThrow()
     })
+
+    test("ends at a worktree's files, its Working Changes included, when the compared branch is checked out there", async () => {
+        let { path, api } = await repository()
+        let worktree = resolve(path, "..", `${path.split(/[\\/]/).pop()}-feature`)
+        roots.push(worktree)
+        git(path, "worktree", "add", "-qb", "feature", worktree)
+        await writeFile(resolve(worktree, "committed.txt"), "committed\n")
+        git(worktree, "add", ".")
+        git(worktree, "commit", "-qm", "feature change")
+        await writeFile(resolve(worktree, "file.txt"), "old heading\nunchanged\nworking footer\n")
+        await writeFile(resolve(worktree, "staged.txt"), "staged\n")
+        git(worktree, "add", "staged.txt")
+        await writeFile(resolve(worktree, "untracked.txt"), "untracked\n")
+        let status = git(worktree, "status", "--porcelain=v2")
+
+        let refs: DiffSource = {
+            kind: "refs",
+            from: { kind: "merge-base", ref: "refs/heads/main", withRef: "refs/heads/feature" },
+            to: { kind: "branch", ref: "refs/heads/feature" },
+        }
+        let committed = await api.startReadChanges({ source: refs }).result
+        expect(committed.files.map(file => file.path)).toEqual(["committed.txt"])
+
+        let source: DiffSource = { ...refs, worktreePath: worktree }
+        let inventory = await api.startReadChanges({ source }).result
+        expect(inventory.source.kind).toBe("comparison")
+        expect(inventory.files.map(file => file.path)).toEqual(["committed.txt", "file.txt", "staged.txt", "untracked.txt"])
+        let page = await api.startReadFileDiff({ source: inventory.source, inventoryVersion: inventory.version, path: "file.txt" }).result
+        expect(changed(page.lines)).toEqual([["deletion", "old footer"], ["addition", "working footer"]])
+        let version = await api.startReadFileVersion({ source: inventory.source, side: "new", path: "untracked.txt" }).result
+        expect(version.state == "ready" && Buffer.from(version.bytes).toString()).toBe("untracked\n")
+        expect(git(worktree, "status", "--porcelain=v2")).toBe(status)
+
+        let again = await api.startReadChanges({ source }).result
+        expect(again.version).toBe(inventory.version)
+
+        git(worktree, "switch", "-qc", "other")
+        await expect(api.startReadChanges({ source }).result).rejects.toThrow("no longer checked out")
+    })
 })
 
 function branches(fromRef: string, toRef: string): DiffSource {

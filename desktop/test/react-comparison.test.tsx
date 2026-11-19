@@ -129,6 +129,65 @@ describe("React Branch Comparison", () => {
         expect(scenario.saved().repositories[0]!.columns).toHaveLength(1)
     })
 
+    test("includes the Working Changes of the worktree its branch is checked out in, reading them again as they change", async () => {
+        let scenario = inspectionScenario()
+        let [main, feature] = scenario.graph.branches
+        let worktree = feature!.checkedOut[0]!
+        worktree.branchRef = feature!.preferredRef
+        let requested: Extract<DiffSource, { kind: "refs" }>[] = []
+        let histories: FileHistoryRequest["source"][] = []
+        let app = await startReactApp({
+            ...scenario.api,
+            readChanges: async (...args) => {
+                let request = args[2]
+                if (request.source.kind != "refs")
+                    return scenario.api.readChanges(...args)
+                requested.push(request.source)
+                let source = { kind: "comparison" as const, fromObjectId: main!.tip, toObjectId: feature!.tip }
+                return {
+                    ok: true,
+                    inventory: { source, version: String(requested.length), parents: [], files: [{ ...scenario.page.file, path: "src/file.txt" }] },
+                }
+            },
+            readFileHistory: async (_repositoryId, _id, request) => {
+                histories.push(request.source)
+                return { ok: true, page: { entries: [] } }
+            },
+        })
+        let header = () => comparison()!.querySelector<HTMLElement>(".column-header")!
+        let include = () => button(header(), "Include Working Changes")
+        await app.act(() => press(button(column(feature!.id)!, `Compare ${feature!.name} with ${main!.name}`)))
+        expect(include().getAttribute("aria-pressed")).toBe("false")
+        expect(requested.map(source => source.worktreePath)).toEqual([undefined])
+
+        await app.act(() => press(include()))
+        expect(include().getAttribute("aria-pressed")).toBe("true")
+        expect(requested.at(-1)).toEqual({ ...requested[0]!, worktreePath: worktree.path })
+        expect(comparison()!.querySelector(".column-kind")?.getAttribute("aria-description")).toBe(
+            `Changes on ${feature!.name} since it left ${main!.name}, with its Working Changes`,
+        )
+        expect(scenario.saved().repositories[0]!.columns[1]).toMatchObject({ kind: "comparison", includeWorking: true })
+
+        // Its end changes as the worktree's files do, so a refresh of Working Changes reads it again.
+        let reads = requested.length
+        await app.act(() => app.controller.columns.refresh())
+        expect(requested.length).toBe(reads + 1)
+        expect(requested.at(-1)!.worktreePath).toBe(worktree.path)
+
+        // A file's history at that end includes the Working Changes too.
+        let row = comparison()!.querySelector<HTMLElement>(".branch-comparison .file-row")!
+        await app.act(() => press(button(row, "Actions for src/file.txt")))
+        await app.act(() => press(menuItem(`History in ${feature!.name}`)))
+        expect(histories).toEqual([{ kind: "worktree", worktreePath: worktree.path }])
+
+        await app.act(() => press(include()))
+        expect(requested.at(-1)!.worktreePath).toBeUndefined()
+        expect(scenario.saved().repositories[0]!.columns[1]!).not.toHaveProperty("includeWorking")
+        reads = requested.length
+        await app.act(() => app.controller.columns.refresh())
+        expect(requested.length).toBe(reads)
+    })
+
     test("a branch compares with its base from its heading, but the base at the bottom offers nothing", async () => {
         let scenario = inspectionScenario()
         let [main, feature] = scenario.graph.branches

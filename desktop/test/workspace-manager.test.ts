@@ -118,6 +118,7 @@ describe("Workspace manager", () => {
             width: 470,
             from: { kind: "merge-base" as const, ref: "refs/heads/main", withRef: "refs/heads/topic" },
             to: { kind: "branch" as const, ref: "refs/heads/topic" },
+            includeWorking: true,
             diffLayout: "split" as const,
         }
         await manager.update({ ...presentation, repositories: [{ ...repository, columns: [column, comparison] }] })
