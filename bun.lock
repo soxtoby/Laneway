@@ -28,7 +28,7 @@
     },
     "desktop": {
       "name": "@laneway/desktop",
-      "version": "0.1.0-alpha.1",
+      "version": "0.1.0-alpha.2",
       "dependencies": {
         "@atlaskit/pragmatic-drag-and-drop": "^4.0.0",
         "@laneway/git": "workspace:*",

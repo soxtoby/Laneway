@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.0-alpha.2
+
 ### Added
 
 - Create a tag at a branch's tip or at any commit, from its menu in the Branch Graph or a column. The tag is created on the Branch Graph's remote too, and gets a message if you give it one.
