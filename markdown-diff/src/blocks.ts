@@ -2,7 +2,7 @@ import { diffArrays } from "diff"
 import type { Code, Parent, RootContent, Table, TableCell, TableRow, Yaml } from "mdast"
 import { visit } from "unist-util-visit"
 import { diffPhrasing, wordsOf } from "./inline"
-import { canonical, type DiffChange, type DiffCode, marked } from "./nodes"
+import { type Callout, canonical, type DiffChange, type DiffCode, marked } from "./nodes"
 
 /** One aligned block: its old version, its new version, and both in one. */
 export interface BlockRow {
@@ -21,7 +21,7 @@ let wordlessResemblance = 0.6
 // Hunks of more removed × added blocks than this skip pairing, which compares every combination.
 let pairingLimit = 40_000
 // Blocks whose own parts compare, so they always pair with a like block however much changed inside them.
-let structural = new Set<string>(["list", "table", "blockquote", "footnoteDefinition", "code", "yaml"])
+let structural = new Set<string>(["list", "table", "blockquote", "callout", "footnoteDefinition", "code", "yaml"])
 
 /**
  * Aligns two block sequences: identical blocks anchor the alignment, and between anchors, removed and added blocks
@@ -103,6 +103,9 @@ function comparable(old: RootContent, current: RootContent) {
         return old.children[0]?.children.length == (current as Table).children[0]?.children.length
     if (old.type == "tableRow")
         return old.children.length == (current as TableRow).children.length
+    // A callout of another kind looks different throughout, so it shows as replaced.
+    if (old.type == "callout")
+        return old.kind == (current as Callout).kind
     return true
 }
 
@@ -143,6 +146,7 @@ function changedRows(old: RootContent, current: RootContent, split: boolean): Bl
         case "paragraph":
         case "heading":
         case "tableCell":
+        case "calloutTitle":
             return phrasingRows(old, current as typeof old, split)
         case "blockquote":
         case "footnoteDefinition":
@@ -151,7 +155,9 @@ function changedRows(old: RootContent, current: RootContent, split: boolean): Bl
         case "listItem":
             return [containerRow(old, current as typeof old, diffBlocks(old.children, (current as typeof old).children, false))]
         case "table":
-            return [tableRow(old, current as Table)]
+            return [headedRow(old, current as Table, false)]
+        case "callout":
+            return [headedRow(old, current as Callout, split)]
         case "tableRow":
             return [containerRow(old, current as TableRow, old.children.map((cell, index) => cellRow(cell, (current as TableRow).children[index]!)))]
         case "code":
@@ -162,7 +168,11 @@ function changedRows(old: RootContent, current: RootContent, split: boolean): Bl
     }
 }
 
-function phrasingRows<T extends Extract<RootContent, { type: "paragraph" | "heading" | "tableCell" }>>(old: T, current: T, split: boolean): BlockRow[] {
+function phrasingRows<T extends Extract<RootContent, { type: "paragraph" | "heading" | "tableCell" | "calloutTitle" }>>(
+    old: T,
+    current: T,
+    split: boolean,
+): BlockRow[] {
     let inline = diffPhrasing(old.children, current.children)
     if (split && inline.similarity < rewriteThreshold)
         return [removedRow(old), addedRow(current)]
@@ -185,12 +195,12 @@ function containerRow<T extends Parent & RootContent>(old: T, current: T, rows: 
     }
 }
 
-// The header row always pairs with the other header, so the unified table keeps one header row.
-function tableRow(old: Table, current: Table): BlockRow {
-    let [oldHeader, ...oldBody] = old.children
-    let [newHeader, ...newBody] = current.children
-    let header = canonical(oldHeader!) == canonical(newHeader!) ? unchangedRow(oldHeader!, newHeader!) : changedRows(oldHeader!, newHeader!, false)[0]!
-    return containerRow(old, current, [header, ...diffBlocks(oldBody, newBody, false)])
+// A table's header row and a callout's title always pair with the other version's, so the unified block keeps one.
+function headedRow<T extends Table | Callout>(old: T, current: T, split: boolean): BlockRow {
+    let [oldHead, ...oldBody] = old.children as RootContent[]
+    let [newHead, ...newBody] = current.children as RootContent[]
+    let head = canonical(oldHead!) == canonical(newHead!) ? unchangedRow(oldHead!, newHead!) : changedRows(oldHead!, newHead!, false)[0]!
+    return containerRow(old, current, [head, ...diffBlocks(oldBody, newBody, split)])
 }
 
 function cellRow(old: TableCell, current: TableCell) {

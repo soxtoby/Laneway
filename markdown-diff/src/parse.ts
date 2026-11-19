@@ -1,21 +1,25 @@
 import type { Definition, Root, RootContent } from "mdast"
+import { directiveFromMarkdown } from "mdast-util-directive"
 import { fromMarkdown } from "mdast-util-from-markdown"
 import { frontmatterFromMarkdown } from "mdast-util-frontmatter"
 import { gfmFromMarkdown } from "mdast-util-gfm"
 import { frontmatter } from "micromark-extension-frontmatter"
 import { gfm } from "micromark-extension-gfm"
 import { SKIP, visit } from "unist-util-visit"
+import { containerDirectives, labelLegacyTitles, makeCallouts } from "./callouts"
 
 /**
- * A document's blocks, parsed as GitHub Flavored Markdown with YAML front matter. References resolve to the links
- * and images they name, so each block renders alone; the definitions themselves render nothing and are dropped.
+ * A document's blocks, parsed as GitHub Flavored Markdown with YAML front matter, GitHub's alerts, and Docusaurus'
+ * admonitions. References resolve to the links and images they name, so each block renders alone; the definitions
+ * themselves render nothing and are dropped.
  */
 export function parseMarkdown(source: string): RootContent[] {
     // Code and front matter keep their line endings, which a worktree may convert to CRLF.
-    let tree = fromMarkdown(source.replace(/\r\n?/g, "\n"), {
-        extensions: [gfm(), frontmatter()],
-        mdastExtensions: [gfmFromMarkdown(), frontmatterFromMarkdown()],
+    let tree = fromMarkdown(labelLegacyTitles(source.replace(/\r\n?/g, "\n")), {
+        extensions: [gfm(), frontmatter(), containerDirectives()],
+        mdastExtensions: [gfmFromMarkdown(), frontmatterFromMarkdown(), directiveFromMarkdown()],
     })
+    makeCallouts(tree)
     resolveReferences(tree)
     return tree.children.filter(node => node.type != "definition")
 }

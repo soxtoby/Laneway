@@ -175,6 +175,71 @@ test("diffMarkdown draws strikethrough as s, leaving del to deletions", () => {
     expect(result!.unified).toBe(`<p data-diff="added">Some <s>struck</s> text.</p>`)
 })
 
+test("diffMarkdown shows a GitHub alert as a callout titled by its kind", () => {
+    let [result] = rows(undefined, "> [!IMPORTANT]\n> Read *this*.\n>\n> And this.\n")
+
+    expect(result!.unified).toBe(callout("important", "Important", "<p>Read <em>this</em>.</p>\n<p>And this.</p>", "added"))
+})
+
+test("diffMarkdown keeps a blockquote whose alert marker shares its line with text", () => {
+    let [result] = rows(undefined, "> [!NOTE] Not an alert.\n")
+
+    expect(result!.unified).toBe(`<blockquote data-diff="added">\n<p>[!NOTE] Not an alert.</p>\n</blockquote>`)
+})
+
+test("diffMarkdown shows a Docusaurus admonition as a callout titled by its label", () => {
+    let result = rows(undefined, ":::tip[Use **both**]\nAt 10:30.\n:::\n\n:::danger\n- Careful\n:::\n")
+
+    expect(result.map(row => row.unified)).toEqual([
+        callout("tip", "Use <strong>both</strong>", "<p>At 10:30.</p>", "added"),
+        callout("danger", "Danger", "<ul>\n<li>Careful</li>\n</ul>", "added"),
+    ])
+})
+
+test("diffMarkdown reads Docusaurus' older admonition titles outside fenced code", () => {
+    let result = rows(undefined, ":::note Read me\nBody.\n:::\n\n```md\n:::note Read me\n```\n")
+
+    expect(result.map(row => row.unified)).toEqual([
+        callout("note", "Read me", "<p>Body.</p>", "added"),
+        `<pre><code class="language-md" data-diff="added">:::note Read me\n</code></pre>`,
+    ])
+})
+
+test("diffMarkdown titles a directive of another kind by its name, before any title it's given", () => {
+    let result = rows(undefined, ":::details\nHidden.\n:::\n\n:::details[More *here*]\nAlso hidden.\n:::\n")
+
+    expect(result.map(row => row.unified)).toEqual([
+        callout("details", "Details", "<p>Hidden.</p>", "added"),
+        callout("details", "Details: More <em>here</em>", "<p>Also hidden.</p>", "added"),
+    ])
+})
+
+test("diffMarkdown compares a callout's title word by word and its content block by block", () => {
+    let [result] = rows(":::note[Old title]\nKept.\n\nGone.\n:::\n", ":::note[New title]\nKept.\n\nGone.\n\nAdded.\n:::\n")
+
+    expect(result!.unified).toBe(
+        callout(
+            "note",
+            `${del("Old")}${ins("New")} title`,
+            `<p>Kept.</p>\n<p>Gone.</p>\n<p data-diff="added">Added.</p>`,
+            "changed",
+            "changed",
+        ),
+    )
+})
+
+test("diffMarkdown shows a callout of another kind as replaced", () => {
+    let result = rows("> [!NOTE]\n> Same words.\n", "> [!WARNING]\n> Same words.\n")
+
+    expect(result.map(row => row.change)).toEqual(["removed", "added"])
+})
+
+test("diffMarkdown strips callout marks that embedded HTML writes itself", () => {
+    let [result] = rows(undefined, `<div data-callout="note"><p data-callout-title>Forged</p></div>\n`)
+
+    expect(result!.unified).toBe(`<div><p>Forged</p></div>`)
+})
+
 function rows(oldSource: string | undefined, newSource: string | undefined) {
     return diffMarkdown(oldSource, newSource).rows.map(html)
 }
@@ -195,6 +260,11 @@ function del(text: string) {
 
 function ins(text: string) {
     return `<ins data-diff="added">${text}</ins>`
+}
+
+function callout(kind: string, title: string, body: string, change: string, titleChange?: string) {
+    let titleMark = titleChange ? ` data-diff="${titleChange}"` : ""
+    return `<div data-callout="${kind}" data-diff="${change}">\n<p data-callout-title=""${titleMark}>${title}</p>\n${body}\n</div>`
 }
 
 function modified(text: string, before?: string) {

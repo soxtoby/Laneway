@@ -2,10 +2,10 @@ import type { DiffRow, MarkdownDiff as Diff } from "@laneway/markdown-diff"
 import type { DiffLayout, FileDiffPage, FileVersion, RemoteImageResult } from "@laneway/shared"
 import type { ElementContent } from "hast"
 import { type Components, toJsxRuntime } from "hast-util-to-jsx-runtime"
-import { type ComponentProps, createContext, Fragment, type ReactNode, useContext, useEffect, useEffectEvent, useState } from "react"
+import { type ComponentProps, type ComponentType, createContext, Fragment, type ReactNode, useContext, useEffect, useEffectEvent, useState } from "react"
 import { jsx, jsxs } from "react/jsx-runtime"
 import { Hint } from "./controls"
-import { BrokenPictureIcon } from "./icons"
+import { BrokenPictureIcon, CautionIcon, DangerIcon, ImportantIcon, NoteIcon, TipIcon, WarningIcon } from "./icons"
 import { imageMimeType } from "./image-files"
 import { type MarkdownVersions, oldDocumentPath } from "./markdown-files"
 import { type PictureSource, pictureSource, usePicture } from "./markdown-pictures"
@@ -165,6 +165,8 @@ function collapse(rows: DiffRow[], expanded: ReadonlySet<number>): Item[] {
 
 let components: Partial<Components> = {
     a: MarkdownLink,
+    div: MarkdownDiv,
+    p: MarkdownParagraph,
     img: MarkdownPicture,
     span: MarkdownSpan,
     input: props => <input {...props} readOnly />,
@@ -250,6 +252,36 @@ async function loadPicture(reader: MarkdownReader, page: FileDiffPage, source: P
     if (content.state != "ready")
         throw new Error(content.state == "lfs" ? "Git LFS hasn't downloaded this picture." : content.reason)
     return { bytes: content.bytes, mimeType: source.path.toLowerCase().endsWith(".svg") ? "image/svg+xml" : imageMimeType(source.path) ?? "" }
+}
+
+let calloutIcons: Record<string, ComponentType> = {
+    note: NoteIcon,
+    info: NoteIcon,
+    tip: TipIcon,
+    important: ImportantIcon,
+    warning: WarningIcon,
+    caution: CautionIcon,
+    danger: DangerIcon,
+}
+
+// The kind of callout a title is in, which picks its icon.
+let CalloutContext = createContext<string | undefined>(undefined)
+
+function MarkdownDiv(props: ComponentProps<"div"> & { "data-callout"?: string }) {
+    let div = <div {...props} />
+    let kind = props["data-callout"]
+    return kind ? <CalloutContext value={kind}>{div}</CalloutContext> : div
+}
+
+function MarkdownParagraph({ children, ...props }: ComponentProps<"p"> & { "data-callout-title"?: string }) {
+    let kind = useContext(CalloutContext)
+    let Icon = props["data-callout-title"] != undefined && kind ? calloutIcons[kind] : undefined
+    return (
+        <p {...props}>
+            {Icon && <Icon />}
+            {children}
+        </p>
+    )
 }
 
 // Words whose formatting alone changed say what it was.

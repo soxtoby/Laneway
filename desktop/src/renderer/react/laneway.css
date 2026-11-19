@@ -2319,6 +2319,54 @@
         color: var(--text-color-placeholder);
     }
 
+    /* Callouts edge and title themselves in their kind's colour, as GitHub's alerts do; kinds of their own in grey. */
+    [data-callout] {
+        --callout-color: var(--markdown-callout-other);
+
+        margin: 0 0 0.75em;
+        padding: 0.5em 1em;
+        border-left: 0.25em solid var(--callout-color);
+
+        > :last-child {
+            margin-bottom: 0;
+        }
+    }
+
+    [data-callout="note"],
+    [data-callout="info"] {
+        --callout-color: var(--markdown-callout-note);
+    }
+
+    [data-callout="tip"] {
+        --callout-color: var(--markdown-callout-tip);
+    }
+
+    [data-callout="important"] {
+        --callout-color: var(--markdown-callout-important);
+    }
+
+    [data-callout="warning"] {
+        --callout-color: var(--markdown-callout-warning);
+    }
+
+    [data-callout="caution"],
+    [data-callout="danger"] {
+        --callout-color: var(--markdown-callout-caution);
+    }
+
+    [data-callout-title] {
+        margin-bottom: 0.5em;
+        color: var(--callout-color);
+        font-weight: 600;
+
+        svg {
+            width: 16px;
+            height: 16px;
+            margin-right: 0.5em;
+            vertical-align: -0.2em;
+        }
+    }
+
     a {
         color: var(--link-color);
         text-decoration: underline;

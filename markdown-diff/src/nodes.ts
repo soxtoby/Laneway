@@ -1,4 +1,4 @@
-import type { Data, Nodes, Parent, PhrasingContent } from "mdast"
+import type { BlockContent, Data, DefinitionContent, Nodes, Parent, PhrasingContent } from "mdast"
 
 /** How a block, or a piece of one, differs between the two versions. */
 export type DiffChange = "unchanged" | "added" | "removed" | "changed"
@@ -31,6 +31,23 @@ export interface DiffCode {
     data?: Data
 }
 
+/** A callout, such as GitHub's `> [!NOTE]` or Docusaurus' `:::note`: its title, then its content. */
+export interface Callout extends Parent {
+    type: "callout"
+    /**
+     * What it calls out, in lower case: `note`, `tip`, `important`, `warning`, `caution`, `info`, or `danger`, or a
+     * directive's own name, such as `details`.
+     */
+    kind: string
+    children: [CalloutTitle, ...(BlockContent | DefinitionContent)[]]
+}
+
+/** A callout's title: the one its source gave, or its kind's; a kind of its own is named before a title given. */
+export interface CalloutTitle extends Parent {
+    type: "calloutTitle"
+    children: PhrasingContent[]
+}
+
 declare module "mdast" {
     interface PhrasingContentMap {
         diffInsert: DiffInsert
@@ -38,11 +55,17 @@ declare module "mdast" {
         diffModified: DiffModified
     }
 
+    interface BlockContentMap {
+        callout: Callout
+    }
+
     interface RootContentMap {
         diffInsert: DiffInsert
         diffDelete: DiffDelete
         diffModified: DiffModified
         diffCode: DiffCode
+        callout: Callout
+        calloutTitle: CalloutTitle
     }
 }
 

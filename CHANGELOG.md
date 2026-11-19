@@ -7,6 +7,7 @@
 - Create a tag at a branch's tip or at any commit, from its menu in the Branch Graph or a column. The tag is created on the Branch Graph's remote too, and gets a message if you give it one.
 - Tagged commits in a column show a tag icon; hover it to see the tags' names.
 - MDX files can switch to the rendered Markdown view, like other Markdown files.
+- The rendered Markdown view shows GitHub alerts (`> [!NOTE]`, `> [!WARNING]`, …) and Docusaurus admonitions (`:::tip`, `:::danger[Title]`, …) as titled callouts, and other `:::` blocks, such as `:::details`, as grey callouts named for their kind. Callouts compare their titles and contents like other blocks.
 - When a branch is behind its Base, the Base's heading in the branch's column says how many commits ahead it is, with a Restack button. Restack moves the branch, and the branches built on it, onto the Base at once, with Undo.
 - `lane pull --restack` restacks published branches too, as every pull used to.
 - When the header's column tabs don't all fit, the mouse wheel scrolls along them, the focused column's tab scrolls into view, and a menu beside them lists every open column.

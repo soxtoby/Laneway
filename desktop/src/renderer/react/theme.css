@@ -94,6 +94,13 @@
     --markdown-changed-border: var(--changes-border);
     --markdown-modified: var(--tint-1000);
     --markdown-code-background: var(--gray-100);
+    /* Callouts in GitHub's alert hues: notes blue, tips green, important purple, warnings orange, cautions red, and other kinds grey. */
+    --markdown-callout-note: oklch(from var(--blue) var(--lightness-1000) c h);
+    --markdown-callout-tip: oklch(from var(--green) var(--lightness-1000) c h);
+    --markdown-callout-important: oklch(from var(--purple) var(--lightness-1000) c h);
+    --markdown-callout-warning: oklch(from var(--orange) var(--lightness-1000) c h);
+    --markdown-callout-caution: oklch(from var(--red) var(--lightness-1000) c h);
+    --markdown-callout-other: var(--gray-1000);
 
     /* Chosen diff lines, washed in the accent. */
     --diff-selection: oklch(from var(--tint) l c h / 34%);

@@ -1,4 +1,4 @@
-import { createReactComponent, IconAdjustmentsHorizontal, IconAlertTriangle, IconArchive, IconArrowBackUp, IconArrowBarToDown, IconArrowBarToUp, IconArrowBarToUpDashed, IconArrowForwardUp, IconArrowRight, IconArrowsDiagonal, IconArrowUp, IconArrowsDiagonalMinimize2, IconCheck, IconChevronDown, IconChevronsLeft, IconChevronsRight, IconCircleArrowUp, IconCopy, IconDots, IconExternalLink, IconFileDiff, IconFolder, IconFolderOpen, IconGitBranch, IconGitCompare, IconGitMerge, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconLetterT, IconListTree, IconMarkdown, IconMinus, IconMoodSmile, IconMoon, IconPencil, IconPhoto, IconPhotoOff, IconPhotoPlus, IconPlus, IconRefresh, IconRefreshAlert, IconSearch, IconSelector, IconSettings, IconSun, IconTag, IconTextWrap, IconX } from "@tabler/icons-react"
+import { createReactComponent, IconAdjustmentsHorizontal, IconAlertOctagon, IconAlertTriangle, IconArchive, IconArrowBackUp, IconArrowBarToDown, IconArrowBarToUp, IconArrowBarToUpDashed, IconArrowForwardUp, IconArrowRight, IconArrowsDiagonal, IconArrowsDiagonalMinimize2, IconArrowUp, IconBulb, IconCheck, IconChevronDown, IconChevronsLeft, IconChevronsRight, IconCircleArrowUp, IconCopy, IconDots, IconExternalLink, IconFileDiff, IconFlame, IconFolder, IconFolderOpen, IconGitBranch, IconGitCompare, IconGitMerge, IconInfoCircle, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconLetterT, IconListTree, IconMarkdown, IconMessageReport, IconMinus, IconMoodSmile, IconMoon, IconPencil, IconPhoto, IconPhotoOff, IconPhotoPlus, IconPlus, IconRefresh, IconRefreshAlert, IconSearch, IconSelector, IconSettings, IconSun, IconTag, IconTextWrap, IconX } from "@tabler/icons-react"
 import { createElement, type ReactNode } from "react"
 import type { CatalogNode } from "./icon-catalog"
 import { collapseAllNode, customIconPaths, forcePublishNode } from "./icon-nodes"
@@ -54,6 +54,13 @@ export let WrapLinesIcon = tablerIcon(IconTextWrap)
 export let StagedAboveIcon = tablerIcon(IconArrowUp)
 export let RenderedMarkdownIcon = tablerIcon(IconMarkdown)
 export let BrokenPictureIcon = tablerIcon(IconPhotoOff)
+
+// Rendered Markdown callouts, after GitHub's alerts and Docusaurus' admonitions; a warning shows WarningIcon.
+export let NoteIcon = tablerIcon(IconInfoCircle)
+export let TipIcon = tablerIcon(IconBulb)
+export let ImportantIcon = tablerIcon(IconMessageReport)
+export let CautionIcon = tablerIcon(IconAlertOctagon)
+export let DangerIcon = tablerIcon(IconFlame)
 
 /** Laneway's Hidden L mark, from assets/brand/laneway-icon.svg, fitted to its 48-unit canvas. */
 export function BrandMark() {

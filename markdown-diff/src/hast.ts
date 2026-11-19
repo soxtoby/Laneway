@@ -4,11 +4,11 @@ import { defaultSchema, sanitize, type Schema } from "hast-util-sanitize"
 import type { Delete, FootnoteDefinition, FootnoteReference, Nodes, RootContent, Yaml } from "mdast"
 import { type Handlers, type State, toHast } from "mdast-util-to-hast"
 import { visit } from "unist-util-visit"
-import type { DiffCode, DiffDelete, DiffInsert, DiffModified } from "./nodes"
+import type { Callout, CalloutTitle, DiffCode, DiffDelete, DiffInsert, DiffModified } from "./nodes"
 
-// GitHub's sanitizing schema, which keeps the HTML a README may embed, plus the attributes that mark changes.
-// Without <source>, a <picture> shows its <img>, so a consumer that loads pictures itself loads that one.
-let markAttributes = ["dataDiff", "dataDiffBefore", "dataDiffStamp"]
+// GitHub's sanitizing schema, which keeps the HTML a README may embed, plus the attributes that mark changes and
+// callouts. Without <source>, a <picture> shows its <img>, so a consumer that loads pictures itself loads that one.
+let markAttributes = ["dataDiff", "dataDiffBefore", "dataCallout", "dataCalloutTitle", "dataDiffStamp"]
 let schema: Schema = {
     ...defaultSchema,
     tagNames: defaultSchema.tagNames!.filter(tagName => tagName != "source"),
@@ -30,6 +30,8 @@ let handlers: Handlers = {
         let code: Element = { type: "element", tagName: "code", properties: node.lang ? { className: [`language-${node.lang}`] } : {}, children }
         return state.applyData(node, { type: "element", tagName: "pre", properties: {}, children: [code] })
     },
+    callout: (state, node: Callout) => element(state, node, "div", { dataCallout: node.kind }, state.wrap(state.all(node), true)),
+    calloutTitle: (state, node: CalloutTitle) => element(state, node, "p", { dataCalloutTitle: "" }),
     yaml: (state, node: Yaml) => state.applyData(node, state.handlers.code!(state, { type: "code", lang: "yaml", value: node.value }, undefined) as Element),
     // Each block renders on its own, so footnotes show their labels where they're cited and defined.
     footnoteReference: (state, node: FootnoteReference) => state.applyData(node, footnoteLabel(node.label ?? node.identifier)),
@@ -44,11 +46,11 @@ export function toHastContent(block: RootContent): ElementContent[] {
     if (!hasRaw(root))
         return (sanitize(root, schema) as Root).children as ElementContent[]
 
-    // Embedded HTML could write the attributes that mark changes, so the engine stamps its own marks before parsing it
-    // and strips the marks of every element without the stamp once it's sanitized.
+    // Embedded HTML could write the attributes that mark changes and callouts, so the engine stamps its own marks
+    // before parsing it and strips the marks of every element without the stamp once it's sanitized.
     let stamp = crypto.randomUUID()
     visit(root, "element", element => {
-        if (element.properties.dataDiff != undefined)
+        if (markAttributes.some(attribute => element.properties[attribute] != undefined))
             element.properties.dataDiffStamp = stamp
     })
     let clean = sanitize(raw(root), schema) as Root
