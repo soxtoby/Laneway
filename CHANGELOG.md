@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- Hover a branch's ↑↓ badge in the Branch Graph to see what it counts: commits not yet published to its upstream, and commits on its upstream not yet pulled.
+
+### Changed
+
+- Fetching in the background now brings an open column's Base, such as the Primary Branch, up to date with its remote, as long as no worktree has it checked out. The branches above it stay put until you Pull latest or Restack.
+
 ## v0.1.0-alpha.2
 
 ### Added

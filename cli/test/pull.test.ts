@@ -304,7 +304,7 @@ test("incorporates upstream commits another tool's fetch brought, and leaves a b
     expect(git(local, "rev-parse", "one")).toBe(reworded)
 }, 120_000)
 
-test("fetching fast-forwards only branches outside every open or checked-out stack, and leaves the rest for Pull latest", async () => {
+test("fetching fast-forwards open and checked-out stacks' Bases and branches outside those stacks, and leaves the rest for Pull latest", async () => {
     let { other, local } = await fixture()
     git(other, "switch", "-qc", "side", "main")
     await commit(other, "side.txt", "side\n", "side")
@@ -319,17 +319,22 @@ test("fetching fast-forwards only branches outside every open or checked-out sta
     git(other, "switch", "-qc", "one", "origin/one")
     await commit(other, "shared.txt", "from colleague\n", "colleague on one")
     git(other, "push", "-q", "origin", "one")
-    // two is checked out, so main, the Base of its stack, stays put; one has a commit of its own, so it can't fast-forward.
+    // two is checked out, but main, the Base of its stack, still moves forward; one has a commit of its own, so it can't fast-forward.
     git(local, "switch", "-q", "one")
     await commit(local, "mine.txt", "mine\n", "mine on one")
     git(local, "switch", "-q", "two")
-    let main = git(local, "rev-parse", "main")
+    let two = git(local, "rev-parse", "two")
     let total = (await history(local)).total
     let fetched = await fetchLatest(local, [])
 
-    expect(fetched).toMatchObject({ status: "fetched", fetches: [{ remote: "origin", status: "fetched" }], fastForwarded: ["refs/heads/side"] })
+    expect(fetched).toMatchObject({
+        status: "fetched",
+        fetches: [{ remote: "origin", status: "fetched" }],
+        fastForwarded: ["refs/heads/main", "refs/heads/side"],
+    })
     expect(git(local, "rev-parse", "side")).toBe(side)
-    expect(git(local, "rev-parse", "main")).toBe(main)
+    expect(git(local, "rev-parse", "main")).toBe(newMain)
+    expect(git(local, "rev-parse", "two")).toBe(two)
     expect((await history(local)).total).toBe(total)
     // An open column's stack is left alone too.
 

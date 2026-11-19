@@ -425,7 +425,11 @@ function BranchRow({ row, branch, rebase, onMarker, menu }: {
                                     <Tooltip>{`Stash ${marker.label}`}</Tooltip>
                                 </TooltipTrigger>
                             ))}
-                            {(branch.ahead > 0 || branch.behind > 0) && <span className="graph-chip divergence">↑{branch.ahead} ↓{branch.behind}</span>}
+                            {(branch.ahead > 0 || branch.behind > 0) && (
+                                <Hint text={divergenceHint(branch)}>
+                                    <span className="graph-chip divergence">↑{branch.ahead} ↓{branch.behind}</span>
+                                </Hint>
+                            )}
                         </span>
                     </span>
                     {/* Drags the branch by keyboard too: onto another row to rebase, or a worktree column's header to switch it. */}
@@ -531,6 +535,13 @@ export function graphRows(graph: BranchGraph, foldedIds: string[]) {
     })
     let identities = visible.flatMap(branch => localIdentities(graph, branch))
     return { ...layoutBranchGraph(graph, identities), count: identities.length }
+}
+
+/** Explains the ↑↓ chip: how far the branch and its upstream have each moved on without the other. */
+function divergenceHint({ ahead, behind, upstreamRef }: BranchGraphBranchNode) {
+    let upstream = upstreamRef?.replace(/^refs\/remotes\//, "") ?? "its upstream"
+    let commits = (count: number) => `${count} ${count == 1 ? "commit" : "commits"}`
+    return `↑ ${commits(ahead)} not yet published to ${upstream}\n↓ ${commits(behind)} on ${upstream} not yet pulled`
 }
 
 function branchKind(branch: BranchGraphBranchNode) {

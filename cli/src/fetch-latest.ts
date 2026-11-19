@@ -42,8 +42,9 @@ export async function fetchLatest(
 
 /**
  * Moves each local branch strictly behind its upstream to the upstream's tip, outside Operation History. A branch is
- * left for Pull latest when a worktree holds it, when it belongs to the Active Stack of an open column or of a branch
- * a worktree holds, or when an Unresolved Stack or Historical Edit includes it. Called under the mutation lock.
+ * left for Pull latest when a worktree holds it, when it is an open column's branch or lies above the Base of the
+ * Active Stack of one or of a branch a worktree holds, or when an Unresolved Stack or Historical Edit includes it.
+ * Called under the mutation lock.
  */
 export async function fastForwardBranches(repo: RepositoryGit, request: FetchRequest, graphOptions: BranchGraphReadOptions) {
     let lines = await gitText(repo, ["for-each-ref", "--format=%(refname)%00%(objectname)%00%(upstream)%00%(upstream:trackshort)", "refs/heads/"])
@@ -63,8 +64,10 @@ export async function fastForwardBranches(repo: RepositoryGit, request: FetchReq
     if (behind.some(([ref]) => !left.has(ref))) {
         let graph = await repo.startReadBranchGraph({ ...graphOptions, refreshRemote: false }).result
         for (let ref of new Set([...request.branches, ...held])) {
-            for (let item of (await readActiveStack(repo, graph, ref))?.branches ?? [])
+            // A Base only moves forward, as Pull latest would move it, leaving the stack on it to Restack.
+            for (let item of (await readActiveStack(repo, graph, ref))?.branches.slice(1) ?? [])
                 left.add(item.ref)
+            left.add(ref)
         }
     }
 

@@ -110,7 +110,7 @@ The ordered branch chain from an integration target through the branch shown in 
 _Avoid_: Active branch
 
 **Pull latest**:
-A fetch and local synchronization of a Workspace Column's Active Stack, together with every open Active Stack sharing a branch above its Base with it, including incoming changes from each branch's upstream and its Base Branch. Its scope includes intermediate branches without their own columns, excludes branches outside those stacks, and never includes publication. A branch that is published, or has a published branch built on it, takes its upstream's commits but stays behind a Primary Branch that only moved forward, until it is Restacked. Background fetching fast-forwards branches outside every open stack instead.
+A fetch and local synchronization of a Workspace Column's Active Stack, together with every open Active Stack sharing a branch above its Base with it, including incoming changes from each branch's upstream and its Base Branch. Its scope includes intermediate branches without their own columns, excludes branches outside those stacks, and never includes publication. A branch that is published, or has a published branch built on it, takes its upstream's commits but stays behind a Primary Branch that only moved forward, until it is Restacked. Background fetching fast-forwards open stacks' Bases and branches outside every open stack instead.
 _Avoid_: Git pull
 
 **Restack**:
