@@ -2453,13 +2453,16 @@
         text-decoration-color: var(--markdown-removed-border);
     }
 
-    /* A picture hides the wash behind it, so a swapped one is outlined instead. */
-    ins[data-diff="added"] :is(img, .markdown-picture) {
+    /* A picture hides the wash behind it, so an added or deleted one is outlined instead, whether it's swapped
+       within a block or its whole block is new or gone. Outlines take no room, so the layout stays put. */
+    [data-diff="added"] :is(img, .markdown-picture),
+    &[data-change="added"] :is(img, .markdown-picture) {
         outline: 2px solid var(--markdown-added-border);
         outline-offset: 1px;
     }
 
-    del[data-diff="removed"] :is(img, .markdown-picture) {
+    [data-diff="removed"] :is(img, .markdown-picture),
+    &[data-change="removed"] :is(img, .markdown-picture) {
         outline: 2px solid var(--markdown-removed-border);
         outline-offset: 1px;
         opacity: 0.6;
@@ -2518,6 +2521,11 @@
 
     [data-diff] {
         background: none;
+    }
+
+    :is(img, .markdown-picture) {
+        outline: none;
+        opacity: 1;
     }
 }
 
