@@ -91,7 +91,7 @@ test("fast-forwards a stack consisting only of the primary branch", async () => 
     expect(again.stacks[0]).toMatchObject({ branches: ["main"], status: "current" })
 }, 120_000)
 
-test("restacks unpublished branches left behind a parent or Base that moved before the pull, including a remote-only Base", async () => {
+test("restacks unpublished branches left behind a parent that moved before the pull, but not onto a Primary Branch only on the remote", async () => {
     let { other, local } = await fixture()
     // Without their remote branches, one and two are unpublished, whatever upstreams they still name.
     git(other, "push", "-q", "origin", "--delete", "one", "two")
@@ -102,17 +102,20 @@ test("restacks unpublished branches left behind a parent or Base that moved befo
 
     expect(result.stacks[0]).toMatchObject({ branches: ["main", "one", "two"], status: "updated" })
     expect(git(local, "merge-base", "--is-ancestor", advanced, "two")).toBe("")
-    // Without a local main, the Base is origin/main, already fetched by the time the pull starts.
+    // Without a local main, the Primary Branch is origin/main, already fetched by the time the pull starts; the stack
+    // waits behind it for Restack.
 
     git(local, "branch", "-qD", "main")
     git(other, "switch", "-q", "main")
-    let newMain = await commit(other, "base.txt", "base updated\n", "upstream main")
+    await commit(other, "base.txt", "base updated\n", "upstream main")
     git(other, "push", "-q", "origin", "main")
     git(local, "fetch", "-q", "origin")
+    let two = git(local, "rev-parse", "two")
     let remoteBase = await pull(local, ["refs/heads/two"])
 
-    expect(remoteBase.stacks[0]).toMatchObject({ branches: ["origin/main", "one", "two"], status: "updated" })
-    expect(git(local, "merge-base", "--is-ancestor", newMain, "one")).toBe("")
+    expect(remoteBase.stacks[0]).toMatchObject({ branches: ["origin/main", "one", "two"], status: "current" })
+    expect(git(local, "rev-parse", "one")).toBe(advanced)
+    expect(git(local, "rev-parse", "two")).toBe(two)
 }, 120_000)
 
 test("pulling one column's stack carries open stacks sharing a branch above its Base, but not those sharing only the Base", async () => {
@@ -202,7 +205,7 @@ test("a published branch that diverged from its upstream replays onto it, and th
     expect(ancestor(local, "main", "one")).toBe(false)
 }, 120_000)
 
-test("an unpublished branch under a published one stays with it, while a stack with nothing published restacks", async () => {
+test("a stack stays on a Primary Branch that only moved forward, whether or not anything in it is published", async () => {
     let { other, local } = await fixture()
     // below is unpublished, and the published above is built on it; alone is unpublished and has nothing built on it.
     git(local, "switch", "-qc", "below", "main")
@@ -211,17 +214,19 @@ test("an unpublished branch under a published one stays with it, while a stack w
     let above = await commit(local, "above.txt", "above\n", "above")
     git(local, "push", "-q", "-u", "origin", "above")
     git(local, "switch", "-qc", "alone", "main")
-    await commit(local, "alone.txt", "alone\n", "alone")
+    let alone = await commit(local, "alone.txt", "alone\n", "alone")
     git(local, "switch", "-q", "main")
     git(other, "switch", "-q", "main")
     let newMain = await commit(other, "base.txt", "base updated\n", "upstream main")
     git(other, "push", "-q", "origin", "main")
     let result = await pull(local, ["refs/heads/above", "refs/heads/alone"])
 
-    expect(result.stacks.map(stack => stack.status)).toEqual(["updated", "updated"])
+    // The first stack moves their shared Base forward, leaving nothing for the second.
+    expect(result.stacks.map(stack => stack.status)).toEqual(["updated", "current"])
+    expect(git(local, "rev-parse", "main")).toBe(newMain)
     expect(git(local, "rev-parse", "below")).toBe(below)
     expect(git(local, "rev-parse", "above")).toBe(above)
-    expect(git(local, "rev-parse", "alone~1")).toBe(newMain)
+    expect(git(local, "rev-parse", "alone")).toBe(alone)
 }, 120_000)
 
 test("incorporates upstream commits an earlier fetch brought but no pull integrated, including after undoing the pull that did", async () => {

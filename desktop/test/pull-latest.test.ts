@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test"
-import { incoming, staysBehind } from "../src/renderer/react/pull-latest"
+import { incoming } from "../src/renderer/react/pull-latest"
 import { branchGraph } from "./renderer-fixtures"
 
-test("lists each upstream with new commits and each branch behind its Base, down to the Active Stack's Base", () => {
+test("lists each upstream with new commits and each branch behind a Base other than the Primary Branch, down to the Active Stack's Base", () => {
     let graph = branchGraph("repo")
     let [main, feature] = graph.branches
     let remoteMain = {
@@ -18,11 +18,7 @@ test("lists each upstream with new commits and each branch behind its Base, down
     let local = { ...main!, upstreamRef: "refs/remotes/origin/main", behind: 1, upstreamIncoming: true, behindBase: true }
     let tip = { ...feature!, upstreamRef: "refs/remotes/origin/feature/laneway", behind: 2, upstreamIncoming: true, behindBase: true }
 
-    expect(incoming({ ...graph, branches: [local, tip] }, tip, {})).toEqual([
-        "origin/feature/laneway has 2 new commits",
-        "feature/laneway is behind main",
-        "origin/main has 1 new commit",
-    ])
+    expect(incoming({ ...graph, branches: [local, tip] }, tip, {})).toEqual(["origin/feature/laneway has 2 new commits", "origin/main has 1 new commit"])
 
     // A remote Base ends the stack, and has no upstream of its own.
     let onRemote = {
@@ -38,15 +34,13 @@ test("lists each upstream with new commits and each branch behind its Base, down
     expect(incoming(graph, feature!, {})).toEqual([])
 
     // A restacked branch is behind its upstream only by the commits it replaced; it has publication pending instead.
-    let restacked = { ...tip, ahead: 3, upstreamIncoming: false }
-    expect(incoming({ ...graph, branches: [main!, restacked] }, restacked, {})).toEqual(["feature/laneway is behind main"])
+    let restacked = { ...onRemote, ahead: 3, upstreamIncoming: false }
+    expect(incoming({ ...graph, branches: [local, below, restacked] }, restacked, {})).toEqual(["feature/laneway is behind origin/main"])
 })
 
-test("a branch that is published, or has a published branch built on it, waits behind the Primary Branch for Restack", () => {
+test("a branch behind the Primary Branch waits there for Restack, though its upstream's commits still arrive", () => {
     let graph = branchGraph("repo")
     let [main, feature] = graph.branches
-    let base = (branch: typeof main) => ({ status: "known" as const, branchId: branch!.id, name: branch!.name, ref: branch!.preferredRef, tip: branch!.tip })
-    let published = { upstreamRef: "refs/remotes/origin/feature/laneway", upstreamTip: "9".repeat(40) }
     let behind = { ...feature!, behindBase: true }
     let child = {
         ...feature!,
@@ -54,22 +48,15 @@ test("a branch that is published, or has a published branch built on it, waits b
         name: "child",
         preferredRef: "refs/heads/child",
         localRefs: ["refs/heads/child"],
-        base: base(behind),
+        base: { status: "known" as const, branchId: behind.id, name: behind.name, ref: behind.preferredRef, tip: behind.tip },
     }
 
-    // Its own upstream's commits still arrive.
-    let own = { ...behind, ...published, behind: 1, upstreamIncoming: true }
+    expect(incoming({ ...graph, branches: [main!, behind] }, behind, {})).toEqual([])
+    let own = { ...behind, upstreamRef: "refs/remotes/origin/feature/laneway", behind: 1, upstreamIncoming: true }
     expect(incoming({ ...graph, branches: [main!, own] }, own, {})).toEqual(["origin/feature/laneway has 1 new commit"])
-    // A published branch built on it holds it too, whichever column is asking.
-    let above = { ...child, ...published }
-    expect(incoming({ ...graph, branches: [main!, behind, above] }, behind, {})).toEqual([])
-    expect(staysBehind({ ...graph, branches: [main!, behind, above] }, behind, main!)).toBe(true)
-    // Within the stack a branch still follows the one below it, and an upstream that is gone publishes nothing.
-    let lagging = { ...above, behindBase: true }
+    // Within the stack a branch still follows the one below it, and so does one on a Base other than the Primary Branch.
+    let lagging = { ...child, behindBase: true }
     expect(incoming({ ...graph, branches: [main!, behind, lagging] }, lagging, {})).toEqual(["child is behind feature/laneway"])
-    let gone = { ...behind, upstreamRef: published.upstreamRef }
-    expect(incoming({ ...graph, branches: [main!, gone, child] }, gone, {})).toEqual(["feature/laneway is behind main"])
-    // Only the Primary Branch stays a Base however far it moves on.
     let integration = { ...main!, primary: false }
-    expect(staysBehind({ ...graph, branches: [integration, own] }, own, integration)).toBe(false)
+    expect(incoming({ ...graph, branches: [integration, behind] }, behind, {})).toEqual(["feature/laneway is behind main"])
 })

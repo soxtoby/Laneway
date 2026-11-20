@@ -18,7 +18,7 @@ import { movableBase, moveIntoBaseLabel } from "./local-branches"
 import { offersPublish, type Publish, publishRef } from "./publish"
 import { PublishButton } from "./publish-control"
 import { PullButton } from "./pull-control"
-import { incoming, type PullLatest, staysBehind } from "./pull-latest"
+import { incoming, type PullLatest } from "./pull-latest"
 import type { Reword } from "./reword"
 import { TransferGrip, TransferReview, TransferSeam, useTransferScope, useTransferTarget } from "./transfer"
 import { Button } from "./ui/Button"
@@ -200,11 +200,7 @@ function StackBranch(props: StackBranchProps) {
                     )}
                 {lagging && (
                     <span className="stack-ahead">
-                        <Hint
-                            text={`${branch.name} has ${plural(lagging.baseAhead, "commit")} ${lagging.name} isn't built on.${
-                                staysBehind(props.graph, lagging, branch) ? " Pull latest leaves it there, since restacking rewrites what is published." : ""
-                            }`}
-                        >
+                        <Hint text={`${branch.name} has ${plural(lagging.baseAhead, "commit")} ${lagging.name} isn't built on.`}>
                             <span className="stack-ahead-count">{lagging.baseAhead} ahead</span>
                         </Hint>
                         <Button

@@ -30,8 +30,8 @@ A remote branch, such as origin/feature, checks out as a new local branch tracki
 branch has its name already, --local reset moves that branch to it, and --local new creates feature-2.`,
     pull: `lane pull [branch ...] [--remote <remote>] [--restack]
 Fetch and synchronize the named Active Stacks, including their bases and upstreams.
-A published branch, and each branch below one, takes its upstream's commits but stays where it is
-when its Base only moved forward; --restack moves those onto their Bases too.
+Each branch takes its upstream's commits, but a stack stays where it is when the Primary Branch
+under it only moved forward; --restack moves it onto the Primary Branch too.
 With no branches, use the current branch. This does not publish.`,
     fetch: `lane fetch [--remote <remote>]
 Fetch the selected remote and every remote a local branch tracks, then fast-forward each branch

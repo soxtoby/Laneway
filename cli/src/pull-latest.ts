@@ -34,12 +34,8 @@ export type PullPreparation =
         stacks: ScopedStack[]
         blocked: PullStackOutcome[]
         remotesFor: (stack: ScopedStack) => string[]
-        /**
-         * Each local branch's upstream, with the Branch Node its stack rests on the Primary Branch by. While the
-         * upstream exists the branch is published, and a pull leaves that node where it is while the Primary Branch only
-         * moves forward. Empty when the pull was asked to restack those too.
-         */
-        anchors: Array<{ upstream: string; anchor: string }>
+        /** Whether the pull moves stacks onto a Primary Branch that only moved forward, rather than leaving that to Restack. */
+        restack: boolean
     }
 
 // Explains why a stack was left untouched; anything else is reported as a failure.
@@ -75,25 +71,6 @@ export async function preparePull(
         primary: branch.primary,
         upstream: branch.remoteOnly ? undefined : upstreams.get(ref),
     })
-
-    // Read from the whole graph, so a published branch holds what it is built on whether or not its column is open.
-    let anchors: Array<{ upstream: string; anchor: string }> = []
-    let nodes = new Map(graph.branches.map(branch => [branch.id, branch]))
-    for (let branch of request.restack ? [] : graph.branches) {
-        let tracked = branch.localRefs.flatMap(ref => upstreams.get(ref)?.ref ?? [])
-        let seen = new Set<string>()
-        for (let current = branch; tracked.length && current.base.status == "known" && !seen.has(current.id);) {
-            seen.add(current.id)
-            let base = nodes.get(current.base.branchId)
-            if (!base || base.remoteOnly && !base.primary)
-                break
-            if (base.primary) {
-                anchors.push(...tracked.map(upstream => ({ upstream, anchor: current.id })))
-                break
-            }
-            current = base
-        }
-    }
 
     let candidates: Array<{ chain: ScopedBranch[]; ambiguous?: string }> = []
     for (let ref of [...new Set([...request.branches, ...request.open ?? []])]) {
@@ -157,7 +134,7 @@ export async function preparePull(
         progress(`Fetching ${remote}…`, index, total)
         fetches.push(await fetchRemote(repo, remote))
     }
-    return { kind: "prepared", fetches, trackingBefore, stacks, blocked, remotesFor, anchors }
+    return { kind: "prepared", fetches, trackingBefore, stacks, blocked, remotesFor, restack: request.restack == true }
 }
 
 export async function fetchRemote(repo: RepositoryGit, remote: string): Promise<PullFetch> {
@@ -185,9 +162,6 @@ export async function executePull(
     let held = heldBranches(prepared.stacks, editing)
     let failedRemotes = new Set(prepared.fetches.filter(fetch => fetch.status == "failed").map(fetch => fetch.remote))
     let pulled = await readPulledUpstreams(repo)
-    // An upstream the fetch pruned no longer publishes its branch.
-    let remoteTips = prepared.anchors.length ? await readRemoteTips(repo) : new Map<string, string>()
-    let anchors = new Set(prepared.anchors.filter(item => remoteTips.has(item.upstream)).map(item => item.anchor))
     let processed = new Map<string, { before: string; current: string }>()
     let outcomes: PullStackOutcome[] = [...prepared.blocked]
 
@@ -217,7 +191,7 @@ export async function executePull(
                 let messages = prepared.fetches.filter(fetch => failed.includes(fetch.remote)).map(fetch => `${fetch.remote}: ${fetch.message}`)
                 throw new PullSkip(`Fetching ${failed.join(", ")} failed, so this stack was not updated. ${messages.join(" ")}`)
             }
-            outcomes.push(await updateStack(repo, session, stack, pulled, anchors, processed, changes, cancelled, working))
+            outcomes.push(await updateStack(repo, session, stack, pulled, prepared.restack, processed, changes, cancelled, working))
         } catch (error) {
             if ([...changes].some(([ref, value]) => !snapshot.has(ref) || snapshot.get(ref) != value))
                 throw error
@@ -266,8 +240,8 @@ async function updateStack(
     session: ConflictSession,
     stack: ScopedStack,
     pulled: Map<string, string | null>,
-    // The Branch Nodes that published branches rest on the Primary Branch by.
-    anchors: Set<string>,
+    // Moves the stack onto a Primary Branch that only moved forward too.
+    restack: boolean,
     processed: Map<string, { before: string; current: string }>,
     changes: Changes,
     cancelled: () => boolean,
@@ -389,12 +363,12 @@ async function updateStack(
         onto?: string
     }
     let planned: Planned[] = []
-    // A branch that is published, or has a published branch built on it, stays where it is while the Primary Branch under
-    // it only moves forward, since moving it would rewrite published history; it still takes its own upstream's commits.
-    // Only the lowest branch can stay: the Primary Branch remains a branch's Base however far it moves on, but any other
-    // branch stops being one once it moves past the fork, so the branches above follow the one below them as ever.
+    // A stack stays where it is while the Primary Branch under it only moves forward, since moving it onto the Primary
+    // Branch is Restack's job; it still takes its own upstream's commits. Only the lowest branch can stay: the Primary
+    // Branch remains a branch's Base however far it moves on, but any other branch stops being one once it moves past the
+    // fork, so the branches above follow the one below them as ever.
     let lowest = stack.branches[position + 1]
-    let anchored = position == 0 && base.primary && lowest != undefined && anchors.has(lowest.id)
+    let anchored = !restack && position == 0 && base.primary && lowest != undefined
         && (baseOld == baseNew || await isAncestor(repo, baseOld, baseNew))
     for (let branch of stack.branches.slice(position + 1)) {
         let existing = Boolean(stackOf(branch.ref))
