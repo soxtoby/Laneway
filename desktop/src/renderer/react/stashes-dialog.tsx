@@ -1,3 +1,4 @@
+import { DialogHeader } from "./dialog-header"
 import { FormError } from "./form-error"
 import type { Stashes } from "./stashes"
 import { Button } from "./ui/Button"
@@ -12,7 +13,9 @@ export function StashesDialog({ stashes }: { stashes: Stashes }) {
     return (
         <Modal isOpen={open} onOpenChange={isOpen => isOpen || stashes.close()}>
             <Dialog className="react-aria-Dialog stashes-dialog">
-                <Heading slot="title">Stashes</Heading>
+                <DialogHeader isDismissDisabled={busy}>
+                    <Heading slot="title">Stashes</Heading>
+                </DialogHeader>
                 {!preview && !error && <p role="status">Reading stashes…</p>}
                 {preview && !preview.stashes.length && <p>No stashes.</p>}
                 {preview && preview.stashes.length > 0 && (

@@ -1,5 +1,6 @@
 import type { TrackingBranch, WorktreePreview } from "@laneway/shared"
 import { useState } from "react"
+import { DialogHeader } from "./dialog-header"
 import { FormError } from "./form-error"
 import { Button } from "./ui/Button"
 import { Checkbox } from "./ui/Checkbox"
@@ -38,7 +39,9 @@ export function WorktreeDialog({ worktrees }: { worktrees: WorktreeActions }) {
                         void worktrees.execute()
                     }}
                 >
-                    <Heading slot="title">{title}</Heading>
+                    <DialogHeader isDismissDisabled={busy}>
+                        <Heading slot="title">{title}</Heading>
+                    </DialogHeader>
                     {preview && <PreviewDetails preview={preview} preserve={preserve} busy={busy} worktrees={worktrees} />}
                     {tracking && <TrackingChoice branch={tracking.branch} />}
                     <FormError message={error} />

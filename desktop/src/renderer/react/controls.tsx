@@ -6,7 +6,7 @@ import { MoreIcon } from "./icons"
 import { Menu, MenuItem, MenuTrigger, SubmenuTrigger } from "./ui/Menu"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 
-interface IconButtonProps extends Pick<ButtonProps, "onPress" | "isDisabled" | "aria-expanded"> {
+interface IconButtonProps extends Pick<ButtonProps, "onPress" | "isDisabled" | "aria-expanded" | "slot"> {
     label: string
     children: ReactNode
     small?: boolean

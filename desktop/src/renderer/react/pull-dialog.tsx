@@ -1,5 +1,6 @@
 import type { PullStackOutcome, PullStackStatus } from "@laneway/shared"
 import { useState } from "react"
+import { DialogHeader } from "./dialog-header"
 import type { PullLatest } from "./pull-latest"
 import { Button } from "./ui/Button"
 import { Dialog, Heading } from "./ui/Dialog"
@@ -34,7 +35,9 @@ export function PullDialog({ pull, onResolve }: { pull: PullLatest; onResolve(re
     return (
         <Modal className="react-aria-Modal pull-modal" isOpen={open != undefined} isDismissable onOpenChange={isOpen => isOpen || pull.close()}>
             <Dialog className="react-aria-Dialog pull-outcome" aria-label="Pull latest outcome">
-                <Heading slot="title">Pull latest</Heading>
+                <DialogHeader>
+                    <Heading slot="title">Pull latest</Heading>
+                </DialogHeader>
                 <div className="pull-outcome-body">
                     {outcome?.error && <p className="pull-error" role="alert">{outcome.error}</p>}
                     {result && (

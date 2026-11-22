@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Radio, RadioGroup } from "react-aria-components"
 import { type BranchRebase, plural } from "./branch-rebase"
+import { DialogHeader } from "./dialog-header"
 import { FormError } from "./form-error"
 import { Button } from "./ui/Button"
 import { Checkbox } from "./ui/Checkbox"
@@ -30,7 +31,9 @@ export function RebaseDialog({ rebase }: { rebase: BranchRebase }) {
             <Dialog className="react-aria-Dialog rebase-dialog" aria-label={current && `Rebase ${current.source.name}`}>
                 {current && (
                     <>
-                        <Heading slot="title">Rebase {current.source.name}</Heading>
+                        <DialogHeader isDismissDisabled={executing}>
+                            <Heading slot="title">Rebase {current.source.name}</Heading>
+                        </DialogHeader>
                         {current.destinations.length > 1
                             ? (
                                 <RadioGroup

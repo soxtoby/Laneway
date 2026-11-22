@@ -73,13 +73,12 @@
     }
 
     &[data-open],
-    &[data-pressed] {
+    &[data-focused] {
         background: var(--highlight-hover);
     }
 
-    &[data-focused] {
-        background: var(--highlight-background);
-        color: var(--highlight-foreground);
+    &[data-pressed] {
+        background: var(--highlight-pressed);
     }
 
     &[data-selection-mode] {
@@ -111,7 +110,6 @@
     .react-aria-Text:not([slot]),
     [slot="label"] {
         grid-area: label;
-        font-weight: 500;
     }
 
     [slot="description"] {
@@ -130,11 +128,6 @@
         border: 0.5px solid var(--highlight-pressed);
         padding: 0 var(--spacing-1);
         border-radius: var(--radius-sm);
-    }
-
-    &[data-focused] kbd {
-        background: rgb(255 255 255 / 0.1);
-        border-color: rgb(255 255 255 / 0.2);
     }
 
     .tabler-icon-chevron-right {
@@ -163,20 +156,10 @@
         font-size: var(--font-size-sm);
         font-weight: 600;
         font-variation-settings: initial;
-        padding: var(--spacing-1) var(--spacing-3);
-        background: var(--gray-100);
-        border-block: 0.5px solid var(--gray-400);
+        padding: var(--spacing-2) var(--spacing-3) var(--spacing-1);
+        color: var(--text-color-placeholder);
         cursor: default;
         user-select: none;
-        box-shadow: inset 0px 1px 0px white, inset 0px -4px 8px var(--gray-200);
-
-        @media (prefers-color-scheme: dark) {
-            box-shadow: inset 0px 4px 8px var(--gray-200);
-        }
-    }
-
-    &:first-child .react-aria-Header {
-        margin-top: -0.5px;
     }
 }
 

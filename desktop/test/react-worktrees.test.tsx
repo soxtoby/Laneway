@@ -65,7 +65,9 @@ describe("React worktree actions", () => {
         await app.act(() => press(button(column, "Repair")))
         expect(chosenPaths).toEqual([worktree.path])
         expect(previews[0]).toEqual({ action: "repair", path: worktree.path, destination: "D:/relocated/missing" })
-        await app.act(() => press(button(dialog(), "Cancel")))
+        // The dialog's Close button dismisses it as Cancel does.
+        await app.act(() => press(button(dialog(), "Close")))
+        expect(document.querySelector("[role=dialog]") == null).toBe(true)
         await app.act(() => press(button(column, "Remove")))
         expect(previews[1]).toEqual({ action: "remove", path: worktree.path, preserve: true })
         expect(executions).toEqual([{ action: "remove", path: worktree.path, preserve: true }])

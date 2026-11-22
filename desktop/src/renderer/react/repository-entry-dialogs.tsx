@@ -1,4 +1,5 @@
 import type { FormEvent, ReactNode } from "react"
+import { DialogHeader } from "./dialog-header"
 import { FormError } from "./form-error"
 import { type CloneForm, entryErrorMessage, type EntryOperation, type InitializeForm, type RepositoryEntry } from "./repository-entry"
 import { Button } from "./ui/Button"
@@ -17,7 +18,9 @@ export function EntryDialogs({ entry, busy }: { entry: RepositoryEntry; busy: bo
     return (
         <>
             <EntryModal isOpen={dialog == "add"} onDismiss={dismiss}>
-                <Heading slot="title">Add repository</Heading>
+                <DialogHeader>
+                    <Heading slot="title">Add repository</Heading>
+                </DialogHeader>
                 <EntryOptions
                     busy={busy || operation != "idle"}
                     onOpen={entry.openRepository}
@@ -51,7 +54,9 @@ function CloneFields({ entry, clone, operation }: { entry: RepositoryEntry; clon
     let busy = operation == "cloning" || operation == "cancelling"
     return (
         <Form className="react-aria-Form entry-form" onSubmit={submitWith(entry.submitClone)}>
-            <Heading slot="title">Clone repository</Heading>
+            <DialogHeader isDismissDisabled={operation == "cancelling"}>
+                <Heading slot="title">Clone repository</Heading>
+            </DialogHeader>
             <TextField
                 label="Git source"
                 value={clone.source}
@@ -101,7 +106,9 @@ function InitializeFields({ entry, initialize, operation }: { entry: RepositoryE
     let busy = operation == "initializing"
     return (
         <Form className="react-aria-Form entry-form" onSubmit={submitWith(entry.submitInitialize)}>
-            <Heading slot="title">Initialize repository</Heading>
+            <DialogHeader isDismissDisabled={busy}>
+                <Heading slot="title">Initialize repository</Heading>
+            </DialogHeader>
             <div className="field-with-action">
                 <TextField
                     label="Parent directory"

@@ -2,6 +2,7 @@ import { publishReceiptStatus, type PublishUpdate, type PublishUpdateStatus } fr
 import { type RefObject, useLayoutEffect, useRef, useState } from "react"
 import { Button as AriaButton } from "react-aria-components"
 import { Hint } from "./controls"
+import { DialogHeader } from "./dialog-header"
 import { ForcePublishIcon, PublishIcon, PublishNewIcon } from "./icons"
 import type { Publish } from "./publish"
 import { Button } from "./ui/Button"
@@ -154,7 +155,9 @@ export function PublishConfirmation({ publish }: { publish: Publish }) {
     return (
         <Modal isOpen={confirming != undefined} isDismissable onOpenChange={isOpen => isOpen || publish.cancel()}>
             <Dialog className="react-aria-Dialog publish-confirmation">
-                <Heading slot="title">{action} {name}</Heading>
+                <DialogHeader>
+                    <Heading slot="title">{action} {name}</Heading>
+                </DialogHeader>
                 <p>{name} is the Primary Branch, the line everyone's work builds on.</p>
                 <Destinations updates={updates} />
                 {forced.map(update => (
@@ -197,7 +200,9 @@ export function PublishDialog({ publish, repositoryId }: { publish: Publish; rep
     return (
         <Modal isOpen={open != undefined} isDismissable onOpenChange={isOpen => isOpen || close()}>
             <Dialog className="react-aria-Dialog publish-outcome" aria-label="Publish outcome">
-                <Heading slot="title">Publish</Heading>
+                <DialogHeader>
+                    <Heading slot="title">Publish</Heading>
+                </DialogHeader>
                 {outcome?.error && <p className="publish-error" role="alert">{outcome.error}</p>}
                 {result && <p className="publish-summary">{result.message}</p>}
                 {receipt && (

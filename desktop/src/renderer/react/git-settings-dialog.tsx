@@ -1,5 +1,6 @@
 import { useId } from "react"
 import { Hint } from "./controls"
+import { DialogHeader } from "./dialog-header"
 import type { GitSettings } from "./git-settings"
 import { Button } from "./ui/Button"
 import { Dialog, Heading } from "./ui/Dialog"
@@ -15,7 +16,9 @@ export function GitSettingsDialog({ gitSettings }: { gitSettings: GitSettings })
     return (
         <Modal isOpen={isOpen} onOpenChange={open => open || gitSettings.close()}>
             <Dialog className="react-aria-Dialog settings-dialog">
-                <Heading slot="title">System Git</Heading>
+                <DialogHeader isDismissDisabled={pending}>
+                    <Heading slot="title">System Git</Heading>
+                </DialogHeader>
                 {settings.error
                     ? (
                         <div className="settings-error">

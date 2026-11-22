@@ -3,7 +3,9 @@
     max-height: inherit;
     box-sizing: border-box;
     overflow: auto;
-    padding: var(--spacing-10);
+    border-radius: inherit;
+    --dialog-padding: var(--spacing-6);
+    padding: var(--dialog-padding);
 
     .react-aria-Heading[slot="title"] {
         margin-top: 0;

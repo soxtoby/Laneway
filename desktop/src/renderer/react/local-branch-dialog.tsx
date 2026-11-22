@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { DialogHeader } from "./dialog-header"
 import { FormError } from "./form-error"
 import type { LocalBranches } from "./local-branches"
 import { Button } from "./ui/Button"
@@ -30,7 +31,9 @@ export function LocalBranchDialog({ branches }: { branches: LocalBranches }) {
                             void branches.submit()
                         }}
                     >
-                        <Heading slot="title">{titles[dialog.action]}</Heading>
+                        <DialogHeader isDismissDisabled={busy}>
+                            <Heading slot="title">{titles[dialog.action]}</Heading>
+                        </DialogHeader>
                         <TextField
                             label={dialog.action == "tag-create" ? "Tag name" : "Branch name"}
                             description={dialog.action == "tag-create" && dialog.remote ? `Also created on ${dialog.remote}.` : undefined}

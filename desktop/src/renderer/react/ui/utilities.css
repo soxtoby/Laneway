@@ -3,22 +3,16 @@
     .button-base {
         --button-color: var(--tint);
         --button-background: oklch(from var(--button-color) var(--lightness-100) var(--chroma-100) h);
-        --button-gradient: oklch(from var(--button-color) var(--lightness-200) var(--chroma-200) h);
         --button-border: oklch(from var(--button-color) var(--lightness-300) var(--chroma-300) h);
-        --button-highlight: rgb(255 255 255 / 0.8);
+        --button-highlight: rgb(255 255 255 / 0.15);
         --button-shadow: oklch(from var(--button-color) var(--lightness-400) var(--chroma-400) h);
         --button-border-size: 1px;
         --button-text: oklch(from var(--button-color) var(--lightness-1400) var(--chroma-1400) h);
-        --button-gradient-size: 8px;
 
+        /* Flat, as Windows draws its buttons: a border whose bottom edge is a little darker. */
         background: var(--button-background);
         color: var(--button-text);
-        box-shadow:
-            inset 0 -1px 0 var(--button-shadow),
-            /* bottom shadow */ inset 0 0 0 var(--button-border-size) var(--button-border),
-            /* border */ inset 0px calc(var(--button-border-size) + 1px) 0px var(--button-highlight),
-            /* top specular highlight */ inset 0px calc(-1 * var(--button-gradient-size)) var(--button-gradient-size) -2px
-            var(--button-gradient); /* inner gradient */
+        box-shadow: inset 0 -1px 0 var(--button-shadow), inset 0 0 0 var(--button-border-size) var(--button-border);
         outline: none;
         transition-property: background, color, scale, box-shadow;
         transition-duration: 200ms;
@@ -26,14 +20,9 @@
         forced-color-adjust: none;
         -webkit-tap-highlight-color: transparent;
 
+        /* In the dark, the top edge is the lighter one. */
         @media (prefers-color-scheme: dark) {
-            --button-shadow: oklch(from var(--button-color) var(--lightness-200) var(--chroma-200) h);
-            --button-highlight: rgb(255 255 255 / 0.15);
-            box-shadow:
-                inset 0 var(--button-border-size) 0 var(--button-highlight),
-                /* top specular highlight */ inset 0 calc(-1 * var(--button-border-size)) 0 var(--button-shadow),
-                /* bottom shadow */ inset 0 0 0 var(--button-border-size) var(--button-border),
-                /* border */ inset 0 var(--button-gradient-size) var(--button-gradient-size) -2px var(--button-gradient); /* inner gradient */
+            box-shadow: inset 0 var(--button-border-size) 0 var(--button-highlight), inset 0 0 0 var(--button-border-size) var(--button-border);
         }
 
         &:where([data-pressed]) {
@@ -64,27 +53,9 @@
         &:where([data-selected]) {
             --button-background: oklch(from var(--button-color) 55% c h);
             --button-border: oklch(from var(--button-color) 50% c h);
-            --button-gradient: var(--button-border);
             --button-highlight: rgb(255 255 255 / 0.2);
             --button-shadow: oklch(from var(--button-color) 30% c h);
             --button-text: var(--highlight-foreground);
-
-            box-shadow:
-                inset 0 -1px 0 var(--button-shadow),
-                /* bottom shadow */ inset 0 0 0 1px var(--button-border),
-                /* border */ inset 0 2px 0 var(--button-highlight),
-                /* top specular highlight */ inset 0 calc(-1 * var(--button-gradient-size)) var(--button-gradient-size)
-                var(--button-gradient); /* inner gradient */
-
-            @media (prefers-color-scheme: dark) {
-                --button-highlight: rgb(255 255 255 / 0.4);
-                --button-gradient: rgb(255 255 255 / 0.2);
-                --button-shadow: var(--button-border);
-                box-shadow:
-                    inset 0 1px 0 var(--button-highlight),
-                    /* top specular highlight */ inset 0 var(--button-gradient-size) var(--button-gradient-size) var(--button-gradient),
-                    /* inner gradient */ inset 0 0 0 1px var(--button-border); /* border */
-            }
 
             &:where([data-pressed]) {
                 --button-background: oklch(from var(--button-color) 50% c h);

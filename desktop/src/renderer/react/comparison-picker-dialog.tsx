@@ -1,6 +1,7 @@
 import { Autocomplete } from "react-aria-components"
 import { refName } from "./comparison-columns"
 import { type ComparisonPicker, pickerChoices } from "./comparison-picker"
+import { DialogHeader } from "./dialog-header"
 import { Dialog } from "./ui/Dialog"
 import { Header, Menu, MenuItem, MenuSection } from "./ui/Menu"
 import { Modal } from "./ui/Modal"
@@ -20,7 +21,9 @@ export function ComparisonPickerDialog({ picker }: { picker: ComparisonPicker })
     return (
         <Modal isOpen isDismissable onOpenChange={open => open || picker.close()}>
             <Dialog aria-label="Compare refs" className="react-aria-Dialog command-lens">
-                <strong>{state.from ? refName(state.from) : "From"} → {state.to ? refName(state.to) : "To"}</strong>
+                <DialogHeader>
+                    <strong>{state.from ? refName(state.from) : "From"} → {state.to ? refName(state.to) : "To"}</strong>
+                </DialogHeader>
                 <Autocomplete key={side} inputValue={state.query} onInputChange={picker.search}>
                     <SearchField aria-label={side} placeholder={`${side} · Branch, tag, or commit`} autoFocus isReadOnly={state.busy} />
                     <Menu aria-label={`Choose ${side.toLowerCase()} ref`} className="react-aria-Menu lens-results">

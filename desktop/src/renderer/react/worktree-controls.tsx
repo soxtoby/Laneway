@@ -4,6 +4,7 @@ import { Autocomplete, Button as AriaButton, useFilter } from "react-aria-compon
 import type { ColumnView } from "./branch-workspace"
 import { CommitAgesShown } from "./commit-age"
 import { Hint } from "./controls"
+import { DialogHeader } from "./dialog-header"
 import { copyText } from "./file-paths"
 import { MoreIcon } from "./icons"
 import { Button } from "./ui/Button"
@@ -163,7 +164,9 @@ function WorktreeRename({ worktree, isOpen, onClose, onRename }: {
                             onRename(next)
                     }}
                 >
-                    <Heading slot="title">Rename worktree</Heading>
+                    <DialogHeader>
+                        <Heading slot="title">Rename worktree</Heading>
+                    </DialogHeader>
                     <TextField
                         label="Directory name"
                         description={worktree.path}
@@ -226,7 +229,9 @@ function BranchChooser({ worktree, graph, isOpen, onClose, onChoose }: {
     return (
         <Modal isOpen={isOpen} isDismissable onOpenChange={open => open || onClose()}>
             <Dialog className="react-aria-Dialog branch-chooser">
-                <Heading slot="title">Switch {worktree.name} to branch</Heading>
+                <DialogHeader>
+                    <Heading slot="title">Switch {worktree.name} to branch</Heading>
+                </DialogHeader>
                 <Autocomplete filter={contains}>
                     <SearchField aria-label="Search branches" placeholder="Search branches" autoFocus />
                     <Menu

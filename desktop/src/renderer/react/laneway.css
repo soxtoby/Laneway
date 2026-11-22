@@ -2119,14 +2119,16 @@
     outline: none;
 }
 
+/* The viewer's bar is a dialog title bar, with the viewer's controls in it. */
 .image-viewer-bar {
     height: var(--viewer-bar);
     flex: 0 0 auto;
     display: flex;
     align-items: center;
     gap: var(--spacing-2);
-    padding: 0 var(--spacing-2) 0 var(--spacing-3);
-    border-bottom: 1px solid var(--border-color);
+    padding: 0 var(--spacing-2) 0 var(--spacing-4);
+    border-bottom: 1px solid var(--dialog-title-border);
+    background: var(--dialog-title-background);
     font-size: var(--font-size-sm);
 }
 
@@ -2971,11 +2973,6 @@
     height: 20px;
 }
 
-/* A coloured icon takes the highlight's ink, as the menu's other icons do, so an amber one can't vanish into it. */
-.script-menu .react-aria-MenuItem[data-focused] > svg.script-tile [data-tone] {
-    color: inherit;
-}
-
 /* A script's gear shares its row as a split menu item's chevron does, outranking the kit's menu icon rule. */
 .react-aria-MenuItem.split-more.script-configure > svg {
     margin: 0;
@@ -3098,15 +3095,67 @@
 .branch-chooser {
     width: 440px;
     max-width: 100%;
-    padding: var(--spacing-6);
     display: flex;
     flex-direction: column;
     gap: var(--spacing-4);
+}
 
-    .react-aria-Heading[slot="title"] {
+/* A dialog's title bar spans the dialog's top edge to edge, out past its padding, and stays put while the dialog
+   scrolls. The title truncates, and its detail gives way first. Below it, a dialog laid out with a gap spaces its
+   content by the gap and a little more, and one laid out in blocks by its padding. */
+.dialog-header {
+    position: sticky;
+    top: calc(-1 * var(--dialog-padding));
+    z-index: 1;
+    min-height: 44px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    margin: calc(-1 * var(--dialog-padding)) calc(-1 * var(--dialog-padding)) var(--spacing-2);
+    padding: var(--spacing-1) var(--spacing-2) var(--spacing-1) var(--dialog-padding);
+    border-bottom: 1px solid var(--dialog-title-border);
+    background: var(--dialog-title-background);
+
+    /* Three classes outrank the kit's title margin wherever its stylesheet lands. */
+    .react-aria-Dialog & :is(.react-aria-Heading[slot="title"], strong) {
+        flex: 0 1 auto;
+        min-width: 0;
         margin: 0;
-        font-size: var(--font-size-lg);
+        overflow: hidden;
+        font-size: var(--font-size);
+        font-weight: 600;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
+
+    :is(.return-dialog, .rebase-dialog, .publish-confirmation, .publish-outcome) > & {
+        margin-bottom: var(--dialog-padding);
+    }
+
+    .command-lens > & {
+        margin-bottom: 0;
+    }
+}
+
+.dialog-title-icon {
+    flex: none;
+    width: 20px;
+    height: 20px;
+}
+
+.dialog-title-detail {
+    flex: 0 2 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-color-placeholder);
+    font-size: var(--font-size-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.icon-button.dialog-close {
+    margin-inline-start: auto;
 }
 
 .settings-dialog,
@@ -3136,35 +3185,10 @@
     margin-inline-end: auto;
 }
 
-.identity-header {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
-}
-
 .identity-preview {
     flex: none;
     width: 40px;
     height: 40px;
-}
-
-.identity-title {
-    min-width: 0;
-    display: grid;
-
-    .react-aria-Heading[slot="title"] {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-}
-
-.identity-path {
-    overflow: hidden;
-    color: var(--text-color-placeholder);
-    font-size: var(--font-size-sm);
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 /* Every icon type gets the icon picker's height, and its lists scroll within it, so changing type
@@ -3339,7 +3363,8 @@
     gap: var(--spacing-2);
 }
 
-.entry-form {
+/* Two classes outrank the kit's form gap wherever its stylesheet lands. */
+.react-aria-Form.entry-form {
     gap: var(--spacing-4);
 
     .react-aria-TextField {
@@ -4266,8 +4291,9 @@
     width: 340px;
 }
 
-.graph-settings {
-    padding: var(--spacing-4);
+/* Two classes outrank the kit's dialog padding wherever its stylesheet lands. */
+.react-aria-Dialog.graph-settings {
+    --dialog-padding: var(--spacing-4);
 
     .react-aria-Form {
         display: grid;
@@ -4416,11 +4442,12 @@
     color: var(--text-color-placeholder);
 }
 
-/* The Command Lens: a search over open repositories, their branches, and column commands. */
-.command-lens {
+/* The Command Lens: a search over open repositories, their branches, and column commands. Two classes outrank the
+   kit's dialog padding wherever its stylesheet lands. */
+.react-aria-Dialog.command-lens {
     width: 560px;
     max-width: 100%;
-    padding: var(--spacing-4);
+    --dialog-padding: var(--spacing-3);
     display: flex;
     flex-direction: column;
     gap: var(--spacing-3);
@@ -4438,6 +4465,7 @@
         display: flex;
         align-items: center;
         gap: var(--spacing-2);
+        padding-inline: var(--spacing-2);
     }
 }
 
@@ -4485,19 +4513,6 @@
     padding: var(--spacing-2);
     color: var(--text-color-placeholder);
     font-size: var(--font-size-sm);
-}
-
-/* A focused result takes the accent fill, so its badge and detail take its ink. */
-.command-lens .react-aria-MenuItem:is([data-focused], [data-pressed]) {
-    .lens-kind {
-        border-color: currentColor;
-        color: inherit;
-    }
-
-    .lens-copy small {
-        color: inherit;
-        opacity: 0.8;
-    }
 }
 
 /* Fetch in the header; a failed fetch marks it until one succeeds. */
@@ -4567,12 +4582,7 @@
     gap: var(--spacing-4);
     min-width: 0;
     width: 100%;
-    padding: var(--spacing-6);
     overflow: hidden;
-
-    .react-aria-Heading[slot="title"] {
-        margin: 0;
-    }
 
     p {
         margin: var(--spacing-1) 0;

@@ -1,5 +1,6 @@
 import type { BranchGraphWorktree } from "@laneway/shared"
 import { useState } from "react"
+import { DialogHeader } from "./dialog-header"
 import { FormError } from "./form-error"
 import type { HistoricalEdits } from "./historical-edit"
 import { ModifiedIcon } from "./icons"
@@ -76,7 +77,9 @@ export function ReturnDialog({ edits }: { edits: HistoricalEdits }) {
             <Dialog className="react-aria-Dialog return-dialog" aria-label={shown && `Return to ${shown.branch}`}>
                 {shown && (
                     <>
-                        <Heading slot="title">Return to {shown.branch}</Heading>
+                        <DialogHeader isDismissDisabled={busy}>
+                            <Heading slot="title">Return to {shown.branch}</Heading>
+                        </DialogHeader>
                         <p>
                             {remaining} Drop them, or bring them along onto the latest {shown.branch}. Your earlier Working Changes are restored first.
                         </p>

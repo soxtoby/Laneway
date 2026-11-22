@@ -321,13 +321,12 @@
         }
     }
 
-    &[data-pressed] {
+    &[data-focused] {
         background: var(--highlight-hover);
     }
 
-    &[data-focused] {
-        background: var(--highlight-background);
-        color: var(--highlight-foreground);
+    &[data-pressed] {
+        background: var(--highlight-pressed);
     }
 
     [slot="label"] {

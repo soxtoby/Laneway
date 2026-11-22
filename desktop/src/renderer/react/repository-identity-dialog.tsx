@@ -1,6 +1,7 @@
 import type { OpenRepository } from "@laneway/shared"
 import { repositoryInitials } from "@laneway/shared"
 import { Hint } from "./controls"
+import { DialogHeader } from "./dialog-header"
 import { IconFields } from "./icon-pickers"
 import { automaticIcon, baseName, repositoryFolderName } from "./repositories"
 import type { IconImageApi } from "./repository-icon-images"
@@ -35,15 +36,13 @@ function IdentityFields(
     let automatic = automaticIcon(repository)
     return (
         <>
-            <header className="identity-header">
-                <RepositoryTile className="tile identity-preview" icon={repository.icon ?? automatic} name={name} api={api} />
-                <div className="identity-title">
-                    <Heading slot="title">{name}</Heading>
-                    <Hint text={repository.path}>
-                        <span className="identity-path">{repository.path}</span>
-                    </Hint>
-                </div>
-            </header>
+            <DialogHeader>
+                <RepositoryTile className="tile dialog-title-icon" icon={repository.icon ?? automatic} name={name} api={api} />
+                <Heading slot="title">{name}</Heading>
+                <Hint text={repository.path}>
+                    <span className="dialog-title-detail">{repository.path}</span>
+                </Hint>
+            </DialogHeader>
             <TextField
                 label="Name"
                 value={state.label}

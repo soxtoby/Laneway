@@ -1,6 +1,7 @@
 import type { OpenRepository, Workspace } from "@laneway/shared"
 import { repositoryInitials } from "@laneway/shared"
 import { useState } from "react"
+import { DialogHeader } from "./dialog-header"
 import { chosenIcon } from "./icon-choice"
 import { IconFields } from "./icon-pickers"
 import { repositoryName } from "./repositories"
@@ -43,13 +44,11 @@ function ScriptFields({ scripts, state, repository }: { scripts: RepositoryScrip
                 scripts.save()
             }}
         >
-            <header className="identity-header">
-                <ScriptTile className="tile identity-preview" script={{ name: state.name, icon: chosenIcon(state, saved?.icon) }} api={scripts.images} />
-                <div className="identity-title">
-                    <Heading slot="title">{saved ? `Configure ${saved.name}` : "New script"}</Heading>
-                    <span className="identity-path">{repositoryName(repository)}</span>
-                </div>
-            </header>
+            <DialogHeader>
+                <ScriptTile className="tile dialog-title-icon" script={{ name: state.name, icon: chosenIcon(state, saved?.icon) }} api={scripts.images} />
+                <Heading slot="title">{saved ? `Configure ${saved.name}` : "New script"}</Heading>
+                <span className="dialog-title-detail">{repositoryName(repository)}</span>
+            </DialogHeader>
             <TextField label="Name" value={state.name} onChange={scripts.setName} maxLength={80} autoComplete="off" autoFocus />
             <TextField
                 label="Command"
