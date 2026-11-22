@@ -114,6 +114,45 @@ describe("branch tip comparisons", () => {
         await expect(api.startReadChanges({ source: branches("refs/heads/main~1", "refs/heads/main") }).result).rejects.toThrow()
     })
 
+    test("compares independent Working Changes in both directions, including untracked files", async () => {
+        let { path, api } = await repository()
+        let linked = resolve(path, "..", `${path.split(/[\\/]/).pop()}-linked`)
+        roots.push(linked)
+        git(path, "worktree", "add", "-qb", "feature", linked)
+        await writeFile(resolve(path, "file.txt"), "main working\n")
+        await writeFile(resolve(linked, "file.txt"), "feature working\n")
+        await writeFile(resolve(linked, "new.txt"), "untracked\n")
+        let from = { kind: "branch" as const, ref: "refs/heads/main" }, to = { kind: "branch" as const, ref: "refs/heads/feature" }
+        let read = async (reverse: boolean) => {
+            let source: DiffSource = reverse
+                ? { kind: "refs", from: to, to: from, fromWorktreePath: linked, worktreePath: path }
+                : { kind: "refs", from, to, fromWorktreePath: path, worktreePath: linked }
+            let inventory = await api.startReadChanges({ source }).result
+            let page = await api.startReadFileDiff({ source: inventory.source, path: "file.txt" }).result
+            return [changed(page.lines), inventory.files.find(file => file.path == "new.txt")?.status]
+        }
+        expect(await read(false)).toEqual([[["deletion", "main working"], ["addition", "feature working"]], "added"])
+        expect(await read(true)).toEqual([[["deletion", "feature working"], ["addition", "main working"]], "deleted"])
+    })
+
+    test("lists branch and tag names and peels annotated tags and abbreviated commit IDs", async () => {
+        let { path, api } = await repository()
+        git(path, "tag", "-a", "release", "-m", "release")
+        let commit = git(path, "rev-parse", "HEAD").trim()
+        git(path, "branch", "laneway/unresolved/test")
+        git(path, "tag", "lightweight")
+        git(path, "tag", "-a", "nested", "-m", "nested", "release")
+        git(path, "tag", "tree", "HEAD^{tree}")
+        expect(await api.comparisonRefs()).toEqual([{ kind: "branch", ref: "refs/heads/main" }, { kind: "commit", tag: "lightweight", objectId: commit }, {
+            kind: "commit",
+            tag: "nested",
+            objectId: commit,
+        }, { kind: "commit", tag: "release", objectId: commit }])
+        expect(await api.resolveComparisonCommit("refs/tags/release")).toBe(commit)
+        expect(await api.resolveComparisonCommit(commit.slice(0, 8))).toBe(commit)
+        await expect(api.resolveComparisonCommit("unavailable")).rejects.toThrow("No unique commit")
+    })
+
     test("ends at a worktree's files, its Working Changes included, when the compared branch is checked out there", async () => {
         let { path, api } = await repository()
         let worktree = resolve(path, "..", `${path.split(/[\\/]/).pop()}-feature`)

@@ -51,6 +51,7 @@ export interface CommitTrailProps {
     reword(branch: BranchGraphBranchNode, commit: BranchHistoryCommit, close: () => void): Reword
     /** Starts a Historical Edit from a commit; only a worktree-backed column outside one can. */
     editFrom?(commit: BranchHistoryCommit): void
+    compareWith(to: ComparisonRef): void
     /** Opens the Branch Comparison Column from `from` to `to` beside this column. */
     compare(from: ComparisonRef, to: ComparisonRef): void
     /** Resolves the conflicts that rewrites deferred in the column's commits. */
@@ -142,6 +143,7 @@ function StackBranch(props: StackBranchProps) {
         label: `Actions for branch ${branch.name}`,
         items: () => (
             <>
+                <MenuItem onAction={() => props.compareWith({ kind: "branch", ref: branch.preferredRef })}>Compare with…</MenuItem>
                 {base && <MenuItem onAction={() => props.moveIntoBase(branch)}>{moveIntoBaseLabel(base, moving)}</MenuItem>}
                 {branch.localRefs.length > 0 && <MenuItem onAction={() => props.deleteBranch(branch)}>Delete branch</MenuItem>}
                 <Separator />
@@ -320,6 +322,7 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
         label: `Actions for commit ${commit.subject}`,
         items: () => (
             <>
+                <MenuItem onAction={() => props.compareWith({ kind: "commit", objectId: commit.objectId })}>Compare with…</MenuItem>
                 {editFrom && rewordable && !branch.primary && <MenuItem onAction={() => editFrom(commit)}>Edit from here</MenuItem>}
                 {rewordable && <MenuItem onAction={() => onReword(commit.objectId)}>Reword commit…</MenuItem>}
                 <MenuItem onAction={() => props.createBranchAt(commit)}>Create branch here…</MenuItem>

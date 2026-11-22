@@ -1,9 +1,10 @@
-import type { BranchGraphReadOptions, BranchHistoryRequest, ChangesRequest, DiffSource, FileDiffRequest, FileImageRequest, FileVersionRequest } from "@laneway/shared"
+import type { BranchGraphReadOptions, BranchHistoryRequest, ChangesRequest, ComparisonRef, DiffSource, FileDiffRequest, FileImageRequest, FileVersionRequest } from "@laneway/shared"
 import { access, lstat, mkdir, readdir, readFile, realpath } from "node:fs/promises"
 import { isAbsolute, resolve } from "node:path"
 import { type BranchGraphReadCache, startBranchGraphRead, startBranchHistoryRead } from "./branch-graph"
 import { type ChangesReadCache, startChangesRead, startFileDiffRead, startFileImageRead, startFileVersionRead } from "./changes"
 import { conflictComparisonSource, conflictHistoryRequest, projectConflictGraph } from "./conflict-graph"
+import { temporaryBranchPrefix } from "./conflicts"
 import { GitError } from "./git-error"
 import { selectGit } from "./git-installation"
 import { commandEffect, commandFailure, type GitRunResult, redactGitText, runGitProcess, startGitProcess } from "./git-process"
@@ -156,21 +157,64 @@ export class RepositoryGit {
     }
 
     /**
-     * A comparison ending at a worktree's files compares with a tree of them, untracked files included, so the lists,
-     * diffs, and versions read from it work as they do between commits, which take any tree.
+     * Snapshot each included worktree once so inventory pages, diffs, and file versions use the same trees.
      */
     private async workingComparisonSource(source: Extract<DiffSource, { kind: "refs" }>): Promise<Extract<DiffSource, { kind: "refs" }>> {
-        let { worktreePath, ...refs } = source
-        if (!worktreePath)
+        let { fromWorktreePath, worktreePath } = source
+        if (!fromWorktreePath && !worktreePath)
             return source
 
-        let worktree = (await readRegisteredWorktrees(this)).find(candidate => samePath(candidate.path, resolve(worktreePath)))
-        if (!worktree || worktree.missing)
-            throw new GitError("git.command-failed", "The compared worktree is unavailable.")
-        if (refs.to.kind != "branch" || worktree.branchRef != refs.to.ref)
-            throw new GitError("git.command-failed", "The compared branch is no longer checked out in that worktree.")
+        let worktrees = await readRegisteredWorktrees(this)
+        let endpoint = async (ref: ComparisonRef, path?: string): Promise<ComparisonRef> => {
+            if (!path)
+                return ref
+            let worktree = worktrees.find(candidate => samePath(candidate.path, resolve(path)))
+            if (!worktree || worktree.missing)
+                throw new GitError("git.command-failed", "The compared worktree is unavailable.")
+            if (ref.kind != "branch" || worktree.branchRef != ref.ref)
+                throw new GitError("git.command-failed", "The compared branch is no longer checked out in that worktree.")
 
-        return { ...refs, to: { kind: "commit", objectId: await workingFilesTree(this, worktree.path, "HEAD") } }
+            return { kind: "commit", objectId: await workingFilesTree(this, worktree.path, "HEAD") }
+        }
+        let [from, to] = await Promise.all([endpoint(source.from, fromWorktreePath), endpoint(source.to, worktreePath)])
+        return { kind: "refs", from, to }
+    }
+
+    async comparisonRefs(): Promise<ComparisonRef[]> {
+        let output = await this.command(this.descriptor.selectedWorktree, [
+            "for-each-ref",
+            "--format=%(refname)%00%(symref)%00%(objecttype)%00%(objectname)%00%(*objecttype)%00%(*objectname)",
+            "refs/heads",
+            "refs/remotes",
+            "refs/tags",
+        ])
+        let refs: ComparisonRef[] = []
+        for (let line of output.toString().trimEnd().split("\n")) {
+            let [ref, symref, type, id, peeledType, peeledId] = line.split("\0")
+            if (ref && !symref && !ref.startsWith(temporaryBranchPrefix)) {
+                if (!ref.startsWith("refs/tags/"))
+                    refs.push({ kind: "branch", ref })
+                else {
+                    // Git's starred format atoms peel one annotated tag. A tag on another tag needs recursive peeling.
+                    let targetType = peeledType || type
+                    let objectId = targetType == "commit"
+                        ? peeledId || id
+                        : targetType == "tag"
+                        ? await this.resolveRef(`${id}^{commit}`)
+                        : undefined
+                    if (objectId)
+                        refs.push({ kind: "commit", objectId, tag: ref.slice("refs/tags/".length) })
+                }
+            }
+        }
+        return refs
+    }
+
+    async resolveComparisonCommit(revision: string): Promise<string> {
+        let objectId = await this.resolveRef(`${revision}^{commit}`)
+        if (!objectId)
+            throw new GitError("git.command-failed", "No unique commit matches that ref.")
+        return objectId
     }
 
     async hashObject(value: string) {
@@ -180,7 +224,7 @@ export class RepositoryGit {
     }
 
     async resolveRef(ref: string) {
-        let result = await this.run(this.descriptor.selectedWorktree, ["rev-parse", "--verify", "--quiet", ref])
+        let result = await this.run(this.descriptor.selectedWorktree, ["rev-parse", "--verify", "--quiet", "--end-of-options", ref])
         if (result.exitCode == 1)
             return null
 

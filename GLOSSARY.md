@@ -262,7 +262,7 @@ An AI-assisted Laneway Operation that may split, squash, reorder, and reword com
 _Avoid_: Restack, AI refactoring
 
 **Comparison Ref**:
-One end of a Branch Comparison: a commit, a branch identity that follows its tip, or the merge base of two branch identities. A branch's whole set of changes against its Base Branch runs from the merge base of the two to the branch itself.
+One end of a Branch Comparison: a commit (including a tag resolved to its commit when chosen), a branch identity that follows its tip, or the merge base of two branch identities. A branch's whole set of changes against its Base Branch runs from the merge base of the two to the branch itself.
 _Avoid_: Revision, commit-ish
 
 **Branch Comparison**:
@@ -270,5 +270,5 @@ An ordered live diff from one Comparison Ref to another, recomputed when a branc
 _Avoid_: Three-dot diff
 
 **Branch Comparison Column**:
-A read-only Workspace Column showing a Branch Comparison. It is filtered, broken out into a diff column, and maximized with it like any Workspace Column, and persists in Workspace State by its refs. While the branch it compares to is checked out in a worktree, it may end at that worktree's files instead, including its Working Changes, untracked files too, and reading them again as they change; the choice persists with the column. Unique commits remain part of the compared branch's Active Stack.
+A read-only Workspace Column showing a Branch Comparison. It is filtered, broken out into a diff column, and maximized with it like any Workspace Column, and persists its ordered refs in Workspace State. Either checked-out branch can include its worktree’s Working Changes, including untracked files. Each choice stays with its branch when swapping sides and persists with the column. The comparison follows edits in either included worktree. Unique commits remain part of the compared branch's Active Stack.
 _Avoid_: Comparison auxiliary column, Three-dot Diff Column

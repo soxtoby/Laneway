@@ -8,6 +8,7 @@ type Api = Window["laneway"]
 export type LensResult =
     | { kind: "repository"; repositoryId: string; nodeId: string; label: string; detail: string; score: number }
     | { kind: "branch"; repositoryId: string; nodeId: string; label: string; detail: string; score: number }
+    | { kind: "compare"; repositoryId: string; nodeId: string; label: string; detail: string; score: number }
     | { kind: "command"; repositoryId: string; nodeId: string; label: string; detail: string; score: number; delta: number }
 
 export interface LensSnapshot {
@@ -75,6 +76,17 @@ export function lensResults(
     if (!needle)
         return []
     let results: LensResult[] = []
+    let compareScore = textScore("Compare refs…", needle)
+    if (activeId && compareScore && workspace.repositories.some(repository => repository.id == activeId && repository.status == "available")) {
+        results.push({
+            kind: "compare",
+            repositoryId: activeId,
+            nodeId: "compare-refs",
+            label: "Compare refs…",
+            detail: "Branches, tags, or commits",
+            score: compareScore,
+        })
+    }
     if (activeId && focusedColumnId) {
         for (let command of [{ label: "Move column left", delta: -1 }, { label: "Move column right", delta: 1 }]) {
             let score = textScore(command.label, needle)
@@ -112,7 +124,7 @@ export function lensResults(
 }
 
 // Whole names score highest, then prefixes, then a word's prefix, then anywhere.
-function textScore(value: string, query: string) {
+export function textScore(value: string, query: string) {
     let text = value.toLocaleLowerCase()
     if (text == query)
         return 4

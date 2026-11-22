@@ -4,7 +4,7 @@ import { memo, type ReactNode, type RefObject, useCallback, useEffect, useState 
 import { Button as AriaButton, Form } from "react-aria-components"
 import type { ColumnView } from "./branch-workspace"
 import { type CommitComposer, defaultBranchName } from "./commit-composer"
-import { type ComparisonColumnNode, comparisonHistorySource, comparisonWorktreePath } from "./comparison-columns"
+import { type ComparisonColumnNode, comparisonHistorySource } from "./comparison-columns"
 import type { Landing, TransferSelection } from "./composition"
 import { Hint, IconButton } from "./controls"
 import { DiffControls, DiffPanel } from "./diff-panel"
@@ -512,9 +512,19 @@ export const FileList = memo(function FileList(
     let history = historySource(files.source)
     let histories = (file: ChangedFile) =>
         comparison
-            ? [{ label: `History in ${comparison.fromName}`, source: comparisonHistorySource(comparison.from), path: file.oldPath ?? file.path }, {
-                label: `History in ${comparison.toName}`,
-                source: comparisonHistorySource(comparison.to, comparisonWorktreePath(comparison)),
+            ? [{
+                label: `History in ${comparison.from.label}`,
+                source: comparisonHistorySource(
+                    comparison.from,
+                    files.source.kind == "comparison" ? files.source.fromObjectId : undefined,
+                ),
+                path: file.oldPath ?? file.path,
+            }, {
+                label: `History in ${comparison.to.label}`,
+                source: comparisonHistorySource(
+                    comparison.to,
+                    files.source.kind == "comparison" ? files.source.toObjectId : undefined,
+                ),
                 path: file.path,
             }]
             : history
@@ -525,8 +535,8 @@ export const FileList = memo(function FileList(
         let opened = histories(file)
         return (
             <>
-                {opened.map(item => (
-                    <MenuItem key={item.label} onAction={() => inspection.openHistory(columnId, item.source, item.path)}>{item.label}</MenuItem>
+                {opened.map((item, side) => (
+                    <MenuItem key={side} onAction={() => inspection.openHistory(columnId, item.source, item.path)}>{item.label}</MenuItem>
                 ))}
                 {opened.length > 0 && own && <Separator />}
                 {own}

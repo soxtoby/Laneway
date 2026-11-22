@@ -1,4 +1,4 @@
-import { createReactComponent, IconAdjustmentsHorizontal, IconAlertOctagon, IconAlertTriangle, IconArchive, IconArrowBackUp, IconArrowBarToDown, IconArrowBarToUp, IconArrowBarToUpDashed, IconArrowForwardUp, IconArrowRight, IconArrowsDiagonal, IconArrowsDiagonalMinimize2, IconArrowUp, IconBulb, IconCheck, IconChevronDown, IconChevronsLeft, IconChevronsRight, IconCircleArrowUp, IconCopy, IconDots, IconExternalLink, IconFileDiff, IconFlame, IconFolder, IconFolderOpen, IconGitBranch, IconGitCompare, IconGitMerge, IconInfoCircle, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconLetterT, IconListTree, IconMarkdown, IconMessageReport, IconMinus, IconMoodSmile, IconMoon, IconPencil, IconPencilPlus, IconPhoto, IconPhotoOff, IconPhotoPlus, IconPlus, IconRefresh, IconRefreshAlert, IconSearch, IconSelector, IconSettings, IconSun, IconTag, IconTextWrap, IconX } from "@tabler/icons-react"
+import { createReactComponent, IconAdjustmentsHorizontal, IconAlertOctagon, IconAlertTriangle, IconArchive, IconArrowBackUp, IconArrowBarToDown, IconArrowBarToUp, IconArrowBarToUpDashed, IconArrowForwardUp, IconArrowRight, IconArrowsDiagonal, IconArrowsDiagonalMinimize2, IconArrowsExchange, IconArrowUp, IconBulb, IconCheck, IconChevronDown, IconChevronsLeft, IconChevronsRight, IconCircleArrowUp, IconCopy, IconDots, IconExternalLink, IconFileDiff, IconFlame, IconFolder, IconFolderOpen, IconGitBranch, IconGitCompare, IconGitMerge, IconInfoCircle, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconLetterT, IconListTree, IconMarkdown, IconMessageReport, IconMinus, IconMoodSmile, IconMoon, IconPencil, IconPencilPlus, IconPhoto, IconPhotoOff, IconPhotoPlus, IconPlus, IconRefresh, IconRefreshAlert, IconSearch, IconSelector, IconSettings, IconSun, IconTag, IconTextWrap, IconX } from "@tabler/icons-react"
 import { createElement, type ReactNode } from "react"
 import type { CatalogNode } from "./icon-catalog"
 import { collapseAllNode, customIconPaths, forcePublishNode } from "./icon-nodes"
@@ -37,6 +37,7 @@ export let CollapseColumnIcon = tablerIcon(IconChevronsLeft)
 export let ExpandColumnIcon = tablerIcon(IconChevronsRight)
 export let RestoreIcon = tablerIcon(IconArrowsDiagonalMinimize2)
 export let WarningIcon = tablerIcon(IconAlertTriangle)
+export let SwapIcon = tablerIcon(IconArrowsExchange)
 export let CompareIcon = tablerIcon(IconGitCompare)
 export let CheckIcon = tablerIcon(IconCheck)
 export let UpdateIcon = tablerIcon(IconCircleArrowUp)

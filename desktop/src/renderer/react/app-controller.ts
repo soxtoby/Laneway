@@ -5,6 +5,7 @@ import { type BranchRebase, createBranchRebase } from "./branch-rebase"
 import { type BranchWorkspace, createBranchWorkspace } from "./branch-workspace"
 import { type CommandLens, createCommandLens, type LensResult } from "./command-lens"
 import { type CommitComposer, createCommitComposer } from "./commit-composer"
+import { type ComparisonPicker, createComparisonPicker } from "./comparison-picker"
 import { type Composition, createComposition } from "./composition"
 import { type Conflicts, createConflicts } from "./conflicts"
 import { undoWindowMs } from "./discard"
@@ -69,6 +70,7 @@ export interface AppController extends Store<AppSnapshot> {
     readonly stashes: Stashes
     /** Rebasing branches from the Branch Graph. */
     readonly rebase: BranchRebase
+    readonly comparisonPicker: ComparisonPicker
     readonly lens: CommandLens
     /** Resolving conflicts that rewrites deferred. */
     readonly conflicts: Conflicts
@@ -148,6 +150,8 @@ export function createAppController(api: Api): AppController {
 
     // Each workspace change that can move the active repository shows that repository's columns.
     function showWorkspace(workspace: Workspace) {
+        if (comparisonPicker.snapshot() && comparisonPicker.snapshot()?.repositoryId != workspace.activeRepositoryId)
+            comparisonPicker.close()
         update({ workspace })
         publish.retain(workspace.repositories.map(repository => repository.id))
         let active = activeRepository(workspace)
@@ -342,6 +346,7 @@ export function createAppController(api: Api): AppController {
         },
     })
 
+    let comparisonPicker = createComparisonPicker(api, columns, inspection)
     let lens = createCommandLens({ api, workspace: () => ready()?.workspace })
 
     // The active repository's open columns' local branches; a column showing a remote branch has no stack to update.
@@ -440,6 +445,7 @@ export function createAppController(api: Api): AppController {
         stashes,
         rebase,
         lens,
+        comparisonPicker,
         conflicts,
         pull,
         fetching,
@@ -570,6 +576,8 @@ export function createAppController(api: Api): AppController {
 
         async activateLensResult(result) {
             lens.close()
+            if (result.kind == "compare")
+                return comparisonPicker.open()
             if (result.kind == "command")
                 return columns.move(result.nodeId, result.delta)
             if (result.repositoryId != ready()?.workspace.activeRepositoryId)

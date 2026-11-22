@@ -124,6 +124,16 @@ describe("Workspace manager", () => {
         await manager.update({ ...presentation, repositories: [{ ...repository, columns: [column, comparison] }] })
         expect(manager.snapshot().repositories[0].columns[1]).toEqual(comparison)
         expect((await new WorkspaceManager(new OpenRepositories(settingsPath), statePath).load()).repositories[0].columns[1]).toEqual(comparison)
+
+        let swapped = {
+            ...comparison,
+            from: comparison.to,
+            to: { kind: "commit" as const, objectId: "a".repeat(40), tag: "v1" },
+            includeWorking: undefined,
+            includeFromWorking: true,
+        }
+        await manager.update({ ...presentation, repositories: [{ ...repository, columns: [column, swapped] }] })
+        expect((await new WorkspaceManager(new OpenRepositories(settingsPath), statePath).load()).repositories[0].columns[1]).toEqual(swapped)
     })
 
     test("retains unavailable repositories and their layout", async () => {

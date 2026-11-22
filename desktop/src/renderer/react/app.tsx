@@ -5,6 +5,7 @@ import type { BackgroundFetch } from "./background-fetch"
 import { BranchGraphPanel, defaultGraphWidth } from "./branch-graph"
 import { CommandLensDialog } from "./command-lens-dialog"
 import { CommitAgesShown } from "./commit-age"
+import { ComparisonPickerDialog } from "./comparison-picker-dialog"
 import { ContextMenuHost } from "./context-menu"
 import { GitSettingsDialog } from "./git-settings-dialog"
 import { ReturnDialog } from "./historical-edit-banner"
@@ -143,6 +144,7 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
             <PublishDialog publish={controller.publish} repositoryId={active?.id} />
             <PullDialog pull={controller.pull} onResolve={(_repositoryId, branch) => columns.open(`branch:refs/heads/${branch}`)} />
             <CommandLensDialog controller={controller} workspace={workspace} />
+            <ComparisonPickerDialog picker={controller.comparisonPicker} />
             <RepositoryIdentityDialog editor={identity} repositories={workspace.repositories} api={api} />
             <ScriptDialog scripts={controller.scripts} workspace={workspace} />
             <Notices controller={controller} notice={notice} />

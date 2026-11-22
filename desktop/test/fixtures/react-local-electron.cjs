@@ -29,6 +29,29 @@ app.on("browser-window-created", (_event, window) => {
                     input.dispatchEvent(new Event('input', { bubbles: true }));
                 };
                 const key = (target, key) => target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+                if (${JSON.stringify(phase)} == 'compare') {
+                    await wait(() => document.querySelector('[data-column-id="branch:refs/heads/main"]'));
+                    (await wait(() => button('Command Lens'))).click();
+                    type(await wait(() => document.querySelector('[aria-label="Command Lens"] input')), 'compare refs');
+                    const matchingRefOrCommand = label => [...document.querySelectorAll('[role=menuitem]')].find(row => row.querySelector('strong')?.textContent == label);
+                    (await wait(() => matchingRefOrCommand('Compare refs…'))).click();
+                    (await wait(() => matchingRefOrCommand('before-compose'))).click();
+                    await wait(() => document.querySelector('[aria-label="Choose to ref"]'));
+                    const refInput = document.querySelector('[aria-label="Compare refs"] input');
+                    type(refInput, 'unknown-comparison-ref');
+                    (await wait(() => matchingRefOrCommand('unknown-comparison-ref'))).click();
+                    const alert = await wait(() => document.querySelector('[aria-label="Compare refs"] [role=alert]'));
+                    if (alert.textContent != 'No unique commit matches that ref.') throw new Error(alert.textContent);
+                    type(refInput, 'main');
+                    (await wait(() => matchingRefOrCommand('main'))).click();
+                    const column = await wait(() => document.querySelector('[data-column-id^="comparison:"]'));
+                    await wait(() => column.querySelector('h2')?.textContent == 'before-compose → main' && column.querySelector('.file-row'));
+                    (await wait(() => button('Open diff column', column))).click();
+                    await wait(() => document.querySelector('.diff-column'));
+                    button('Swap sides', column).click();
+                    await wait(() => column.querySelector('h2')?.textContent == 'main → before-compose' && document.querySelector('.diff-column'));
+                    return { compared: true };
+                }
                 if (${JSON.stringify(phase)} == 'compose') {
                     (await wait(() => button('Move or copy file.txt'))).click();
                     (await wait(() => document.querySelector('.transfer-seam[aria-label="New commit on main"]'))).click();

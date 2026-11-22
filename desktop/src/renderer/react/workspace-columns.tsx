@@ -11,10 +11,11 @@ import { ColumnDivider } from "./column-divider"
 import { columnDropTarget, columnSpans } from "./column-drag"
 import { ColumnFilter } from "./column-filter"
 import { navigationKeyDown } from "./column-navigation"
+import { ComparisonWorkingChanges } from "./comparison-working-changes"
 import { Hint, IconButton } from "./controls"
 import { DiffColumn, minimumDiffColumnWidth } from "./diff-column"
 import { CommitDiffColumn, FileHistoryColumn, HostedDiffScope } from "./file-history"
-import { BranchIcon, ChevronDownIcon, CloseIcon, CollapseColumnIcon, CompareIcon, ExpandColumnIcon, FolderIcon, MaximizeIcon, OpenColumnIcon, RestoreIcon, SearchIcon, WarningIcon, WorkingChangesIcon } from "./icons"
+import { BranchIcon, ChevronDownIcon, CloseIcon, CollapseColumnIcon, CompareIcon, ExpandColumnIcon, FolderIcon, MaximizeIcon, OpenColumnIcon, RestoreIcon, SearchIcon, SwapIcon, WarningIcon } from "./icons"
 import { type AuxiliaryView, type CommitDiffView, type FileHistoryView, hostedView, type Inspection, type InspectionSnapshot } from "./inspection"
 import { type Publish, publishBranches } from "./publish"
 import { ScriptButton } from "./script-button"
@@ -374,23 +375,14 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
                                         />
                                     )}
                                     {column.kind == "comparison" && (
-                                        // Mirrors Working Changes' controls: its file list view, and a control that opens the
-                                        // comparison's whole diff, or focuses it. While its branch is checked out, it can end
-                                        // at the worktree's files instead.
                                         <>
-                                            {column.comparison.worktree && (
-                                                <TooltipTrigger>
-                                                    <ToggleButton
-                                                        className="icon-button"
-                                                        aria-label="Include Working Changes"
-                                                        isSelected={column.comparison.includeWorking}
-                                                        onChange={include => columns.setIncludeWorking(column.id, include)}
-                                                    >
-                                                        <WorkingChangesIcon />
-                                                    </ToggleButton>
-                                                    <Tooltip>Include Working Changes</Tooltip>
-                                                </TooltipTrigger>
-                                            )}
+                                            <IconButton label="Swap sides" onPress={() => columns.swapComparison(column.id)}>
+                                                <SwapIcon />
+                                            </IconButton>
+                                            <ComparisonWorkingChanges
+                                                comparison={column.comparison}
+                                                onChange={(side, include) => columns.setIncludeWorking(column.id, side, include)}
+                                            />
                                             <FileListViewMenu
                                                 label={`File list view for ${column.name}`}
                                                 view={fileListView}
@@ -635,6 +627,7 @@ function AuxiliaryFrame({ repositoryId, view, column, inspected, graph, controll
                 : view.kind == "history"
                 ? (
                     <FileHistoryColumn
+                        compareWith={ref => controller.comparisonPicker.open(ref, column.id)}
                         history={view}
                         inspection={inspection}
                         view={fileListView}

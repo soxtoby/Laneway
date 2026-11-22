@@ -493,7 +493,11 @@ describe("React Commit Trail", () => {
 
         await app.act(() => press(button(trail(), "Actions for branch feature/laneway")))
 
-        expect([...document.querySelectorAll("[role=menu] [role=menuitem]")].map(item => item.textContent)).toEqual(["Delete branch", "Copy branch name"])
+        expect([...document.querySelectorAll("[role=menu] [role=menuitem]")].map(item => item.textContent)).toEqual([
+            "Compare with…",
+            "Delete branch",
+            "Copy branch name",
+        ])
     })
 
     test("a deletion's Undo notice goes as soon as another operation starts, since Undo undoes the latest one", async () => {

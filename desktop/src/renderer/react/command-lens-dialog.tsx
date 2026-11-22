@@ -9,11 +9,11 @@ import { SearchField } from "./ui/SearchField"
 import { useSnapshot } from "./use-snapshot"
 
 let prompt = "Search open repositories and branches."
-let kinds = { repository: "Repo", branch: "Branch", command: "Command" }
+let kinds = { repository: "Repo", branch: "Branch", command: "Command", compare: "Command" }
 
 /**
  * The Command Lens: type to find an open repository, a branch in any of them, or a column command, and Enter to go
- * there. A branch shows in its repository's Branch Graph; the Lens never opens a column or switches a worktree.
+ * there. Choosing a branch locates it in its repository’s Branch Graph.
  */
 export function CommandLensDialog({ controller, workspace }: { controller: AppController; workspace: Parameters<typeof lensResults>[0]["workspace"] }) {
     let { lens, columns } = controller

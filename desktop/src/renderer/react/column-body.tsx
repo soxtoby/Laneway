@@ -102,6 +102,7 @@ export function ColumnBody({ controller, repositoryId, graph, column, inspected,
                         editFrom={path && !column.worktree?.historicalEdit
                             ? commit => void controller.edits.enter(repositoryId, path, commit.objectId)
                             : undefined}
+                        compareWith={to => controller.comparisonPicker.open(to, column.id)}
                         compare={(from, to) => controller.columns.openComparison(column.id, from, to)}
                         conflicts={conflicts}
                         publish={controller.publish}

@@ -132,6 +132,7 @@ describe("React Branch Graph", () => {
             "Check out",
             "Check out in",
             "Open column",
+            "Compare with…",
             "Rebase onto…",
             "Move commits into main",
             "Create branch here…",
@@ -188,8 +189,8 @@ describe("React Branch Graph", () => {
         await app.act(() => press(button(document.body, "Show Branch Graph")))
 
         await app.act(() => rightClick(row(tag.id)))
-        expect(menuItems().map(item => item.textContent)).toEqual(["Copy tag name"])
-        await app.act(() => press(menuItems()[0]!))
+        expect(menuItems().map(item => item.textContent)).toEqual(["Compare with…", "Copy tag name"])
+        await app.act(() => press(menuItem("Copy tag name")))
         expect(await navigator.clipboard.readText()).toBe("v1.0")
 
         await app.act(() => rightClick(row(feature!.id)))

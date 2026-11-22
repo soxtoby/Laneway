@@ -1,11 +1,11 @@
 import type { BranchGraph, BranchGraphBranchNode, BranchGraphMarker, BranchGraphWorktree, ComparisonRef, DiffLayout, RecoveryRequest, RepositoryGraphSettings, Workspace, WorkspaceColumn, WorktreeRecovery } from "@laneway/shared"
-import { type Comparison, comparisonColumnId, type ComparisonColumnNode, comparisonNode, comparisonWorktreePath, renameComparisonRef } from "./comparison-columns"
+import { type Comparison, type ComparisonColumnNode, comparisonNode, findComparisonId, includedWorktreePath, renameComparisonRef } from "./comparison-columns"
 import type { ColumnInspection, Inspection } from "./inspection"
 import { errorMessage, type Notice } from "./notice"
 import { baseName } from "./repositories"
 import { sharedSnapshot } from "./shared-snapshot"
 import { createStore, type RepositoryStore } from "./store"
-import { branchNodeFor, columnWorktree, reconcileWorktreeColumns, recoveryColumnId, recoveryWorkspaceColumn, workspaceGraph } from "./worktree-columns"
+import { branchNodeFor, columnWorktree, reconcileWorktreeColumns, recoveryColumnId, recoveryWorkspaceColumn, shortBranchRef, workspaceGraph } from "./worktree-columns"
 
 type Api = Window["laneway"]
 type VirtualBranch = BranchGraph["virtualBranches"][number]
@@ -103,9 +103,9 @@ export interface BranchWorkspace extends RepositoryStore<ColumnsSnapshot> {
      */
     reveal(repositoryId: string, nodeId: string): void
     /** Opens the Branch Comparison Column from `from` to `to` beside `sourceId`, or brings the open one into view. */
-    openComparison(sourceId: string, from: ComparisonRef, to: ComparisonRef): void
-    /** Ends a Branch Comparison Column at the files of the worktree its branch is checked out in, or at the branch again. */
-    setIncludeWorking(id: string, include: boolean): void
+    openComparison(sourceId: string | undefined, from: ComparisonRef, to: ComparisonRef): void
+    swapComparison(id: string): void
+    setIncludeWorking(id: string, side: "from" | "to", include: boolean): void
     /**
      * Follows a branch rename: its column, and any comparison naming it, keep their place, width, and state
      * under the new name. The saved layout follows at once, so the next read reconciles against it.
@@ -223,7 +223,12 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
                 comparisons: Object.fromEntries(
                     columns.flatMap(column =>
                         column.kind == "comparison"
-                            ? [[column.id, { from: column.from, to: column.to, ...(column.includeWorking ? { includeWorking: true } : {}) }]]
+                            ? [[column.id, {
+                                from: column.from,
+                                to: column.to,
+                                includeFromWorking: column.includeFromWorking,
+                                includeWorking: column.includeWorking,
+                            }]]
                             : []
                     ),
                 ),
@@ -336,35 +341,30 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
     // A branch's column, and with `comparisons` any comparison naming it, keep their place, width, and state under its new ref.
     function follow(repositoryId: string, oldRef: string, newRef: string, comparisons: boolean) {
         let state = stateFor(repositoryId)
-        let ids = new Map([[`branch:${oldRef}`, `branch:${newRef}`]])
+        let oldId = `branch:${oldRef}`, newId = `branch:${newRef}`
         for (let [id, comparison] of comparisons ? Object.entries(state.comparisons) : []) {
             let renamed = { ...comparison, from: renameComparisonRef(comparison.from, oldRef, newRef), to: renameComparisonRef(comparison.to, oldRef, newRef) }
-            let newId = comparisonColumnId(renamed.from, renamed.to)
-            if (newId != id) {
-                delete state.comparisons[id]
-                state.comparisons[newId] = renamed
-                ids.set(id, newId)
-            }
+            state.comparisons[id] = renamed
         }
-        let rename = (id: string) => ids.get(id) ?? id
+        let rename = (id: string) => id == oldId ? newId : id
         state.openedIds = state.openedIds.map(rename)
         state.collapsedIds = state.collapsedIds.map(rename)
         state.focusedId = state.focusedId && rename(state.focusedId)
         state.maximizedId = state.maximizedId && rename(state.maximizedId)
-        for (let [oldId, newId] of ids) {
-            state.widths[newId] = state.widths[oldId] ?? defaultColumnWidth
-            state.diffLayouts[newId] = state.diffLayouts[oldId] ?? "unified"
-        }
+        state.widths[newId] = state.widths[oldId] ?? defaultColumnWidth
+        state.diffLayouts[newId] = state.diffLayouts[oldId] ?? "unified"
         // Nothing shows until the next read brings the renamed branch; the saved layout must already name it.
         let saved = savedRepository(repositoryId)
         if (saved) {
             let columns = saved.columns.map((column): WorkspaceColumn => {
                 let id = rename(column.id)
+                if (column.kind == "comparison")
+                    return { ...column, ...state.comparisons[id] }
                 if (id == column.id)
                     return column
                 if (column.kind == "branch")
                     return { ...column, id, ref: newRef }
-                return column.kind == "comparison" ? { ...column, id, ...state.comparisons[id] } : column
+                return column
             })
             let focusedColumnId = saved.focusedColumnId && rename(saved.focusedColumnId)
             void saveColumns(repositoryId, { columns, focusedColumnId, layoutInitialized: saved.layoutInitialized })
@@ -634,10 +634,7 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
                 if (!state.openedIds.includes(id))
                     state.openedIds.push(id)
                 state.selectedId = id
-                state.collapsedIds = state.collapsedIds.filter(candidate => candidate != id)
-                state.focusedId = id
-                state.widths[id] ??= defaultColumnWidth
-                state.revealed = { id, serial: (state.revealed?.serial ?? 0) + 1 }
+                revealColumn(state, id)
             })
         },
         toggleGraph() {
@@ -696,22 +693,38 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
             await read(repositoryId, false)
         },
         openComparison(sourceId, from, to) {
-            let id = comparisonColumnId(from, to)
             change(activeId, state => {
+                let id = findComparisonId(state.comparisons, from, to) ?? `comparison:${crypto.randomUUID()}`
                 state.comparisons[id] ??= { from, to }
                 if (!state.openedIds.includes(id))
-                    state.openedIds.splice(state.openedIds.indexOf(sourceId) + 1, 0, id)
-                state.collapsedIds = state.collapsedIds.filter(candidate => candidate != id)
-                state.focusedId = id
-                state.widths[id] ??= defaultColumnWidth
-                state.revealed = { id, serial: (state.revealed?.serial ?? 0) + 1 }
+                    state.openedIds.splice(sourceId ? state.openedIds.indexOf(sourceId) + 1 : state.openedIds.length, 0, id)
+                revealColumn(state, id)
             })
         },
-        setIncludeWorking(id, include) {
+        swapComparison(id) {
             change(activeId, state => {
                 let comparison = state.comparisons[id]
-                if (comparison)
-                    state.comparisons[id] = { from: comparison.from, to: comparison.to, ...(include ? { includeWorking: true } : {}) }
+                if (!comparison)
+                    return
+                let { from, to, includeFromWorking, includeWorking } = comparison
+                let reverse = findComparisonId(state.comparisons, to, from) ?? id
+                if (reverse == id)
+                    state.comparisons[id] = { from: to, to: from, includeFromWorking: includeWorking, includeWorking: includeFromWorking }
+                if (state.maximizedId != reverse)
+                    state.maximizedId = undefined
+                revealColumn(state, reverse)
+            })
+        },
+        setIncludeWorking(id, side, include) {
+            change(activeId, state => {
+                let comparison = state.comparisons[id]
+                if (comparison) {
+                    let key: "includeFromWorking" | "includeWorking" = side == "from" ? "includeFromWorking" : "includeWorking"
+                    if (include)
+                        comparison[key] = true
+                    else
+                        delete comparison[key]
+                }
             })
         },
         switched(columnId, worktreePath) {
@@ -851,10 +864,16 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
     }
 }
 
-// A comparison including Working Changes reads them from the worktree its branch is checked out in, while there is one.
+function revealColumn(state: RepositoryColumns, id: string) {
+    state.collapsedIds = state.collapsedIds.filter(candidate => candidate != id)
+    state.focusedId = id
+    state.widths[id] ??= defaultColumnWidth
+    state.revealed = { id, serial: (state.revealed?.serial ?? 0) + 1 }
+}
+
 function inspectedComparison(comparison: ComparisonColumnNode) {
-    let worktreePath = comparisonWorktreePath(comparison)
-    return { from: comparison.from, to: comparison.to, ...(worktreePath ? { worktreePath } : {}) }
+    let fromWorktreePath = includedWorktreePath(comparison.from), worktreePath = includedWorktreePath(comparison.to)
+    return { from: comparison.from.ref, to: comparison.to.ref, ...(fromWorktreePath ? { fromWorktreePath } : {}), ...(worktreePath ? { worktreePath } : {}) }
 }
 
 function columnNode(graph: BranchGraph, state: RepositoryColumns, id: string): ColumnNode | undefined {
@@ -875,7 +894,7 @@ function columnNode(graph: BranchGraph, state: RepositoryColumns, id: string): C
 function removedColumnName(id: string) {
     if (id.startsWith("virtual:"))
         return baseName(id.slice("virtual:".length))
-    return id.replace(/^branch:/, "").replace(/^refs\/(heads|remotes)\//, "")
+    return shortBranchRef(id.replace(/^branch:/, ""))
 }
 
 // A column is named for its branch, worktree-backed or not, since a worktree's directory name often says little; a

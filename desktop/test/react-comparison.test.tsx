@@ -1,7 +1,7 @@
 import type { DiffSource, FileHistoryRequest, FileListView } from "@laneway/shared"
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
 import type { Window as HappyWindow } from "happy-dom"
-import { button, installReactDom, press, startReactApp, stopReactApps } from "./react-dom"
+import { button, installReactDom, press, startReactApp, stopReactApps, type } from "./react-dom"
 import { inspectionScenario } from "./renderer-fixtures"
 
 let browserWindow: HappyWindow
@@ -15,6 +15,102 @@ afterEach(stopReactApps)
 afterAll(() => browserWindow.close())
 
 describe("React Branch Comparison", () => {
+    test("opens from a branch menu, offers the workspace first, and swaps its Working Changes with the branch", async () => {
+        let scenario = inspectionScenario()
+        let [main, feature] = scenario.graph.branches
+        feature!.checkedOut[0]!.branchRef = feature!.preferredRef
+        let app = await startReactApp({
+            ...scenario.api,
+            comparisonRefs: async () => ({ ok: true, refs: [main!, feature!].map(branch => ({ kind: "branch", ref: branch.preferredRef })) }),
+        })
+        await app.act(() => app.controller.columns.open(main!.id))
+        await app.act(() => press(button(column(feature!.id)!, `Actions for branch ${feature!.name}`)))
+        await app.act(() => press(menuItem("Compare with…")))
+        let shortlist = document.querySelector<HTMLElement>('[aria-label="In this workspace"]')!
+        expect(shortlist.textContent).toContain(main!.name)
+        await app.act(() => press(shortlist.querySelector<HTMLElement>('[role="menuitem"]')!))
+        expect(comparison()!.querySelector("h2")?.textContent).toBe(`${main!.name} → ${feature!.name}`)
+        await app.act(() => press(button(comparison()!, `Include Working Changes on ${feature!.name}`)))
+        await app.act(() => press(button(comparison()!, "Swap sides")))
+        expect(comparison()!.querySelector("h2")?.textContent).toBe(`${feature!.name} → ${main!.name}`)
+        expect(scenario.saved().repositories[0]!.columns.find(item => item.kind == "comparison")).toMatchObject({
+            from: { kind: "branch", ref: feature!.preferredRef },
+            to: { kind: "branch", ref: main!.preferredRef },
+            includeFromWorking: true,
+        })
+    })
+
+    test("chooses Working Changes independently on two checked-out branches and focuses an existing reverse comparison", async () => {
+        let scenario = inspectionScenario()
+        let [main, feature] = scenario.graph.branches
+        let worktree = feature!.checkedOut[0]!
+        worktree.branchRef = feature!.preferredRef
+        main!.checkedOut = [{ ...worktree, branchRef: main!.preferredRef, path: worktree.path + "-main", main: false, head: main!.tip }]
+        let app = await startReactApp(scenario.api)
+        let from = { kind: "branch" as const, ref: main!.preferredRef }, to = { kind: "branch" as const, ref: feature!.preferredRef }
+        await app.act(() => app.controller.columns.openComparison(feature!.id, to, from))
+        await app.act(() => app.controller.columns.openComparison(feature!.id, from, to))
+        let source = comparison()!
+        await app.act(() => press(button(source, "Include Working Changes")))
+        let check = (label: string) => [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')].find(item => item.textContent == label)!
+        await app.act(() => press(check(`From · ${main!.name}`)))
+        if (!check(`To · ${feature!.name}`))
+            await app.act(() => press(button(source, "Include Working Changes")))
+        await app.act(() => press(check(`To · ${feature!.name}`)))
+        expect(scenario.saved().repositories[0]!.columns.find(column => column.id == source.dataset.columnId)).toMatchObject({
+            includeWorking: true,
+            includeFromWorking: true,
+        })
+        if (check(`To · ${feature!.name}`))
+            await app.act(() => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })))
+        await app.act(() => press(button(source, "Swap sides")))
+        let snapshot = app.controller.columns.snapshot()
+        let reverse = snapshot.columns.find(column => column.id == snapshot.focusedId)
+        expect(reverse).toMatchObject({
+            kind: "comparison",
+            comparison: { from: { ref: to, includeWorking: false }, to: { ref: from, includeWorking: false } },
+        })
+        expect(reverse!.id).not.toBe(source.dataset.columnId)
+        expect(snapshot.columns.filter(column => column.kind == "comparison")).toHaveLength(2)
+    })
+
+    test("Command Lens compares a tag with a typed commit outside the workspace", async () => {
+        let scenario = inspectionScenario()
+        let priorTagCommit = "c".repeat(40), tagCommit = "a".repeat(40), typedCommit = "b".repeat(40)
+        let app = await startReactApp({
+            ...scenario.api,
+            comparisonRefs: async () => ({ ok: true, refs: [{ kind: "commit", objectId: tagCommit, tag: "v1" }] }),
+            resolveComparisonCommit: async (_repositoryId, revision) => {
+                if (revision == typedCommit.slice(0, 8))
+                    return { ok: true, objectId: typedCommit }
+                return { ok: false, error: { code: "git.command-failed", message: "Unknown revision" } }
+            },
+        })
+        await app.act(() =>
+            app.controller.columns.openComparison(undefined, { kind: "commit", tag: "v1", objectId: priorTagCommit }, {
+                kind: "branch",
+                ref: "refs/heads/main",
+            })
+        )
+        await app.act(() => press(button(document.body, "Command Lens")))
+        await app.act(() => type(document.querySelector<HTMLInputElement>('[aria-label="Command Lens"] input')!, "compare"))
+        await app.act(() => press(document.querySelector<HTMLElement>('[aria-label="Command Lens"] [role="menuitem"]')!))
+        expect(menuItem("v1Tag · cccccccc").closest("[aria-label='In this workspace']") != null).toBe(true)
+        await app.act(() => press(menuItem("v1Tag · aaaaaaaa")))
+        let search = () => document.querySelector<HTMLInputElement>('[aria-label="Compare refs"] input')!
+        await app.act(() => type(search(), "missing"))
+        await app.act(() => press(menuItem("missingResolve revision")))
+        expect(document.querySelector('[aria-label="Compare refs"] [role="alert"]')?.textContent).toContain("Unknown revision")
+        await app.act(() => type(search(), typedCommit.slice(0, 8)))
+        await app.act(() => press(menuItem(typedCommit.slice(0, 8) + "Resolve revision")))
+        let opened = app.controller.columns.snapshot().focusedId
+        expect(column(opened!)!.querySelector("h2")?.textContent).toBe("v1 → bbbbbbbb")
+        expect(scenario.saved().repositories[0]!.columns.find(item => item.id == opened)).toMatchObject({
+            from: { kind: "commit", objectId: tagCommit, tag: "v1" },
+            to: { kind: "commit", objectId: typedCommit },
+        })
+    })
+
     test("opens beside its source, reads diffs lazily, breaks them out, follows moved tips, and persists", async () => {
         let scenario = inspectionScenario()
         let [main, feature] = scenario.graph.branches
@@ -120,7 +216,7 @@ describe("React Branch Comparison", () => {
         await app.act(() => press(button(row, "Actions for src/file.txt")))
         expect(menuItems().slice(0, 2)).toEqual([`History in ${main!.name}`, `History in ${feature!.name}`])
         await app.act(() => press(menuItem(`History in ${main!.name}`)))
-        expect(histories).toEqual([{ kind: "branch", ref: main!.preferredRef }])
+        expect(histories).toEqual([{ kind: "commit", objectId: main!.tip }])
         expect(document.querySelector<HTMLElement>(".file-history")!.dataset.sourceColumnId).toBe(comparison()!.dataset.columnId)
 
         await app.act(() => press(button(header(), "Close column")))
@@ -155,7 +251,7 @@ describe("React Branch Comparison", () => {
             },
         })
         let header = () => comparison()!.querySelector<HTMLElement>(".column-header")!
-        let include = () => button(header(), "Include Working Changes")
+        let include = () => button(header(), `Include Working Changes on ${feature!.name}`)
         await app.act(() => press(button(column(feature!.id)!, `Compare ${feature!.name} with ${main!.name}`)))
         expect(include().getAttribute("aria-pressed")).toBe("false")
         expect(requested.map(source => source.worktreePath)).toEqual([undefined])

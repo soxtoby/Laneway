@@ -1,6 +1,7 @@
 import type { BranchGraph, BranchGraphBranchNode, CompositionRequest, LocalPreview } from "@laneway/shared"
 import { errorMessage, type Notice } from "./notice"
 import { createStore, type Store } from "./store"
+import { shortBranchRef } from "./worktree-columns"
 
 type Api = Window["laneway"]
 
@@ -130,7 +131,7 @@ export function createBranchRebase({ api, notify: show, mutating, completed, res
                 ...current,
                 preview,
                 dependents: current.descendants
-                    ? preview.composition!.branches.filter(name => name != shortName(current!.source.preferredRef))
+                    ? preview.composition!.branches.filter(name => name != shortBranchRef(current!.source.preferredRef))
                     : current.dependents,
             }
             set({ pending: current })
@@ -190,7 +191,7 @@ export function createBranchRebase({ api, notify: show, mutating, completed, res
                 offerUndo!(current.repositoryId, message)
             }
             if (resolveNow)
-                resolve?.(current.repositoryId, [shortName(current.source.preferredRef), ...moved])
+                resolve?.(current.repositoryId, [shortBranchRef(current.source.preferredRef), ...moved])
         } catch (error) {
             fail(current, error)
         } finally {
@@ -352,15 +353,11 @@ function destinations(target: BranchGraphBranchNode): RebaseDestination[] {
     let local = { branch: target.preferredRef, tip: target.tip, name: target.name, detail: "" }
     if (target.remoteOnly || !target.upstreamRef || !target.upstreamTip || target.upstreamTip == target.tip || target.behind == 0)
         return [local]
-    let upstream = shortName(target.upstreamRef)
+    let upstream = shortBranchRef(target.upstreamRef)
     local.detail = `Local tip, ${plural(target.behind, "commit")} behind ${upstream}${target.ahead ? ` and ${target.ahead} ahead` : ""}`
     return [local, { branch: target.upstreamRef, tip: target.upstreamTip, name: upstream, detail: "Upstream tip" }]
 }
 
 export function plural(count: number, noun: string) {
     return `${count} ${noun}${count == 1 ? "" : "s"}`
-}
-
-function shortName(ref: string) {
-    return ref.replace(/^refs\/(heads|remotes)\//, "")
 }

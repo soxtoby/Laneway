@@ -1,5 +1,5 @@
-import type { ComparisonRef, DiffLayout, ObjectFormat, RepositoryIcon, RepositoryScript, Workspace, WorkspaceColumn } from "@laneway/shared"
-import { openFolderScriptId, RepositoryIconSchema, RepositoryLabelSchema, RepositoryScriptSchema } from "@laneway/shared"
+import type { DiffLayout, ObjectFormat, RepositoryIcon, RepositoryScript, Workspace, WorkspaceColumn } from "@laneway/shared"
+import { ComparisonRefSchema, openFolderScriptId, RepositoryIconSchema, RepositoryLabelSchema, RepositoryScriptSchema } from "@laneway/shared"
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, resolve } from "node:path"
@@ -256,8 +256,17 @@ function parseColumn(value: unknown, restoring = false): WorkspaceColumn | undef
         ...(diffLayout ? { diffLayout } : {}),
     }
     if (record.kind == "comparison") {
-        let from = parseComparisonRef(record.from), to = parseComparisonRef(record.to)
-        return from && to ? { kind: "comparison", ...presentation, from, to, ...(record.includeWorking === true ? { includeWorking: true } : {}) } : undefined
+        let from = savedComparisonRef(record.from), to = savedComparisonRef(record.to)
+        return from && to
+            ? {
+                kind: "comparison",
+                ...presentation,
+                from,
+                to,
+                ...(record.includeFromWorking === true ? { includeFromWorking: true } : {}),
+                ...(record.includeWorking === true ? { includeWorking: true } : {}),
+            }
+            : undefined
     } else if (!nonEmptyString(record.lastSeenObjectId))
         return undefined
     else if (record.kind == "branch" && nonEmptyString(record.ref)) {
@@ -282,20 +291,11 @@ function parseColumn(value: unknown, restoring = false): WorkspaceColumn | undef
     }
 }
 
-function parseComparisonRef(value: unknown): ComparisonRef | undefined {
-    if (!value || typeof value != "object" || Array.isArray(value))
-        return undefined
-
-    let record = value as Record<string, unknown>
-    let branchRef = (candidate: unknown): candidate is string => nonEmptyString(candidate) && /^refs\/(heads|remotes)\/.+/.test(candidate)
-    if (record.kind == "commit" && nonEmptyString(record.objectId) && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(record.objectId))
-        return { kind: "commit", objectId: record.objectId }
-    else if (record.kind == "branch" && branchRef(record.ref))
-        return { kind: "branch", ref: record.ref }
-    else if (record.kind == "merge-base" && branchRef(record.ref) && branchRef(record.withRef))
-        return { kind: "merge-base", ref: record.ref, withRef: record.withRef }
-    else
-        return undefined
+function savedComparisonRef(value: unknown) {
+    // An invalid display label can be discarded while retaining the pinned commit.
+    if (value && typeof value == "object" && "tag" in value && !nonEmptyString(value.tag))
+        value = { ...value, tag: undefined }
+    return ComparisonRefSchema.safeParse(value).data
 }
 
 function nonEmptyString(value: unknown): value is string {

@@ -4,6 +4,7 @@
 
 ### Added
 
+- Compare branches, tags, or commits from their menus or with **Compare refs…** in the Command Lens. The picker suggests refs from your open columns. Swap sides in the comparison header and include either branch’s Working Changes.
 - Hover a branch's ↑↓ badge in the Branch Graph to see what it counts: commits not yet published to its upstream, and commits on its upstream not yet pulled.
 
 ### Changed

@@ -1,4 +1,4 @@
-import type { FileHistoryEntry, FileHistorySource, FileListView } from "@laneway/shared"
+import type { ComparisonRef, FileHistoryEntry, FileHistorySource, FileListView } from "@laneway/shared"
 import clsx from "clsx"
 import { type ReactNode, useMemo } from "react"
 import { Button as AriaButton } from "react-aria-components"
@@ -15,6 +15,7 @@ import { ChevronRight } from "./ui/icons"
 import { MenuItem, Separator } from "./ui/Menu"
 import { Select, SelectItem } from "./ui/Select"
 import { FileList } from "./working-changes"
+import { shortBranchRef } from "./worktree-columns"
 
 interface AuxiliaryProps {
     inspection: Inspection
@@ -31,7 +32,9 @@ interface AuxiliaryProps {
  * One file's history: a worktree's Working Changes to it, then each commit that changed it, unfolding to the
  * file's diff there. An entry's menu blames the file at that commit or opens the whole commit beside it.
  */
-export function FileHistoryColumn({ history, inspection, view, root, stacked, onClose }: AuxiliaryProps & { history: FileHistoryView }) {
+export function FileHistoryColumn(
+    { history, inspection, view, root, stacked, onClose, compareWith }: AuxiliaryProps & { history: FileHistoryView; compareWith(ref: ComparisonRef): void },
+) {
     let { page, host } = history
     let working = host.files.working
     let source = history.source
@@ -87,7 +90,13 @@ export function FileHistoryColumn({ history, inspection, view, root, stacked, on
                     )}
                 </section>
             )}
-            {page?.entries.map(entry => <HistoryEntry key={entry.objectId} history={history} entry={entry} inspection={inspection} />)}
+            {page?.entries.map(entry => <HistoryEntry
+                compareWith={compareWith}
+                key={entry.objectId}
+                history={history}
+                entry={entry}
+                inspection={inspection}
+            />)}
             {page && !page.entries.length && !page.cursor && <p className="column-placeholder">No committed history.</p>}
             {page?.cursor && (
                 <Button
@@ -104,7 +113,14 @@ export function FileHistoryColumn({ history, inspection, view, root, stacked, on
     )
 }
 
-function HistoryEntry({ history, entry, inspection }: { history: FileHistoryView; entry: FileHistoryEntry; inspection: Inspection }) {
+function HistoryEntry(
+    { history, entry, inspection, compareWith }: {
+        compareWith(ref: ComparisonRef): void
+        history: FileHistoryView
+        entry: FileHistoryEntry
+        inspection: Inspection
+    },
+) {
     let expanded = history.expanded.includes(entry.objectId)
     let id = diffKey(entry.objectId, entry.path)
     let diff = history.host.diffs[id]
@@ -116,6 +132,7 @@ function HistoryEntry({ history, entry, inspection }: { history: FileHistoryView
         label: `Actions for ${entry.subject}`,
         items: () => (
             <>
+                <MenuItem onAction={() => compareWith({ kind: "commit", objectId: entry.objectId })}>Compare with…</MenuItem>
                 <MenuItem onAction={() => inspection.blame(history.id, entry.objectId)}>Blame context</MenuItem>
                 <MenuItem onAction={() => inspection.openCommitDiff(history.id, entry.objectId)}>Complete commit diff</MenuItem>
                 <Separator />
@@ -359,7 +376,7 @@ export function HostedDiffScope({ column, inspection, children }: { column: File
 /** Where a history was read from: a branch, a worktree, or a commit. */
 function sourceName(source: FileHistorySource) {
     return source.kind == "branch"
-        ? source.ref.replace(/^refs\/(heads|remotes)\//, "")
+        ? shortBranchRef(source.ref)
         : source.kind == "worktree"
         ? source.worktreePath
         : source.objectId.slice(0, 8)

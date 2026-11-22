@@ -1,4 +1,4 @@
-import type { BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, RepositoryGraphSettings } from "@laneway/shared"
+import type { BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, ComparisonCommitResult, ComparisonRefsResult, RepositoryGraphSettings } from "@laneway/shared"
 import { ChangesRequestSchema, type ChangesResult, FileDiffRequestSchema, type FileDiffResult, FileHistoryRequestSchema, type FileHistoryResult, FileImageRequestSchema, type FileImageResult, FileVersionRequestSchema, type FileVersionResult } from "@laneway/shared"
 import { ipcMain } from "electron"
 import { runEngineCommand } from "../engine"
@@ -8,6 +8,22 @@ import { entryError } from "../repositories"
 export function registerInspectionHandlers(repositories: OpenRepositories, enginePath: string) {
     registerChangesHandlers()
     registerGraphHandlers()
+    ipcMain.handle("comparison:refs", async (_event, repositoryId: string): Promise<ComparisonRefsResult> => {
+        try {
+            return { ok: true, refs: await repositories.worktreeRepository(repositoryId).comparisonRefs() }
+        } catch (error) {
+            return { ok: false, error: entryError(error) }
+        }
+    })
+    ipcMain.handle("comparison:commit", async (_event, repositoryId: string, revision: unknown): Promise<ComparisonCommitResult> => {
+        if (typeof revision != "string" || !revision.trim() || revision.includes("\0"))
+            return { ok: false, error: { code: "git.command-failed", message: "Enter a commit, branch, or tag." } }
+        try {
+            return { ok: true, objectId: await repositories.worktreeRepository(repositoryId).resolveComparisonCommit(revision) }
+        } catch (error) {
+            return { ok: false, error: entryError(error) }
+        }
+    })
 
     function registerChangesHandlers() {
         ipcMain.handle("history:read", async (_event, repositoryId: unknown, requestId: unknown, value: unknown): Promise<FileHistoryResult> => {

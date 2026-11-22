@@ -1,73 +1,67 @@
-import type { BranchGraph, BranchGraphWorktree, ComparisonRef, FileHistorySource } from "@laneway/shared"
+import type { BranchGraph, ComparisonRef, FileHistorySource } from "@laneway/shared"
+import { shortBranchRef } from "./worktree-columns"
 
-/** A Branch Comparison Column's identity: the refs name it, so opening the same comparison twice reuses the column. */
+interface ComparisonSide {
+    ref: ComparisonRef
+    label: string
+    worktreePath?: string
+    includeWorking: boolean
+}
+
+/** The column ID stays stable as its ordered endpoints change. */
 export interface ComparisonColumnNode {
     kind: "comparison"
     id: string
     name: string
     description: string
-    from: ComparisonRef
-    to: ComparisonRef
-    fromName: string
-    toName: string
-    /** Whether it ends at `worktree`'s files, its Working Changes included, while there is one. */
-    includeWorking: boolean
-    /** The available worktree `to` is checked out in, whose Working Changes it can include. */
-    worktree?: BranchGraphWorktree
+    from: ComparisonSide
+    to: ComparisonSide
 }
 
-/** What a column persists of a comparison: its ends, and whether it includes the Working Changes of the worktree `to` is checked out in. */
+/** The ordered refs and per-side Working Changes choices that persist with the column. */
 export interface Comparison {
     from: ComparisonRef
     to: ComparisonRef
     includeWorking?: boolean
+    includeFromWorking?: boolean
 }
 
-export function comparisonColumnId(from: ComparisonRef, to: ComparisonRef) {
-    return `comparison:${refKey(from)}..${refKey(to)}`
+export function findComparisonId(comparisons: Record<string, Comparison>, from: ComparisonRef, to: ComparisonRef) {
+    return Object.keys(comparisons).find(id => refKey(comparisons[id]!.from) == refKey(from) && refKey(comparisons[id]!.to) == refKey(to))
 }
 
 export function comparisonNode(id: string, comparison: Comparison, graph: BranchGraph): ComparisonColumnNode {
-    let fromName = refName(comparison.from, graph), toName = refName(comparison.to, graph)
-    let worktree = comparisonWorktree(comparison.to, graph)
-    let includeWorking = comparison.includeWorking == true
-    let description = comparison.from.kind == "merge-base" && comparison.from.withRef == refOf(comparison.to)
-        ? `Changes on ${toName} since it left ${fromName}`
-        : `Compare ${fromName} to ${toName}`
+    let baseComparison = comparison.from.kind == "merge-base" && comparison.to.kind == "branch" && comparison.from.withRef == comparison.to.ref
+    let from = comparisonSide(comparison.from, graph, comparison.includeFromWorking)
+    let to = comparisonSide(comparison.to, graph, comparison.includeWorking)
+    if (baseComparison && comparison.from.kind == "merge-base")
+        from.label = shortBranchRef(comparison.from.ref)
 
-    return {
-        kind: "comparison",
-        id,
-        name: `${fromName} → ${toName}`,
-        description: includeWorking && worktree ? `${description}, with its Working Changes` : description,
-        from: comparison.from,
-        to: comparison.to,
-        fromName,
-        toName,
-        includeWorking,
-        ...(worktree ? { worktree } : {}),
+    let description = baseComparison ? `Changes on ${to.label} since it left ${from.label}` : `Compare ${from.label} to ${to.label}`
+    for (let side of [from, to]) {
+        if (includedWorktreePath(side))
+            description += baseComparison ? ", with its Working Changes" : `, with Working Changes on ${side.label}`
     }
+    return { kind: "comparison", id, name: `${from.label} → ${to.label}`, description, from, to }
 }
 
-/** The worktree a comparison reads its end from: the one `to` is checked out in, when it includes its Working Changes. */
-export function comparisonWorktreePath(comparison: ComparisonColumnNode) {
-    return comparison.includeWorking ? comparison.worktree?.path : undefined
+function comparisonSide(ref: ComparisonRef, graph: BranchGraph, includeWorking = false): ComparisonSide {
+    let worktree = ref.kind == "branch"
+        ? graph.branches.find(branch => branch.refs.includes(ref.ref))?.checkedOut.find(worktree => worktree.branchRef == ref.ref && !worktree.missing)
+        : undefined
+    return { ref, label: refName(ref), worktreePath: worktree?.path, includeWorking }
 }
 
-function comparisonWorktree(ref: ComparisonRef, graph: BranchGraph) {
-    if (ref.kind != "branch")
-        return undefined
-    return graph.branches.find(branch => branch.refs.includes(ref.ref))?.checkedOut.find(worktree => worktree.branchRef == ref.ref && !worktree.missing)
+export function includedWorktreePath(side: ComparisonSide) {
+    return side.includeWorking ? side.worktreePath : undefined
 }
 
 /** Changes whenever a compared branch moves, so the comparison re-reads. */
-export function comparisonKey(graph: BranchGraph, from: ComparisonRef, to: ComparisonRef) {
-    return JSON.stringify(
-        [from, to].flatMap(branchRefs).map(ref => {
-            let branch = graph.branches.find(branch => branch.refs.includes(ref))
-            return branch ? ref == branch.upstreamRef ? branch.upstreamTip : branch.tip : null
-        }),
-    )
+export function comparisonTips(graph: BranchGraph, from: ComparisonRef, to: ComparisonRef) {
+    return [from, to].flatMap(branchRefs).map(ref => {
+        let branch = graph.branches.find(branch => branch.refs.includes(ref))
+        return branch ? ref == branch.upstreamRef ? branch.upstreamTip : branch.tip : null
+    })
 }
 
 export function renameComparisonRef(ref: ComparisonRef, oldRef: string, newRef: string): ComparisonRef {
@@ -80,27 +74,27 @@ export function renameComparisonRef(ref: ComparisonRef, oldRef: string, newRef: 
 }
 
 /** The branch, commit, or worktree whose history explains one end of the comparison. */
-export function comparisonHistorySource(ref: ComparisonRef, worktreePath?: string): FileHistorySource {
+export function comparisonHistorySource(side: ComparisonSide, resolvedId?: string): FileHistorySource {
+    let { ref } = side
+    let worktreePath = includedWorktreePath(side)
     return worktreePath
         ? { kind: "worktree", worktreePath }
         : ref.kind == "commit"
         ? { kind: "commit", objectId: ref.objectId }
+        : ref.kind == "merge-base" && resolvedId
+        ? { kind: "commit", objectId: resolvedId }
         : { kind: "branch", ref: ref.ref }
 }
 
-function refName(ref: ComparisonRef, graph: BranchGraph) {
+export function refName(ref: ComparisonRef) {
     if (ref.kind == "commit")
-        return ref.objectId.slice(0, 8)
+        return ref.tag ?? ref.objectId.slice(0, 8)
 
-    return graph.branches.find(branch => branch.refs.includes(ref.ref))?.name ?? ref.ref.replace(/^refs\/(heads|remotes)\//, "")
-}
-
-function refOf(ref: ComparisonRef) {
-    return ref.kind == "commit" ? undefined : ref.ref
+    return ref.kind == "branch" ? shortBranchRef(ref.ref) : `merge base of ${shortBranchRef(ref.ref)} and ${shortBranchRef(ref.withRef)}`
 }
 
 function refKey(ref: ComparisonRef) {
-    return ref.kind == "commit" ? ref.objectId : ref.kind == "branch" ? ref.ref : `merge-base(${ref.ref},${ref.withRef})`
+    return ref.kind == "commit" ? ref.objectId : ref.kind == "branch" ? ref.ref : JSON.stringify([ref.ref, ref.withRef])
 }
 
 function branchRefs(ref: ComparisonRef) {

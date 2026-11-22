@@ -17,19 +17,21 @@ export let defaultFileListView: FileListView = { layout: "flat", grouping: "none
 
 /** One end of a Branch Comparison. Branch identities follow their tips, so a comparison between them stays live. */
 export type ComparisonRef =
-    | { kind: "commit"; objectId: string }
+    | { kind: "commit"; objectId: string; tag?: string }
     | { kind: "branch"; ref: string }
     /** The merge base of `ref` and `withRef`, so a diff from here to `withRef` shows only `withRef`'s own changes. */
     | { kind: "merge-base"; ref: string; withRef: string }
+
+export type ComparisonRefsResult = { ok: true; refs: ComparisonRef[] } | { ok: false; error: EntryError }
+export type ComparisonCommitResult = { ok: true; objectId: string } | { ok: false; error: EntryError }
 
 export type DiffSource =
     | { kind: "working"; worktreePath: string }
     | { kind: "commit"; objectId: string; parentId?: string }
     /**
-     * Resolves to a `comparison` between the refs' current object IDs. With `worktreePath`, `to` is a branch checked
-     * out there and ends at that worktree's files instead, its Working Changes included.
+     * Resolves to immutable trees. The worktree paths include the checked-out files on the left and right respectively.
      */
-    | { kind: "refs"; from: ComparisonRef; to: ComparisonRef; worktreePath?: string }
+    | { kind: "refs"; from: ComparisonRef; to: ComparisonRef; fromWorktreePath?: string; worktreePath?: string }
     | { kind: "comparison"; fromObjectId: string; toObjectId: string }
 
 export interface ChangedFile {
@@ -156,13 +158,19 @@ let objectIdSchema = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)
 let branchRefSchema = z.string().regex(/^refs\/(heads|remotes)\/.+/)
 
 export let ComparisonRefSchema = z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("commit"), objectId: objectIdSchema }),
+    z.object({ kind: z.literal("commit"), objectId: objectIdSchema, tag: z.string().min(1).optional() }),
     z.object({ kind: z.literal("branch"), ref: branchRefSchema }),
     z.object({ kind: z.literal("merge-base"), ref: branchRefSchema, withRef: branchRefSchema }),
 ])
 
 export let DiffSourceSchema = z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("refs"), from: ComparisonRefSchema, to: ComparisonRefSchema, worktreePath: z.string().min(1).optional() }),
+    z.object({
+        kind: z.literal("refs"),
+        from: ComparisonRefSchema,
+        to: ComparisonRefSchema,
+        fromWorktreePath: z.string().min(1).optional(),
+        worktreePath: z.string().min(1).optional(),
+    }),
     z.object({ kind: z.literal("comparison"), fromObjectId: objectIdSchema, toObjectId: objectIdSchema }),
     z.object({ kind: z.literal("working"), worktreePath: z.string().min(1) }),
     z.object({ kind: z.literal("commit"), objectId: objectIdSchema, parentId: objectIdSchema.optional() }),

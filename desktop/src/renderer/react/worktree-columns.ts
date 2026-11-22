@@ -1,5 +1,9 @@
 import type { BranchGraph, BranchGraphBranchNode, WorkspaceColumn, WorktreeRecovery } from "@laneway/shared"
 
+export function shortBranchRef(ref: string) {
+    return ref.replace(/^refs\/(heads|remotes)\//, "")
+}
+
 export function columnWorktree(column: BranchGraph["branches"][number] | BranchGraph["virtualBranches"][number] | { kind: "comparison" }, path?: string) {
     return column.kind == "branch" ? column.checkedOut.find(worktree => worktree.path == path) : column.kind == "virtual" ? column.worktree : undefined
 }
@@ -97,7 +101,7 @@ export function localIdentities(graph: BranchGraph, branch: BranchGraphBranchNod
             preferredRef: ref,
             localRefs: [ref],
             refs,
-            aliases: refs.map(ref => ref.replace(/^refs\/(heads|remotes)\//, "")),
+            aliases: refs.map(shortBranchRef),
             checkedOut: branch.checkedOut.filter(worktree => worktree.branchRef == ref),
             markers: branch.markers.filter(marker => marker.branchName ? marker.branchName == ref.slice(11) : ref == branch.preferredRef),
             // Tags belong to the shared commit, so they show once, beside the identity that leads it.

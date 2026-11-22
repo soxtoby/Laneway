@@ -18,7 +18,7 @@ import { Menu, MenuItem, Separator } from "./ui/Menu"
 import { ToggleButton } from "./ui/ToggleButton"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 import { useSnapshot } from "./use-snapshot"
-import { branchNodeFor, localIdentities, workspaceGraph } from "./worktree-columns"
+import { branchNodeFor, localIdentities, shortBranchRef, workspaceGraph } from "./worktree-columns"
 import { CheckoutItems, checkoutWorktrees } from "./worktree-controls"
 
 /** What a Branch Graph row carries when dragged: the branch's ref. */
@@ -97,7 +97,7 @@ function GraphPanel({ controller, repositoryId, mainWorktree, snapshot, width }:
                 <>
                     <p className="graph-summary">
                         <span>{rows.count} branches</span>
-                        <span>{graph.primaryBranch.status == "known" ? `Primary · ${shortRef(graph.primaryBranch.ref!)}` : "Primary unresolved"}</span>
+                        <span>{graph.primaryBranch.status == "known" ? `Primary · ${shortBranchRef(graph.primaryBranch.ref!)}` : "Primary unresolved"}</span>
                         <span>{graph.selectedRemote ? `Remote · ${graph.selectedRemote}` : "Remote unresolved"}</span>
                     </p>
                     <GraphRows controller={controller} repositoryId={repositoryId} mainWorktree={mainWorktree} graph={graph} rows={rows.rows} view={view} />
@@ -318,6 +318,9 @@ function GraphRows(
                                                 </SplitMenuItem>
                                             )}
                                             <MenuItem onAction={() => columns.open(branch.id)}>Open column</MenuItem>
+                                            <MenuItem onAction={() => controller.comparisonPicker.open({ kind: "branch", ref: branch.preferredRef })}>
+                                                Compare with…
+                                            </MenuItem>
                                             <Separator />
                                             {rebaseable(branch) && (
                                                 <MenuItem
@@ -347,9 +350,19 @@ function GraphRows(
                                                 <MenuItem onAction={() => void branches.delete(repositoryId, branch)}>Delete branch</MenuItem>
                                             )}
                                             <Separator />
-                                            <MenuItem onAction={() => void copyText(branch.name)}>
+                                            <MenuItem
+                                                onAction={() => void copyText(branch.name)}
+                                            >
                                                 Copy branch name
                                             </MenuItem>
+                                            {branch.tags.map(tag => (
+                                                <MenuItem
+                                                    key={`compare:${tag}`}
+                                                    onAction={() => controller.comparisonPicker.open({ kind: "commit", objectId: branch.tip, tag })}
+                                                >
+                                                    {`Compare tag ${tag} with…`}
+                                                </MenuItem>
+                                            ))}
                                             {branch.tags.map(tag => (
                                                 <MenuItem
                                                     key={tag}
@@ -362,7 +375,17 @@ function GraphRows(
                                     )}
                                 />
                             )
-                            : <SimpleRow row={row} />
+                            : (
+                                <SimpleRow
+                                    row={row}
+                                    compareWith={() =>
+                                        controller.comparisonPicker.open({
+                                            kind: "commit",
+                                            objectId: row.objectId,
+                                            ...(row.node.kind == "tag" && { tag: row.node.name }),
+                                        })}
+                                />
+                            )
                     }}
                 </GridList>
             </Virtualizer>
@@ -443,13 +466,19 @@ function BranchRow({ row, branch, rebase, onMarker, menu }: {
     )
 }
 
-/** A tag or a detached worktree: it only selects, and a tag's menu copies its name. */
-function SimpleRow({ row }: { row: GraphRowLayout }) {
+/** A tag or detached worktree compares at its commit. */
+function SimpleRow({ row, compareWith }: { row: GraphRowLayout; compareWith(): void }) {
     let node = row.node as Extract<GraphRowLayout["node"], { kind: "tag" | "worktree" }>
     let { row: rowRef, openMenu, actions } = useRowMenu(
-        node.kind == "tag"
-            ? { label: `Actions for ${node.name}`, items: () => <MenuItem onAction={() => void copyText(node.name)}>Copy tag name</MenuItem> }
-            : undefined,
+        {
+            label: `Actions for ${node.name}`,
+            items: () => (
+                <>
+                    <MenuItem onAction={compareWith}>Compare with…</MenuItem>
+                    {node.kind == "tag" && <MenuItem onAction={() => void copyText(node.name)}>Copy tag name</MenuItem>}
+                </>
+            ),
+        },
     )
     return (
         <GridListItem ref={rowRef} id={node.id} textValue={node.name} className="graph-row simple" data-node-id={node.id} onContextMenu={openMenu}>
@@ -563,8 +592,4 @@ function branchKind(branch: BranchGraphBranchNode) {
 // The Primary Branch's line keeps the neutral colour; the others cycle through the theme's lane colours.
 function lane(color: number) {
     return color == 0 ? 0 : (color - 1) % 7 + 1
-}
-
-function shortRef(ref: string) {
-    return ref.replace(/^refs\/(heads|remotes)\//, "")
 }
