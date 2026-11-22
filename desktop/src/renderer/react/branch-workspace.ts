@@ -224,8 +224,8 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
                     columns.flatMap(column =>
                         column.kind == "comparison"
                             ? [[column.id, {
-                                from: column.from,
-                                to: column.to,
+                                from: { ...column.from },
+                                to: { ...column.to },
                                 includeFromWorking: column.includeFromWorking,
                                 includeWorking: column.includeWorking,
                             }]]
@@ -572,6 +572,14 @@ export function createBranchWorkspace({ api, notify, inspection, workspace, save
     // The first read shows the local Branch Graph at once; the remote's default branch follows quietly.
     async function ensure(repositoryId: string) {
         let state = stateFor(repositoryId)
+        let unlabeled = Object.values(state.comparisons).flatMap(comparison => [comparison.from, comparison.to]).filter(ref => ref.kind == "commit").filter(
+            ref => !ref.details,
+        )
+        if (unlabeled.length) {
+            let details = await api.comparisonCommitDetails(repositoryId, [...new Set(unlabeled.map(ref => ref.objectId))]).catch(() => undefined)
+            for (let ref of unlabeled)
+                ref.details = details?.[ref.objectId]
+        }
         await read(repositoryId, state.graph != undefined)
         if (state.graph && !state.remoteRefreshed)
             await read(repositoryId, true, true)

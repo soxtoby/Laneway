@@ -3,6 +3,7 @@ import { Radio, RadioGroup } from "react-aria-components"
 import { type BranchRebase, plural } from "./branch-rebase"
 import { DialogHeader } from "./dialog-header"
 import { FormError } from "./form-error"
+import { RemovedCommits } from "./removed-commits"
 import { Button } from "./ui/Button"
 import { Checkbox } from "./ui/Checkbox"
 import { Dialog, Heading } from "./ui/Dialog"
@@ -62,7 +63,7 @@ export function RebaseDialog({ rebase }: { rebase: BranchRebase }) {
                                 <ol>
                                     {commits.slice(0, 8).map(commit => (
                                         <li key={commit.objectId}>
-                                            <code>{commit.objectId.slice(0, 8)}</code> {commit.subject}
+                                            {commit.subject}
                                         </li>
                                     ))}
                                 </ol>
@@ -80,7 +81,7 @@ export function RebaseDialog({ rebase }: { rebase: BranchRebase }) {
                                 Rewrites history already published on {reviewed.published.join(", ")}. The next Publish needs force-with-lease.
                             </p>
                         )}
-                        {!!reviewed?.removed.length && <p>Removes commits left empty: {reviewed.removed.map(commit => commit.slice(0, 8)).join(", ")}</p>}
+                        <RemovedCommits preview={reviewed} />
                         {!!reviewed?.conflicts.length && (
                             <p>Conflicts in {reviewed.conflicts.map(conflict => `${conflict.subject}: ${conflict.files.join(", ")}`).join("; ")}</p>
                         )}

@@ -39,7 +39,7 @@ export function ConflictResolution({ conflicts, repositoryId, subject, path, fil
     useEffect(() => void conflicts.inspect(repositoryId, subject), [conflicts, repositoryId, subject])
     let view = state?.view
     let busy = state?.busy ?? true
-    let sides = conflictSides(view, state?.summary)
+    let sides = conflictSides(state?.summary)
     let resolved = view?.files.filter(file => file.resolved).length ?? 0
     let remaining = (view?.files.length ?? 0) - resolved
     let act = (action: ResolutionAction) => conflicts.act(repositoryId, subject, action)
@@ -487,7 +487,7 @@ export function ConflictControls({ conflicts, repositoryId, branch, path }: {
                         aria-expanded={selected == conflict.id}
                         onPress={() => setSelected(selected == conflict.id ? undefined : conflict.id)}
                     >
-                        {conflict.title} {conflict.commit ? `(${conflict.commit.slice(0, 8)})` : ""}
+                        {conflict.title}
                     </Button>
                     {selected == conflict.id && !conflict.suspended && (
                         <ConflictResolution conflicts={conflicts} repositoryId={repositoryId} subject={conflict.id} path={path} />

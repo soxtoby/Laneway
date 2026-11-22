@@ -151,7 +151,7 @@ test("bringing changes that conflict with the tip restores the original changes,
 
     let brought = await edit(path, { action: "return", path, mode: "bring" })
 
-    let label = `On feature: Historical Working Changes from ${greeting.slice(0, 8)} Add a greeting`
+    let label = "On feature: Historical Working Changes from “Add a greeting”"
     let working = (await readConflictState(await connectRepository(path))).working
 
     expect(brought.operation?.summary).toBe("Bring Historical Working Changes to feature")
@@ -181,7 +181,7 @@ test("when the original changes conflict on return, the historical ones wait as 
     expect(brought.message).toContain("earlier Working Changes conflict with feature")
     expect((await readConflictState(await connectRepository(path))).working).toHaveLength(1)
     expect(git(path, "stash", "list", "--format=%gs").split("\n").toSorted()).toEqual([
-        `On feature: Historical Working Changes from ${git(path, "rev-parse", "feature~2").slice(0, 8)} Add a greeting`,
+        "On feature: Historical Working Changes from “Add a greeting”",
         "On feature: Working Changes before Historical Edit",
     ])
     expect(await Bun.file(join(path, "extra.txt")).exists()).toBe(false)

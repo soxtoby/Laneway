@@ -1,5 +1,5 @@
 import type { Appearance, AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryDefaults, EntryProgress, EntryResult, GitSettingsState, RepositoryGraphSettings, RepositoryImageFile, ScriptRunResult, Workspace } from "@laneway/shared"
-import type { ChangesRequest, ChangesResult, ComparisonCommitResult, ComparisonRefsResult, FileDiffRequest, FileDiffResult, FileImageRequest, FileImageResult, FileListView, FileVersionRequest, FileVersionResult, RemoteImageResult } from "@laneway/shared"
+import type { ChangesRequest, ChangesResult, CommitDetails, ComparisonCommitResult, ComparisonRefsResult, FileDiffRequest, FileDiffResult, FileImageRequest, FileImageResult, FileListView, FileVersionRequest, FileVersionResult, RemoteImageResult } from "@laneway/shared"
 import type { WorktreeActionResult, WorktreePreviewResult, WorktreeRequest } from "@laneway/shared"
 import type { CommitDraft, LocalActionResult, LocalRequest } from "@laneway/shared"
 import type { DiscardRequest, DiscardResult, DiscardUndoResult } from "@laneway/shared"
@@ -119,6 +119,7 @@ declare global {
             setGraphWidth(width: number): Promise<number>
             readBranchGraph(repositoryId: string, refreshRemote?: boolean, allBranches?: boolean): Promise<BranchGraphResult>
             comparisonRefs(repositoryId: string): Promise<ComparisonRefsResult>
+            comparisonCommitDetails(repositoryId: string, ids: string[]): Promise<Record<string, CommitDetails>>
             resolveComparisonCommit(repositoryId: string, revision: string): Promise<ComparisonCommitResult>
             cancelBranchGraph(repositoryId: string): Promise<boolean>
             readBranchHistory(repositoryId: string, history: BranchHistoryRequest): Promise<BranchHistoryResult>

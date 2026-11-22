@@ -3,6 +3,7 @@ import { access, lstat, mkdir, readdir, readFile, realpath } from "node:fs/promi
 import { isAbsolute, resolve } from "node:path"
 import { type BranchGraphReadCache, startBranchGraphRead, startBranchHistoryRead } from "./branch-graph"
 import { type ChangesReadCache, startChangesRead, startFileDiffRead, startFileImageRead, startFileVersionRead } from "./changes"
+import { readCommitDetails } from "./commit-details"
 import { conflictComparisonSource, conflictHistoryRequest, projectConflictGraph } from "./conflict-graph"
 import { temporaryBranchPrefix } from "./conflicts"
 import { GitError } from "./git-error"
@@ -11,6 +12,7 @@ import { commandEffect, commandFailure, type GitRunResult, redactGitText, runGit
 import { projectHistoricalEdits } from "./historical-edit"
 import { readRegisteredWorktrees, workingFilesTree } from "./worktrees"
 
+export { stashLabel } from "./branch-graph"
 export { GitError, type GitErrorCode } from "./git-error"
 export { parseGitVersion, selectGit } from "./git-installation"
 export { redactGitText } from "./git-process"
@@ -99,7 +101,7 @@ export class RepositoryGit {
     startReadFileHistory(request: FileHistoryRequest) {
         return startFileHistoryRead(
             this.readDescriptor,
-            (cwd, args) => startGitProcess({ installation: this.descriptor.git, cwd, args, readOnly: true }),
+            (cwd, args, input) => startGitProcess({ installation: this.descriptor.git, cwd, args, input, readOnly: true }),
             request,
         )
     }
@@ -207,7 +209,15 @@ export class RepositoryGit {
                 }
             }
         }
+        let tags = refs.filter(ref => ref.kind == "commit")
+        let details = await this.commitDetails(tags.map(tag => tag.objectId))
+        for (let tag of tags)
+            tag.details = details[tag.objectId]
         return refs
+    }
+
+    commitDetails(objectIds: string[]) {
+        return readCommitDetails(objectIds, (args, input) => this.command(this.descriptor.selectedWorktree, args, input))
     }
 
     async resolveComparisonCommit(revision: string): Promise<string> {

@@ -15,15 +15,21 @@ export type FileListGrouping = "none" | "change" | "kind"
 
 export let defaultFileListView: FileListView = { layout: "flat", grouping: "none" }
 
+export interface CommitDetails {
+    subject: string
+    authorName: string
+    authoredAt: number
+}
+
 /** One end of a Branch Comparison. Branch identities follow their tips, so a comparison between them stays live. */
 export type ComparisonRef =
-    | { kind: "commit"; objectId: string; tag?: string }
+    | { kind: "commit"; objectId: string; tag?: string; details?: CommitDetails }
     | { kind: "branch"; ref: string }
     /** The merge base of `ref` and `withRef`, so a diff from here to `withRef` shows only `withRef`'s own changes. */
     | { kind: "merge-base"; ref: string; withRef: string }
 
 export type ComparisonRefsResult = { ok: true; refs: ComparisonRef[] } | { ok: false; error: EntryError }
-export type ComparisonCommitResult = { ok: true; objectId: string } | { ok: false; error: EntryError }
+export type ComparisonCommitResult = { ok: true; objectId: string; details: CommitDetails } | { ok: false; error: EntryError }
 
 export type DiffSource =
     | { kind: "working"; worktreePath: string }
@@ -158,7 +164,12 @@ let objectIdSchema = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)
 let branchRefSchema = z.string().regex(/^refs\/(heads|remotes)\/.+/)
 
 export let ComparisonRefSchema = z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("commit"), objectId: objectIdSchema, tag: z.string().min(1).optional() }),
+    z.object({
+        kind: z.literal("commit"),
+        objectId: objectIdSchema,
+        tag: z.string().min(1).optional(),
+        details: z.object({ subject: z.string(), authorName: z.string(), authoredAt: z.number() }).optional(),
+    }),
     z.object({ kind: z.literal("branch"), ref: branchRefSchema }),
     z.object({ kind: z.literal("merge-base"), ref: branchRefSchema, withRef: branchRefSchema }),
 ])

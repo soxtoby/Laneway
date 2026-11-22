@@ -6,6 +6,7 @@ import { plural } from "./branch-rebase"
 import type { ColumnView } from "./branch-workspace"
 import { CommitAge } from "./commit-age"
 import { authoredBy, authorInitials } from "./commit-authors"
+import { comparisonCommit } from "./comparison-columns"
 import { ConflictResolution } from "./conflict-resolution"
 import type { Conflicts } from "./conflicts"
 import { Hint, IconButton, MoreMenu } from "./controls"
@@ -19,6 +20,7 @@ import { offersPublish, type Publish, publishRef } from "./publish"
 import { PublishButton } from "./publish-control"
 import { PullButton } from "./pull-control"
 import { incoming, type PullLatest } from "./pull-latest"
+import { RemovedCommits } from "./removed-commits"
 import type { Reword } from "./reword"
 import { TransferGrip, TransferReview, TransferSeam, useTransferScope, useTransferTarget } from "./transfer"
 import { Button } from "./ui/Button"
@@ -324,7 +326,7 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
         items: () => (
             <>
                 {props.checkOutDetached && <MenuItem isDisabled={props.busy} onAction={() => props.checkOutDetached?.(commit)}>Check out detached</MenuItem>}
-                <MenuItem onAction={() => props.compareWith({ kind: "commit", objectId: commit.objectId })}>Compare with…</MenuItem>
+                <MenuItem onAction={() => props.compareWith(comparisonCommit(commit))}>Compare with…</MenuItem>
                 {editFrom && rewordable && !branch.primary && <MenuItem onAction={() => editFrom(commit)}>Edit from here</MenuItem>}
                 {rewordable && <MenuItem onAction={() => onReword(commit.objectId)}>Reword commit…</MenuItem>}
                 <MenuItem onAction={() => props.createBranchAt(commit)}>Create branch here…</MenuItem>
@@ -443,9 +445,7 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
                             selectedKey={files.source.kind == "commit" && files.source.parentId || commit.parentIds[0]}
                             onSelectionChange={key => inspection.chooseParent(column.id, commit.objectId, String(key))}
                         >
-                            {commit.parentIds.map((parent, index) => (
-                                <SelectItem key={parent} id={parent}>{`Parent ${index + 1} · ${parent.slice(0, 8)}`}</SelectItem>
-                            ))}
+                            {commit.parentIds.map((parent, index) => <SelectItem key={parent} id={parent}>{parentLabel(commit, parent, index)}</SelectItem>)}
                         </Select>
                     )}
                     {commit.conflictId
@@ -503,7 +503,12 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
     )
 }
 
-/** Copies of the commit's identity and message, at the end of its menu, as a File History entry's are too. */
+export function parentLabel(commit: BranchHistoryCommit, parent: string, index: number) {
+    let subject = commit.parentSubjects?.[parent]
+    return subject ? `Parent ${index + 1} · ${subject}` : `Parent ${index + 1}`
+}
+
+/** Copy the exact identity or the full message from a commit menu. */
 export function CommitCopyItems({ commit }: { commit: Pick<BranchHistoryCommit, "objectId" | "subject" | "body"> }) {
     return (
         <>
@@ -564,7 +569,7 @@ function RewordForm({ branch, commit, reword, close }: StackBranchProps & { comm
                     Rewrites history already published on {composition.published.join(", ")}. The next Publish needs force-with-lease.
                 </p>
             )}
-            {!!composition?.removed.length && <p>Remove empty commits: {composition.removed.map(objectId => objectId.slice(0, 8)).join(", ")}</p>}
+            <RemovedCommits preview={composition} />
             {!!composition?.branches.length && <p>Affected: {composition.branches.join(", ")}</p>}
             {state.error && <p role="status">{state.error}</p>}
             <div className="commit-actions">

@@ -428,8 +428,8 @@ async function rebaseStack(repo: RepositoryGit, stack: UnresolvedStack, cancelle
             throw new Error("Stack replay cancelled.")
         let previous = step.conflict
         let merged = await replayTree(repo, await commitParent(repo, step.source), parent, step.source, step.id, {
-            left: `Before this commit at ${parent.slice(0, 8)}`,
-            right: `This commit ${step.source.slice(0, 8)}`,
+            left: "Before this commit",
+            right: "This commit",
         })
         // Composition may retain conflict markers while changing unrelated lines.
         // Those regions remain explicit conflicts even when their replay is clean.
@@ -610,8 +610,8 @@ export async function applyStashConflict(repo: RepositoryGit, path: string, stas
     }
 
     let merged = await replayTree(repo, await commitParent(repo, stash), current, stashTree, crypto.randomUUID(), {
-        left: `Current files before restoring stash at ${head.slice(0, 8)}`,
-        right: `Stashed changes ${stash.slice(0, 8)}`,
+        left: "Current files before restoring stash",
+        right: "Stashed changes",
     })
     if (!merged.conflict && !allowClean)
         throw new Error("The stash failed for a reason other than a content conflict. Its original state is preserved.")

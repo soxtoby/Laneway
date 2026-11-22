@@ -3,6 +3,7 @@ import { createHash } from "node:crypto"
 import { readFile } from "node:fs/promises"
 import { basename, join, resolve } from "node:path"
 import { type GraphTopology, readTopology, type TopologyCache } from "./branch-topology"
+import { labelMergeParents, readCommitDetails } from "./commit-details"
 import { graphHistory } from "./graph-history"
 import { GitError, type GitTask, redactGitText, type RepositoryDescriptor } from "./index"
 
@@ -417,7 +418,7 @@ async function buildGraph(
         branch.merged = Boolean(primary && branch.id != primary.id && topology.isAncestor(branch.tip, primary.tip))
         branch.published = branch.ownRemoteTips.some(remoteTip => topology.isAncestor(branch.tip, remoteTip))
     }
-    let virtualBranches = createVirtualBranches(evidence.worktrees)
+    let virtualBranches = await createVirtualBranches(evidence.worktrees, runner)
     let history = graphHistory(topology.commits, [
         ...[...visibleBranches].sort((left, right) => Number(right.primary) - Number(left.primary))
             .map(branch => ({ objectId: branch.tip, lineId: branch.id, connect: !branch.primary })),
@@ -821,20 +822,27 @@ function placeTags(refs: RefRecord[], branches: MutableBranch[], topology: Graph
             name: shortRef(tag.ref),
             objectId: target,
             parentBranchId: possibleParents[0]?.id,
-            tooltip: `Tag ${shortRef(tag.ref)} at ${shortObjectId(target)}`,
+            tooltip: `Tag ${shortRef(tag.ref)}`,
         })
     }
     return { branchTags, tagNodes: tagNodes.sort((left, right) => naturalCompare(left.name, right.name)) }
 }
 
-function createVirtualBranches(worktrees: BranchGraphWorktree[]): BranchGraphVirtualBranch[] {
-    return worktrees.filter(worktree => !worktree.branchRef || /^0+$/.test(worktree.head)).map(worktree => ({
+async function createVirtualBranches(worktrees: BranchGraphWorktree[], runner: GraphRunner): Promise<BranchGraphVirtualBranch[]> {
+    let detached = worktrees.filter(worktree => !worktree.branchRef || /^0+$/.test(worktree.head))
+    let details = await readCommitDetails(detached.map(w => w.head), async (args, input) => (await runner.run(args, [0], input)).stdout)
+    return detached.map(worktree => ({
         kind: "virtual",
         id: `virtual:${worktree.path}`,
         name: worktree.name,
         objectId: worktree.head,
         worktree,
-        tooltip: /^0+$/.test(worktree.head) ? "No commits yet" : `detached at ${shortObjectId(worktree.head)}`,
+        details: details[worktree.head],
+        tooltip: /^0+$/.test(worktree.head)
+            ? "No commits yet"
+            : details[worktree.head]
+            ? `Detached at “${details[worktree.head]!.subject}”`
+            : "Detached worktree",
     }))
 }
 
@@ -947,6 +955,7 @@ async function readHistoryPage(descriptor: RepositoryDescriptor, runner: GraphRu
         ]),
     )
     let commits = parseHistory(output)
+    await labelMergeParents(commits, async (args, input) => (await runner.run(args, [0], input)).stdout)
 
     if (remoteTips.includes(request.tip)) {
         for (let commit of commits)
@@ -1041,6 +1050,11 @@ function effectiveIdentities(configured: AuthorIdentitySettings, effectiveEmail:
     }
 }
 
+/** Git includes the abbreviated base ID in its default stash message. Keep custom messages verbatim. */
+export function stashLabel(message: string, parent?: string) {
+    return message.replace(/^(WIP on [^:]+:) ([0-9a-f]{4,64})(?= |$)/, (match, prefix, id) => parent?.startsWith(id) ? prefix : match)
+}
+
 function stashMarker(stash: StashRecord): BranchGraphMarker {
     return {
         branchName: stash.branch === undefined ? /^(?:WIP on|On) ([^:]+):/.exec(stash.subject)?.[1] : stash.branch,
@@ -1048,7 +1062,7 @@ function stashMarker(stash: StashRecord): BranchGraphMarker {
         kind: "stash",
         label: stash.selector,
         objectId: stash.objectId,
-        tooltip: stash.subject,
+        tooltip: stashLabel(stash.subject, stash.parentIds[0]),
     }
 }
 
@@ -1084,10 +1098,6 @@ function naturalCompare(left: string, right: string) {
 
 function shortRef(ref: string) {
     return ref.replace(/^refs\/heads\//, "").replace(/^refs\/remotes\//, "").replace(/^refs\/tags\//, "")
-}
-
-function shortObjectId(objectId: string) {
-    return objectId.slice(0, 10)
 }
 
 function verificationFingerprint(evidence: Pick<Evidence, "refText" | "worktreeText" | "context">) {

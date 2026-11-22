@@ -1,7 +1,7 @@
-import type { ComparisonRef } from "@laneway/shared"
+import type { CommitDetails, ComparisonRef } from "@laneway/shared"
 import type { BranchWorkspace, ColumnsSnapshot } from "./branch-workspace"
 import { textScore } from "./command-lens"
-import { refName } from "./comparison-columns"
+import { commitCredit, comparisonCommit, refName } from "./comparison-columns"
 import type { Inspection, InspectionSnapshot } from "./inspection"
 import { errorMessage } from "./notice"
 import { createStore } from "./store"
@@ -60,9 +60,13 @@ export function createComparisonPicker(
             })
             void api.comparisonRefs(repositoryId).then(result => {
                 if (generation == session) {
+                    let state = store.snapshot()!
+                    let repository = result.ok ? result.refs.map(refChoice) : []
+                    let choices = new Map(repository.map(choice => [choice.id, choice]))
                     store.publish({
-                        ...store.snapshot()!,
-                        repository: result.ok ? result.refs.map(ref => refChoice(ref)) : [],
+                        ...state,
+                        workspace: state.workspace.map(choice => choices.get(choice.id) ?? choice),
+                        repository,
                         error: result.ok ? undefined : result.error.message,
                     })
                 }
@@ -88,7 +92,7 @@ export function createComparisonPicker(
                     let result = await api.resolveComparisonCommit(state.repositoryId, ref)
                     if (!result.ok)
                         throw new Error(result.error.message)
-                    ref = { kind: "commit", objectId: result.objectId }
+                    ref = { kind: "commit", objectId: result.objectId, details: result.details }
                 }
                 if (generation != session || columns.snapshot().repositoryId != state.repositoryId)
                     return
@@ -128,7 +132,7 @@ export function pickerChoices(state: PickerState) {
     let workspace = matches(state.workspace.filter(choice => choice.id != otherId))
     let repository = matches(state.repository ?? [])
     let revision = state.repository && query && ![...workspace, ...repository].some(item => item.label == query || item.id == query)
-        ? [{ id: "revision:" + query, label: query, detail: "Resolve revision", target: query }]
+        ? [{ id: "revision:" + query, label: /^[0-9a-f]{4,64}$/i.test(query) ? "Entered commit" : query, detail: "Resolve revision", target: query }]
         : []
     return { workspace, repository: repository.slice(0, 60), more: repository.length > 60, revision }
 }
@@ -148,14 +152,13 @@ function workspaceChoices(columns: ColumnsSnapshot, inspection: InspectionSnapsh
         if (column.kind == "branch")
             choices.push(refChoice({ kind: "branch", ref: column.branch.preferredRef }))
         if (column.kind == "virtual")
-            choices.push(refChoice({ kind: "commit", objectId: column.branch.objectId }))
+            choices.push(refChoice({ kind: "commit", objectId: column.branch.objectId, details: column.branch.details }))
     }
     for (let column of columns.columns) {
         if (column.kind == "comparison")
             choices.push(...[column.comparison.from.ref, column.comparison.to.ref].filter(ref => ref.kind != "merge-base").map(ref => refChoice(ref)))
         let inspected = inspection.columns[column.id]
-        let addCommit = (commit: { objectId: string; subject: string }) =>
-            choices.push(refChoice({ kind: "commit", objectId: commit.objectId }, commit.subject))
+        let addCommit = (commit: CommitDetails & { objectId: string }) => choices.push(refChoice(comparisonCommit(commit)))
         for (let history of Object.values(inspected?.history ?? {})) {
             if (history.open && history.page) {
                 choices.push(refChoice({ kind: "branch", ref: history.page.branchRef }))
@@ -172,11 +175,15 @@ function workspaceChoices(columns: ColumnsSnapshot, inspection: InspectionSnapsh
     return choices
 }
 
-function refChoice(ref: ComparisonRef, subject?: string): RefChoice {
+function refChoice(ref: ComparisonRef): RefChoice {
     let label = refName(ref)
     if (ref.kind == "branch")
         return { id: ref.ref, label, detail: ref.ref.startsWith("refs/remotes/") ? "Remote branch" : "Branch", target: ref }
     if (ref.kind == "commit" && ref.tag)
-        return { id: `refs/tags/${ref.tag}:${ref.objectId}`, label, detail: `Tag · ${ref.objectId.slice(0, 8)}`, target: ref }
-    return { id: ref.kind == "commit" ? ref.objectId : label, label, detail: subject ?? (ref.kind == "merge-base" ? "Merge base" : "Commit"), target: ref }
+        return { id: `refs/tags/${ref.tag}:${ref.objectId}`, label, detail: ref.details ? `Tag · ${ref.details.subject}` : "Tag", target: ref }
+    if (ref.kind == "commit") {
+        let detail = ref.details ? commitCredit(ref.details) : "Commit"
+        return { id: ref.objectId, label, detail, target: ref }
+    }
+    return { id: label, label, detail: "Merge base", target: ref }
 }

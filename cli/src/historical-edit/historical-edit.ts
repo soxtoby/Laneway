@@ -68,7 +68,7 @@ async function prepareEntry(
         throw new Error("Historical Edit is unavailable in a worktree with populated submodules.")
     await requireUniqueCommit(repo, request.commit, branch)
 
-    return { request, worktree, summary: `Edit ${request.commit.slice(0, 8)} from ${display(branch)}`, recorded: false }
+    return { request, worktree, summary: `Edit “${await commitSubject(repo, request.commit)}” from ${display(branch)}`, recorded: false }
 }
 
 async function prepareReturn(
@@ -115,7 +115,7 @@ async function prepareRestart(
     if (worktree.branchRef || !await isAncestor(repo, worktree.head, tip))
         throw new Error(`The edited commit is no longer part of ${name}. Return to ${name} and bring your changes along instead.`)
 
-    return { request, worktree, stored, summary: `Restart editing ${worktree.head.slice(0, 8)} on the latest ${name}`, recorded: false }
+    return { request, worktree, stored, summary: `Restart editing “${await commitSubject(repo, worktree.head)}” on the latest ${name}`, recorded: false }
 }
 
 async function enter(repo: RepositoryGit, worktree: RegisteredWorktree, commit: string) {
@@ -130,14 +130,14 @@ async function enter(repo: RepositoryGit, worktree: RegisteredWorktree, commit: 
 
     let session = { version: 1 as const, worktreeId: worktree.id, path, branch, tip: worktree.head, selected: commit, commit, stash }
     await repo.updateRefs([{ ref: historicalEditRef(worktree.id), before: null, after: await storeHistoricalEdit(repo, session) }])
-    return `Editing ${commit.slice(0, 8)} from ${display(branch)}. Apply changes to rewrite it, then return to ${display(branch)}.`
+    return `Editing “${await commitSubject(repo, commit)}” from ${display(branch)}. Apply changes to rewrite it, then return to ${display(branch)}.`
 }
 
 /** Original Working Changes are restored before Historical Working Changes, so each restore conflict is its own. */
 async function returnToBranch(repo: RepositoryGit, plan: HistoricalEditPlan, mode: "clean" | "drop" | "bring", changes: Changes) {
     let { worktree } = plan, { ref, value, edit } = plan.stored!
     let path = worktree.path, name = display(edit.branch)
-    let label = `Historical Working Changes from ${edit.commit.slice(0, 8)} ${await gitText(repo, ["show", "-s", "--format=%s", edit.commit])}`
+    let label = `Historical Working Changes from “${await commitSubject(repo, edit.commit)}”`
 
     let historical: string | undefined
     if (mode == "bring" && await isDirty(repo, path))
@@ -167,7 +167,7 @@ async function restart(repo: RepositoryGit, worktree: RegisteredWorktree, { ref,
     let tip = (await repo.resolveRef(edit.branch))!
     let session = HistoricalEditSessionSchema.parse({ ...edit, tip, commit: worktree.head, unresolved: undefined })
     await repo.updateRefs([{ ref, before: value, after: await storeHistoricalEdit(repo, session) }])
-    return `Editing ${worktree.head.slice(0, 8)} on the latest ${display(edit.branch)}.`
+    return `Editing “${await commitSubject(repo, worktree.head)}” on the latest ${display(edit.branch)}.`
 }
 
 /** Stashes and clears the worktree's changes, returning the stash commit without leaving it in the stash list. */
@@ -192,6 +192,10 @@ async function restoreStash(repo: RepositoryGit, path: string, stash: string, me
     return false
 }
 
+async function commitSubject(repo: RepositoryGit, commit: string) {
+    return (await repo.commitDetails([commit]))[commit]?.subject ?? "Untitled commit"
+}
+
 async function requireUniqueCommit(repo: RepositoryGit, commit: string, branch: string) {
     let parents = (await gitText(repo, ["show", "-s", "--format=%P", commit])).split(" ").filter(Boolean)
     if (parents.length != 1)
@@ -204,7 +208,7 @@ async function requireUniqueCommit(repo: RepositoryGit, commit: string, branch: 
     let local = ref && remote ? `refs/heads/${ref.slice(`refs/remotes/${remote}/`.length)}` : undefined
     for (let primary of [ref, local].filter(value => value && value != branch)) {
         if (await repo.resolveRef(primary!) && await isAncestor(repo, commit, primary!))
-            throw new Error(`${commit.slice(0, 8)} is already on the Primary Branch. Historical Edit works on commits unique to this stack.`)
+            throw new Error("This commit is already on the Primary Branch. Historical Edit works on commits unique to this stack.")
     }
 }
 

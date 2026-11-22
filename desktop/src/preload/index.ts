@@ -77,6 +77,7 @@ contextBridge.exposeInMainWorld("laneway", {
     setShowCommitAges: (shown: boolean) => ipcRenderer.invoke("settings:show-commit-ages", { shown }),
     setGraphWidth: (width: number) => ipcRenderer.invoke("settings:graph-width", { width }),
     comparisonRefs: (repositoryId: string) => ipcRenderer.invoke("comparison:refs", repositoryId),
+    comparisonCommitDetails: (repositoryId: string, ids: string[]) => ipcRenderer.invoke("comparison:commit-details", repositoryId, ids),
     resolveComparisonCommit: (repositoryId: string, revision: string) => ipcRenderer.invoke("comparison:commit", repositoryId, revision),
     readBranchGraph: (repositoryId: string, refreshRemote = false, allBranches = false) =>
         ipcRenderer.invoke("graph:read", { repositoryId, refreshRemote, allBranches }),

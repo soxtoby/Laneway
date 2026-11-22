@@ -108,7 +108,7 @@ export async function replayTree(
     left: string,
     right: string,
     id: string,
-    labels = { left: `Current files at ${left.slice(0, 8)}`, right: `Incoming changes at ${right.slice(0, 8)}` },
+    labels = { left: "Current files", right: "Incoming changes" },
 ): Promise<{ tree: string; conflict?: ConflictSubject }> {
     let result = await repo.run(repo.descriptor.mainWorktree, [
         "-c",

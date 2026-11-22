@@ -80,6 +80,23 @@ test("branch rebase restacks descendants by default and can leave them on old hi
     }
 }, 120_000)
 
+test("the rebase review names a commit whose change the destination already contains", async () => {
+    let { path, base } = await fixture()
+    await writeFile(join(path, "feature.txt"), "feature\n")
+    git(path, "add", ".")
+    git(path, "commit", "-qm", "Introduce feature")
+    let feature = git(path, "rev-parse", "HEAD")
+    git(path, "checkout", "-qb", "destination", base)
+    git(path, "cherry-pick", "--no-commit", feature)
+    git(path, "commit", "-qm", "Already integrated")
+    let rebase = request({
+        source: { kind: "branch", branch: "feature", tip: feature },
+        target: { kind: "branch", branch: "destination", tip: git(path, "rev-parse", "HEAD") },
+    })
+    let reviewed = await preview(path, rebase)
+    expect(reviewed.composition).toMatchObject({ removed: [feature], removedSubjects: { [feature]: "Introduce feature" } })
+}, 30_000)
+
 test("branch rebase takes only commits since its Base, and repeating it changes nothing", async () => {
     let { path, base } = await fixture()
     let commit = async (name: string) => {

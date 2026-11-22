@@ -121,8 +121,10 @@ export function createFileHistories({ api, update, composition, changed }: Optio
                     append = false
                     continue
                 }
-                if (append)
+                if (append) {
+                    result.page.tipSubject = state.page!.tipSubject ?? result.page.tipSubject
                     result.page.entries = [...state.page!.entries, ...result.page.entries]
+                }
                 // Empty scan windows still advance the cursor, so a quiet first page keeps the progress already made.
                 if (!append && !moved && state.page && state.page.entries.length >= result.page.entries.length) {
                     if (!state.page.cursor || state.page.entries.length >= target)

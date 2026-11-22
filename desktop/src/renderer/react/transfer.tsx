@@ -2,6 +2,7 @@ import type { CompositionSource, CompositionTarget, DiffSource } from "@laneway/
 import { createContext, type MouseEvent, useContext, useEffect, useEffectEvent, useRef, useSyncExternalStore } from "react"
 import { Button as AriaButton } from "react-aria-components"
 import type { Composition, CompositionSnapshot, Edges, Landing, TransferSelection } from "./composition"
+import { RemovedCommits } from "./removed-commits"
 import { Button } from "./ui/Button"
 import { Checkbox } from "./ui/Checkbox"
 import { GripVertical } from "./ui/icons"
@@ -178,7 +179,7 @@ export function TransferReview({ composition, repositoryId, target }: { composit
                 </Checkbox>
             )}
             {!!review?.branches.length && <p>Affected: {review.branches.join(", ")}</p>}
-            {!!review?.removed.length && <p>Remove empty commits: {review.removed.map(objectId => objectId.slice(0, 8)).join(", ")}</p>}
+            <RemovedCommits preview={review} />
             {!!review?.published.length && (
                 <p className="transfer-warning" role="alert">
                     Rewrites history already published on {review.published.join(", ")}. The next Publish needs force-with-lease.

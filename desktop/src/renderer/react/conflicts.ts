@@ -185,9 +185,8 @@ export function createConflicts({ api, changed }: ConflictOptions): Conflicts {
 }
 
 /** The two sides a conflict's files choose between, named for what they are: a commit's, or a stash's. */
-export function conflictSides(view: ConflictView | undefined, summary: ConflictSummary | undefined) {
+export function conflictSides(summary: ConflictSummary | undefined) {
     let working = summary?.kind == "working"
-    let source = view?.sourceCommit.slice(0, 8) ?? ""
     return {
         left: {
             label: working ? "Current files" : "Before this commit",
@@ -197,7 +196,7 @@ export function conflictSides(view: ConflictView | undefined, summary: ConflictS
         right: {
             label: working ? "Stashed changes" : "This commit",
             action: working ? "Use stashed changes" : "Use this commit",
-            description: working ? `Stash ${source}` : `${source} · ${summary?.title ?? ""}`,
+            description: working ? "Changes saved in the stash." : summary?.title || "Changes from this commit.",
         },
     }
 }

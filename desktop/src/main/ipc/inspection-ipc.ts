@@ -19,10 +19,21 @@ export function registerInspectionHandlers(repositories: OpenRepositories, engin
         if (typeof revision != "string" || !revision.trim() || revision.includes("\0"))
             return { ok: false, error: { code: "git.command-failed", message: "Enter a commit, branch, or tag." } }
         try {
-            return { ok: true, objectId: await repositories.worktreeRepository(repositoryId).resolveComparisonCommit(revision) }
+            let repo = repositories.worktreeRepository(repositoryId)
+            let objectId = await repo.resolveComparisonCommit(revision)
+            let details = (await repo.commitDetails([objectId]))[objectId]
+            if (!details)
+                throw new Error("The selected commit is unavailable.")
+            return { ok: true, objectId, details }
         } catch (error) {
             return { ok: false, error: entryError(error) }
         }
+    })
+
+    ipcMain.handle("comparison:commit-details", async (_event, repositoryId: string, ids: unknown) => {
+        if (!Array.isArray(ids) || !ids.every(id => typeof id == "string" && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(id)))
+            throw new Error("Invalid comparison commits.")
+        return repositories.worktreeRepository(repositoryId).commitDetails(ids)
     })
 
     function registerChangesHandlers() {

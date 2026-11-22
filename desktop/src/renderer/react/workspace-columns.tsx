@@ -611,7 +611,7 @@ function AuxiliaryFrame({ repositoryId, view, column, inspected, graph, controll
                     <MaybeHostedDiffScope host={host} inspection={inspection}>
                         <DiffColumn
                             view={view}
-                            sourceName={host?.kind == "commit" ? `commit ${host.entry.objectId.slice(0, 8)}` : column.name}
+                            sourceName={host?.kind == "commit" ? host.entry.subject : column.name}
                             stacked={stacked}
                             inspected={host ? host.host : inspected?.columns[column.id]}
                             eligible={host ? host.eligible.includes(view.group) : view.group != "comparison"}

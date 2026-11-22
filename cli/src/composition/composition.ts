@@ -135,10 +135,12 @@ export async function prepareComposition(
     let messages = new Map<string, string>()
     let deleted = new Set<string>(), onlyBranches = new Set<string>()
     let sourceWorking: TreeChange | undefined, destinationWorking: TreeChange | undefined
-    let merge = async (base: string, left: string, right: string, label: string): Promise<TreeChange> => {
-        let result = await replayTree(repo, base, left, right, id(base, left, right, label), { left: `Before ${label}`, right: `Incoming ${label}` })
-        if (result.conflict)
-            preview.conflicts.push({ subject: label, files: result.conflict.files.map(f => f.path) })
+    let merge = async (base: string, left: string, right: string, label: string, source?: string): Promise<TreeChange> => {
+        let result = await replayTree(repo, base, left, right, id(base, left, right, source ?? label), { left: `Before ${label}`, right: `Incoming ${label}` })
+        if (result.conflict) {
+            let subject = source ? (await repo.commitDetails([source]))[source]?.subject ?? "Untitled commit" : label
+            preview.conflicts.push({ subject, files: result.conflict.files.map(f => f.path) })
+        }
         return result
     }
 
@@ -346,6 +348,10 @@ export async function prepareComposition(
     }
 
     preview.removed = [...new Set(preview.removed)]
+    if (preview.removed.length) {
+        let details = await repo.commitDetails(preview.removed)
+        preview.removedSubjects = Object.fromEntries(preview.removed.map(id => [id, details[id]?.subject ?? "Untitled commit"]))
+    }
     preview.skipped = [...new Set(preview.skipped)]
     preview.branches = changedBranches.map(ref => ref.slice(11))
 
@@ -547,9 +553,9 @@ export async function prepareComposition(
                 let sourceTree = changed?.tree ?? await tree(repo, old)
                 let result = await sameTree(parent, ps[0])
                     ? { tree: sourceTree, conflict: changed?.conflict }
-                    : await merge(ps[0], parent, sourceTree, `commit ${old.slice(0, 8)}`)
+                    : await merge(ps[0], parent, sourceTree, "commit", old)
                 if (parent != ps[0] && compose?.target.kind == "commit" && compose.target.objectId == old) {
-                    let replayed = await merge(ps[0], parent, old, `commit ${old.slice(0, 8)}`)
+                    let replayed = await merge(ps[0], parent, old, "commit", old)
                     result = await merge(selection!.base, replayed.tree, selection!.selected, "transferred changes")
                 }
                 let existing = oldSubjects.get(old)

@@ -3,7 +3,8 @@ import clsx from "clsx"
 import { type ReactNode, useMemo } from "react"
 import { Button as AriaButton } from "react-aria-components"
 import { CommitAge } from "./commit-age"
-import { CommitCopyItems } from "./commit-trail"
+import { CommitCopyItems, parentLabel } from "./commit-trail"
+import { comparisonCommit } from "./comparison-columns"
 import { Hint, IconButton, MoreMenu } from "./controls"
 import { useRowMenu } from "./dense-row"
 import { DiffControls, DiffPanel, DiffScopeContext } from "./diff-panel"
@@ -44,7 +45,7 @@ export function FileHistoryColumn(
             className="file-history"
             label={`History of ${history.path}`}
             title={`History · ${history.path}`}
-            from={`From ${sourceName(source)}`}
+            from={`From ${sourceName(source, page?.tipSubject)}`}
             close={{ label: "Close file history", press: () => inspection.closeAuxiliary(history.id) }}
             onClose={onClose}
             inspection={inspection}
@@ -132,7 +133,7 @@ function HistoryEntry(
         label: `Actions for ${entry.subject}`,
         items: () => (
             <>
-                <MenuItem onAction={() => compareWith({ kind: "commit", objectId: entry.objectId })}>Compare with…</MenuItem>
+                <MenuItem onAction={() => compareWith(comparisonCommit(entry))}>Compare with…</MenuItem>
                 <MenuItem onAction={() => inspection.blame(history.id, entry.objectId)}>Blame context</MenuItem>
                 <MenuItem onAction={() => inspection.openCommitDiff(history.id, entry.objectId)}>Complete commit diff</MenuItem>
                 <Separator />
@@ -141,7 +142,7 @@ function HistoryEntry(
         ),
     }
     let { row, openMenu } = useRowMenu(menu)
-    let title = `${entry.subject}\n${entry.objectId} · ${entry.authorName}\n${entry.previousPath ? `${entry.previousPath} → ` : ""}${entry.path}`
+    let title = `${entry.subject}\n${entry.authorName}\n${entry.previousPath ? `${entry.previousPath} → ` : ""}${entry.path}`
     return (
         <section className="history-entry" data-expanded={expanded || undefined}>
             <div ref={row} className="history-row" onContextMenu={openMenu}>
@@ -221,8 +222,8 @@ function Blame({ history, inspection }: { history: FileHistoryView; inspection: 
                             aria-label={`Open origin of line ${line.line}`}
                             onPress={() => inspection.openHistory(history.hostId, { kind: "commit", objectId: line.objectId }, line.path)}
                         >
-                            <Hint text={`Open origin · ${line.author} · ${line.path}:${line.originalLine}`}>
-                                <span>{line.objectId.slice(0, 8)}:{line.line}</span>
+                            <Hint text={`Open origin · ${line.subject ?? "Commit"} · ${line.author} · ${line.path}:${line.originalLine}`}>
+                                <span>{line.line}</span>
                             </Hint>
                         </AriaButton>
                         <code>{line.text}</code>
@@ -253,7 +254,7 @@ export function CommitDiffColumn({ commit, inspection, view, root, stacked, onCl
             className="commit-diff"
             label={`Commit diff · ${entry.subject}`}
             title={entry.subject}
-            from={`From history · ${entry.path} · ${objectId.slice(0, 8)}`}
+            from={`From history · ${entry.path}`}
             close={{ label: "Close commit diff", press: () => inspection.closeAuxiliary(commit.id) }}
             onClose={onClose}
             inspection={inspection}
@@ -267,7 +268,7 @@ export function CommitDiffColumn({ commit, inspection, view, root, stacked, onCl
                     selectedKey={commit.parentId ?? entry.parentIds[0]}
                     onSelectionChange={key => key != null && inspection.chooseCommitParent(commit.id, String(key))}
                 >
-                    {entry.parentIds.map((parent, index) => <SelectItem key={parent} id={parent}>{`Parent ${index + 1} · ${parent.slice(0, 8)}`}</SelectItem>)}
+                    {entry.parentIds.map((parent, index) => <SelectItem key={parent} id={parent}>{parentLabel(entry, parent, index)}</SelectItem>)}
                 </Select>
             )}
             <FileList
@@ -374,12 +375,12 @@ export function HostedDiffScope({ column, inspection, children }: { column: File
 }
 
 /** Where a history was read from: a branch, a worktree, or a commit. */
-function sourceName(source: FileHistorySource) {
+function sourceName(source: FileHistorySource, subject?: string) {
     return source.kind == "branch"
         ? shortBranchRef(source.ref)
         : source.kind == "worktree"
         ? source.worktreePath
-        : source.objectId.slice(0, 8)
+        : subject || "Commit"
 }
 
 // History entries carry Git's one-letter status.

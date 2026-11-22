@@ -23,7 +23,7 @@ test("rewrite completes with committed markers, explicit durable resolution, und
 
     let marked = await readFile(join(path, "a.txt"), "utf8")
 
-    expect(marked).toContain("<<<<<<< Before this commit at")
+    expect(marked).toContain("<<<<<<< Before this commit (")
     expect(marked).toContain(">>>>>>> This commit")
     expect(await readFile(join(path, "b.txt"), "utf8")).toBe("later\n")
     expect((await conflict(path, { action: "publish-check", branches: ["topic"] })).publishable).toBe(false)

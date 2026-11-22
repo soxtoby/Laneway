@@ -361,6 +361,7 @@ function GraphRows(
                                         controller.comparisonPicker.open({
                                             kind: "commit",
                                             objectId: row.objectId,
+                                            details: graph.virtualBranches.find(branch => branch.id == row.node.id)?.details,
                                             ...(row.node.kind == "tag" && { tag: row.node.name }),
                                         })}
                                 />
@@ -511,7 +512,6 @@ function MarkerDetails({ marker, onClose }: { marker: BranchGraphMarker; onClose
         <aside className="marker-details" aria-label={`Stash ${marker.label}`}>
             <span className="marker-kind">Stash</span>
             <strong>{marker.label}</strong>
-            <small>{marker.objectId.slice(0, 8)}</small>
             <IconButton label="Close marker details" small onPress={onClose}>
                 <CloseIcon />
             </IconButton>

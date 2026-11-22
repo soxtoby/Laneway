@@ -46,7 +46,7 @@ describe("Branch Graph and lazy history", () => {
             expect(runGit(repository, "branch", "feature/alias", tip).exitCode).toBe(0)
             await writeFile(resolve(repository, "working.txt"), "stashed\n")
             expect(runGit(repository, "add", "working.txt").exitCode).toBe(0)
-            expect(runGit(repository, "stash", "push", "-m", "Graph marker").exitCode).toBe(0)
+            expect(runGit(repository, "stash", "push").exitCode).toBe(0)
             let detached = resolve(await temporaryDirectory(`laneway-graph-detached-${objectFormat}-`), "detached")
             expect(runGit(repository, "worktree", "add", "--detach", detached, mainTip).exitCode).toBe(0)
 
@@ -62,9 +62,11 @@ describe("Branch Graph and lazy history", () => {
             expect(tipNode.base).toMatchObject({ status: "known", ref: "refs/heads/feature/base", tip: baseTip })
             expect(tipNode.involvement).toBe("involved")
             expect(tipNode.markers).toHaveLength(1)
-            expect(tipNode.markers[0].tooltip).toContain("Graph marker")
+            expect(tipNode.markers[0].tooltip).toBe("WIP on feature/tip: Second tip commit")
             expect(graph.primaryBranch).toMatchObject({ status: "known", remote: "upstream", ref: "refs/remotes/upstream/main" })
-            expect(graph.virtualBranches).toContainEqual(expect.objectContaining({ name: basename(detached), objectId: mainTip }))
+            expect(graph.virtualBranches).toContainEqual(
+                expect.objectContaining({ name: basename(detached), objectId: mainTip, tooltip: "Detached at “Initial”" }),
+            )
             expect(graph.tags).toContainEqual(expect.objectContaining({ name: "waypoint", objectId: taggedCommit, parentBranchId: tipNode.id }))
 
             let history = await opened.startReadBranchHistory({

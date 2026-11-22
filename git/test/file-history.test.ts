@@ -111,6 +111,7 @@ test("copy ties require a validated choice; related evidence is ranked and Prima
     let merged = await api.startReadFileHistory({ source: { kind: "branch", ref: "refs/heads/main" }, path: "copy.txt" }).result
     expect(merged.entries[0].parentIds).toEqual([primaryTip, tip])
     expect(merged.entries[0].followedParent).toBe(primaryTip)
+    expect(merged.entries[0].parentSubjects).toEqual({ [primaryTip]: "primary", [tip]: "copy" })
 }, 30_000)
 afterEach(async () => {
     for (let root of roots.splice(0))
@@ -152,10 +153,11 @@ for (let format of ["sha1", "sha256"]) {
         expect(next.entries[2].path).toBe("before.txt")
 
         let blame = await api.startReadFileHistory({ source, path: "after.txt", blame: { objectId: page.tip!, path: "after.txt" } }).result
-        expect(blame.blame?.[1].objectId).toBe(first)
+        expect(blame.blame?.[1]).toMatchObject({ objectId: first, subject: "created" })
         expect(blame.blame?.[1].path).toBe("before.txt")
 
         let fixed = await api.startReadFileHistory({ source: { kind: "commit", objectId: first }, path: "before.txt" }).result
+        expect(fixed.tipSubject).toBe("created")
         expect(fixed.entries.map(entry => entry.subject)).toEqual(["created"])
 
         git(root, "checkout", "--detach")

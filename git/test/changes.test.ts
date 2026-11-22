@@ -143,11 +143,12 @@ describe("branch tip comparisons", () => {
         git(path, "tag", "lightweight")
         git(path, "tag", "-a", "nested", "-m", "nested", "release")
         git(path, "tag", "tree", "HEAD^{tree}")
-        expect(await api.comparisonRefs()).toEqual([{ kind: "branch", ref: "refs/heads/main" }, { kind: "commit", tag: "lightweight", objectId: commit }, {
-            kind: "commit",
-            tag: "nested",
-            objectId: commit,
-        }, { kind: "commit", tag: "release", objectId: commit }])
+        let details = { subject: "initial", authorName: "Diff Test", authoredAt: Number(git(path, "show", "-s", "--format=%at", commit)) }
+        expect(await api.commitDetails(["f".repeat(40), commit])).toEqual({ [commit]: details })
+        expect(await api.comparisonRefs()).toEqual([
+            { kind: "branch", ref: "refs/heads/main" },
+            ...["lightweight", "nested", "release"].map(tag => ({ kind: "commit" as const, tag, objectId: commit, details })),
+        ])
         expect(await api.resolveComparisonCommit("refs/tags/release")).toBe(commit)
         expect(await api.resolveComparisonCommit(commit.slice(0, 8))).toBe(commit)
         await expect(api.resolveComparisonCommit("unavailable")).rejects.toThrow("No unique commit")

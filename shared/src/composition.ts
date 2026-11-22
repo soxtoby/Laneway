@@ -51,6 +51,7 @@ export let RewordRequestSchema = z.object({
 export let CompositionPreviewSchema = z.object({
     branches: z.array(z.string()),
     removed: z.array(z.string()),
+    removedSubjects: z.record(z.string(), z.string()).optional(),
     conflicts: z.array(z.object({ subject: z.string(), files: z.array(z.string()) })),
     published: z.array(z.string()),
     skipped: z.array(z.string()),

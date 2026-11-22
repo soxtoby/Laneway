@@ -86,7 +86,7 @@ test("React conflict resolution through production IPC: inline in its commit, ke
             expect(exitCode, result).toBe(0)
             if (phase != "accept") {
                 let marked = await readFile(join(repository, "file.txt"), "utf8")
-                expect(marked).toContain("<<<<<<< Before this commit at")
+                expect(marked).toContain("<<<<<<< Before this commit (")
                 expect(marked).toContain(">>>>>>> This commit")
                 await mkdir(join(root, "desktop/out/validation"), { recursive: true })
                 await copyFile(join(directory, `${phase}.png`), join(root, `desktop/out/validation/react-conflict-${phase}.png`))

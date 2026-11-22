@@ -167,8 +167,8 @@ test("stash apply consumes stash, undo restores it, conflicts keep stash and mar
 
     let marked = await readFile(join(path, "a.txt"), "utf8")
 
-    expect(marked).toContain("<<<<<<< Current files before restoring stash at")
-    expect(marked).toContain(`>>>>>>> Stashed changes ${objectId.slice(0, 8)}`)
+    expect(marked).toContain("<<<<<<< Current files before restoring stash (")
+    expect(marked).toContain(">>>>>>> Stashed changes (")
     expect(git(path, "rev-parse", "refs/stash")).toBe(objectId)
 }, 60_000)
 test("hook changes request review; failed hooks preserve draft content without creating a commit", async () => {

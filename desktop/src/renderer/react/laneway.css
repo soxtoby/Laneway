@@ -3831,6 +3831,8 @@
 
 .blame-origin {
     flex: 0 0 auto;
+    min-width: 4ch;
+    text-align: end;
     padding: 0 var(--spacing-1);
     border: 0;
     border-radius: var(--radius-sm);
@@ -4233,7 +4235,7 @@
 .marker-details {
     flex: 0 0 auto;
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: var(--spacing-2);
     padding: var(--spacing-2) var(--spacing-3);
@@ -4250,11 +4252,6 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-    }
-
-    small {
-        color: var(--text-color-placeholder);
-        font-family: var(--font-family-mono);
     }
 
     p {
@@ -4410,11 +4407,6 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-    }
-
-    code {
-        color: var(--text-color-placeholder);
-        font-family: var(--font-family-mono);
     }
 }
 

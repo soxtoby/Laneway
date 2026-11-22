@@ -10,6 +10,7 @@
 
 ### Changed
 
+- Comparisons, File History, merge parent choices, and change reviews identify commits by subject. Copy commit hash is still available from commit menus.
 - Double-click a branch in the Branch Graph or press Enter to open its column. To switch branches, choose **Check out** from the branch menu.
 - Dialogs and menus look more at home on Windows. Dialogs have a title bar with a Close button, and less space around their edges. Menus highlight the item under the pointer or keyboard in grey rather than amber. Buttons are flat, without gradients.
 - Fetching in the background now brings an open column's Base, such as the Primary Branch, up to date with its remote, as long as no worktree has it checked out. The branches above it stay put until you Pull latest or Restack.

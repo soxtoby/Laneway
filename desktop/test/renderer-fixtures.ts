@@ -261,6 +261,7 @@ export function fakeLaneway(overrides: Partial<Window["laneway"]> = {}): Window[
         openSettingsFile: async () => "",
         setAppearance: async appearance => appearance,
         comparisonRefs: async () => ({ ok: true, refs: [] }),
+        comparisonCommitDetails: async () => ({}),
         resolveComparisonCommit: async () => ({ ok: false, error: { code: "git.command-failed", message: "Unknown revision" } }),
         readBranchGraph: async () => ({ ok: false, error: { code: "git.command-failed", message: "Graph unavailable" } }),
         cancelBranchGraph: async () => false,

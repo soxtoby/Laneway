@@ -1,3 +1,4 @@
+import type { CommitDetails } from "./changes"
 import { type HistoricalEdit } from "./historical-edit"
 import { type AuthorIdentitySettings, type EntryError } from "./workspace"
 import { type WorktreeRecovery } from "./worktree-recovery"
@@ -99,6 +100,7 @@ export interface BranchGraphTagNode {
 }
 
 export interface BranchGraphVirtualBranch {
+    details?: CommitDetails
     kind: "virtual"
     id: string
     name: string
@@ -161,6 +163,7 @@ export interface BranchHistoryRequest {
 }
 
 export interface BranchHistoryCommit {
+    parentSubjects?: Record<string, string>
     conflictId?: string
     objectId: string
     parentIds: string[]

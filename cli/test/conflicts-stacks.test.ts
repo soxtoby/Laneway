@@ -64,12 +64,12 @@ test("a moving base does not change resolution; external provisional descendants
     let originalView = (await conflict(path, { action: "inspect", subject })).view!
     await commit(path, "external.txt", "external\n", "external child")
     git(path, "branch", "-f", "main", "topic")
+    expect((await conflict(path, { action: "inspect", subject })).view!.subject.input).toBe(originalView.subject.input)
     await choose(path, subject, "right")
     await accept(path, subject)
 
     expect(git(path, "show", "HEAD:external.txt")).toBe("external")
     expect(git(path, "log", "--oneline")).toContain("external child")
-    expect(originalView.subject.leftLabel).toContain(base.slice(0, 8))
 }, 120_000)
 
 test("multiple branch boundaries and a dependent stack restack together", async () => {

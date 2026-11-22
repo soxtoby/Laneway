@@ -1,10 +1,11 @@
 import { type FileHistoryEntry, type FileHistoryPage, type FileHistoryRequest, FileHistoryRequestSchema } from "@laneway/shared"
 import { realpath } from "node:fs/promises"
+import { labelMergeParents } from "./commit-details"
 import { GitError, type GitTask, type RepositoryDescriptor } from "./index"
 import { type FileChange, parseFileChanges, rankRelatedFiles } from "./related-files"
 
 type Command = { result: Promise<{ exitCode: number; stdout: Buffer; stderr: Buffer }>; cancel(): void }
-type Start = (cwd: string, args: string[]) => Command
+type Start = (cwd: string, args: string[], input?: string) => Command
 
 /** Bounded first-parent walk: preserve the actual parent and path at every transition. */
 export function startFileHistoryRead(descriptor: RepositoryDescriptor, start: Start, input: FileHistoryRequest): GitTask<FileHistoryPage> {
@@ -89,13 +90,15 @@ export function startFileHistoryRead(descriptor: RepositoryDescriptor, start: St
             let end = Math.min(count, offset + 200)
             let raw = await run(cwd, ["blame", "--line-porcelain", "-M", "-C", "-L", `${offset + 1},${end}`, objectId, "--", path])
             let blame: NonNullable<FileHistoryPage["blame"]> = []
-            let current = { objectId: "", originalLine: 0, line: 0, path, author: "" }
+            let current = { objectId: "", originalLine: 0, line: 0, path, author: "", subject: "" }
             for (let line of raw.split("\n")) {
                 let header = /^([a-f0-9]{40,64}) (\d+) (\d+)(?: \d+)?$/.exec(line)
                 if (header)
                     current = { ...current, objectId: header[1], originalLine: Number(header[2]), line: Number(header[3]) }
                 else if (line.startsWith("author "))
                     current.author = line.slice(7)
+                else if (line.startsWith("summary "))
+                    current.subject = line.slice(8)
                 else if (line.startsWith("filename "))
                     current.path = line.slice(9)
                 else if (line.startsWith("\t"))
@@ -259,7 +262,13 @@ export function startFileHistoryRead(descriptor: RepositoryDescriptor, start: St
             objectId = parentIds[0] ?? ""
         }
 
-        return { tip: tip || undefined, entries, ...(objectId ? { cursor: { objectId, path } } : {}) }
+        await labelMergeParents(entries, (args, input) => run(cwd, args, false, input))
+        return {
+            tip: tip || undefined,
+            tipSubject: commits.find(commit => commit.objectId == tip)?.subject,
+            entries,
+            ...(objectId ? { cursor: { objectId, path } } : {}),
+        }
     })()
 
     return {
@@ -270,11 +279,11 @@ export function startFileHistoryRead(descriptor: RepositoryDescriptor, start: St
         },
     }
 
-    async function run(cwd: string, args: string[], optional = false) {
+    async function run(cwd: string, args: string[], optional = false, input?: string) {
         if (cancelled)
             throw new GitError("git.cancelled", "History read cancelled.")
 
-        active = start(cwd, ["-c", "core.quotepath=false", "--literal-pathspecs", ...args])
+        active = start(cwd, ["-c", "core.quotepath=false", "--literal-pathspecs", ...args], input)
         let result = await active.result
         if (cancelled)
             throw new GitError("git.cancelled", "History read cancelled.")

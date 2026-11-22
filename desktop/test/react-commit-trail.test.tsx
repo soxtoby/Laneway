@@ -143,7 +143,11 @@ describe("React Commit Trail", () => {
                     branchRef: request.branchRef,
                     tip: request.tip,
                     baseTips: request.baseTips,
-                    commits: [{ ...commit(scenario.graph.branches[1]!.tip, "Merge work", [scenario.graph.branches[0]!.tip, second]), body: "Why it merged." }],
+                    commits: [{
+                        ...commit(scenario.graph.branches[1]!.tip, "Merge work", [scenario.graph.branches[0]!.tip, second]),
+                        parentSubjects: { [second]: "Finish the feature" },
+                        body: "Why it merged.",
+                    }],
                 },
             }),
             readChanges: (...args) => {
@@ -160,7 +164,7 @@ describe("React Commit Trail", () => {
         expect([...trail().querySelectorAll("[role=treegrid][aria-label='Files in commit Merge work'] .file-row")].map(row => row.getAttribute("aria-label")))
             .toContain("src/file.txt")
         await app.act(() => press(trail().querySelector<HTMLElement>(".trail-choice button")!))
-        await app.act(() => press(option(`Parent 2 · ${second.slice(0, 8)}`)))
+        await app.act(() => press(option("Parent 2 · Finish the feature")))
         expect(sources.at(-1)).toEqual({ kind: "commit", objectId: scenario.graph.branches[1]!.tip, parentId: second })
 
         await app.act(() => press(toggle))

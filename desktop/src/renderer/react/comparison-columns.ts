@@ -1,4 +1,4 @@
-import type { BranchGraph, ComparisonRef, FileHistorySource } from "@laneway/shared"
+import type { BranchGraph, CommitDetails, ComparisonRef, FileHistorySource } from "@laneway/shared"
 import { shortBranchRef } from "./worktree-columns"
 
 interface ComparisonSide {
@@ -36,6 +36,13 @@ export function comparisonNode(id: string, comparison: Comparison, graph: Branch
     let to = comparisonSide(comparison.to, graph, comparison.includeWorking)
     if (baseComparison && comparison.from.kind == "merge-base")
         from.label = shortBranchRef(comparison.from.ref)
+
+    if (from.label == to.label && from.ref.kind == "commit" && to.ref.kind == "commit" && from.ref.objectId != to.ref.objectId) {
+        for (let side of [from, to]) {
+            if (side.ref.kind == "commit" && side.ref.details)
+                side.label += ` · ${commitCredit(side.ref.details)}`
+        }
+    }
 
     let description = baseComparison ? `Changes on ${to.label} since it left ${from.label}` : `Compare ${from.label} to ${to.label}`
     for (let side of [from, to]) {
@@ -88,9 +95,17 @@ export function comparisonHistorySource(side: ComparisonSide, resolvedId?: strin
 
 export function refName(ref: ComparisonRef) {
     if (ref.kind == "commit")
-        return ref.tag ?? ref.objectId.slice(0, 8)
+        return ref.tag ?? (ref.details?.subject || "Commit")
 
     return ref.kind == "branch" ? shortBranchRef(ref.ref) : `merge base of ${shortBranchRef(ref.ref)} and ${shortBranchRef(ref.withRef)}`
+}
+
+export function commitCredit(details: CommitDetails) {
+    return `${details.authorName} · ${new Date(details.authoredAt * 1000).toLocaleString()}`
+}
+
+export function comparisonCommit({ objectId, subject, authorName, authoredAt }: CommitDetails & { objectId: string }): ComparisonRef {
+    return { kind: "commit", objectId, details: { subject, authorName, authoredAt } }
 }
 
 function refKey(ref: ComparisonRef) {

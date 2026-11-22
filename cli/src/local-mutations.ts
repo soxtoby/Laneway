@@ -1,4 +1,4 @@
-import { normalize, pathExists, readRegisteredWorktrees, redactGitText, type RepositoryGit } from "@laneway/git"
+import { normalize, pathExists, readRegisteredWorktrees, redactGitText, type RepositoryGit, stashLabel } from "@laneway/git"
 import type { LocalPreview, LocalRequest, LocalResult } from "@laneway/shared"
 import { createHash } from "node:crypto"
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
@@ -480,9 +480,10 @@ async function lastCommit(repository: RepositoryGit, path: string) {
 }
 export async function localStashes(repository: RepositoryGit) {
     let data = await metadata(repository)
-    let output = await text(repository, repository.descriptor.mainWorktree, ["stash", "list", "--format=%H%x00%gs"])
+    let output = await text(repository, repository.descriptor.mainWorktree, ["stash", "list", "--format=%H%x00%P%x00%gs"])
     return output.split("\n").filter(Boolean).map(line => {
-        let [objectId, label] = line.split("\0")
+        let [objectId, parents, message] = line.split("\0")
+        let label = stashLabel(message, parents.split(" ")[0])
         let inferred = /^(?:On|WIP on) (.+?):/.exec(label)?.[1]
         return { objectId, label, branch: Object.hasOwn(data.stashes, objectId) ? data.stashes[objectId] : inferred ?? null }
     })

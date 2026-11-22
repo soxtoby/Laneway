@@ -34,6 +34,7 @@ export interface FileHistoryEntry extends BranchHistoryCommit {
 }
 
 export interface BlameLine {
+    subject?: string
     objectId: string
     path: string
     originalLine: number
@@ -43,6 +44,7 @@ export interface BlameLine {
 }
 
 export interface FileHistoryPage {
+    tipSubject?: string
     tip?: string
     entries: FileHistoryEntry[]
     working?: ChangedFile

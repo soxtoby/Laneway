@@ -77,38 +77,67 @@ describe("React Branch Comparison", () => {
     test("Command Lens compares a tag with a typed commit outside the workspace", async () => {
         let scenario = inspectionScenario()
         let priorTagCommit = "c".repeat(40), tagCommit = "a".repeat(40), typedCommit = "b".repeat(40)
+        let details = { subject: "First release", authorName: "Alice", authoredAt: 100 }
+        scenario.saved().repositories[0]!.columns.push({
+            id: "comparison:saved",
+            kind: "comparison",
+            width: 380,
+            from: { kind: "commit", tag: "v1", objectId: priorTagCommit },
+            to: { kind: "branch", ref: "refs/heads/main" },
+        })
         let app = await startReactApp({
             ...scenario.api,
-            comparisonRefs: async () => ({ ok: true, refs: [{ kind: "commit", objectId: tagCommit, tag: "v1" }] }),
+            comparisonCommitDetails: async (_id, ids) => {
+                expect(ids).toEqual([priorTagCommit])
+                return { [priorTagCommit]: details }
+            },
+            comparisonRefs: async () => ({
+                ok: true,
+                refs: [{ kind: "commit", objectId: tagCommit, tag: "v1", details: { ...details, subject: "Second release" } }],
+            }),
             resolveComparisonCommit: async (_repositoryId, revision) => {
                 if (revision == typedCommit.slice(0, 8))
-                    return { ok: true, objectId: typedCommit }
+                    return { ok: true, objectId: typedCommit, details: { ...details, subject: "Fix layout" } }
                 return { ok: false, error: { code: "git.command-failed", message: "Unknown revision" } }
             },
         })
-        await app.act(() =>
-            app.controller.columns.openComparison(undefined, { kind: "commit", tag: "v1", objectId: priorTagCommit }, {
-                kind: "branch",
-                ref: "refs/heads/main",
-            })
-        )
         await app.act(() => press(button(document.body, "Command Lens")))
         await app.act(() => type(document.querySelector<HTMLInputElement>('[aria-label="Command Lens"] input')!, "compare"))
         await app.act(() => press(document.querySelector<HTMLElement>('[aria-label="Command Lens"] [role="menuitem"]')!))
-        expect(menuItem("v1Tag · cccccccc").closest("[aria-label='In this workspace']") != null).toBe(true)
-        await app.act(() => press(menuItem("v1Tag · aaaaaaaa")))
+        expect(menuItem("v1Tag · First release").closest("[aria-label='In this workspace']") != null).toBe(true)
+        await app.act(() => press(menuItem("v1Tag · Second release")))
         let search = () => document.querySelector<HTMLInputElement>('[aria-label="Compare refs"] input')!
         await app.act(() => type(search(), "missing"))
         await app.act(() => press(menuItem("missingResolve revision")))
         expect(document.querySelector('[aria-label="Compare refs"] [role="alert"]')?.textContent).toContain("Unknown revision")
         await app.act(() => type(search(), typedCommit.slice(0, 8)))
-        await app.act(() => press(menuItem(typedCommit.slice(0, 8) + "Resolve revision")))
+        await app.act(() => press(menuItem("Entered commitResolve revision")))
         let opened = app.controller.columns.snapshot().focusedId
-        expect(column(opened!)!.querySelector("h2")?.textContent).toBe("v1 → bbbbbbbb")
+        expect(column(opened!)!.querySelector("h2")?.textContent).toBe("v1 → Fix layout")
         expect(scenario.saved().repositories[0]!.columns.find(item => item.id == opened)).toMatchObject({
             from: { kind: "commit", objectId: tagCommit, tag: "v1" },
             to: { kind: "commit", objectId: typedCommit },
         })
+    })
+
+    test("distinguishes two commits with the same subject when reopening a comparison", async () => {
+        let scenario = inspectionScenario()
+        let [from, to] = ["a".repeat(40), "b".repeat(40)]
+        scenario.saved().repositories[0]!.columns.push({
+            kind: "comparison",
+            id: "comparison:older",
+            width: 380,
+            from: { kind: "commit", objectId: from },
+            to: { kind: "commit", objectId: to },
+        })
+        await startReactApp({
+            ...scenario.api,
+            comparisonCommitDetails: async () => ({
+                [from]: { subject: "Update layout", authorName: "Ari", authoredAt: 100 },
+                [to]: { subject: "Update layout", authorName: "Sam", authoredAt: 200 },
+            }),
+        })
+        expect(comparison()!.querySelector("h2")!.textContent).toMatch(/^Update layout · Ari .* → Update layout · Sam /)
     })
 
     test("opens beside its source, reads diffs lazily, breaks them out, follows moved tips, and persists", async () => {
