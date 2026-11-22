@@ -36,8 +36,7 @@ interface GraphPanelProps {
 
 /**
  * A repository's Branch Graph: its branches, tags, and detached worktrees on the rails of their verified
- * history. Choosing a row only selects it; a double-click or Enter checks its branch out, and its menu, from a
- * right-click or the button showing on hover and focus, checks it out there or elsewhere, or opens its column.
+ * history. Choosing a row selects it. A double-click or Enter opens its column. The row's menu offers checkout.
  * The divider after it resizes it, up to half the work area, so the columns always keep room beside it.
  */
 export function BranchGraphPanel({ snapshot, width, onResize, ...props }: GraphPanelProps & {
@@ -136,7 +135,7 @@ function GraphRows(
     // While a rebase chooses its destination, a row chosen with the pointer is the destination; arrows only select.
     let pointer = useRef(false)
     // The rows the last two presses began on. React Aria takes a double-click anywhere in a row, its buttons and open
-    // menu included, as the row's; a checkout waits for both clicks to land on the row itself.
+    // menu included, as the row's. Both clicks must land on the row itself to activate it.
     let presses = useRef<(Element | null)[]>([])
     let list = useRef<HTMLDivElement>(null)
     // A revealed node scrolls to the top of the rows when it is out of view, and its row takes focus once it shows.
@@ -204,13 +203,10 @@ function GraphRows(
     // Worktree can't take it while it is missing or in a Historical Edit.
     let checkoutTarget = (branch: BranchGraphBranchNode) =>
         branch.checkedOut.length == 0 && !branch.remoteOnly ? checkoutWorktrees(graph).find(worktree => worktree.main && !worktree.missing) : undefined
-    // A double-click, Enter, or the menu's Check out checks the branch out; one that can't check out opens its column.
-    let activate = (branch: BranchGraphBranchNode) => {
+    let checkOutInMain = (branch: BranchGraphBranchNode) => {
         let main = checkoutTarget(branch)
         if (main)
             checkOut({ action: "switch", path: main.path, branch: branch.preferredRef, move: true })
-        else
-            columns.open(branch.id)
     }
     // Left folds the selected branch's stack and Right unfolds it; F2 renames, Delete deletes, and M rebases it.
     // Keys pressed in a row's open menu reach here through React's portal bubbling, and are the menu's.
@@ -276,13 +272,13 @@ function GraphRows(
                             rebase.chooseDestination(repositoryId, identities, key)
                         pointer.current = false
                     }}
-                    // A double-click or Enter checks the branch out, or rebases onto it while a rebase chooses its destination.
+                    // While choosing a rebase destination, activating a row chooses that branch.
                     onAction={key => {
                         let branch = identities.branches.find(candidate => candidate.id == key)
                         if (choosing)
                             rebase.chooseDestination(repositoryId, identities, String(key))
                         else if (branch)
-                            activate(branch)
+                            columns.open(branch.id)
                     }}
                     dependencies={[identities, choosing, view.selectedId]}
                 >
@@ -310,7 +306,7 @@ function GraphRows(
                                                     label="Check out"
                                                     moreLabel="Check out in"
                                                     isDisabled={!checkoutTarget(branch)}
-                                                    onAction={() => activate(branch)}
+                                                    onAction={() => checkOutInMain(branch)}
                                                 >
                                                     <Menu aria-label={`Check out ${branch.name} in`}>
                                                         <CheckoutItems graph={graph} branch={branch} onPrepare={checkOut} />

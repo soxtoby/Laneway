@@ -84,7 +84,7 @@ describe("React Branch Graph", () => {
         expect(panel() == null).toBe(true)
     })
 
-    test("a double-click or Enter checks a branch out in the Main Worktree, its menu checks it out in another, and F2 renames it", async () => {
+    test("a double-click or Enter opens a branch column, its menu checks it out, and F2 renames it", async () => {
         let repository = repositoryInfo("D:\\Source\\graph-project")
         let graph: BranchGraph = branchGraph(repository.id)
         let [main, feature, team] = graph.branches
@@ -110,22 +110,21 @@ describe("React Branch Graph", () => {
         await app.act(() => press(button(document.body, "Show Branch Graph")))
         let checkedOut = (path: string) => ({ request: { action: "switch" as const, path, branch: feature!.preferredRef, move: true }, token: undefined })
 
-        // A double-click on a row's button is the button's; on the row, it checks out at once and offers Undo.
         await app.act(() => press(row(feature!.id).querySelector<HTMLElement>(".graph-name")!))
         await app.act(() => doubleClick(button(row(feature!.id), "Actions for feature/laneway")))
         await app.act(() => key(document.querySelector<HTMLElement>("[role=menu]")!, "Escape"))
-        expect(executions).toEqual([])
-        await app.act(() => doubleClick(row(feature!.id).querySelector<HTMLElement>(".graph-name")!))
-        expect(executions).toEqual([checkedOut(repository.root)])
-        expect(document.querySelector("[role=alertdialog]")?.textContent).toContain("Checked out feature/laneway in graph-project.")
-        await app.act(() => key(row(feature!.id), "Enter"))
-        expect(executions).toEqual([checkedOut(repository.root), checkedOut(repository.root)])
+        expect(columnNames()).not.toContain(feature!.name)
 
-        // A branch already checked out brings its worktree's column forward instead.
+        await app.act(() => doubleClick(row(feature!.id).querySelector<HTMLElement>(".graph-name")!))
+        expect(columnNames()).toContain(feature!.name)
+        expect(executions).toEqual([])
+
         await app.act(() => press(row(team!.id).querySelector<HTMLElement>(".graph-name")!))
         await app.act(() => key(row(team!.id), "Enter"))
-        expect(executions).toHaveLength(2)
         expect(app.controller.columns.snapshot().focusedId).toBe(team!.id)
+        await app.act(() => key(row(feature!.id), "Enter"))
+        expect(app.controller.columns.snapshot().focusedId).toBe(feature!.id)
+        expect(executions).toEqual([])
 
         await app.act(() => rightClick(row(feature!.id)))
         expect(menuLabels()).toEqual([
@@ -141,10 +140,9 @@ describe("React Branch Graph", () => {
             "Delete branch",
             "Copy branch name",
         ])
-        // Check out does as a double-click does; the chevron beside it, Check out in, chooses the worktree.
         await app.act(() => press(menuItem("Check out")))
-        expect(executions.at(-1)).toEqual(checkedOut(repository.root))
-        expect(executions).toHaveLength(3)
+        expect(executions).toEqual([checkedOut(repository.root)])
+        expect(document.querySelector("[role=alertdialog]")?.textContent).toContain("Checked out feature/laneway in graph-project.")
         await app.act(() => rightClick(row(feature!.id)))
         await app.act(() => press(menuItem("Check out in")))
         expect(menuLabels(submenu())).toEqual(["main · graph-project", "other/team · team", "New worktree"])
