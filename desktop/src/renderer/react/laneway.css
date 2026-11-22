@@ -2740,18 +2740,6 @@
     }
 }
 
-.panel-heading {
-    padding: 0 var(--spacing-2) var(--spacing-1);
-    color: var(--text-color-placeholder);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    white-space: nowrap;
-
-    .collapsed > & {
-        visibility: hidden;
-    }
-}
-
 .repository-list-area {
     flex: 1 1 auto;
     min-height: 0;
@@ -2775,10 +2763,6 @@
     height: 40px;
     margin-top: 2px;
     border-radius: var(--radius);
-
-    &.collapsed {
-        height: 36px;
-    }
 
     &.active {
         background: var(--selection-background);

@@ -32,10 +32,9 @@ interface RepositoryPanelProps {
  */
 export function RepositoryPanel(props: RepositoryPanelProps) {
     let [collapsed, setCollapsed] = useState(true)
-    // The heading and labels stay in place while collapsed, hidden, so nothing moves as the panel's width animates.
+    // Rows keep one height either way, so each tile stays where it was as the panel's width animates.
     return (
         <aside className={collapsed ? "repository-panel collapsed" : "repository-panel"} aria-label="Open repositories">
-            <div className="panel-heading">Repositories</div>
             <RepositoryList {...props} collapsed={collapsed} />
             <div className="panel-footer">
                 <PanelAction label="Add repository" isDisabled={props.busy} onPress={props.onAdd} labelled={!collapsed}>
