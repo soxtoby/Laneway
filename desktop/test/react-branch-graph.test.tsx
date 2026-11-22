@@ -164,6 +164,61 @@ describe("React Branch Graph", () => {
         expect(document.querySelector("[role=dialog]")?.textContent).toContain("Rename")
     })
 
+    test("a remote-only branch checks out detached in the main, chosen, or new worktree", async () => {
+        let repository = repositoryInfo("D:\\Source\\remote-checkout")
+        let graph: BranchGraph = branchGraph(repository.id)
+        let [main, feature, remote] = graph.branches
+        let remoteRef = "refs/remotes/origin/team"
+        Object.assign(remote!, {
+            id: `branch:${remoteRef}`,
+            name: "origin/team",
+            preferredRef: remoteRef,
+            refs: [remoteRef],
+            remoteRefs: [remoteRef],
+            localRefs: [],
+            remoteOnly: true,
+        })
+        graph.history.find(point => point.objectId == remote!.tip)!.lineId = remote!.id
+        let linkedPath = repository.root + ".worktrees/feature"
+        main!.checkedOut = [{ id: "main", path: repository.root, name: "main-tree", head: main!.tip, branchRef: main!.preferredRef, main: true }]
+        feature!.checkedOut = [{ id: "feature", path: linkedPath, name: "feature-tree", head: feature!.tip, branchRef: feature!.preferredRef, main: false }]
+        let createdPath = repository.root + ".worktrees/detached"
+        let requests: WorktreeRequest[] = []
+        let app = await startReactApp(fakeLaneway({
+            getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
+            readBranchGraph: async () => ({ ok: true, graph: structuredClone(graph) }),
+            executeWorktree: async (_id, request) => {
+                requests.push(request)
+                if (request.action == "create") {
+                    let worktree = { id: "detached", path: createdPath, name: "detached", head: remote!.tip, main: false }
+                    graph.virtualBranches.push({ id: "virtual:detached", kind: "virtual", name: worktree.name, worktree, objectId: remote!.tip, tooltip: "" })
+                    return { ok: true, createdPath }
+                }
+                return { ok: true }
+            },
+        }))
+        await app.act(() => press(button(document.body, "Show Branch Graph")))
+        let open = () => app.act(() => rightClick(row(remote!.id)))
+        await open()
+        await app.act(() => press(menuItem("Check out detached")))
+        expect(requests.at(-1)).toEqual({ action: "switch", path: repository.root, commit: remote!.tip, move: false })
+
+        await open()
+        await app.act(() => press(menuItem("Check out detached in")))
+        await app.act(() => press(menuItem("feature/laneway · feature-tree", submenu())))
+        expect(requests.at(-1)).toEqual({ action: "switch", path: linkedPath, commit: remote!.tip, move: false })
+
+        await open()
+        await app.act(() => press(menuItem("Check out detached in")))
+        await app.act(() => press(menuItem("New worktree", submenu())))
+
+        expect(requests.at(-1)).toEqual({ action: "create", commit: remote!.tip, move: false })
+        expect(app.controller.columns.snapshot().focusedId).toBe("virtual:detached")
+        let toast = document.querySelector<HTMLElement>("[role=alertdialog]")!
+        expect(toast.querySelector("[slot=title]")?.textContent).toBe("Checked out “origin/team” in a new worktree (detached).")
+        expect(button(toast, "Undo").hasAttribute("disabled")).toBe(false)
+    })
+
     test("a tag's name copies from its Tag Node's menu, or from the menu of the Branch Node it sits on", async () => {
         let repository = repositoryInfo("D:\\Source\\graph-tags")
         let graph = branchGraph(repository.id)

@@ -212,7 +212,7 @@ function ColumnFrame({ column, snapshot, inspected, graph, controller, fileListV
     let { columns } = controller
     let worktreeBusy = useSnapshot(controller.worktrees).busy
     let busy = snapshot.busy || worktreeBusy
-    let prepare = (request: WorktreeRequest) => void controller.worktrees.prepare(snapshot.repositoryId!, request, column.id)
+    let prepare = (request: WorktreeRequest) => void controller.worktrees.prepare(snapshot.repositoryId!, request, { columnId: column.id })
     let files = inspected?.columns[column.id]
     let headerRef = useRef<HTMLElement>(null)
     // A branch dragged from the Branch Graph onto a worktree column's header switches that worktree to it, unless

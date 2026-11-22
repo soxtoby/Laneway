@@ -18,6 +18,7 @@ Repeat -m for paragraphs, or use -F <message-file>. Branch defaults to the curre
 --yes approves rewriting published history or removing empty commits.`,
     worktree: `lane worktree create [branch] [--commit <revision>] [--move] [--local reset|new]
 lane worktree switch <branch> [--path <worktree>] [--move] [--local reset|new]
+lane worktree switch --detach <revision> [--path <worktree>]
 lane worktree rename <path> <basename>
 lane worktree repair <path> <destination>
 lane worktree remove <path> [--discard]

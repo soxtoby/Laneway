@@ -3,7 +3,7 @@ import { useContext, useState } from "react"
 import { Autocomplete, Button as AriaButton, useFilter } from "react-aria-components"
 import type { ColumnView } from "./branch-workspace"
 import { CommitAgesShown } from "./commit-age"
-import { Hint } from "./controls"
+import { Hint, SplitMenuItem } from "./controls"
 import { DialogHeader } from "./dialog-header"
 import { copyText } from "./file-paths"
 import { MoreIcon } from "./icons"
@@ -186,34 +186,66 @@ function WorktreeRename({ worktree, isOpen, onClose, onRename }: {
     )
 }
 
-/**
- * Where a local branch checks out: in each worktree, the Main Worktree first, or in a new one. The worktree already
- * holding it shows without acting, and one in a Historical Edit isn't offered, as it can't switch branch.
- */
-export function CheckoutItems({ graph, branch, onPrepare }: { graph: BranchGraph; branch: BranchGraphBranchNode; onPrepare(request: WorktreeRequest): void }) {
-    let ref = branch.preferredRef
+interface CheckoutProps {
+    graph: BranchGraph
+    branch: BranchGraphBranchNode
+    onPrepare(request: WorktreeRequest): void
+}
+
+/** The graph checks local branches out by name and remote-only branches detached at their displayed tip. */
+export function GraphCheckout({ graph, branch, onPrepare }: CheckoutProps) {
+    let detached = branch.remoteOnly
+    let label = detached ? "Check out detached" : "Check out"
+    let main = checkoutWorktrees(graph).find(worktree => worktree.main && !worktree.missing)
+    return (
+        <SplitMenuItem
+            label={label}
+            moreLabel={`${label} in`}
+            isDisabled={!main || (detached ? detachedAt(main, branch.tip) : branch.checkedOut.length > 0)}
+            onAction={() => {
+                if (main)
+                    onPrepare({ action: "switch", path: main.path, ...checkoutTarget(branch, detached) })
+            }}
+        >
+            <Menu aria-label={`${label} ${branch.name} in`}>
+                <CheckoutItems graph={graph} branch={branch} detached={detached} onPrepare={onPrepare} />
+            </Menu>
+        </SplitMenuItem>
+    )
+}
+
+function CheckoutItems({ graph, branch, detached = false, onPrepare }: CheckoutProps & { detached?: boolean }) {
+    let target = checkoutTarget(branch, detached)
     return (
         <>
             {checkoutWorktrees(graph).map(item => (
                 <MenuItem
                     key={item.path}
                     textValue={item.name}
-                    isDisabled={item.missing || branch.checkedOut.some(holder => holder.path == item.path)}
-                    onAction={() => onPrepare({ action: "switch", path: item.path, branch: ref, move: true })}
+                    isDisabled={item.missing || (detached ? detachedAt(item, branch.tip) : branch.checkedOut.some(holder => holder.path == item.path))}
+                    onAction={() => onPrepare({ action: "switch", path: item.path, ...target })}
                 >
                     <Text slot="label">{`${worktreeBranch(graph, item)} · ${item.name}`}</Text>
                     <Text slot="description">{item.path}</Text>
                 </MenuItem>
             ))}
             <Separator />
-            <MenuItem onAction={() => onPrepare({ action: "create", branch: ref, move: true })}>New worktree</MenuItem>
+            <MenuItem onAction={() => onPrepare({ action: "create", ...target })}>New worktree</MenuItem>
         </>
     )
 }
 
 /** The worktrees a branch can check out in, the Main Worktree first. */
-export function checkoutWorktrees(graph: BranchGraph) {
+function checkoutWorktrees(graph: BranchGraph) {
     return allWorktrees(graph).filter(item => !item.historicalEdit).sort((a, b) => Number(b.main) - Number(a.main))
+}
+
+function checkoutTarget(branch: BranchGraphBranchNode, detached: boolean) {
+    return detached ? { commit: branch.tip, move: false } : { branch: branch.preferredRef, move: true }
+}
+
+function detachedAt(worktree: BranchGraphWorktree, commit: string) {
+    return !worktree.branchRef && worktree.head == commit
 }
 
 /** Finds a local branch to switch a worktree to, by typing part of its name. */

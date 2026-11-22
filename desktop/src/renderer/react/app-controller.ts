@@ -271,14 +271,14 @@ export function createAppController(api: Api): AppController {
     let worktrees = createWorktreeActions({
         api,
         mutating,
-        completed: async (repositoryId, request, columnId, ref) => {
+        completed: async (repositoryId, request, { columnId, checkoutLabel }, ref, createdPath) => {
             // A remote-tracking branch's column becomes the column of the local branch its checkout made, in its place.
             if ((request.action == "switch" || request.action == "create") && request.branch?.startsWith("refs/remotes/") && ref) {
                 columns.tracked(request.branch, ref)
                 if (columnId == `branch:${request.branch}`)
                     columnId = `branch:${ref}`
             }
-            if (request.action == "switch" && columnId)
+            if (request.action == "switch" && request.branch && columnId)
                 columns.switched(columnId, request.path)
             await columns.refresh(false)
             inspection.refreshWorking()
@@ -291,6 +291,14 @@ export function createAppController(api: Api): AppController {
                     columns.open(`branch:${ref}`)
                 let into = request.action == "switch" ? request.path.split(/[\\/]/).pop() : "a new worktree"
                 offerUndo(repositoryId, "worktree.checked-out", `Checked out ${ref.slice(11)} in ${into}.`)
+            } else if ((request.action == "switch" || request.action == "create") && request.commit) {
+                let path = request.action == "switch" ? request.path : createdPath
+                let column = columns.snapshot().graph?.virtualBranches.find(branch => branch.worktree.path == path)
+                if (column)
+                    columns.open(column.id)
+                let into = request.action == "create" ? "a new worktree" : request.path.split(/[\\/]/).pop()
+                let target = checkoutLabel ? `“${checkoutLabel}”` : "the commit"
+                offerUndo(repositoryId, "worktree.checked-out", `Checked out ${target} in ${into} (detached).`)
             }
         },
         transitioned: rewritten,

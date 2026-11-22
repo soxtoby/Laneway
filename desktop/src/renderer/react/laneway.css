@@ -3525,12 +3525,13 @@
 }
 
 /* Toasts carry file paths, so they are wider than the starter's and wrap long paths. */
-.react-aria-Toast {
-    width: 360px;
+.react-aria-ToastRegion .react-aria-Toast {
+    width: min(360px, calc(100vw - 2 * var(--spacing-4)));
+    box-sizing: border-box;
+    overflow-wrap: anywhere;
 
     /* A failed script's output, as it printed it. */
     [slot="description"] {
-        overflow-wrap: anywhere;
         max-height: 8lh;
         overflow: auto;
         font-family: var(--font-family-mono);

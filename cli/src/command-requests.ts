@@ -59,11 +59,17 @@ export async function worktreeRequest(action: string, args: Arguments, repo: Rep
             local: localBranchChoice(args),
         }
     } else if (action == "switch") {
-        let [branch] = operands(args, 1)
+        let [target] = operands(args, 1)
+        let path = await worktreePath(repo, cwd, option(args, "path"))
+        if (flag(args, "detach")) {
+            if (flag(args, "move") || option(args, "local"))
+                throw new UsageError("--move and --local apply only to branch checkouts.")
+            return { action, path, commit: target!, move: false }
+        }
         return {
             action,
-            branch: await checkoutBranch(repo, branch!),
-            path: await worktreePath(repo, cwd, option(args, "path")),
+            branch: await checkoutBranch(repo, target!),
+            path,
             move: flag(args, "move"),
             local: localBranchChoice(args),
         }

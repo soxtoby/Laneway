@@ -57,6 +57,7 @@ export let TestMutationResultSchema = z.object({
 export let WorktreeResultSchema = z.object({
     type: z.literal("result"),
     command: z.literal("worktree"),
+    createdPath: z.string().optional(),
     operation: OperationSummarySchema,
 })
 

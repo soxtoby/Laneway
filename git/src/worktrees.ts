@@ -18,7 +18,8 @@ export async function previewWorktree(repository: RepositoryGit, request: Worktr
     }
 
     let worktrees = await readRegisteredWorktrees(repository)
-    let current = "path" in request ? worktrees.find(item => normalize(item.path) == normalize(request.path)) : undefined
+    let currentPath = "path" in request ? normalize(request.path) : undefined
+    let current = worktrees.find(item => normalize(item.path) == currentPath)
     if ("path" in request && !current)
         throw new GitError("git.invalid-root", "The worktree is no longer registered. Refresh and try again.")
     if (current?.main && ["remove", "rename", "repair"].includes(request.action))
@@ -32,10 +33,15 @@ export async function previewWorktree(repository: RepositoryGit, request: Worktr
     let holder: RegisteredWorktree | undefined
     let tracking: TrackingBranch | undefined
     if (request.action == "create" || request.action == "switch") {
-        if (request.action == "create" && Boolean(request.branch) == Boolean(request.commit))
+        if (Boolean(request.branch) == Boolean(request.commit))
             throw new GitError("git.command-failed", "Choose one local branch or one commit.")
-        if (request.action == "create" && request.commit)
-            await repository.command(repository.descriptor.mainWorktree, ["rev-parse", "--verify", `${request.commit}^{commit}`])
+        if (request.commit) {
+            let path = current?.path ?? repository.descriptor.mainWorktree
+            let commit = (await repository.command(path, ["rev-parse", "--verify", "--end-of-options", `${request.commit}^{commit}`])).toString().trim()
+            if (current && !current.branchRef && current.head == commit)
+                throw new GitError("git.command-failed", "This worktree is already detached at that commit.")
+            request = { ...request, commit }
+        }
 
         if (request.branch && isRemoteRef(request.branch)) {
             await repository.command(repository.descriptor.mainWorktree, ["show-ref", "--verify", request.branch])

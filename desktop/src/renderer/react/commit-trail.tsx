@@ -51,6 +51,7 @@ export interface CommitTrailProps {
     reword(branch: BranchGraphBranchNode, commit: BranchHistoryCommit, close: () => void): Reword
     /** Starts a Historical Edit from a commit; only a worktree-backed column outside one can. */
     editFrom?(commit: BranchHistoryCommit): void
+    checkOutDetached?(commit: BranchHistoryCommit): void
     compareWith(to: ComparisonRef): void
     /** Opens the Branch Comparison Column from `from` to `to` beside this column. */
     compare(from: ComparisonRef, to: ComparisonRef): void
@@ -322,6 +323,7 @@ function TrailCommit(props: StackBranchProps & { commit: BranchHistoryCommit }) 
         label: `Actions for commit ${commit.subject}`,
         items: () => (
             <>
+                {props.checkOutDetached && <MenuItem isDisabled={props.busy} onAction={() => props.checkOutDetached?.(commit)}>Check out detached</MenuItem>}
                 <MenuItem onAction={() => props.compareWith({ kind: "commit", objectId: commit.objectId })}>Compare with…</MenuItem>
                 {editFrom && rewordable && !branch.primary && <MenuItem onAction={() => editFrom(commit)}>Edit from here</MenuItem>}
                 {rewordable && <MenuItem onAction={() => onReword(commit.objectId)}>Reword commit…</MenuItem>}

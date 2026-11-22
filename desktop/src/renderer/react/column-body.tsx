@@ -99,6 +99,12 @@ export function ColumnBody({ controller, repositoryId, graph, column, inspected,
                         restack={branch => void controller.rebase.restack(repositoryId, graph, branch)}
                         deleteBranch={branch => void branches.delete(repositoryId, branch)}
                         reword={(branch, commit, close) => controller.reword(repositoryId, branch.preferredRef, commit, close)}
+                        checkOutDetached={path && !edit && !blocked
+                            ? commit =>
+                                void controller.worktrees.prepare(repositoryId, { action: "switch", path, commit: commit.objectId, move: false }, {
+                                    checkoutLabel: commit.subject,
+                                })
+                            : undefined}
                         editFrom={path && !column.worktree?.historicalEdit
                             ? commit => void controller.edits.enter(repositoryId, path, commit.objectId)
                             : undefined}

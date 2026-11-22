@@ -82,7 +82,7 @@ A graph of visible lines of work whose edges place branches relative to their Ba
 _Avoid_: Commit graph
 
 **Graph Selection**:
-The one Branch Node, Tag Node, or Virtual Branch highlighted in a repository's Branch Graph. Selecting only highlights the node and exposes its controls; it never opens a Workspace Column, and hiding the node clears the selection. Double-clicking a branch or pressing Enter opens its Workspace Column. The branch menu's Check out switches the Main Worktree to an eligible local branch, with Undo. The chevron beside it, Check out in, chooses a worktree or creates one.
+The one Branch Node, Tag Node, or Virtual Branch highlighted in a repository's Branch Graph. Selecting only highlights the node and exposes its controls; it never opens a Workspace Column, and hiding the node clears the selection. Double-clicking a branch or pressing Enter opens its Workspace Column. The branch menu's Check out switches the Main Worktree to an eligible local branch, with Undo. On a remote-only branch, Check out detached checks out its tip. The chevron beside either action chooses a worktree or creates one.
 _Avoid_: Open branch, active branch
 
 **Open Branch**:
@@ -154,7 +154,7 @@ A tag occupying its commit's position as a history waypoint when that commit is 
 _Avoid_: Tag branch
 
 **Virtual Branch**:
-A changes-only view of a Registered Worktree's clean or dirty detached head, created by branch relocation or deletion of its checked-out branch, with an editable default branch name. Its column remains available with commit history hidden until attached; committing first creates the real branch, while switching away from unique state creates a protective branch and stashes any Working Changes.
+A changes-only view of a Registered Worktree's clean or dirty detached head, with an editable default branch name. A detached checkout creates this view at the chosen commit, as does relocating or deleting a checked-out branch. Its column remains available with commit history hidden until attached; committing first creates the real branch, while switching away from unique state creates a protective branch and stashes any Working Changes.
 _Avoid_: Detached HEAD
 
 **Worktree-only Commit**:

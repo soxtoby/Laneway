@@ -21,6 +21,12 @@ export interface WorktreeActionsSnapshot {
 
 type CheckoutRequest = Extract<WorktreeRequest, { action: "create" | "switch" }>
 
+interface WorktreeActionContext {
+    columnId?: string
+    /** The selected commit's subject or the remote branch's name, for the detached checkout notice. */
+    checkoutLabel?: string
+}
+
 /**
  * Creating, switching, renaming, repairing, unlocking, and removing worktrees; and undoing or redoing the Operation
  * History. Checking a branch out, in a worktree or a new one, and removing a worktree without Working Changes run at
@@ -32,7 +38,7 @@ export interface WorktreeActions extends Store<WorktreeActionsSnapshot> {
      * Starts an operation: a checkout, or a removal without Working Changes, runs at once, and any other shows in the
      * dialog once reviewed. `columnId` is the column it was asked from.
      */
-    prepare(repositoryId: string, request: WorktreeRequest, columnId?: string): Promise<void>
+    prepare(repositoryId: string, request: WorktreeRequest, context?: WorktreeActionContext): Promise<void>
     setPreserve(preserve: boolean): void
     /** Checks out the remote-tracking branch waiting on a choice, resetting the local branch with its name or making a new one. */
     track(choice: "reset" | "new"): Promise<void>
@@ -51,7 +57,7 @@ interface WorktreeActionsOptions {
      * Runs after an operation succeeds; `columnId` is the column it was asked from, and `branch` the local branch a
      * checkout left checked out.
      */
-    completed(repositoryId: string, request: WorktreeRequest, columnId?: string, branch?: string): Promise<void>
+    completed(repositoryId: string, request: WorktreeRequest, context: WorktreeActionContext, branch?: string, createdPath?: string): Promise<void>
     /** Runs after an undo or redo. */
     transitioned(repositoryId: string): Promise<void>
     mutating(busy: boolean): void
@@ -61,7 +67,7 @@ export function createWorktreeActions({ api, completed, transitioned, mutating }
     let store = createStore<WorktreeActionsSnapshot>({ busy: false, preserve: true })
     let state = store.snapshot
     let set = (change: Partial<WorktreeActionsSnapshot>) => store.publish({ ...state(), ...change })
-    let columnId: string | undefined
+    let context: WorktreeActionContext = {}
 
     // Choosing what a removal keeps leaves the token valid; the engine re-reads the worktree under
     // its lock and refuses if anything reviewed has changed since.
@@ -75,7 +81,7 @@ export function createWorktreeActions({ api, completed, transitioned, mutating }
         if (!result.ok)
             throw new Error(result.error.message)
         set({ preview: undefined, tracking: undefined })
-        await completed(repositoryId, request, columnId, branch)
+        await completed(repositoryId, request, context, branch, result.createdPath)
     }
 
     // The engine names the local branch a remote-tracking branch checks out as, and whether one has its name already.
@@ -109,9 +115,9 @@ export function createWorktreeActions({ api, completed, transitioned, mutating }
         subscribe: store.subscribe,
         snapshot: store.snapshot,
 
-        prepare: (repositoryId, request, sourceColumn) =>
+        prepare: (repositoryId, request, source = {}) =>
             act(async () => {
-                columnId = sourceColumn
+                context = source
                 store.publish({ repositoryId, busy: true, preserve: true })
                 // A checkout stashes the Working Changes it leaves behind and detaches any worktree it takes the
                 // branch from, all of which Undo restores, so it has nothing to ask.

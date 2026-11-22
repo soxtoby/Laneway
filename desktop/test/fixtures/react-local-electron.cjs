@@ -80,21 +80,36 @@ app.on("browser-window-created", (_event, window) => {
                     await wait(() => !document.querySelector('[data-column-id="branch:refs/heads/renamed"]'));
                     if (document.querySelector('[role=dialog]')) throw new Error('Deleting the branch asked first');
                     await wait(() => document.querySelector('[role=alertdialog]')?.textContent.includes('Deleted branch renamed.'));
+
+                    commit = await wait(() => column.querySelector('.commit-row'));
+                    const subject = commit.querySelector('.commit-subject').textContent;
+                    commit.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 80, clientY: 100 }));
+                    (await wait(() => menuItem('Check out detached'))).click();
+                    const toast = await wait(() => [...document.querySelectorAll('[role=alertdialog]')].find(item => item.textContent.includes('Checked out')));
+                    const title = toast.querySelector('[slot=title]');
+                    if (title.textContent != 'Checked out “' + subject + '” in repository (detached).') throw new Error(title.textContent);
+                    const text = document.createRange();
+                    text.selectNodeContents(title);
+                    const undo = button('Undo', toast);
+                    if ([...text.getClientRects()].some(line => line.right > undo.getBoundingClientRect().left)) throw new Error('Checkout notice overlaps Undo');
+                    undo.click();
+                    await wait(() => document.querySelector('[data-column-id="branch:refs/heads/main"] [aria-label="Working Changes"]'));
                     return { branches: true };
                 }
                 (await wait(() => button('Commit…'))).click();
                 const title = await wait(() => document.querySelector('[aria-label="Commit title"]'));
+                const draftTitle = 'Persistent desktop commit ' + 'x'.repeat(80);
                 if (${JSON.stringify(phase)} == 'draft') {
-                    type(title, 'Persistent desktop commit');
+                    type(title, draftTitle);
                     (await wait(() => button('Cancel'))).click();
                     // Reading waits for queued writes through the production IPC handler.
                     const state = await window.laneway.getState();
                     const repository = state.workspace.repositories[0];
                     const draft = await window.laneway.readCommitDraft(repository.id, repository.info.mainWorktree);
-                    if (draft.title != 'Persistent desktop commit') throw new Error('Draft was not saved');
+                    if (draft.title != draftTitle) throw new Error('Draft was not saved');
                     return { draft: true };
                 }
-                if (title.value != 'Persistent desktop commit') throw new Error('Draft was not restored across restart');
+                if (title.value != draftTitle) throw new Error('Draft was not restored across restart');
                 (await wait(() => button('Commit all changes (1)'))).click();
                 await wait(() => !document.querySelector('[aria-label="Commit title"]') && document.body.innerText.includes('No Working Changes'));
                 return { committed: true };

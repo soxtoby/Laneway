@@ -14,7 +14,14 @@ export let WorktreeRequestSchema = z.discriminatedUnion("action", [
         move: z.boolean().default(false),
         local: LocalBranchChoiceSchema,
     }),
-    z.object({ action: z.literal("switch"), path: z.string(), branch: z.string().min(1), move: z.boolean().default(false), local: LocalBranchChoiceSchema }),
+    z.object({
+        action: z.literal("switch"),
+        path: z.string(),
+        branch: z.string().min(1).optional(),
+        commit: z.string().min(1).optional(),
+        move: z.boolean().default(false),
+        local: LocalBranchChoiceSchema,
+    }),
     z.object({ action: z.literal("rename"), path: z.string(), basename: z.string().min(1) }),
     z.object({ action: z.literal("repair"), path: z.string(), destination: z.string() }),
     z.object({ action: z.literal("remove"), path: z.string(), preserve: z.boolean().default(true) }),
@@ -76,4 +83,4 @@ export interface WorktreePreview {
 }
 
 export type WorktreePreviewResult = { ok: true; preview: WorktreePreview } | { ok: false; error: { message: string } }
-export type WorktreeActionResult = { ok: true } | { ok: false; error: { message: string } }
+export type WorktreeActionResult = { ok: true; createdPath?: string } | { ok: false; error: { message: string } }

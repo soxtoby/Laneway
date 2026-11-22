@@ -1,4 +1,4 @@
-import type { BranchGraph, BranchGraphBranchNode, BranchGraphMarker, WorktreeRequest } from "@laneway/shared"
+import type { BranchGraph, BranchGraphBranchNode, BranchGraphMarker } from "@laneway/shared"
 import { type KeyboardEvent, type SyntheticEvent, useEffect, useEffectEvent, useMemo, useRef } from "react"
 import { Button as AriaButton, GridList, GridListItem, ListLayout, useDragAndDrop, Virtualizer } from "react-aria-components"
 import type { AppController } from "./app-controller"
@@ -6,7 +6,7 @@ import { graphRowHeight, type GraphRowLayout, layoutBranchGraph } from "./branch
 import { canRebaseOnto, rebaseable } from "./branch-rebase"
 import type { ColumnsSnapshot, GraphView } from "./branch-workspace"
 import { ColumnDivider } from "./column-divider"
-import { Hint, IconButton, SplitMenuItem } from "./controls"
+import { Hint, IconButton } from "./controls"
 import { useRowMenu } from "./dense-row"
 import { copyText } from "./file-paths"
 import { GraphSettings } from "./graph-settings"
@@ -14,12 +14,12 @@ import { ArchiveIcon, CloseIcon, FolderIcon, TagIcon } from "./icons"
 import { movableBase, moveIntoBaseLabel } from "./local-branches"
 import { Button } from "./ui/Button"
 import { GripVertical } from "./ui/icons"
-import { Menu, MenuItem, Separator } from "./ui/Menu"
+import { MenuItem, Separator } from "./ui/Menu"
 import { ToggleButton } from "./ui/ToggleButton"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 import { useSnapshot } from "./use-snapshot"
 import { branchNodeFor, localIdentities, shortBranchRef, workspaceGraph } from "./worktree-columns"
-import { CheckoutItems, checkoutWorktrees } from "./worktree-controls"
+import { GraphCheckout } from "./worktree-controls"
 
 /** What a Branch Graph row carries when dragged: the branch's ref. */
 export let branchDragType = "application/x-laneway-branch"
@@ -198,16 +198,6 @@ function GraphRows(
                 void rebase.start(repositoryId, identities, dragged.current, String(event.target.key))
         },
     })
-    let checkOut = (request: WorktreeRequest) => void worktrees.prepare(repositoryId, request)
-    // A branch checks out in the Main Worktree, unless it is checked out already or only on a remote, or the Main
-    // Worktree can't take it while it is missing or in a Historical Edit.
-    let checkoutTarget = (branch: BranchGraphBranchNode) =>
-        branch.checkedOut.length == 0 && !branch.remoteOnly ? checkoutWorktrees(graph).find(worktree => worktree.main && !worktree.missing) : undefined
-    let checkOutInMain = (branch: BranchGraphBranchNode) => {
-        let main = checkoutTarget(branch)
-        if (main)
-            checkOut({ action: "switch", path: main.path, branch: branch.preferredRef, move: true })
-    }
     // Left folds the selected branch's stack and Right unfolds it; F2 renames, Delete deletes, and M rebases it.
     // Keys pressed in a row's open menu reach here through React's portal bubbling, and are the menu's.
     let keyDown = (event: KeyboardEvent) => {
@@ -301,18 +291,11 @@ function GraphRows(
                                     }}
                                     menu={() => (
                                         <>
-                                            {!branch.remoteOnly && (
-                                                <SplitMenuItem
-                                                    label="Check out"
-                                                    moreLabel="Check out in"
-                                                    isDisabled={!checkoutTarget(branch)}
-                                                    onAction={() => checkOutInMain(branch)}
-                                                >
-                                                    <Menu aria-label={`Check out ${branch.name} in`}>
-                                                        <CheckoutItems graph={graph} branch={branch} onPrepare={checkOut} />
-                                                    </Menu>
-                                                </SplitMenuItem>
-                                            )}
+                                            <GraphCheckout
+                                                graph={graph}
+                                                branch={branch}
+                                                onPrepare={request => void worktrees.prepare(repositoryId, request, { checkoutLabel: branch.name })}
+                                            />
                                             <MenuItem onAction={() => columns.open(branch.id)}>Open column</MenuItem>
                                             <MenuItem onAction={() => controller.comparisonPicker.open({ kind: "branch", ref: branch.preferredRef })}>
                                                 Compare with…

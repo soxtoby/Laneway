@@ -29,7 +29,7 @@ let compositionOptions = {
 } as const
 let worktreeOptions: Record<string, Record<string, "string" | "boolean">> = {
     create: { commit: "string", move: "boolean", local: "string" },
-    switch: { path: "string", move: "boolean", local: "string" },
+    switch: { path: "string", detach: "boolean", move: "boolean", local: "string" },
     rename: {},
     repair: {},
     remove: { discard: "boolean" },

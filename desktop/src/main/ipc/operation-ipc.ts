@@ -423,7 +423,8 @@ export function registerOperationHandlers(repositories: OpenRepositories, engine
                 if (result.exitCode)
                     throw new Error(result.messages.find(message => message.type == "error")?.message ?? result.diagnostics)
 
-                return { ok: true }
+                let worktree = result.messages.find(message => message.type == "result" && message.command == "worktree")
+                return { ok: true, createdPath: worktree?.createdPath }
             } catch (error) {
                 return { ok: false, error: { message: error instanceof Error ? error.message : String(error) } }
             }

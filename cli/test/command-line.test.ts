@@ -209,6 +209,68 @@ test("worktree workflows and Git wrappers honor -C and linked worktrees", async 
     expect(git(linked, "diff", "--cached", "--name-only")).toBe("nested/file.txt")
 })
 
+test("detached checkout peels a tag, preserves branch tips, and restores Working Changes on undo", async () => {
+    let path = await repository()
+    let branch = git(path, "branch", "--show-current")
+    let tagged = git(path, "rev-parse", "HEAD")
+    git(path, "tag", "-a", "release", "-m", "Release")
+    git(path, "commit", "--allow-empty", "-m", "Next")
+    let tip = git(path, "rev-parse", "HEAD")
+    await writeFile(join(path, "README.md"), "staged\n")
+    git(path, "add", "README.md")
+    await writeFile(join(path, "README.md"), "unstaged\n")
+
+    let invalid = await lane(path, "worktree", "switch", "--detach", "missing-ref")
+    expect(invalid.exitCode).not.toBe(0)
+    expect(git(path, "stash", "list")).toBe("")
+
+    let result = await lane(path, "worktree", "switch", "--detach", "release")
+    expect(result.exitCode, result.stderr).toBe(0)
+    expect(git(path, "branch", "--show-current")).toBe("")
+    expect(git(path, "rev-parse", "HEAD")).toBe(tagged)
+    expect(git(path, "rev-parse", branch)).toBe(tip)
+    expect(git(path, "status", "--porcelain")).toBe("")
+
+    expect((await lane(path, "undo")).exitCode).toBe(0)
+    expect(git(path, "branch", "--show-current")).toBe(branch)
+    expect(git(path, "show", ":README.md")).toBe("staged")
+    expect(await readFile(join(path, "README.md"), "utf8")).toBe("unstaged\n")
+    expect((await lane(path, "redo")).exitCode).toBe(0)
+    expect(git(path, "branch", "--show-current")).toBe("")
+    expect(git(path, "rev-parse", "HEAD")).toBe(tagged)
+}, 60_000)
+
+test("creating a detached worktree reports its path even when another worktree has the same tip", async () => {
+    let path = await repository()
+    let tip = git(path, "rev-parse", "HEAD")
+    let worktrees = `${path}.worktrees`
+    directories.push(worktrees)
+    let first = join(worktrees, `detached-${tip.slice(0, 8)}`)
+    git(path, "worktree", "add", "--detach", first, tip)
+
+    let result = await lane(path, "worktree", "create", "--commit", tip, "--json")
+    expect(result.exitCode, result.stderr).toBe(0)
+    expect(parseNdjson(result.stdout).at(-1)).toMatchObject({ createdPath: `${first}-2` })
+    expect(git(`${first}-2`, "branch", "--show-current")).toBe("")
+    expect(git(`${first}-2`, "rev-parse", "HEAD")).toBe(tip)
+}, 60_000)
+
+test("detaching at HEAD resolves it in the chosen worktree and undo reattaches its branch", async () => {
+    let path = await repository()
+    let linked = `${path}-linked`
+    directories.push(linked)
+    git(path, "worktree", "add", "-b", "topic", linked)
+    git(linked, "commit", "--allow-empty", "-m", "Topic")
+    let tip = git(linked, "rev-parse", "HEAD")
+
+    let result = await lane(path, "worktree", "switch", "--detach", "HEAD", "--path", linked)
+    expect(result.exitCode, result.stderr).toBe(0)
+    expect(git(linked, "branch", "--show-current")).toBe("")
+    expect(git(linked, "rev-parse", "HEAD")).toBe(tip)
+    expect((await lane(path, "undo")).exitCode).toBe(0)
+    expect(git(linked, "branch", "--show-current")).toBe("topic")
+}, 60_000)
+
 test("workflow usage errors and empty conflict output are readable", async () => {
     let path = await repository()
     for (let args of [["move", "--from", "working"], ["worktree", "remove"], ["reword", "HEAD"], ["pull", "--typo"], ["fetch", "extra"], ["undo", "extra"]])

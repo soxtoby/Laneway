@@ -14,7 +14,8 @@ export async function mutateWorktree(repository: RepositoryGit, preview: Worktre
     if (request.action == "create" || request.action == "switch") {
         let branch = tracking ? trackingBranchName(tracking, request.local) : request.branch?.replace(/^refs\/heads\//, "")
         // A remote-tracking branch checks out as a new local branch tracking it, or as the taken one reset to it.
-        let track = tracking ? [tracking.taken && request.local == "reset" ? "-B" : "-b", branch!, "--track"] : []
+        let checkoutOptions = tracking ? [tracking.taken && request.local == "reset" ? "-B" : "-b", branch!, "--track"] : request.commit ? ["--detach"] : []
+        let target = tracking?.remoteRef ?? branch ?? request.commit!
         let holder = branch ? worktrees.find(item => item.branchRef == `refs/heads/${branch}` && item.id != current?.id) : undefined
         if (holder && !request.move)
             throw new Error(`The branch is checked out in ${holder.path}. Confirm moving it first.`)
@@ -29,18 +30,11 @@ export async function mutateWorktree(repository: RepositoryGit, preview: Worktre
         if (current) {
             await changes.worktree(current.path, async () => {
                 await preserveBeforeSwitch(repository, current, branchPrefix, changedRefs)
-                await repository.command(current.path, ["checkout", ...track, tracking?.remoteRef ?? branch!])
+                await repository.command(current.path, ["checkout", ...checkoutOptions, target])
             })
         } else {
             await mkdir(dirname(destination!), { recursive: true })
-            await repository.command(main, [
-                "worktree",
-                "add",
-                ...(branch ? track : ["--detach"]),
-                "--",
-                destination!,
-                tracking?.remoteRef ?? branch ?? (request.action == "create" ? request.commit! : ""),
-            ])
+            await repository.command(main, ["worktree", "add", ...checkoutOptions, "--", destination!, target])
         }
     } else if (request.action == "rename")
         await repository.command(main, ["worktree", "move", "--", current!.path, destination!])

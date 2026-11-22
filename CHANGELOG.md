@@ -4,6 +4,7 @@
 
 ### Added
 
+- Choose **Check out detached** on a remote-only branch in the Branch Graph to check out its tip in the Main Worktree. The chevron lets you choose another worktree or create one. Commit menus also offer detached checkout in their column’s worktree. The Undo notice names the remote branch or commit subject.
 - Compare branches, tags, or commits from their menus or with **Compare refs…** in the Command Lens. The picker suggests refs from your open columns. Swap sides in the comparison header and include either branch’s Working Changes.
 - Hover a branch's ↑↓ badge in the Branch Graph to see what it counts: commits not yet published to its upstream, and commits on its upstream not yet pulled.
 

@@ -264,7 +264,7 @@ class OperationRuntime {
             ? tracking ? trackingBranchName(tracking, request.local) : request.branch?.replace(/^refs\/heads\//, "")
             : undefined
         if (
-            (request.action == "create" || request.action == "switch") && !request.move
+            (request.action == "create" || request.action == "switch") && branch && !request.move
             && preview.worktrees.some(item => item.branchRef == `refs/heads/${branch}` && !("path" in request && item.path == request.path))
         ) {
             throw new OperationRuntimeError("operation.precondition-failed", "Confirm moving the branch from its current worktree first.")
@@ -292,7 +292,12 @@ class OperationRuntime {
             { crashAfter, removing },
         )
 
-        return { type: "result", command: "worktree", operation: summarize(operation) }
+        return {
+            type: "result",
+            command: "worktree",
+            createdPath: request.action == "create" ? preview.destination : undefined,
+            operation: summarize(operation),
+        }
     }
 
     async applyTestMutation(value: string, crashAfter?: JournalPhase, holdAfterIntentMs?: number): Promise<TestMutationResult> {

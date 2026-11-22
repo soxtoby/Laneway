@@ -74,7 +74,7 @@ test("the built React renderer commits, manages branches, and composes through p
                 }[phase],
             )
         }
-        expect(git("log", "-2", "--format=%s")).toBe("Composed in desktop\nPersistent desktop commit")
+        expect(git("log", "-2", "--format=%s")).toBe(`Composed in desktop\nPersistent desktop commit ${"x".repeat(80)}`)
         expect(git("show", "HEAD:file.txt")).toBe("composed desktop change")
         expect(git("status", "--porcelain")).toBe("")
         expect(git("branch", "--show-current")).toBe("main")

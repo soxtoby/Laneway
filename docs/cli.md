@@ -75,6 +75,7 @@ lane publish --resume <receipt-id>
 lane publish --restore <receipt-id>
 lane worktree create feature
 lane worktree switch feature --path ../other-worktree --move
+lane worktree switch --detach v1.0 --path ../other-worktree
 lane worktree rename ../old-name new-name
 lane worktree remove ../other-worktree
 lane conflict list
