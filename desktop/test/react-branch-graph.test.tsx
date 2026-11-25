@@ -1,4 +1,4 @@
-import type { BranchGraph, WorktreeRequest } from "@laneway/shared"
+import type { BranchGraph, LocalRequest, WorktreeRequest } from "@laneway/shared"
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
 import type { Window as HappyWindow } from "happy-dom"
 import { button, installReactDom, press, startReactApp, stopReactApps, submit, type } from "./react-dom"
@@ -6,6 +6,8 @@ import { appState, branchGraph, fakeLaneway, openedWorkspace, repositoryInfo } f
 
 let browserWindow: HappyWindow
 let restoreSizes: () => void
+
+type ReactApp = Awaited<ReturnType<typeof startReactApp>>
 
 beforeAll(() => {
     browserWindow = installReactDom()
@@ -219,6 +221,41 @@ describe("React Branch Graph", () => {
         expect(button(toast, "Undo").hasAttribute("disabled")).toBe(false)
     })
 
+    test("Create branch here checks the new branch out in the Main Worktree by default, as one operation with Undo", async () => {
+        let { repository, main, app, worktreeRequests } = await startBranchCreation("create-checkout")
+        let dialog = await openBranchCreation(app, main.id)
+        expect(checkoutSelect(dialog).querySelector(".react-aria-SelectValue [slot=label]")?.textContent).toBe("main · main-tree")
+
+        await submitBranch(app, dialog, "topic")
+
+        expect(worktreeRequests).toEqual([{ action: "switch", path: repository.root, commit: main.tip, newBranch: "topic", move: false }])
+        expect(document.querySelector("[role=dialog]") == null).toBe(true)
+        expect(app.controller.columns.snapshot().focusedId).toBe("branch:refs/heads/topic")
+        let toast = document.querySelector<HTMLElement>("[role=alertdialog]")!
+        expect(toast.querySelector("[slot=title]")?.textContent).toBe("Checked out new branch topic in create-checkout.")
+        expect(button(toast, "Undo").hasAttribute("disabled")).toBe(false)
+    })
+
+    test("Create branch here checks the new branch out in a chosen worktree, a new one, or none", async () => {
+        let { main, linkedPath, app, worktreeRequests, localRequests } = await startBranchCreation("create-choices")
+        let dialog = await openBranchCreation(app, main.id)
+        await app.act(() => press(checkoutSelect(dialog)))
+        expect(optionLabels()).toEqual(["main · main-tree", "feature/laneway · feature-tree", "New worktree", "Don't check out"])
+
+        await app.act(() => press(option("feature/laneway · feature-tree")))
+        await submitBranch(app, dialog, "in-linked")
+        await createBranch(app, main.id, "in-new", "New worktree")
+        await createBranch(app, main.id, "unchecked", "Don't check out")
+
+        let atMain = { commit: main.tip, move: false }
+        expect(worktreeRequests).toEqual([{ action: "switch", path: linkedPath, newBranch: "in-linked", ...atMain }, {
+            action: "create",
+            newBranch: "in-new",
+            ...atMain,
+        }])
+        expect(localRequests).toEqual([{ action: "branch-create", name: "unchecked", commit: main.tip }])
+    })
+
     test("a tag's name copies from its Tag Node's menu, or from the menu of the Branch Node it sits on", async () => {
         let repository = repositoryInfo("D:\\Source\\graph-tags")
         let graph = branchGraph(repository.id)
@@ -416,6 +453,80 @@ describe("React Branch Graph", () => {
         expect(saved).toBe(380)
     })
 })
+
+/** Shows the Branch Graph of a repository whose Main Worktree has main and a linked worktree feature/laneway, recording what creating a branch asks for. */
+async function startBranchCreation(directory: string) {
+    let repository = repositoryInfo(`D:\\Source\\${directory}`)
+    let graph: BranchGraph = branchGraph(repository.id)
+    let main = graph.branches[0]!
+    let feature = graph.branches[1]!
+    let linkedPath = repository.root + ".worktrees/feature"
+    main.checkedOut = [{ id: "main", path: repository.root, name: "main-tree", head: main.tip, branchRef: main.preferredRef, main: true }]
+    feature.checkedOut = [{ id: "feature", path: linkedPath, name: "feature-tree", head: feature.tip, branchRef: feature.preferredRef, main: false }]
+    let worktreeRequests: WorktreeRequest[] = []
+    let localRequests: LocalRequest[] = []
+    let base = fakeLaneway()
+    let app = await startReactApp(fakeLaneway({
+        getState: async () => ({ ...appState(), workspace: openedWorkspace(repository) }),
+        readBranchGraph: async () => ({ ok: true, graph: structuredClone(graph) }),
+        executeWorktree: async (_id, request) => {
+            worktreeRequests.push(request)
+            if ((request.action == "switch" || request.action == "create") && request.newBranch) {
+                let ref = `refs/heads/${request.newBranch}`
+                let names = { id: `branch:${ref}`, name: request.newBranch, preferredRef: ref, refs: [ref], aliases: [request.newBranch], localRefs: [ref] }
+                graph.branches.push({ ...structuredClone(feature), ...names, checkedOut: [] })
+            }
+            return { ok: true }
+        },
+        localOperation: async (id, request, token) => {
+            if (!token)
+                return base.localOperation(id, request)
+            localRequests.push(request)
+            return { ok: true, result: { type: "result", command: "local", status: "performed" } }
+        },
+    }))
+    await app.act(() => press(button(document.body, "Show Branch Graph")))
+    return { repository, main, linkedPath, app, worktreeRequests, localRequests }
+}
+
+/** Creates a branch at a Branch Node's tip from its menu, checked out where the `checkout` option says. */
+async function createBranch(app: ReactApp, id: string, name: string, checkout: string) {
+    let dialog = await openBranchCreation(app, id)
+    await app.act(() => press(checkoutSelect(dialog)))
+    await app.act(() => press(option(checkout)))
+    await submitBranch(app, dialog, name)
+}
+
+async function openBranchCreation(app: ReactApp, id: string) {
+    await app.act(() => rightClick(row(id)))
+    await app.act(() => press(menuItem("Create branch here…")))
+    return document.querySelector<HTMLElement>("[role=dialog]")!
+}
+
+function checkoutSelect(dialog: HTMLElement) {
+    return dialog.querySelector<HTMLElement>(".react-aria-Select button")!
+}
+
+async function submitBranch(app: ReactApp, dialog: HTMLElement, name: string) {
+    await app.act(() => type(dialog.querySelector<HTMLInputElement>("input")!, name))
+    await app.act(() => press(button(dialog, "Create branch")))
+}
+
+function options() {
+    return [...document.querySelectorAll<HTMLElement>("[role=listbox] [role=option]")]
+}
+
+/** The open list box's option with a label, which its description doesn't take part in. */
+function option(label: string) {
+    let item = options().find(item => item.querySelector("[slot=label]")?.textContent == label)
+    if (!item)
+        throw new Error(`No ${label} option in: ${optionLabels().join(", ")}`)
+    return item
+}
+
+function optionLabels() {
+    return options().map(item => item.querySelector("[slot=label]")?.textContent)
+}
 
 // Happy DOM lays nothing out, so the graph's scroller is given a size for the virtualizer to fill.
 function sizeGraphRows(height: number) {

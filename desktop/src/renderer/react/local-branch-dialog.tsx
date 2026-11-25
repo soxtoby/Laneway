@@ -1,18 +1,32 @@
 import { useState } from "react"
 import { DialogHeader } from "./dialog-header"
 import { FormError } from "./form-error"
-import type { LocalBranches } from "./local-branches"
+import type { BranchCheckout, LocalBranches } from "./local-branches"
 import { Button } from "./ui/Button"
+import { Text } from "./ui/Content"
 import { Dialog, Heading } from "./ui/Dialog"
 import { Form } from "./ui/Form"
 import { Modal } from "./ui/Modal"
+import { Select, SelectItem } from "./ui/Select"
 import { TextArea, TextField } from "./ui/TextField"
 import { useSnapshot } from "./use-snapshot"
 
 let titles = { "branch-create": "Create branch", "branch-rename": "Rename branch", "tag-create": "Create tag" }
 let submits = { "branch-create": "Create branch", "branch-rename": "Rename", "tag-create": "Create tag" }
 
-/** Creating or renaming a local branch, or creating a tag; Escape and Cancel wait while Git runs. */
+// A worktree's option is keyed by its path, which is absolute, so it can't be taken for the other two.
+function checkoutKey(checkout: BranchCheckout) {
+    return checkout.kind == "worktree" ? checkout.path : checkout.kind
+}
+
+function checkoutChoice(key: string): BranchCheckout {
+    return key == "new" || key == "none" ? { kind: key } : { kind: "worktree", path: key }
+}
+
+/**
+ * Creating or renaming a local branch, or creating a tag; Escape and Cancel wait while Git runs. A new branch checks
+ * out in the Main Worktree unless another worktree, a new one, or none is chosen.
+ */
 export function LocalBranchDialog({ branches }: { branches: LocalBranches }) {
     let { dialog: open, busy, error } = useSnapshot(branches)
     // The closing dialog keeps its content while it animates away.
@@ -44,6 +58,23 @@ export function LocalBranchDialog({ branches }: { branches: LocalBranches }) {
                             spellCheck="false"
                             autoFocus
                         />
+                        {dialog.action == "branch-create" && (
+                            <Select
+                                label="Check out in"
+                                selectedKey={checkoutKey(dialog.checkout)}
+                                onSelectionChange={key => key != null && branches.setCheckout(checkoutChoice(String(key)))}
+                                isDisabled={busy}
+                            >
+                                {dialog.worktrees.map(worktree => (
+                                    <SelectItem key={worktree.path} id={worktree.path} textValue={worktree.label} isDisabled={worktree.missing}>
+                                        <Text slot="label">{worktree.label}</Text>
+                                        <Text slot="description">{worktree.path}</Text>
+                                    </SelectItem>
+                                ))}
+                                <SelectItem id="new">New worktree</SelectItem>
+                                <SelectItem id="none">Don't check out</SelectItem>
+                            </Select>
+                        )}
                         {dialog.action == "tag-create" && (
                             <TextArea
                                 label="Message"

@@ -1,4 +1,4 @@
-import type { BranchHistoryCommit, LocalActionResult, LocalRequest } from "@laneway/shared"
+import type { BranchHistoryCommit, LocalActionResult, LocalRequest, WorktreeRequest } from "@laneway/shared"
 import { afterAll, afterEach, beforeAll, describe, expect, jest, test } from "bun:test"
 import type { Window as HappyWindow } from "happy-dom"
 import { button, installReactDom, press, renderReact, startReactApp, stopReactApps, type } from "./react-dom"
@@ -212,25 +212,21 @@ describe("React Commit Trail", () => {
         expect(stackNames()).toEqual(["feature/laneway"])
     })
 
-    test("Create branch here names the branch in a dialog, creates it at the commit, and opens its column", async () => {
+    test("Create branch here names the branch in a dialog, checks it out at the commit in the Main Worktree, and opens its column", async () => {
         let scenario = inspectionScenario()
-        let requests: LocalRequest[] = []
+        let requests: WorktreeRequest[] = []
         let app = await startReactApp({
             ...scenario.api,
-            localOperation: async (id, request, token) => {
-                if (!token)
-                    return scenario.api.localOperation(id, request)
+            executeWorktree: async (_id, request) => {
                 requests.push(request)
-                if (request.action == "branch-create") {
-                    scenario.graph.branches.push({
-                        ...structuredClone(scenario.graph.branches[2]!),
-                        id: "branch:refs/heads/alias",
-                        name: "alias",
-                        preferredRef: "refs/heads/alias",
-                        localRefs: ["refs/heads/alias"],
-                    })
-                }
-                return performed()
+                scenario.graph.branches.push({
+                    ...structuredClone(scenario.graph.branches[2]!),
+                    id: "branch:refs/heads/alias",
+                    name: "alias",
+                    preferredRef: "refs/heads/alias",
+                    localRefs: ["refs/heads/alias"],
+                })
+                return { ok: true }
             },
         })
         await app.act(() => press(button(commitRows()[0]!, "Actions for commit Inspect changes")))
@@ -242,7 +238,8 @@ describe("React Commit Trail", () => {
         await app.act(() => type(dialog.querySelector<HTMLInputElement>("input")!, "alias"))
         await app.act(() => press(button(dialog, "Create branch")))
 
-        expect(requests).toEqual([{ action: "branch-create", name: "alias", commit: scenario.graph.branches[1]!.tip }])
+        let root = scenario.graph.branches[1]!.checkedOut[0]!.path
+        expect(requests).toEqual([{ action: "switch", path: root, commit: scenario.graph.branches[1]!.tip, newBranch: "alias", move: false }])
         expect(document.querySelector("[role=dialog]") == null).toBe(true)
         expect(document.querySelector("[data-column-id='branch:refs/heads/alias']")).not.toBeNull()
     })

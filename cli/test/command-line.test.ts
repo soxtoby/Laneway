@@ -271,10 +271,65 @@ test("detaching at HEAD resolves it in the chosen worktree and undo reattaches i
     expect(git(linked, "branch", "--show-current")).toBe("topic")
 }, 60_000)
 
+test("switching to a new branch makes it at the revision, stashes Working Changes, and one undo removes it", async () => {
+    let path = await repository()
+    let branch = git(path, "branch", "--show-current")
+    let start = git(path, "rev-parse", "HEAD")
+    git(path, "commit", "--allow-empty", "-m", "Next")
+    let tip = git(path, "rev-parse", "HEAD")
+    await writeFile(join(path, "README.md"), "changed\n")
+
+    let taken = await lane(path, "worktree", "switch", "--new-branch", branch, start)
+    expect(taken.exitCode).not.toBe(0)
+    expect(git(path, "stash", "list")).toBe("")
+
+    let result = await lane(path, "worktree", "switch", "--new-branch", "topic", start)
+    expect(result.exitCode, result.stderr).toBe(0)
+    expect(git(path, "branch", "--show-current")).toBe("topic")
+    expect(git(path, "rev-parse", "HEAD")).toBe(start)
+    expect(git(path, "rev-parse", branch)).toBe(tip)
+    expect(git(path, "status", "--porcelain")).toBe("")
+
+    expect((await lane(path, "undo")).exitCode).toBe(0)
+    expect(git(path, "branch", "--show-current")).toBe(branch)
+    expect(git(path, "branch", "--list", "topic")).toBe("")
+    expect(await readFile(join(path, "README.md"), "utf8")).toBe("changed\n")
+}, 60_000)
+
+test("creating a worktree with a new branch names it for the branch, and undo removes both", async () => {
+    let path = await repository()
+    let tip = git(path, "rev-parse", "HEAD")
+    let worktrees = `${path}.worktrees`
+    directories.push(worktrees)
+
+    let result = await lane(path, "worktree", "create", "--new-branch", "topic/one", "--commit", tip, "--json")
+    expect(result.exitCode, result.stderr).toBe(0)
+    let created = join(worktrees, "topic-one")
+    expect(parseNdjson(result.stdout).at(-1)).toMatchObject({ createdPath: created })
+    expect(git(created, "branch", "--show-current")).toBe("topic/one")
+    expect(git(created, "rev-parse", "HEAD")).toBe(tip)
+
+    expect((await lane(path, "undo")).exitCode).toBe(0)
+    expect(git(path, "branch", "--list", "topic/one")).toBe("")
+    expect(git(path, "worktree", "list", "--porcelain")).not.toContain("topic-one")
+}, 60_000)
+
 test("workflow usage errors and empty conflict output are readable", async () => {
     let path = await repository()
-    for (let args of [["move", "--from", "working"], ["worktree", "remove"], ["reword", "HEAD"], ["pull", "--typo"], ["fetch", "extra"], ["undo", "extra"]])
+    for (
+        let args of [
+            ["move", "--from", "working"],
+            ["worktree", "remove"],
+            ["worktree", "create", "--new-branch", "topic"],
+            ["worktree", "switch", "--detach", "--new-branch", "topic", "HEAD"],
+            ["reword", "HEAD"],
+            ["pull", "--typo"],
+            ["fetch", "extra"],
+            ["undo", "extra"],
+        ]
+    ) {
         expect((await lane(path, ...args)).exitCode).toBe(2)
+    }
     expect((await lane(path, "conflict", "list")).stdout).toBe("No unresolved conflicts.\n")
     expect((await lane(path, "pull")).stdout).toContain("Add a remote")
     expect((await lane(path, "fetch")).stdout).toContain("Add a remote to fetch.")

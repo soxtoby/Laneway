@@ -1,12 +1,26 @@
-import type { BranchGraphBranchNode, LocalPreview, LocalRequest, LocalResult } from "@laneway/shared"
+import type { BranchGraph, BranchGraphBranchNode, LocalPreview, LocalRequest, LocalResult } from "@laneway/shared"
 import { errorMessage, type Notice } from "./notice"
 import { createStore, type Store } from "./store"
+import type { CheckoutRequest } from "./worktree-actions"
+import { checkoutWorktrees, worktreeLabel } from "./worktree-columns"
 
 type Api = Window["laneway"]
 
+/** Where a new branch is checked out: in a Registered Worktree, in a new worktree, or nowhere. */
+export type BranchCheckout = { kind: "worktree"; path: string } | { kind: "new" } | { kind: "none" }
+
+/** A worktree a new branch can check out in, named as the checkout menus name it. */
+export interface CheckoutWorktree {
+    path: string
+    label: string
+    main: boolean
+    missing: boolean
+}
+
 /** The dialog open: creating a branch or a tag at a commit, or renaming a branch. */
 export type BranchDialog =
-    | { action: "branch-create"; name: string; commit: string }
+    /** A new branch checks out in the Main Worktree unless another choice is made; `worktrees` are those it can. */
+    | { action: "branch-create"; name: string; commit: string; worktrees: CheckoutWorktree[]; checkout: BranchCheckout }
     | { action: "branch-rename"; name: string; original: string }
     /** A tag also goes to `remote`, the Branch Graph's remote when the dialog opened. */
     | { action: "tag-create"; name: string; commit: string; message: string; remote?: string }
@@ -29,6 +43,8 @@ export interface LocalBranches extends Store<LocalBranchesSnapshot> {
     /** Moves a branch's Base Branch up to its tip straight away, when `movableBase` offers one; a failure shows as a notice. */
     moveIntoBase(repositoryId: string, branch: BranchGraphBranchNode): Promise<void>
     setName(name: string): void
+    /** Chooses where a new branch is checked out. */
+    setCheckout(checkout: BranchCheckout): void
     /** Sets a new tag's message; a tag with one is annotated. */
     setMessage(message: string): void
     submit(): Promise<void>
@@ -42,13 +58,15 @@ interface LocalBranchesOptions {
     api: Api
     /** Runs after an operation succeeds and before the dialog closes, with the review it ran from. */
     completed(repositoryId: string, request: LocalRequest, preview: LocalPreview, result: LocalResult): Promise<void>
+    /** Creates a branch and checks it out as one operation; throws its failure for the dialog to show. */
+    checkOut(repositoryId: string, request: CheckoutRequest): Promise<void>
     mutating(busy: boolean): void
     notify(notice: Notice): void
-    /** The Branch Graph's remote, which new tags are created on too. */
-    remote(): string | undefined
+    /** The Branch Graph shown: new tags are created on its remote too, and new branches check out in its worktrees. */
+    graph(): BranchGraph | undefined
 }
 
-export function createLocalBranches({ api, completed, mutating, notify, remote }: LocalBranchesOptions): LocalBranches {
+export function createLocalBranches({ api, completed, checkOut, mutating, notify, graph }: LocalBranchesOptions): LocalBranches {
     let store = createStore<LocalBranchesSnapshot>({ busy: false })
     let state = store.snapshot
     let set = (change: Partial<LocalBranchesSnapshot>) => store.publish({ ...state(), ...change })
@@ -90,6 +108,14 @@ export function createLocalBranches({ api, completed, mutating, notify, remote }
         }
     }
 
+    // A new branch that's checked out is made by the checkout, so one Undo takes both back.
+    function checkoutRequest(dialog: BranchDialog): CheckoutRequest | undefined {
+        if (dialog.action != "branch-create" || dialog.checkout.kind == "none")
+            return
+        let created = { commit: dialog.commit, newBranch: dialog.name.trim(), move: false }
+        return dialog.checkout.kind == "new" ? { action: "create", ...created } : { action: "switch", path: dialog.checkout.path, ...created }
+    }
+
     function request(dialog: BranchDialog): LocalRequest {
         if (dialog.action == "branch-create")
             return { action: dialog.action, name: dialog.name.trim(), commit: dialog.commit }
@@ -102,9 +128,16 @@ export function createLocalBranches({ api, completed, mutating, notify, remote }
         subscribe: store.subscribe,
         snapshot: store.snapshot,
 
-        createAt: (repositoryId, objectId) => open(repositoryId, { action: "branch-create", name: "", commit: objectId }),
+        createAt(repositoryId, objectId) {
+            let shown = graph()
+            let worktrees = shown ? checkoutChoices(shown) : []
+            let main = worktrees.find(worktree => worktree.main && !worktree.missing)
+            let checkout: BranchCheckout = main ? { kind: "worktree", path: main.path } : { kind: "none" }
+            open(repositoryId, { action: "branch-create", name: "", commit: objectId, worktrees, checkout })
+        },
 
-        tagAt: (repositoryId, objectId) => open(repositoryId, { action: "tag-create", name: "", commit: objectId, message: "", remote: remote() }),
+        tagAt: (repositoryId, objectId) =>
+            open(repositoryId, { action: "tag-create", name: "", commit: objectId, message: "", remote: graph()?.selectedRemote }),
 
         rename: (repositoryId, branch) => open(repositoryId, { action: "branch-rename", name: branch.name, original: branch.name }),
 
@@ -124,6 +157,12 @@ export function createLocalBranches({ api, completed, mutating, notify, remote }
                 set({ dialog: { ...dialog, name }, error: undefined })
         },
 
+        setCheckout(checkout) {
+            let dialog = state().dialog
+            if (dialog?.action == "branch-create")
+                set({ dialog: { ...dialog, checkout }, error: undefined })
+        },
+
         setMessage(message) {
             let dialog = state().dialog
             if (dialog?.action == "tag-create")
@@ -134,11 +173,15 @@ export function createLocalBranches({ api, completed, mutating, notify, remote }
             let { repositoryId, dialog, busy } = state()
             if (!repositoryId || !dialog || busy)
                 return
+            let checkout = checkoutRequest(dialog)
             let value = request(dialog)
             set({ busy: true, error: undefined })
             mutating(true)
             try {
-                await run(repositoryId, value, await inspect(repositoryId, value))
+                if (checkout)
+                    await checkOut(repositoryId, checkout)
+                else
+                    await run(repositoryId, value, await inspect(repositoryId, value))
                 store.publish({ busy: false })
             } catch (error) {
                 set({ error: errorMessage(error) })
@@ -163,6 +206,16 @@ export function createLocalBranches({ api, completed, mutating, notify, remote }
             }
         },
     }
+}
+
+/** The worktrees a new branch can check out in, the Main Worktree first. */
+function checkoutChoices(graph: BranchGraph): CheckoutWorktree[] {
+    return checkoutWorktrees(graph).map(worktree => ({
+        path: worktree.path,
+        label: worktreeLabel(graph, worktree),
+        main: worktree.main,
+        missing: worktree.missing == true,
+    }))
 }
 
 /** The Base Branch a branch's commits can move into: a local branch whose tip is still in the branch's history. */

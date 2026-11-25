@@ -6,11 +6,15 @@ import { z } from "zod"
  */
 let LocalBranchChoiceSchema = z.enum(["reset", "new"]).optional()
 
+/** A local branch a checkout makes at its `commit` and checks out, in the same operation. */
+let NewBranchSchema = z.string().min(1).optional()
+
 export let WorktreeRequestSchema = z.discriminatedUnion("action", [
     z.object({
         action: z.literal("create"),
         branch: z.string().min(1).optional(),
         commit: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/).optional(),
+        newBranch: NewBranchSchema,
         move: z.boolean().default(false),
         local: LocalBranchChoiceSchema,
     }),
@@ -19,6 +23,7 @@ export let WorktreeRequestSchema = z.discriminatedUnion("action", [
         path: z.string(),
         branch: z.string().min(1).optional(),
         commit: z.string().min(1).optional(),
+        newBranch: NewBranchSchema,
         move: z.boolean().default(false),
         local: LocalBranchChoiceSchema,
     }),

@@ -16,6 +16,7 @@ import { Modal } from "./ui/Modal"
 import { SearchField } from "./ui/SearchField"
 import { TextField } from "./ui/TextField"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
+import { checkoutWorktrees, worktreeLabel } from "./worktree-columns"
 
 /** A worktree column's title: the column's name over the worktree's path, marked when missing or locked. */
 export function WorktreeTitle({ name, worktree }: { name: string; worktree: BranchGraphWorktree }) {
@@ -225,7 +226,7 @@ function CheckoutItems({ graph, branch, detached = false, onPrepare }: CheckoutP
                     isDisabled={item.missing || (detached ? detachedAt(item, branch.tip) : branch.checkedOut.some(holder => holder.path == item.path))}
                     onAction={() => onPrepare({ action: "switch", path: item.path, ...target })}
                 >
-                    <Text slot="label">{`${worktreeBranch(graph, item)} · ${item.name}`}</Text>
+                    <Text slot="label">{worktreeLabel(graph, item)}</Text>
                     <Text slot="description">{item.path}</Text>
                 </MenuItem>
             ))}
@@ -233,11 +234,6 @@ function CheckoutItems({ graph, branch, detached = false, onPrepare }: CheckoutP
             <MenuItem onAction={() => onPrepare({ action: "create", ...target })}>New worktree</MenuItem>
         </>
     )
-}
-
-/** The worktrees a branch can check out in, the Main Worktree first. */
-function checkoutWorktrees(graph: BranchGraph) {
-    return allWorktrees(graph).filter(item => !item.historicalEdit).sort((a, b) => Number(b.main) - Number(a.main))
 }
 
 function checkoutTarget(branch: BranchGraphBranchNode, detached: boolean) {
@@ -309,16 +305,4 @@ export function MissingWorktree({ worktree, busy, onPrepare, chooseDirectory }: 
             </div>
         </section>
     )
-}
-
-/** Every worktree in the repository, once each. */
-export function allWorktrees(graph: BranchGraph) {
-    let worktrees = [...graph.branches.flatMap(branch => branch.checkedOut), ...graph.virtualBranches.map(branch => branch.worktree)]
-    return worktrees.filter((item, index) => worktrees.findIndex(other => other.path == item.path) == index)
-}
-
-function worktreeBranch(graph: BranchGraph, worktree: BranchGraphWorktree) {
-    return worktree.branchRef?.replace("refs/heads/", "")
-        ?? graph.branches.find(branch => branch.checkedOut.some(item => item.path == worktree.path))?.name
-        ?? "detached"
 }

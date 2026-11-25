@@ -3355,9 +3355,16 @@
         margin: 0;
     }
 
-    .react-aria-ProgressBar {
+    .react-aria-ProgressBar,
+    .react-aria-Select {
         width: auto;
     }
+}
+
+/* A select's list is only as wide as the select, so a description such as a worktree's path wraps rather than
+   scrolling the list sideways. */
+.select-popover .dropdown-item [slot="description"] {
+    overflow-wrap: anywhere;
 }
 
 .form-error {

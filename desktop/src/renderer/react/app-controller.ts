@@ -248,7 +248,8 @@ export function createAppController(api: Api): AppController {
         api,
         notify,
         mutating,
-        remote: () => columns.snapshot().graph?.selectedRemote,
+        graph: () => columns.snapshot().graph,
+        checkOut: (repositoryId, request) => worktrees.checkOut(repositoryId, request),
         completed: async (repositoryId, request, preview, result) => {
             if (request.action == "branch-rename") {
                 columns.renamed(`refs/heads/${request.name}`, `refs/heads/${request.newName}`)
@@ -290,7 +291,8 @@ export function createAppController(api: Api): AppController {
                 if (graph && workspaceGraph(graph).branches.some(branch => branch.id == `branch:${ref}`))
                     columns.open(`branch:${ref}`)
                 let into = request.action == "switch" ? request.path.split(/[\\/]/).pop() : "a new worktree"
-                offerUndo(repositoryId, "worktree.checked-out", `Checked out ${ref.slice(11)} in ${into}.`)
+                let branch = `${request.newBranch ? "new branch " : ""}${ref.slice(11)}`
+                offerUndo(repositoryId, "worktree.checked-out", `Checked out ${branch} in ${into}.`)
             } else if ((request.action == "switch" || request.action == "create") && request.commit) {
                 let path = request.action == "switch" ? request.path : createdPath
                 let column = columns.snapshot().graph?.virtualBranches.find(branch => branch.worktree.path == path)

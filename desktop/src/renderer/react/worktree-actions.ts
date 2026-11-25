@@ -19,7 +19,7 @@ export interface WorktreeActionsSnapshot {
     tracking?: { request: CheckoutRequest; branch: TrackingBranch }
 }
 
-type CheckoutRequest = Extract<WorktreeRequest, { action: "create" | "switch" }>
+export type CheckoutRequest = Extract<WorktreeRequest, { action: "create" | "switch" }>
 
 interface WorktreeActionContext {
     columnId?: string
@@ -39,6 +39,8 @@ export interface WorktreeActions extends Store<WorktreeActionsSnapshot> {
      * dialog once reviewed. `columnId` is the column it was asked from.
      */
     prepare(repositoryId: string, request: WorktreeRequest, context?: WorktreeActionContext): Promise<void>
+    /** Runs a checkout of a local branch or commit at once for another dialog, throwing its failure for that dialog to show. */
+    checkOut(repositoryId: string, request: CheckoutRequest): Promise<void>
     setPreserve(preserve: boolean): void
     /** Checks out the remote-tracking branch waiting on a choice, resetting the local branch with its name or making a new one. */
     track(choice: "reset" | "new"): Promise<void>
@@ -134,6 +136,11 @@ export function createWorktreeActions({ api, completed, transitioned, mutating }
                     set({ preview: result.preview })
             }),
 
+        async checkOut(repositoryId, request) {
+            context = {}
+            await perform(repositoryId, request)
+        },
+
         setPreserve: preserve => set({ preserve }),
 
         track: choice =>
@@ -179,6 +186,10 @@ export function createWorktreeActions({ api, completed, transitioned, mutating }
 }
 
 function checkoutRef(request: WorktreeRequest) {
-    if ((request.action == "switch" || request.action == "create") && request.branch)
+    if (request.action != "switch" && request.action != "create")
+        return
+    if (request.newBranch)
+        return `refs/heads/${request.newBranch}`
+    if (request.branch)
         return request.branch.startsWith("refs/heads/") ? request.branch : `refs/heads/${request.branch}`
 }

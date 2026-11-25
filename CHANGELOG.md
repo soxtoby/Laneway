@@ -10,6 +10,7 @@
 
 ### Changed
 
+- **Create branch** checks the new branch out in the Main Worktree. Choose another worktree, a new worktree, or **Don't check out** from **Check out in**. One Undo removes the branch and returns the worktree to where it was. `lane worktree switch --new-branch` and `lane worktree create --new-branch` do the same from the command line.
 - Comparisons, File History, merge parent choices, and change reviews identify commits by subject. Copy commit hash is still available from commit menus.
 - Double-click a branch in the Branch Graph or press Enter to open its column. To switch branches, choose **Check out** from the branch menu.
 - Dialogs and menus look more at home on Windows. Dialogs have a title bar with a Close button, and less space around their edges. Menus highlight the item under the pointer or keyboard in grey rather than amber. Buttons are flat, without gradients.

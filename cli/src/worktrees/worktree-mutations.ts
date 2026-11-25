@@ -13,8 +13,15 @@ export async function mutateWorktree(repository: RepositoryGit, preview: Worktre
 
     if (request.action == "create" || request.action == "switch") {
         let branch = tracking ? trackingBranchName(tracking, request.local) : request.branch?.replace(/^refs\/heads\//, "")
-        // A remote-tracking branch checks out as a new local branch tracking it, or as the taken one reset to it.
-        let checkoutOptions = tracking ? [tracking.taken && request.local == "reset" ? "-B" : "-b", branch!, "--track"] : request.commit ? ["--detach"] : []
+        // A remote-tracking branch checks out as a new local branch tracking it, or as the taken one reset to it. A new
+        // branch starts at the commit, which a checkout without one leaves detached.
+        let checkoutOptions = tracking
+            ? [tracking.taken && request.local == "reset" ? "-B" : "-b", branch!, "--track"]
+            : request.newBranch
+            ? ["-b", request.newBranch]
+            : request.commit
+            ? ["--detach"]
+            : []
         let target = tracking?.remoteRef ?? branch ?? request.commit!
         let holder = branch ? worktrees.find(item => item.branchRef == `refs/heads/${branch}` && item.id != current?.id) : undefined
         if (holder && !request.move)

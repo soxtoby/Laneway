@@ -1,4 +1,4 @@
-import type { BranchGraph, BranchGraphBranchNode, WorkspaceColumn, WorktreeRecovery } from "@laneway/shared"
+import type { BranchGraph, BranchGraphBranchNode, BranchGraphWorktree, WorkspaceColumn, WorktreeRecovery } from "@laneway/shared"
 
 export function shortBranchRef(ref: string) {
     return ref.replace(/^refs\/(heads|remotes)\//, "")
@@ -113,6 +113,25 @@ export function localIdentities(graph: BranchGraph, branch: BranchGraphBranchNod
                 : { remoteRefs: [], upstreamRef: undefined, upstreamTip: undefined, ahead: 0, behind: 0, upstreamIncoming: false }),
         }
     })
+}
+
+/** Every worktree in the repository, once each. */
+export function allWorktrees(graph: BranchGraph) {
+    let worktrees = [...graph.branches.flatMap(branch => branch.checkedOut), ...graph.virtualBranches.map(branch => branch.worktree)]
+    return worktrees.filter((item, index) => worktrees.findIndex(other => other.path == item.path) == index)
+}
+
+/** The worktrees a branch can check out in, the Main Worktree first. */
+export function checkoutWorktrees(graph: BranchGraph) {
+    return allWorktrees(graph).filter(item => !item.historicalEdit).sort((a, b) => Number(b.main) - Number(a.main))
+}
+
+/** Names a worktree in a list of worktrees by the branch it has checked out and its directory. */
+export function worktreeLabel(graph: BranchGraph, worktree: BranchGraphWorktree) {
+    let branch = worktree.branchRef?.replace("refs/heads/", "")
+        ?? graph.branches.find(branch => branch.checkedOut.some(item => item.path == worktree.path))?.name
+        ?? "detached"
+    return `${branch} · ${worktree.name}`
 }
 
 export function recoveryWorkspaceColumn(recovery: WorktreeRecovery, width = 380): WorkspaceColumn {

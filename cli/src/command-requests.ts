@@ -51,20 +51,31 @@ export async function worktreeRequest(action: string, args: Arguments, repo: Rep
     if (action == "create") {
         let [branch] = operands(args, 0, 1)
         let commit = option(args, "commit")
+        let newBranch = option(args, "new-branch")
+        if (newBranch) {
+            if (branch || !commit)
+                throw new UsageError("--new-branch starts a branch at --commit instead of checking out a branch.")
+            if (flag(args, "move") || option(args, "local"))
+                throw new UsageError("--move and --local apply only to checking out an existing branch.")
+        }
         return {
             action,
             branch: branch && await checkoutBranch(repo, branch),
             commit: commit ? await commitId(repo, commit) : undefined,
+            newBranch,
             move: flag(args, "move"),
             local: localBranchChoice(args),
         }
     } else if (action == "switch") {
         let [target] = operands(args, 1)
         let path = await worktreePath(repo, cwd, option(args, "path"))
-        if (flag(args, "detach")) {
+        let newBranch = option(args, "new-branch")
+        if (flag(args, "detach") || newBranch) {
+            if (flag(args, "detach") && newBranch)
+                throw new UsageError("Use either --detach or --new-branch.")
             if (flag(args, "move") || option(args, "local"))
-                throw new UsageError("--move and --local apply only to branch checkouts.")
-            return { action, path, commit: target!, move: false }
+                throw new UsageError("--move and --local apply only to checking out an existing branch.")
+            return { action, path, commit: target!, newBranch, move: false }
         }
         return {
             action,

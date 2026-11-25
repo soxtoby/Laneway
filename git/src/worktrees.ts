@@ -35,12 +35,22 @@ export async function previewWorktree(repository: RepositoryGit, request: Worktr
     if (request.action == "create" || request.action == "switch") {
         if (Boolean(request.branch) == Boolean(request.commit))
             throw new GitError("git.command-failed", "Choose one local branch or one commit.")
+        if (request.newBranch && !request.commit)
+            throw new GitError("git.command-failed", "Choose the commit the new branch starts at.")
         if (request.commit) {
             let path = current?.path ?? repository.descriptor.mainWorktree
             let commit = (await repository.command(path, ["rev-parse", "--verify", "--end-of-options", `${request.commit}^{commit}`])).toString().trim()
-            if (current && !current.branchRef && current.head == commit)
+            if (current && !current.branchRef && current.head == commit && !request.newBranch)
                 throw new GitError("git.command-failed", "This worktree is already detached at that commit.")
             request = { ...request, commit }
+        }
+        if (request.newBranch) {
+            let name = request.newBranch
+            await repository.command(repository.descriptor.mainWorktree, ["check-ref-format", "--branch", name])
+            if (name.startsWith("-") || name.startsWith("refs/"))
+                throw new GitError("git.command-failed", "Use a local branch name.")
+            if (await repository.resolveRef(`refs/heads/${name}`))
+                throw new GitError("git.command-failed", "That branch already exists.")
         }
 
         if (request.branch && isRemoteRef(request.branch)) {
@@ -66,7 +76,7 @@ export async function previewWorktree(repository: RepositoryGit, request: Worktr
 
         if (request.action == "create") {
             let home = `${repository.descriptor.mainWorktree}.worktrees`
-            let branch = tracking ? trackingBranchName(tracking, request.local) : request.branch
+            let branch = tracking ? trackingBranchName(tracking, request.local) : request.branch ?? request.newBranch
             let slug = branchSlug(branch ?? `detached-${request.commit!.slice(0, 8)}`)
             destination = join(home, slug)
             for (let suffix = 2; await pathExists(destination) || worktrees.some(item => normalize(item.path) == normalize(destination!)); suffix++)

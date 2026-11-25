@@ -17,8 +17,10 @@ Reword a commit and restack dependent history. Accepts Git revisions such as HEA
 Repeat -m for paragraphs, or use -F <message-file>. Branch defaults to the current branch.
 --yes approves rewriting published history or removing empty commits.`,
     worktree: `lane worktree create [branch] [--commit <revision>] [--move] [--local reset|new]
+lane worktree create --new-branch <name> --commit <revision>
 lane worktree switch <branch> [--path <worktree>] [--move] [--local reset|new]
 lane worktree switch --detach <revision> [--path <worktree>]
+lane worktree switch --new-branch <name> <revision> [--path <worktree>]
 lane worktree rename <path> <basename>
 lane worktree repair <path> <destination>
 lane worktree remove <path> [--discard]
@@ -27,6 +29,7 @@ lane worktree list
 Paths resolve from the current directory. Switch defaults to the current worktree.
 Removal preserves Working Changes and Worktree-only Commits unless --discard is given.
 --move approves transferring a branch held by another worktree.
+--new-branch makes a local branch at the revision and checks it out; Undo removes it again.
 A remote branch, such as origin/feature, checks out as a new local branch tracking it. When a local
 branch has its name already, --local reset moves that branch to it, and --local new creates feature-2.`,
     pull: `lane pull [branch ...] [--remote <remote>] [--restack]

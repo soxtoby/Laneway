@@ -65,10 +65,27 @@ app.on("browser-window-created", (_event, window) => {
                     let commit = await wait(() => column.querySelector('.commit-row'));
                     commit.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 80, clientY: 100 }));
                     (await wait(() => menuItem('Create branch here…'))).click();
-                    type(await wait(() => document.querySelector('[role=dialog] input')), 'alias');
+                    type(await wait(() => document.querySelector('[role=dialog] input')), 'checked');
                     (await wait(() => button('Create branch', document.querySelector('[role=dialog]')))).click();
+                    // A new branch checks out in the Main Worktree, and one Undo removes it and puts main back.
+                    await wait(() => document.querySelector('[data-column-id="branch:refs/heads/checked"] [aria-label="Working Changes"]'));
+                    const created = await wait(() => [...document.querySelectorAll('[role=alertdialog]')].find(item => item.textContent.includes('Checked out new branch checked in repository.')));
+                    button('Undo', created).click();
+                    column = await wait(() => !document.querySelector('[data-column-id="branch:refs/heads/checked"]') && document.querySelector('[data-column-id="branch:refs/heads/main"]'));
+                    await wait(() => column.querySelector('[aria-label="Working Changes"]'));
+
+                    commit = await wait(() => column.querySelector('.commit-row'));
+                    commit.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 80, clientY: 100 }));
+                    (await wait(() => menuItem('Create branch here…'))).click();
+                    // The page has other dialog elements, so the dialog is the one holding the picker.
+                    const picker = await wait(() => document.querySelector('[role=dialog] .react-aria-Select button'));
+                    const dialog = picker.closest('[role=dialog]');
+                    picker.click();
+                    (await wait(() => [...document.querySelectorAll('[role=option]')].find(option => option.textContent == "Don't check out"))).click();
+                    type(await wait(() => dialog.querySelector('input')), 'alias');
+                    (await wait(() => button('Create branch', dialog))).click();
                     const alias = await wait(() => document.querySelector('[data-column-id="branch:refs/heads/alias"]'));
-                    if (alias.querySelector('[aria-label="Working Changes"]')) throw new Error('Branch creation unexpectedly checked out the branch');
+                    if (alias.querySelector('[aria-label="Working Changes"]')) throw new Error('Branch creation checked out the branch');
                     await wait(() => !document.querySelector('[role=dialog]'));
                     key(alias, 'F2');
                     const rename = await wait(() => document.querySelector('[role=dialog] input'));

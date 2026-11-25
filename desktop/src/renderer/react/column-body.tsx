@@ -9,7 +9,7 @@ import { HistoricalEditBanner } from "./historical-edit-banner"
 import type { ColumnInspection } from "./inspection"
 import { TransferScopeContext } from "./transfer"
 import { FileList, StashedChanges, WorkingChanges } from "./working-changes"
-import { allWorktrees } from "./worktree-controls"
+import { allWorktrees } from "./worktree-columns"
 
 interface ColumnBodyProps {
     controller: AppController
