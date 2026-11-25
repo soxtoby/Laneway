@@ -1,7 +1,7 @@
 import { normalize, type RepositoryGit } from "@laneway/git"
 import type { DiffLine, DiscardRequest, DiscardResult, DiscardUndoResult } from "@laneway/shared"
 import { randomUUID } from "node:crypto"
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises"
+import { mkdir, readdir, readFile, rename, rm, stat, utimes, writeFile } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 
 interface HeldEntry {
@@ -148,7 +148,7 @@ export class WorkingDiscards {
                     await rm(absolute, { recursive: true, force: true })
                 if (entry.held) {
                     await mkdir(dirname(absolute), { recursive: true })
-                    await rename(entry.held, absolute)
+                    await moveBack(entry.held, absolute)
                 }
             }
 
@@ -275,8 +275,18 @@ async function hold(holding: Holding, absolute: string, path: string): Promise<H
 async function putBack(root: string, entries: HeldEntry[]) {
     for (let entry of entries) {
         if (entry.held)
-            await rename(entry.held, join(root, entry.path)).catch(() => undefined)
+            await moveBack(entry.held, join(root, entry.path)).catch(() => undefined)
     }
+}
+
+/**
+ * Moves an original back from holding, timed now. Git on Windows compares file times to the second, so an original
+ * edited in the second its discard restored a version the same size would otherwise look unchanged to Git.
+ */
+async function moveBack(held: string, absolute: string) {
+    await rename(held, absolute)
+    let now = new Date()
+    await utimes(absolute, now, now)
 }
 
 function worktreeFile(root: string, path: string) {

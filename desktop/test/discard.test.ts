@@ -36,6 +36,25 @@ test("unstaged file discards return the index content and undo renames the origi
     expect(await discards.undo("repo", (result as { id: string }).id)).toMatchObject({ ok: false })
 })
 
+test("undo shows Git an original that kept the time and size of the version its discard restored", async () => {
+    let fixture = await repository()
+    // Git on Windows compares file times to the second, and ctime would give the original away as another file.
+    fixture.run("config", "core.trustctime", "false")
+    await writeFile(join(fixture.path, "keep.txt"), "a\nB\n")
+    let discards = new WorkingDiscards(() => fixture.git)
+    let result = await discards.apply("repo", { kind: "files", worktreePath: fixture.path, view: "unstaged", files: [{ path: "keep.txt", untracked: false }] })
+    let [held] = await readdir(join(fixture.path, ".git", "laneway", "discard"))
+    // As when the file was edited in the second its discard restored it, Git records a time the original shares.
+    let past = new Date("2020-01-01T00:00:00Z")
+    await utimes(join(fixture.path, "keep.txt"), past, past)
+    await utimes(join(fixture.path, ".git", "laneway", "discard", held!, "keep.txt"), past, past)
+    fixture.run("update-index", "--refresh")
+
+    await discards.undo("repo", (result as { id: string }).id)
+
+    expect(fixture.status()).toBe(" M keep.txt")
+})
+
 test("untracked files move aside without Git and settle for good", async () => {
     let fixture = await repository()
     await mkdir(join(fixture.path, "dir"))

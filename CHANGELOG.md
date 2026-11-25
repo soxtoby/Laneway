@@ -18,6 +18,10 @@
 - Pull latest no longer moves a branch onto a Primary Branch that has moved on, published or not: it brings in the branch's upstream commits, and the Base's heading in the column offers Restack for the rest. Pull latest no longer lights up just because a branch is behind the Primary Branch. `lane pull --restack` still does both.
 - Repository icons stay in the same place when the repository sidebar expands or collapses, and the sidebar no longer has a "Repositories" heading.
 
+### Fixed
+
+- Undoing a discard always brings the file back into Working Changes. Before, a file discarded within a second of being edited could come back without showing as changed, so committing all changes would leave it out.
+
 ## v0.1.0-alpha.2
 
 ### Added

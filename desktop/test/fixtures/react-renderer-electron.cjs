@@ -106,6 +106,9 @@ app.on("browser-window-created", (_event, window) => {
                 document.querySelector(fileRow + ' button[aria-label$=" in diff column"]').click();
                 const aside = await wait(() => document.querySelector('.diff-column .pierre-diff') && document.querySelector('.diff-column'), 'the diff column');
                 await wait(() => document.getAnimations().length == 0, 'the diff column to settle');
+                // Lines wrap by default; unwrapped, they run past the column.
+                (await wait(() => aside.querySelector('[aria-label="Wrap lines"][aria-pressed="true"]'), 'the Wrap lines toggle')).click();
+                await wait(() => aside.querySelector('.pierre-diff').shadowRoot?.querySelector('[data-overflow="scroll"]'), 'the unwrapped diff');
                 const diffBody = aside.querySelector('.diff-column-files');
                 // A diff's long lines scroll within it.
                 fits.diff = diffBody.scrollWidth <= diffBody.clientWidth;

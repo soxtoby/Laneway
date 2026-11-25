@@ -86,7 +86,7 @@ test("React renderer styles and menus work under production CSP in the built app
                 panel: "#0f141c",
                 accent: "#f5a733",
             },
-            geometry: { header: 48, fileRow: 28, commitRow: 32, collapsedRepositoryRow: 36, repositoryRow: 40 },
+            geometry: { header: 48, fileRow: 28, commitRow: 32, collapsedRepositoryRow: 40, repositoryRow: 40 },
             fits: { column: true, fileName: true, panelRowsSteady: true, diff: true },
             diffScrollbar: { takesRoom: true, onColumnEdge: true },
             contextMenu: { items: ["File history", "Discard changes", "Copy full path", "Copy relative path", "Copy file name"], atPointer: true },

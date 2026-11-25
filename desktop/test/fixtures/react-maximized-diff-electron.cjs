@@ -38,6 +38,9 @@ app.on("browser-window-created", (_event, window) => {
                 const fileRow = '[aria-label="Working Changes"] [role=row]';
                 (await wait(() => document.querySelector(fileRow), 'the file row')).querySelector('[aria-label="Open long.ts in diff column"]').click();
                 const column = await wait(() => document.querySelector('.diff-column'), 'the diff column');
+                // Lines wrap by default; only unwrapped lines run past the restored column.
+                (await wait(() => column.querySelector('[aria-label="Wrap lines"][aria-pressed="true"]'), 'the Wrap lines toggle')).click();
+                await wait(() => column.querySelector('.pierre-diff')?.shadowRoot?.querySelector('[data-overflow="scroll"]'), 'the unwrapped diff');
 
                 column.querySelector('[aria-label="Maximize column"]').click();
                 await wait(() => document.querySelector('.column-group.maximized'), 'the maximized column');
