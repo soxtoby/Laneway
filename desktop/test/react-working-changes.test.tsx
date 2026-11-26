@@ -216,6 +216,43 @@ describe("React Working Changes", () => {
         expect(requests.at(-1)).toMatchObject({ kind: "files", view: "unstaged", files: [{ path: "src/file.txt" }, { path: "other.txt" }] })
     })
 
+    test("Discard Working Changes discards every file but submodules back to HEAD as one discard with Undo", async () => {
+        let scenario = inspectionScenario()
+        let files: ChangedFile[] = [{ ...changedFile("src/file.txt"), staged: true }, {
+            ...changedFile("new.txt"),
+            status: "added",
+            unstaged: false,
+            untracked: true,
+        }, { ...changedFile("lib/module"), submodule: "1".repeat(40) }]
+        let requests: DiscardRequest[] = [], undone: string[] = []
+        let app = await startReactApp({
+            ...scenario.api,
+            readChanges: async (_id, _requestId, request) => ({ ok: true, inventory: { source: request.source, files, version: "inventory", parents: [] } }),
+            discardChanges: async (_id, request) => {
+                requests.push(request)
+                return { ok: true, id: `discard-${requests.length}`, undoable: true }
+            },
+            undoDiscard: async (_id, id) => {
+                undone.push(id)
+                return { ok: true, kept: [] }
+            },
+        })
+
+        await app.act(() => press(button(workingChanges(), "More commit actions")))
+        expect(menuItems().at(-1)).toBe("Discard Working Changes")
+        await app.act(() => press(menuItem("Discard Working Changes")))
+
+        expect(requests).toEqual([{
+            kind: "files",
+            worktreePath: "D:\\Source\\inspection",
+            view: "staged",
+            files: [{ path: "src/file.txt", oldPath: undefined, untracked: false }, { path: "new.txt", oldPath: undefined, untracked: true }],
+        }])
+        expect(toast()?.textContent).toContain("Discarded 2 files")
+        await app.act(() => press(button(toast()!, "Undo")))
+        expect(undone).toEqual(["discard-1"])
+    })
+
     test("the commit composer stages, keeps a cancelled draft, and commits the staged files", async () => {
         let scenario = inspectionScenario()
         let staged = false, committed = false, version = 0

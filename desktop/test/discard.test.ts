@@ -102,6 +102,34 @@ test("staged discards return index and worktree to HEAD, and undo stages the res
     expect(await readFile(join(fixture.path, "keep.txt"), "utf8")).toBe("a\nB\n")
 })
 
+test("a staged discard of every Working Change also deletes untracked files, and undo restages only what was staged", async () => {
+    let fixture = await repository()
+    await writeFile(join(fixture.path, "keep.txt"), "a\nB\n")
+    fixture.run("add", "keep.txt")
+    await writeFile(join(fixture.path, "keep.txt"), "a\nB\nC\n")
+    await writeFile(join(fixture.path, "old.txt"), "y\n")
+    await writeFile(join(fixture.path, "new.txt"), "fresh\n")
+    let before = ["MM keep.txt", " M old.txt", "?? new.txt"]
+    expect(fixture.status().split("\n").sort()).toEqual(before.sort())
+    let discards = new WorkingDiscards(() => fixture.git)
+
+    let result = await discards.apply("repo", {
+        kind: "files",
+        worktreePath: fixture.path,
+        view: "staged",
+        files: [{ path: "keep.txt", untracked: false }, { path: "old.txt", untracked: false }, { path: "new.txt", untracked: true }],
+    })
+    expect(result).toMatchObject({ ok: true, undoable: true })
+    expect(fixture.status()).toBe("")
+    expect(await stat(join(fixture.path, "new.txt")).catch(() => undefined)).toBeUndefined()
+
+    expect(await discards.undo("repo", (result as { id: string }).id)).toEqual({ ok: true, kept: [] })
+    expect(fixture.status().split("\n").sort()).toEqual(before)
+    expect(fixture.run("diff", "--cached", "--", "keep.txt")).toContain("+B")
+    expect(fixture.run("diff", "--", "keep.txt")).toContain("+C")
+    expect(await readFile(join(fixture.path, "new.txt"), "utf8")).toBe("fresh\n")
+})
+
 test("line discards rewrite only the selected lines and verify the file against the diff", async () => {
     let fixture = await repository()
     await writeFile(join(fixture.path, "keep.txt"), "first\nb\nlast\n")

@@ -14,7 +14,7 @@ import { type FileInspection, FileRowsLayout, FileTree, revealRow } from "./file
 import { applySelection } from "./historical-edit"
 import { applyTarget } from "./historical-edit-banner"
 import { ArchiveIcon, ChevronDownIcon, CloseIcon, DetachedIcon, FolderIcon, OpenColumnIcon, StagedAboveIcon, TreeIcon } from "./icons"
-import { type ColumnInspection, diffKey, type FilesState, hostedView, type Inspection, matchesFilter } from "./inspection"
+import { type ColumnInspection, diffKey, discardable, type FilesState, hostedView, type Inspection, matchesFilter } from "./inspection"
 import { TransferGrip, TransferReview, transferSource, useTransferScope, useTransferTarget } from "./transfer"
 import { Button } from "./ui/Button"
 import { ChevronRight } from "./ui/icons"
@@ -182,6 +182,11 @@ export function WorkingChanges({ column, path, inspected, inspection, createComp
                                 <Menu>
                                     <MenuItem isDisabled={!amendable} onAction={reveal(composer.amend)}>Amend last commit…</MenuItem>
                                     <MenuItem onAction={reveal(composer.openStash)}>Stash Working Changes…</MenuItem>
+                                    {/* Two presses away, set apart at the end, and undoable while its notice shows. */}
+                                    <Separator />
+                                    <MenuItem isDisabled={!files.some(discardable)} onAction={() => void inspection.discardAll(column.id)}>
+                                        Discard Working Changes
+                                    </MenuItem>
                                 </Menu>
                             </MenuTrigger>
                         </div>

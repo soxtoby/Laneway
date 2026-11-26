@@ -17,8 +17,8 @@ interface PendingDiscard {
     /** Absent when the originals could not be set aside, so there is nothing to release. */
     holding?: string
     entries: HeldEntry[]
-    /** Paths a staged discard returned to HEAD, which undo stages again from the restored files. */
-    restage: string[]
+    /** The index entries a staged discard returned to HEAD, which undo writes back. */
+    index: IndexEntry[]
     completedAt: number
     timer: ReturnType<typeof setTimeout>
 }
@@ -27,6 +27,11 @@ interface Holding {
     directory: string
     /** Clears when the git directory sits on another volume, where moving would mean copying. */
     possible: boolean
+}
+interface IndexEntry {
+    path: string
+    /** The entry's mode and object, as `ls-files -s` gives them; absent when the index held no entry for the path. */
+    entry?: string
 }
 
 let staleAfterMs = 5 * 60_000
@@ -52,7 +57,7 @@ export class WorkingDiscards {
                 directory: join(discards, id),
                 possible: await mkdir(join(discards, id), { recursive: true }).then(() => true, () => false),
             }
-            let entries: HeldEntry[] = [], restage: string[] = []
+            let entries: HeldEntry[] = [], index: IndexEntry[] = []
 
             try {
                 if (request.kind == "lines")
@@ -66,7 +71,8 @@ export class WorkingDiscards {
 
                         let entry = await hold(holding, absolute, file.path)
                         entries.push(entry)
-                        if (request.view == "unstaged" && file.untracked) {
+                        // Neither the index nor HEAD has an untracked file, so moving it aside is all there is to do.
+                        if (file.untracked) {
                             if (!entry.held && !holding.possible)
                                 await rm(absolute, { recursive: true, force: true })
                         } else {
@@ -80,21 +86,23 @@ export class WorkingDiscards {
                     }
                     if (restore.length) {
                         let staged = request.view == "staged"
+                        if (staged)
+                            index = await indexEntries(repository, root, restore)
+                        // Paths go on standard input, since a discard of every Working Change can outgrow a command line.
+                        let paths = restore.map(path => `${path}\0`).join("")
+                        let pathspec = ["--pathspec-from-file=-", "--pathspec-file-nul"]
                         let result = await repository.run(root, [
                             "--literal-pathspecs",
                             "restore",
                             ...(staged ? ["--source=HEAD", "--staged"] : []),
                             "--worktree",
-                            "--",
-                            ...restore,
-                        ])
+                            ...pathspec,
+                        ], paths)
                         // An unborn branch has no HEAD to restore from; its staged files are all additions.
                         if (result.exitCode && staged && /HEAD/.test(result.stderr.toString()))
-                            result = await repository.run(root, ["--literal-pathspecs", "rm", "-q", "-r", "--cached", "--", ...restore])
+                            result = await repository.run(root, ["--literal-pathspecs", "rm", "-q", "-r", "--cached", ...pathspec], paths)
                         if (result.exitCode)
                             throw new Error(result.stderr.toString().trim() || "Git could not discard the changes.")
-                        if (staged)
-                            restage.push(...restore)
                     }
                 }
             } catch (error) {
@@ -110,7 +118,7 @@ export class WorkingDiscards {
                 worktreePath: root,
                 holding: held ? holding.directory : undefined,
                 entries,
-                restage,
+                index,
                 completedAt: Date.now(),
                 timer: setTimeout(() => void this.settle(repositoryId, id), this.windowMs),
             }
@@ -152,9 +160,15 @@ export class WorkingDiscards {
                 }
             }
 
-            let restage = pending.restage.filter(path => !kept.includes(path))
-            if (restage.length)
-                await this.repository(repositoryId).command(pending.worktreePath, ["--literal-pathspecs", "add", "-A", "--", ...restage])
+            // The index takes back exactly what was staged, so a file staged in part stays staged in part.
+            let index = pending.index.filter(item => !kept.includes(item.path))
+            if (index.length) {
+                let repository = this.repository(repositoryId)
+                // Mode 0 removes a path HEAD put in the index, as it does a staged rename's old side.
+                let zero = `0 ${"0".repeat(repository.descriptor.objectFormat == "sha1" ? 40 : 64)}`
+                let lines = index.map(item => `${item.entry ?? zero}\t${item.path}\0`).join("")
+                await repository.command(pending.worktreePath, ["update-index", "-z", "--index-info"], lines)
+            }
             // Kept files leave their originals in place for the sweep, in case the edits were a mistake too.
             if (pending.holding && !kept.length)
                 await rm(pending.holding, { recursive: true, force: true })
@@ -248,6 +262,20 @@ export function discardLines(text: string, lines: DiffLine[], ids: number[]) {
     }
 
     return result
+}
+
+/**
+ * The index's entries for `paths`, read from the whole index rather than through pathspecs, which a discard of
+ * every Working Change could make too long for a command line.
+ */
+async function indexEntries(repository: RepositoryGit, root: string, paths: string[]): Promise<IndexEntry[]> {
+    let listed = new Map<string, string>()
+    for (let record of (await repository.command(root, ["ls-files", "-s", "-z"])).toString("utf8").split("\0")) {
+        let match = /^(\d+) ([0-9a-f]+) 0\t(.+)$/s.exec(record)
+        if (match)
+            listed.set(match[3], `${match[1]} ${match[2]}`)
+    }
+    return paths.map(path => ({ path, entry: listed.get(path) }))
 }
 
 /** Moves a worktree path into holding. A missing path holds nothing; another volume turns holding off. */

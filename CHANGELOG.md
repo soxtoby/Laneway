@@ -7,6 +7,7 @@
 - Choose **Check out detached** on a remote-only branch in the Branch Graph to check out its tip in the Main Worktree. The chevron lets you choose another worktree or create one. Commit menus also offer detached checkout in their column’s worktree. The Undo notice names the remote branch or commit subject.
 - Compare branches, tags, or commits from their menus or with **Compare refs…** in the Command Lens. The picker suggests refs from your open columns. Swap sides in the comparison header and include either branch’s Working Changes.
 - Hover a branch's ↑↓ badge in the Branch Graph to see what it counts: commits not yet published to its upstream, and commits on its upstream not yet pulled.
+- Discard all of a worktree's Working Changes, staged or not, untracked files included, with **Discard Working Changes** at the end of the menu beside **Commit…**. Undo or Ctrl+Z brings them all back while the notice shows.
 
 ### Changed
 
@@ -21,6 +22,7 @@
 
 ### Fixed
 
+- Undoing the discard of a partly staged file puts back what was staged, rather than staging the whole file.
 - Undoing a discard always brings the file back into Working Changes. Before, a file discarded within a second of being edited could come back without showing as changed, so committing all changes would leave it out.
 
 ## v0.1.0-alpha.2

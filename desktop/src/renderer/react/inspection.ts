@@ -82,6 +82,11 @@ export function matchesFilter(filter: FileFilter, file: ChangedFile) {
     return status && path.includes(filter.text.toLowerCase())
 }
 
+/** Whether a Working Changes Discard can take a file: conflicts resolve, and submodules change, only on their own terms. */
+export function discardable(file: ChangedFile) {
+    return !file.conflicted && !file.submodule && !file.ignored
+}
+
 /** A list's whole diff, in an auxiliary column beside the Workspace Column or Commit Diff column it came from. */
 export interface DiffColumnView {
     kind: "diff"
@@ -297,6 +302,8 @@ export interface Inspection extends RepositoryStore<InspectionSnapshot> {
     /** What discarding `file` from `group` would discard, and the menu label for it; nothing for lists that don't discard. */
     discardTarget(columnId: string, group: string, file: ChangedFile): { label: string; files: ChangedFile[] } | undefined
     discard(columnId: string, group: string, file: ChangedFile): Promise<void>
+    /** Discards every discardable Working Change in the column's worktree, staged or not, as one discard with Undo. */
+    discardAll(columnId: string): Promise<void>
     /** Undoes the discards whose notice still shows; false when there are none, so Ctrl+Z can undo something else. */
     undoDiscard(): boolean
 }
@@ -943,13 +950,12 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
     function discardTarget(columnId: string, group: string, file: ChangedFile) {
         let state = columnState(columnId)
         let files = state?.files[group]
-        if (!state || !files || !group.startsWith("working-") || files.source.kind != "working" || file.conflicted || file.submodule)
+        if (!state || !files || !group.startsWith("working-") || files.source.kind != "working" || !discardable(file))
             return undefined
         let view = group == "working-staged" ? "staged" : "unstaged"
-        let eligible = (candidate: ChangedFile) => !candidate.conflicted && !candidate.submodule
         // A right-click on one of the chosen files acts on all of them.
         let chosen = files.inventory?.files.filter(candidate => state.selected.includes(`${group}:${candidate.path}`)) ?? []
-        let targets = chosen.length > 1 && chosen.some(candidate => candidate.path == file.path) ? chosen.filter(eligible) : [file]
+        let targets = chosen.length > 1 && chosen.some(candidate => candidate.path == file.path) ? chosen.filter(discardable) : [file]
         let label = targets.length > 1
             ? `Discard ${targets.length} selected files`
             : view == "staged"
@@ -1566,6 +1572,15 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
             if (!state?.worktreePath || !target || !activeId)
                 return
             await discards.files(activeId, state.worktreePath, group == "working-staged" ? "staged" : "unstaged", target.files)
+        },
+
+        async discardAll(columnId) {
+            let state = columnState(columnId)
+            let files = state?.files.working?.inventory?.files.filter(discardable)
+            if (!state?.worktreePath || !files?.length || !activeId)
+                return
+            // A staged discard returns each file to HEAD, whichever list it shows in.
+            await discards.files(activeId, state.worktreePath, "staged", files)
         },
 
         undoDiscard: () => discards.undo(),
