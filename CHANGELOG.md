@@ -17,6 +17,7 @@
 - Fetching in the background now brings an open column's Base, such as the Primary Branch, up to date with its remote, as long as no worktree has it checked out. The branches above it stay put until you Pull latest or Restack.
 - Pull latest no longer moves a branch onto a Primary Branch that has moved on, published or not: it brings in the branch's upstream commits, and the Base's heading in the column offers Restack for the rest. Pull latest no longer lights up just because a branch is behind the Primary Branch. `lane pull --restack` still does both.
 - Repository icons stay in the same place when the repository sidebar expands or collapses, and the sidebar no longer has a "Repositories" heading.
+- **Group by file kind** no longer puts everything in `build/` and `out/` folders under Generated, since files committed there are usually build scripts and resources. Minified files, bundles, and source maps in those folders are still Generated.
 
 ### Fixed
 

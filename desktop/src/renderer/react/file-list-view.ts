@@ -67,19 +67,9 @@ let testDirectories = new Set([
 let testNames = [/(^|[._-])(test|tests|spec|specs|e2e)([._-]|$)/i, /(Test|Tests|Spec|Specs)$/, /^conftest$/]
 let testExtensions = new Set(["snap", "feature", "t"])
 // Directories holding build output or third-party copies rather than this repository's own source.
-let generatedDirectories = new Set([
-    "node_modules",
-    "bower_components",
-    "vendor",
-    "dist",
-    "build",
-    "out",
-    "generated",
-    "__generated__",
-    ".generated",
-    "pods",
-    "obj",
-])
+// `build/` and `out/` are left out: their output is usually ignored, so what a change does commit there is
+// hand-written (build scripts, electron-builder resources, packaging). Committed bundles there still match generatedNames.
+let generatedDirectories = new Set(["node_modules", "bower_components", "vendor", "dist", "generated", "__generated__", ".generated", "pods", "obj"])
 // Lock files and other whole-file tool output, matched against the lower-cased file name.
 let generatedFiles = new Set([
     "package-lock.json",

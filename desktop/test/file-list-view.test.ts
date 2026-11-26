@@ -50,6 +50,7 @@ describe("file list view", () => {
                 "src/__generated__/schema.ts",
                 "assets/app.min.js",
                 "assets/app.js.map",
+                "build/static/js/main.min.js",
                 "api/service.pb.go",
                 "api/service_pb2.py",
                 "Models/Thing.g.cs",
@@ -106,6 +107,9 @@ describe("file list view", () => {
                 "bin/lane",
                 "playwright.config.ts",
                 "src/builder/index.ts",
+                "build/gulpfile.js",
+                "build/entitlements.mac.plist",
+                "out/app.ts",
                 "lockfile-reader.ts",
             ]
         ) {
