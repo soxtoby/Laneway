@@ -174,7 +174,7 @@ A read-only auxiliary column for inspecting one commit's complete diff against o
 _Avoid_: Diff Workspace Column
 
 **Working Changes Diff Column**:
-A transient auxiliary column showing a worktree's whole Working Changes diff beside its source Workspace Column, scrolled to the chosen file; a Workspace Column shows diffs nowhere else. A double-click or Enter on a file's row, or the row's button, opens it, and in a read-only Branch Comparison Column so does pressing the row; while it is open, pressing another file scrolls to it instead of replacing the column. It scrolls into view as it opens, keeping its source column in view. Restarting Laneway closes it.
+A transient auxiliary column showing a worktree's whole Working Changes diff beside its source Workspace Column, scrolled to the chosen file; a Workspace Column shows diffs nowhere else. A double-click or Enter on a file's row, or the row's button, opens it, and in a read-only Branch Comparison Column so does pressing the row; while it is open, pressing another file scrolls to it instead of replacing the column. It scrolls into view as it opens, keeping its source column in view. It closes once the list it shows has no files left, as when they are all committed, and when Laneway restarts.
 _Avoid_: Diff Column, Commit Diff Column
 
 **Image Diff**:

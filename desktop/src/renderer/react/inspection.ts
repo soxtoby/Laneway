@@ -838,6 +838,9 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
                 return
             next = { ...state.files[group]!, loading: false, error: errorMessage(error) }
         }
+        let diffColumn = state.diffColumn
+        let shown = diffColumn && (diffColumn.group == group || group == "working" && diffColumn.group.startsWith("working-")) ? diffColumn : undefined
+        let shownBefore = shown && listsFiles(state.files[shown.group])
         state.files[group] = next
         let inventory = next.inventory
         for (let diff of Object.values(state.diffs)) {
@@ -863,9 +866,13 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
                 }
             }
         }
-        let column = state.diffColumn
-        if (column && (column.group == group || group == "working" && column.group.startsWith("working-")))
-            populate(state, column)
+        // A diff column whose list has emptied, as once every Working Change is committed, has nothing left to show.
+        if (shown) {
+            if (shownBefore && !listsFiles(state.files[shown.group]))
+                auxiliaryFor(repositoryId).close(shown.id)
+            else
+                populate(state, shown)
+        }
         publishFor(repositoryId, state)
     }
 
@@ -1197,10 +1204,9 @@ export function createInspection({ api, notify, displayOrder }: InspectionOption
                 focusAuxiliary(state.diffColumn.id)
                 return publish()
             }
-            let listed = (group: string) => state.files[group]?.inventory?.files.some(file => !file.ignored) == true
-            let group = listed("working-staged") ? "working-staged" : "working-unstaged"
+            let group = listsFiles(state.files["working-staged"]) ? "working-staged" : "working-unstaged"
             // It starts at the top, which the file list's view may give to any of its files.
-            if (listed(group))
+            if (listsFiles(state.files[group]))
                 void showDiffColumn(state, group, undefined, undefined, true)
         },
 
@@ -1606,6 +1612,11 @@ export function branchStack(graph: BranchGraph, branch: BranchGraphBranchNode, b
         next = graph.branches.find(candidate => candidate.id == baseId)
     }
     return stack
+}
+
+/** Whether a list has files a diff column would show: any that Git doesn't ignore. */
+function listsFiles(files?: FilesState) {
+    return files?.inventory?.files.some(file => !file.ignored) == true
 }
 
 function baseTips(branch: BranchGraphBranchNode) {

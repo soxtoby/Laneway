@@ -400,6 +400,25 @@ describe("React diff column", () => {
         await app.act(() => [...pending.values()].forEach(finish => finish({ ok: true, page: scenario.page })))
         expect(diffColumn() == null).toBe(true)
     })
+
+    test("closes once its list has no files left, as when every Working Change is committed", async () => {
+        let scenario = inspectionScenario()
+        let committed = false
+        let app = await startReactApp({
+            ...scenario.api,
+            readChanges: async (...args) => {
+                let result = await scenario.api.readChanges(...args)
+                return result.ok && committed ? { ok: true, inventory: { ...result.inventory, files: [], version: "committed" } } : result
+            },
+        })
+        await app.act(() => press(button(workingChanges(), "Open diff column")))
+        expect(diffColumn() == null).toBe(false)
+
+        committed = true
+        await app.act(() => app.controller.inspection.refreshWorking())
+
+        expect(diffColumn() == null).toBe(true)
+    })
 })
 
 function columns() {
