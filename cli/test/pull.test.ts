@@ -356,6 +356,56 @@ test("fetching fast-forwards open and checked-out stacks' Bases and branches out
     expect(git(local, "log", "--format=%s", "main..one").split("\n")).toEqual(["mine on one", "colleague on one", "one"])
 }, 120_000)
 
+test("fetching fast-forwards a branch checked out at the top of its stack, files and all, once its worktree has no Working Changes", async () => {
+    let { root, other, local } = await fixture()
+    git(other, "switch", "-qc", "side", "main")
+    await commit(other, "side.txt", "side\n", "side")
+    git(other, "push", "-q", "origin", "side")
+    git(local, "fetch", "-q", "origin")
+    let sidePath = join(root, "side"), onePath = join(root, "one"), mainPath = join(root, "main")
+    git(local, "worktree", "add", "-q", "--track", "-b", "side", sidePath, "origin/side")
+    git(local, "worktree", "add", "-q", onePath, "one")
+    git(local, "switch", "-q", "two")
+    git(local, "worktree", "add", "-q", mainPath, "main")
+    let side = await commit(other, "side.txt", "side more\n", "more side")
+    git(other, "push", "-q", "origin", "side")
+    git(other, "switch", "-qc", "one", "origin/one")
+    await commit(other, "shared.txt", "from colleague\n", "colleague on one")
+    git(other, "push", "-q", "origin", "one")
+    git(other, "switch", "-qc", "two", "origin/two")
+    let two = await commit(other, "two.txt", "two updated\n", "colleague on two")
+    git(other, "push", "-q", "origin", "two")
+    git(other, "switch", "-q", "main")
+    let main = await commit(other, "base.txt", "base updated\n", "upstream main")
+    git(other, "push", "-q", "origin", "main")
+    await writeFile(join(sidePath, "notes.txt"), "mine\n")
+    let one = git(local, "rev-parse", "one")
+    let total = (await history(local)).total
+    let open = ["refs/heads/two", "refs/heads/one", "refs/heads/side", "refs/heads/main"]
+    let fetched = await fetchLatest(local, open)
+
+    // main, the Base of two's stack, moves in its worktree too.
+    expect(fetched.fastForwarded).toEqual(["refs/heads/main", "refs/heads/two"])
+    expect(git(local, "rev-parse", "two")).toBe(two)
+    expect(await readFile(join(local, "two.txt"), "utf8")).toBe("two updated\n")
+    expect(git(local, "status", "--porcelain")).toBe("")
+    expect(git(local, "rev-parse", "main")).toBe(main)
+    expect(await readFile(join(mainPath, "base.txt"), "utf8")).toBe("base updated\n")
+    expect(git(mainPath, "status", "--porcelain")).toBe("")
+    expect((await history(local)).total).toBe(total)
+    // one lies between main and two, so it waits for Pull latest; side's worktree has an untracked file.
+    expect(git(local, "rev-parse", "one")).toBe(one)
+    expect(git(local, "rev-parse", "side")).not.toBe(side)
+
+    await rm(join(sidePath, "notes.txt"))
+
+    expect((await fetchLatest(local, open)).fastForwarded).toEqual(["refs/heads/side"])
+    expect(git(local, "rev-parse", "side")).toBe(side)
+    expect(await readFile(join(sidePath, "side.txt"), "utf8")).toBe("side more\n")
+    expect(git(sidePath, "status", "--porcelain")).toBe("")
+    expect(git(sidePath, "reflog", "-1", "--format=%gs", "HEAD")).toBe("laneway: fast-forward to origin/side")
+}, 120_000)
+
 test("defers commit conflicts as an Unresolved Stack, skips a diverged Base, and updates the Unresolved Stack on a later pull", async () => {
     let { other, local } = await fixture()
     git(other, "switch", "-q", "main")

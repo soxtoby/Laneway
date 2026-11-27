@@ -378,13 +378,14 @@ test("pull defaults to the current stack and synchronizes a real remote", async 
     expect(await readFile(join(local, "README.md"), "utf8")).toBe("initial\n")
 }, 120_000)
 
-test("fetch fast-forwards a branch nothing has checked out, leaving the checked-out one for pull", async () => {
+test("fetch fast-forwards a branch nothing has checked out, leaving a checked-out one with Working Changes for pull", async () => {
     let upstream = await repository()
     let main = git(upstream, "branch", "--show-current")
     let local = await mkdtemp(join(tmpdir(), "lane-fetch-cli-"))
     directories.push(local)
     git(local, "clone", "-q", upstream, ".")
     git(local, "branch", "-q", "--track", "behind", `origin/${main}`)
+    await writeFile(join(local, "notes.txt"), "mine\n")
     let before = git(local, "rev-parse", "HEAD")
     await writeFile(join(upstream, "README.md"), "upstream\n")
     git(upstream, "commit", "-am", "Upstream")

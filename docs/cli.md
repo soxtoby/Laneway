@@ -116,8 +116,9 @@ reads a message file.
 `pull` defaults to the current branch's Active Stack and never publishes. A stack stays behind a Primary Branch that
 only moved forward, leaving that to Restack; `--restack` moves it too.
 `fetch` fetches as the desktop does in the background: it fast-forwards each branch strictly behind its upstream
-except those a worktree holds, those above the Base of the Active Stack of one it holds, and those in an Unresolved
-Stack or Historical Edit. It is outside undo/redo.
+except those between the Base and the top of the Active Stack of a branch a worktree holds, those whose worktree has
+Working Changes, and those in an Unresolved Stack or Historical Edit. A worktree holding a branch it moves has its
+files brought along. It is outside undo/redo.
 `publish` defaults to the current branch's Active Stack and publishes its changed
 branches above the Base, or the Primary Branch alone, each with an exact force-with-lease; `--preview` lists the
 destinations, and `--remote` chooses where branches without an upstream are created.

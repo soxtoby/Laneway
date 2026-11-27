@@ -1128,8 +1128,8 @@ export async function executeOperationCommand(
         })
     }
 
-    // Fetch changes no local branch Pull latest would update, so it runs outside Operation History, holding the mutation
-    // lock only to record what it moved and fast-forward branches outside every open stack.
+    // Fetch only fast-forwards, never a branch other open branches are built on above their Base, so it runs outside
+    // Operation History, holding the mutation lock only to record what it moved and fast-forward.
     if (command.command == "fetch") {
         let graphOptions = command.graphOptions(repository.descriptor.id)
         let fetched = await fetchLatest(repository, command.request, graphOptions, () => cancellation.isCancelled(), command.progress ?? (() => {}))
