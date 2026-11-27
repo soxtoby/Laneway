@@ -1,4 +1,4 @@
-import { type RegisteredWorktree, type TrackingBranch, trackingBranchName, type WorktreePreview, type WorktreeRequest } from "@laneway/shared"
+import { type ChangedWorktrees, type RegisteredWorktree, type TrackingBranch, trackingBranchName, type WorktreePreview, type WorktreeRequest } from "@laneway/shared"
 import { createHash } from "node:crypto"
 import { copyFile, lstat, readdir, readFile, readlink, stat, utimes } from "node:fs/promises"
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
@@ -189,6 +189,16 @@ async function trackingBranch(repository: RepositoryGit, remoteRef: string): Pro
     for (let suffix = 3; await repository.resolveRef(`refs/heads/${alternative}`); suffix++)
         alternative = `${name}-${suffix}`
     return { remoteRef, name, taken, alternative }
+}
+
+/** How many of a repository's worktrees have Working Changes, with a version that changes whenever any of them do. */
+export async function readChangedWorktrees(repository: RepositoryGit): Promise<ChangedWorktrees> {
+    let worktrees = (await readRegisteredWorktrees(repository)).filter(worktree => !worktree.missing)
+    let states = await Promise.all(worktrees.map(worktree => repository.workingVersion(worktree.path)))
+    return {
+        count: states.filter(state => state.changed).length,
+        version: createHash("sha256").update(states.map(state => state.version).join(" ")).digest("hex"),
+    }
 }
 
 export async function readRegisteredWorktrees(repository: RepositoryGit): Promise<RegisteredWorktree[]> {

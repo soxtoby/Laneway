@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { resolve } from "node:path"
-import { connectRepository, GitError, inferCloneDirectoryName, initializeRepository, isLikelyCloneSource, openRepository, parseGitVersion, redactGitText, selectGit, startCloneRepository } from "../src/index"
+import { connectRepository, GitError, inferCloneDirectoryName, initializeRepository, isLikelyCloneSource, openRepository, parseGitVersion, readChangedWorktrees, redactGitText, selectGit, startCloneRepository } from "../src/index"
 
 let temporaryDirectories: string[] = []
 
@@ -54,6 +54,40 @@ describe("system Git", () => {
         expect(opened.descriptor.mainWorktree).toBe(repository)
         expect(opened.descriptor.selectedWorktree).toBe(linked)
         expect(opened.descriptor.id).toBe(resolve(repository, ".git"))
+    })
+
+    test("readChangedWorktrees with changes in some worktrees counts those worktrees, ignoring ignored files and missing worktrees", async () => {
+        let repository = await committedRepository("laneway changed worktrees ")
+        let edited = await temporaryDirectory("laneway edited ")
+        let untracked = await temporaryDirectory("laneway untracked ")
+        let missing = resolve(await temporaryDirectory("laneway missing "), "gone")
+        for (let linked of [edited, untracked, missing])
+            expect(runGit(repository, "worktree", "add", "--detach", linked).exitCode).toBe(0)
+        await mkdir(resolve(repository, "build"))
+        await writeFile(resolve(repository, "build", "output.txt"), "ignored\n")
+        await writeFile(resolve(edited, "README.md"), "edited\n")
+        await mkdir(resolve(untracked, "notes"))
+        await writeFile(resolve(untracked, "notes", "todo.txt"), "untracked\n")
+        await rm(missing, { recursive: true, force: true })
+
+        let result = await readChangedWorktrees(await openRepository(repository))
+
+        expect(result.count).toBe(2)
+    })
+
+    test("readChangedWorktrees with a changed file edited again gives a new version, and the same one while nothing changes", async () => {
+        let repository = await committedRepository("laneway changes version ")
+        await writeFile(resolve(repository, "README.md"), "edited\n")
+        let git = await openRepository(repository)
+        let first = await readChangedWorktrees(git)
+
+        let unchanged = await readChangedWorktrees(git)
+        await writeFile(resolve(repository, "README.md"), "edited again\n")
+        let editedAgain = await readChangedWorktrees(git)
+
+        expect(unchanged).toEqual(first)
+        expect(editedAgain.count).toBe(1)
+        expect(editedAgain.version == first.version).toBe(false)
     })
 
     test.if(process.platform == "win32")("sees untracked files beyond the Windows path limit", async () => {
@@ -190,6 +224,19 @@ async function temporaryDirectory(prefix: string) {
     let path = await mkdtemp(resolve(tmpdir(), prefix))
     temporaryDirectories.push(path)
     return path
+}
+
+/** A repository with one commit holding README.md, and a .gitignore that ignores build/. */
+async function committedRepository(prefix: string) {
+    let repository = await temporaryDirectory(prefix)
+    expect(runGit(repository, "init", "--quiet").exitCode).toBe(0)
+    expect(runGit(repository, "config", "user.name", "Laneway Test").exitCode).toBe(0)
+    expect(runGit(repository, "config", "user.email", "laneway@example.invalid").exitCode).toBe(0)
+    await writeFile(resolve(repository, ".gitignore"), "build/\n")
+    await writeFile(resolve(repository, "README.md"), "initial\n")
+    expect(runGit(repository, "add", ".gitignore", "README.md").exitCode).toBe(0)
+    expect(runGit(repository, "commit", "--quiet", "-m", "Initial").exitCode).toBe(0)
+    return repository
 }
 
 function runGit(cwd: string, ...args: string[]) {

@@ -56,6 +56,18 @@ export function startChangesRead(
     return { cancel: reader.cancel, result }
 }
 
+/**
+ * Whether a worktree has Working Changes, with a version that changes whenever they do, including further edits to a
+ * file that had already changed. It lists the same files as the worktree's Working Changes inventory.
+ */
+export async function readWorkingVersion(start: StartCommand, worktree: string) {
+    let reader = operation(start)
+    let status = await workingStatus(reader, worktree)
+    let files = parseStatus(status)
+    let stamps = await Promise.all(files.map(file => stamp(resolve(worktree, file.path))))
+    return { changed: files.length > 0, version: hash(status + JSON.stringify(stamps)) }
+}
+
 export function startFileDiffRead(
     descriptor: RepositoryDescriptor,
     start: StartCommand,

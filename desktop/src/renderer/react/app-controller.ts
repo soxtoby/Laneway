@@ -17,6 +17,7 @@ import { createLocalBranches, type LocalBranches } from "./local-branches"
 import { errorMessage, type Notice } from "./notice"
 import { createPublish, type Publish } from "./publish"
 import { createPullLatest, type PullLatest } from "./pull-latest"
+import { createRepositoryChanges, type RepositoryChanges } from "./repository-changes"
 import { createRepositoryEntry, type RepositoryEntry } from "./repository-entry"
 import { createRepositoryIdentityEditor, type RepositoryIdentityEditor } from "./repository-identity"
 import { createRepositoryScripts, type RepositoryScriptsController } from "./repository-scripts"
@@ -62,6 +63,8 @@ export interface AppController extends Store<AppSnapshot> {
     readonly columns: BranchWorkspace
     /** The files and commits each column shows. */
     readonly inspection: Inspection
+    /** Each open repository's Working Changes, and whether they changed since it last showed, for the repository panel. */
+    readonly changes: RepositoryChanges
     /** Creating, renaming, and deleting local branches. */
     readonly branches: LocalBranches
     /** Worktree operations, and undoing and redoing the Operation History. */
@@ -128,6 +131,8 @@ export function createAppController(api: Api): AppController {
         api.onRepositoryChanged(change => {
             if (ready()?.workspace.activeRepositoryId == change.repositoryId)
                 void columns.refresh()
+            else
+                void changes.check(change.repositoryId)
         }),
         api.onEntryProgress(progress => entry.updateProgress(progress)),
         api.onUpdateReady(({ version }) => update({ readyUpdate: version })),
@@ -154,6 +159,10 @@ export function createAppController(api: Api): AppController {
             comparisonPicker.close()
         update({ workspace })
         publish.retain(workspace.repositories.map(repository => repository.id))
+        changes.retain(
+            workspace.repositories.filter(repository => repository.status == "available").map(repository => repository.id),
+            workspace.activeRepositoryId,
+        )
         let active = activeRepository(workspace)
         if (active?.status == "available")
             columns.activate(active.id)
@@ -197,6 +206,7 @@ export function createAppController(api: Api): AppController {
         notify,
         displayOrder: files => orderedFiles(files, ready()?.fileListView ?? defaultFileListView).map(entry => entry.file),
     })
+    let changes = createRepositoryChanges({ api, inspection })
     let columns = createBranchWorkspace({
         api,
         notify,
@@ -450,6 +460,7 @@ export function createAppController(api: Api): AppController {
         scripts,
         columns,
         inspection,
+        changes,
         branches,
         worktrees,
         stashes,
@@ -703,6 +714,7 @@ export function createAppController(api: Api): AppController {
             composition.dispose()
             pull.dispose()
             fetching.dispose()
+            changes.dispose()
             publish.dispose()
             for (let stop of unsubscribe)
                 stop()

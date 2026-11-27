@@ -2,7 +2,7 @@ import type { BranchGraphReadOptions, BranchHistoryRequest, ChangesRequest, Comp
 import { access, lstat, mkdir, readdir, readFile, realpath } from "node:fs/promises"
 import { isAbsolute, resolve } from "node:path"
 import { type BranchGraphReadCache, startBranchGraphRead, startBranchHistoryRead } from "./branch-graph"
-import { type ChangesReadCache, startChangesRead, startFileDiffRead, startFileImageRead, startFileVersionRead } from "./changes"
+import { type ChangesReadCache, readWorkingVersion, startChangesRead, startFileDiffRead, startFileImageRead, startFileVersionRead } from "./changes"
 import { readCommitDetails } from "./commit-details"
 import { conflictComparisonSource, conflictHistoryRequest, projectConflictGraph } from "./conflict-graph"
 import { temporaryBranchPrefix } from "./conflicts"
@@ -96,6 +96,17 @@ export class RepositoryGit {
                 prepared,
                 this.changesCache,
             ))
+    }
+
+    /**
+     * Whether a worktree has Working Changes, with a version that changes whenever they do. It reads without Git's
+     * optional locks, so checking in the background never holds up Git running elsewhere.
+     */
+    workingVersion(worktree: string) {
+        return readWorkingVersion(
+            (cwd, args, onOutput, input) => startGitProcess({ installation: this.descriptor.git, cwd, args, readOnly: true, onOutput, input }),
+            worktree,
+        )
     }
 
     startReadFileHistory(request: FileHistoryRequest) {

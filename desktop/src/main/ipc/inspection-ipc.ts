@@ -1,4 +1,5 @@
-import type { BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, ComparisonCommitResult, ComparisonRefsResult, RepositoryGraphSettings } from "@laneway/shared"
+import { readChangedWorktrees } from "@laneway/git"
+import type { BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, ChangedWorktreesResult, ComparisonCommitResult, ComparisonRefsResult, RepositoryGraphSettings } from "@laneway/shared"
 import { ChangesRequestSchema, type ChangesResult, FileDiffRequestSchema, type FileDiffResult, FileHistoryRequestSchema, type FileHistoryResult, FileImageRequestSchema, type FileImageResult, FileVersionRequestSchema, type FileVersionResult } from "@laneway/shared"
 import { ipcMain } from "electron"
 import { runEngineCommand } from "../engine"
@@ -56,6 +57,17 @@ export function registerInspectionHandlers(repositories: OpenRepositories, engin
 
             try {
                 return { ok: true, inventory: await repositories.readChanges(repositoryId, requestId, request.data) }
+            } catch (error) {
+                return { ok: false, error: entryError(error) }
+            }
+        })
+
+        ipcMain.handle("changes:worktrees", async (_event, repositoryId: unknown): Promise<ChangedWorktreesResult> => {
+            if (typeof repositoryId != "string")
+                return { ok: false, error: { code: "git.command-failed", message: "Choose a repository." } }
+
+            try {
+                return { ok: true, changes: await readChangedWorktrees(repositories.worktreeRepository(repositoryId)) }
             } catch (error) {
                 return { ok: false, error: entryError(error) }
             }

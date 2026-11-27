@@ -1,5 +1,5 @@
 import type { Appearance, AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryDefaults, EntryProgress, EntryResult, GitSettingsState, RepositoryGraphSettings, RepositoryImageFile, ScriptRunResult, Workspace } from "@laneway/shared"
-import type { ChangesRequest, ChangesResult, CommitDetails, ComparisonCommitResult, ComparisonRefsResult, FileDiffRequest, FileDiffResult, FileImageRequest, FileImageResult, FileListView, FileVersionRequest, FileVersionResult, RemoteImageResult } from "@laneway/shared"
+import type { ChangedWorktreesResult, ChangesRequest, ChangesResult, CommitDetails, ComparisonCommitResult, ComparisonRefsResult, FileDiffRequest, FileDiffResult, FileImageRequest, FileImageResult, FileListView, FileVersionRequest, FileVersionResult, RemoteImageResult } from "@laneway/shared"
 import type { WorktreeActionResult, WorktreePreviewResult, WorktreeRequest } from "@laneway/shared"
 import type { CommitDraft, LocalActionResult, LocalRequest } from "@laneway/shared"
 import type { DiscardRequest, DiscardResult, DiscardUndoResult } from "@laneway/shared"
@@ -76,6 +76,8 @@ declare global {
             executeWorktree(repositoryId: string, request: WorktreeRequest, token?: string): Promise<WorktreeActionResult>
             transitionOperation(repositoryId: string, action: "undo" | "redo", basename?: string): Promise<WorktreeActionResult>
             readChanges(repositoryId: string, requestId: string, request: ChangesRequest): Promise<ChangesResult>
+            /** How many of a repository's worktrees have Working Changes, read without holding up Git elsewhere. */
+            readChangedWorktrees(repositoryId: string): Promise<ChangedWorktreesResult>
             readFileHistory(repositoryId: string, requestId: string, request: FileHistoryRequest): Promise<FileHistoryResult>
             readFileDiff(repositoryId: string, requestId: string, request: FileDiffRequest): Promise<FileDiffResult>
             readFileImage(repositoryId: string, requestId: string, request: FileImageRequest): Promise<FileImageResult>

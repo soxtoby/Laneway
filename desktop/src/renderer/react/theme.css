@@ -260,6 +260,8 @@
     --text-color-placeholder: #98a3b8;
     --highlight-background: #f2a92c;
     --focus-ring-color: #f2a92c;
+    --changes-badge-seen: var(--text-color-placeholder);
+    --changes-badge-unseen: var(--highlight-background);
     --tint-200: var(--highlight-hover);
     --tint-1400: var(--text-color);
 }

@@ -56,6 +56,7 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
     let branchesBusy = useSnapshot(branches).busy
     let operating = columnsBusy || worktreesBusy || branchesBusy
     let settings = useSnapshot(gitSettings).settings
+    let changes = useSnapshot(controller.changes)
     let busy = snapshot.opening || entering
     useLensShortcut(controller.lens.open)
     let active = workspace.repositories.find(repository => repository.id == workspace.activeRepositoryId)
@@ -86,6 +87,7 @@ function Shell({ api, controller, snapshot }: { api: IconImageApi; controller: A
                         <RepositoryPanel
                             repositories={workspace.repositories}
                             activeId={workspace.activeRepositoryId}
+                            changes={changes}
                             api={api}
                             busy={busy}
                             onSelect={id => void controller.selectRepository(id)}

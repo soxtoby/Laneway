@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld("laneway", {
     transitionOperation: (repositoryId: string, action: "undo" | "redo", basename?: string) =>
         ipcRenderer.invoke("worktree:history", repositoryId, action, basename),
     readChanges: (repositoryId: string, requestId: string, request: ChangesRequest) => ipcRenderer.invoke("changes:read", repositoryId, requestId, request),
+    readChangedWorktrees: (repositoryId: string) => ipcRenderer.invoke("changes:worktrees", repositoryId),
     readFileHistory: (repositoryId: string, requestId: string, request: FileHistoryRequest) =>
         ipcRenderer.invoke("history:read", repositoryId, requestId, request),
     readFileDiff: (repositoryId: string, requestId: string, request: FileDiffRequest) => ipcRenderer.invoke("changes:diff", repositoryId, requestId, request),

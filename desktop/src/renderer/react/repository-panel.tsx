@@ -6,6 +6,7 @@ import { Hint } from "./controls"
 import { DenseRow } from "./dense-row"
 import { AddIcon, CollapsePanelIcon, ExpandPanelIcon } from "./icons"
 import { automaticIcon, repositoryName } from "./repositories"
+import type { RepositoryChangesSnapshot, RepositoryChangesState } from "./repository-changes"
 import type { IconImageApi } from "./repository-icon-images"
 import { RepositoryTile } from "./repository-tile"
 import { GripVertical } from "./ui/icons"
@@ -15,6 +16,8 @@ import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
 interface RepositoryPanelProps {
     repositories: OpenRepository[]
     activeId?: string
+    /** Each repository's Working Changes; a repository not yet checked is absent. */
+    changes: RepositoryChangesSnapshot
     api: IconImageApi
     /** Opening or adding a repository is under way, so choosing another waits. */
     busy: boolean
@@ -76,7 +79,9 @@ function PanelAction({ label, labelled, children, ...props }: Pick<ButtonProps, 
 }
 
 function RepositoryList(
-    { repositories, activeId, api, busy, onSelect, onReorder, onCustomize, onClose, collapsed }: RepositoryPanelProps & { collapsed: boolean },
+    { repositories, activeId, changes, api, busy, onSelect, onReorder, onCustomize, onClose, collapsed }: RepositoryPanelProps & {
+        collapsed: boolean
+    },
 ) {
     let list = useRef<HTMLDivElement>(null)
     let ids = repositories.map(repository => repository.id)
@@ -123,6 +128,8 @@ function RepositoryList(
                     let name = repositoryName(repository)
                     let isActive = repository.id == activeId
                     let path = repository.status == "available" ? repository.info.selectedWorktree : "Unavailable"
+                    let working = changes[repository.id]
+                    let summary = changesSummary(working)
                     return (
                         <DenseRow
                             key={repository.id}
@@ -135,18 +142,23 @@ function RepositoryList(
                             }}
                         >
                             {({ isFocusVisibleWithin, actions }) => (
-                                <Hint text={collapsed ? `${name}\n${path}` : path} placement="end">
+                                <Hint text={[collapsed && name, path, summary].filter(Boolean).join("\n")} placement="end">
                                     <div className="repository-content">
                                         <AriaButton slot="drag" className="drag-handle" data-visible={isFocusVisibleWithin || undefined}>
                                             <GripVertical />
                                         </AriaButton>
-                                        <RepositoryTile
-                                            icon={repository.icon ?? automaticIcon(repository)}
-                                            name={name}
-                                            api={api}
-                                            isActive={isActive}
-                                            isMissing={repository.status != "available"}
-                                        />
+                                        <span className="repository-tile">
+                                            <RepositoryTile
+                                                icon={repository.icon ?? automaticIcon(repository)}
+                                                name={name}
+                                                api={api}
+                                                isActive={isActive}
+                                                isMissing={repository.status != "available"}
+                                            />
+                                            {summary && (
+                                                <span className="changes-badge" data-unseen={working?.unseen || undefined} role="img" aria-label={summary} />
+                                            )}
+                                        </span>
                                         {!collapsed && (
                                             <>
                                                 <span className="repository-copy">
@@ -165,6 +177,14 @@ function RepositoryList(
             </GridList>
         </div>
     )
+}
+
+/** What a repository's row says about its Working Changes, when it has any. */
+function changesSummary(working?: RepositoryChangesState) {
+    if (!working?.count)
+        return undefined
+    let summary = `Working Changes in ${working.count} ${working.count == 1 ? "worktree" : "worktrees"}`
+    return working.unseen ? `${summary}, changed since you last looked` : summary
 }
 
 function RepositoryMenuItems({ onCustomize, onClose }: { onCustomize(): void; onClose(): void }) {

@@ -138,6 +138,14 @@ export interface FileImagePage {
 
 export type ChangesResult = { ok: true; inventory: ChangesInventory } | { ok: false; error: EntryError }
 
+/** How many of a repository's worktrees have Working Changes, with a version that changes whenever any of them do. */
+export interface ChangedWorktrees {
+    count: number
+    version: string
+}
+
+export type ChangedWorktreesResult = { ok: true; changes: ChangedWorktrees } | { ok: false; error: EntryError }
+
 export type FileDiffResult = { ok: true; page: FileDiffPage } | { ok: false; error: EntryError }
 
 export type FileImageResult = { ok: true; page: FileImagePage } | { ok: false; error: EntryError }

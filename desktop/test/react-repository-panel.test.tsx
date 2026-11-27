@@ -205,6 +205,31 @@ describe("React repository panel", () => {
         expect(isShown(repositoryColumn(infos[1]!.id)!)).toBe(false)
     })
 
+    test("repositories with Working Changes mark their tiles, quietly once they have shown them", async () => {
+        let scenario = inspectionScenario()
+        let changed = openedWorkspace(repositoryInfo("D:\\Source\\changed")).repositories[0]!
+        let clean = openedWorkspace(repositoryInfo("D:\\Source\\clean")).repositories[0]!
+        let workspace = { ...scenario.saved(), repositories: [...scenario.saved().repositories, changed, clean] }
+        let app = await startReactApp(fakeLaneway({
+            ...scenario.api,
+            getState: async () => ({ ...appState(), workspace }),
+            selectRepository: async id => workspace = { ...workspace, activeRepositoryId: id },
+            readChangedWorktrees: async repositoryId => ({ ok: true, changes: { count: repositoryId == clean.id ? 0 : 2, version: "unchanged" } }),
+        }))
+        await app.act(() => pause(0))
+        let opened = changesBadges()
+
+        await app.act(() => press(repositoryRow("changed")))
+        await app.act(() => pause(0))
+
+        expect(opened).toEqual({
+            inspection: "Working Changes in 1 worktree",
+            changed: "Working Changes in 2 worktrees, changed since you last looked",
+            clean: undefined,
+        })
+        expect(changesBadges()).toMatchObject({ inspection: "Working Changes in 2 worktrees", changed: expect.not.stringContaining("since you last looked") })
+    })
+
     test("a missing repository explains itself and can be located", async () => {
         let repository = repositoryInfo("D:\\Source\\moved")
         let missing: Workspace = {
@@ -249,6 +274,10 @@ function repositoryNames() {
 
 function repositoryRow(name?: string) {
     return repositoryRows().find(row => name == undefined || row.getAttribute("aria-label") == name)!
+}
+
+function changesBadges() {
+    return Object.fromEntries(repositoryRows().map(row => [row.getAttribute("aria-label"), row.querySelector("[role=img]")?.getAttribute("aria-label")]))
 }
 
 function mainColumn() {

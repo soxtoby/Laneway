@@ -2823,6 +2823,33 @@
     font-size: var(--font-size-sm);
 }
 
+/* A repository with Working Changes marks its tile's corner, ringed in its row's background to stand clear of the tile.
+   The mark stays quiet once the repository has shown its changes, and lights up when they change after it's left. */
+.repository-tile {
+    position: relative;
+    flex: 0 0 auto;
+    display: block;
+}
+
+.changes-badge {
+    position: absolute;
+    top: -2px;
+    inset-inline-end: -2px;
+    width: var(--spacing-2);
+    height: var(--spacing-2);
+    border-radius: 50%;
+    background: var(--changes-badge-seen);
+    box-shadow: 0 0 0 2px var(--gray-50);
+
+    &[data-unseen] {
+        background: var(--changes-badge-unseen);
+    }
+
+    :is(.active, [data-hovered]) & {
+        box-shadow: 0 0 0 2px var(--selection-background);
+    }
+}
+
 /* React Aria starts keyboard drags from this button; it only shows for keyboard focus. */
 .drag-handle {
     position: absolute;
