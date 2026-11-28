@@ -115,6 +115,10 @@ export function registerRepositoryHandlers(repositories: OpenRepositories, works
         ipcMain.handle("workspace:update", (_event, request: { workspace?: unknown }) => {
             return workspace.update(request?.workspace)
         })
+        ipcMain.handle("workspace:seen-changes", async (_event, request: { id?: unknown; version?: unknown }) => {
+            if (typeof request?.id == "string" && typeof request.version == "string" && request.version)
+                await workspace.markChangesSeen(request.id, request.version)
+        })
 
         ipcMain.handle("workspace:reset", () => workspace.reset())
         ipcMain.handle("icon:read", (_event, request: { path?: unknown }) => typeof request?.path == "string" ? readIconImage(request.path) : undefined)

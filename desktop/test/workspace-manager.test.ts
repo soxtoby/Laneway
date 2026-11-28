@@ -203,6 +203,24 @@ describe("Workspace manager", () => {
         expect(manager.snapshot().repositories[0].lastScriptId).toBeUndefined()
     })
 
+    test("keeps the version of a repository's Working Changes last seen across restarts, whatever presentation is saved", async () => {
+        let repositoryPath = await temporaryDirectory("laneway-workspace-seen-")
+        expect(runGit(repositoryPath, "init", "--quiet").exitCode).toBe(0)
+        let statePath = resolve(await temporaryDirectory("laneway-workspace-state-"), "workspace.json")
+        let settingsPath = resolve(await temporaryDirectory("laneway-workspace-settings-"), "settings.json")
+        let manager = new WorkspaceManager(new OpenRepositories(settingsPath), statePath)
+        await manager.load()
+        let opened = await manager.open(repositoryPath)
+        let repository = opened.repositories[0]
+
+        await manager.markChangesSeen(repository.id, "seen")
+        await manager.update({ ...opened, repositories: [{ ...repository, seenChangesVersion: "older" }] })
+        await manager.update(opened)
+
+        let restored = await new WorkspaceManager(new OpenRepositories(settingsPath), statePath).load()
+        expect(restored.repositories[0].seenChangesVersion).toBe("seen")
+    })
+
     test("infers a repository's favicon only when it is unambiguous", async () => {
         let repositoryPath = await temporaryDirectory("laneway-workspace-favicon-")
         expect(runGit(repositoryPath, "init", "--quiet").exitCode).toBe(0)

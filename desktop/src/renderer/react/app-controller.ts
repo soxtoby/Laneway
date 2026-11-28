@@ -159,10 +159,7 @@ export function createAppController(api: Api): AppController {
             comparisonPicker.close()
         update({ workspace })
         publish.retain(workspace.repositories.map(repository => repository.id))
-        changes.retain(
-            workspace.repositories.filter(repository => repository.status == "available").map(repository => repository.id),
-            workspace.activeRepositoryId,
-        )
+        changes.retain(workspace.repositories.filter(repository => repository.status == "available"), workspace.activeRepositoryId)
         let active = activeRepository(workspace)
         if (active?.status == "available")
             columns.activate(active.id)

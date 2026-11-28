@@ -52,6 +52,7 @@ export class WorkspaceManager {
                 ...(repository.icon ? { icon: structuredClone(repository.icon) } : {}),
                 ...(repository.scripts ? { scripts: structuredClone(repository.scripts) } : {}),
                 ...(repository.lastScriptId ? { lastScriptId: repository.lastScriptId } : {}),
+                ...(repository.seenChangesVersion ? { seenChangesVersion: repository.seenChangesVersion } : {}),
             }
             return info
                 ? { ...common, status: "available" as const, info, ...(favicon ? { favicon } : {}) }
@@ -205,6 +206,15 @@ export class WorkspaceManager {
             await this.save()
 
         return this.snapshot()
+    }
+
+    /** Keeps the version of a repository's Working Changes when it was left, so a restart still shows them as seen. */
+    async markChangesSeen(id: string, version: string) {
+        let record = this.requireStored(id)
+        if (record.seenChangesVersion == version)
+            return
+        record.seenChangesVersion = version
+        await this.save()
     }
 
     async reset() {

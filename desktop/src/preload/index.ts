@@ -64,6 +64,7 @@ contextBridge.exposeInMainWorld("laneway", {
     closeRepository: (id: string) => ipcRenderer.invoke("workspace:close", { id }),
     locateRepository: (id: string, useAnyway = false) => ipcRenderer.invoke("workspace:locate", { id, useAnyway }),
     updateWorkspace: (workspace: Workspace) => ipcRenderer.invoke("workspace:update", { workspace }),
+    markChangesSeen: (repositoryId: string, version: string) => ipcRenderer.invoke("workspace:seen-changes", { id: repositoryId, version }),
     resetWorkspace: () => ipcRenderer.invoke("workspace:reset"),
     readIconImage: (path: string) => ipcRenderer.invoke("icon:read", { path }),
     listRepositoryImages: (repositoryId: string) => ipcRenderer.invoke("icon:list", { repositoryId }),

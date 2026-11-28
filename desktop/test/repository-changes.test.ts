@@ -8,17 +8,15 @@ test("createRepositoryChanges with an active repository counts it from its colum
     let inspection = createStore<InspectionSnapshot>(inspected("alpha", {}))
     let checked: string[] = []
     let sut = createRepositoryChanges({
-        api: {
-            readChangedWorktrees: async repositoryId => {
-                checked.push(repositoryId)
-                return changes(repositoryId == "alpha" ? 3 : 1)
-            },
-        },
+        api: fakeApi(async repositoryId => {
+            checked.push(repositoryId)
+            return changes(repositoryId == "alpha" ? 3 : 1)
+        }),
         inspection,
         environment: fakeEnvironment().environment,
     })
 
-    sut.retain(["alpha", "beta"], "alpha")
+    sut.retain(repositories("alpha", "beta"), "alpha")
     await Bun.sleep(0)
 
     expect(checked).toEqual(["alpha", "beta"])
@@ -40,21 +38,21 @@ test("createRepositoryChanges with an active repository counts it from its colum
 test("createRepositoryChanges with a repository left behind shows its changes as seen until they change", async () => {
     let versions: Record<string, string> = { alpha: "first", beta: "first" }
     let sut = createRepositoryChanges({
-        api: { readChangedWorktrees: async repositoryId => changes(1, versions[repositoryId]) },
+        api: fakeApi(async repositoryId => changes(1, versions[repositoryId])),
         inspection: createStore<InspectionSnapshot>(inspected(undefined, {})),
         environment: fakeEnvironment().environment,
     })
-    sut.retain(["alpha", "beta"], "alpha")
+    sut.retain(repositories("alpha", "beta"), "alpha")
     await Bun.sleep(0)
 
-    sut.retain(["alpha", "beta"], "beta")
+    sut.retain(repositories("alpha", "beta"), "beta")
     let leaving = sut.snapshot()
     await Bun.sleep(0)
     let left = sut.snapshot()
     versions.alpha = "edited"
     await sut.check("alpha")
     let edited = sut.snapshot()
-    sut.retain(["alpha", "beta"], "alpha")
+    sut.retain(repositories("alpha", "beta"), "alpha")
     let returned = sut.snapshot()
 
     expect(leaving).toEqual({ alpha: { count: 1, unseen: false }, beta: { count: 1, unseen: false } })
@@ -63,16 +61,53 @@ test("createRepositoryChanges with a repository left behind shows its changes as
     expect(returned.alpha).toEqual({ count: 1, unseen: false })
 })
 
+test("createRepositoryChanges with versions seen before a restart shows those changes as seen until they change", async () => {
+    let versions: Record<string, string> = { alpha: "first", beta: "edited" }
+    let sut = createRepositoryChanges({
+        api: fakeApi(async repositoryId => changes(1, versions[repositoryId])),
+        inspection: createStore<InspectionSnapshot>(inspected(undefined, {})),
+        environment: fakeEnvironment().environment,
+    })
+
+    sut.retain([{ id: "alpha", seenChangesVersion: "first" }, { id: "beta", seenChangesVersion: "first" }])
+    await Bun.sleep(0)
+    let restarted = sut.snapshot()
+    versions.alpha = "edited"
+    await sut.check("alpha")
+
+    expect(restarted).toEqual({ alpha: { count: 1, unseen: false }, beta: { count: 1, unseen: true } })
+    expect(sut.snapshot().alpha).toEqual({ count: 1, unseen: true })
+})
+
+test("createRepositoryChanges with a repository left behind saves the version it was left at, over an older one in the workspace", async () => {
+    let saved: Record<string, string> = {}
+    let sut = createRepositoryChanges({
+        api: fakeApi(async () => changes(1, "edited"), saved),
+        inspection: createStore<InspectionSnapshot>(inspected(undefined, {})),
+        environment: fakeEnvironment().environment,
+    })
+    let workspace = [{ id: "alpha", seenChangesVersion: "first" }, { id: "beta" }]
+    sut.retain(workspace, "alpha")
+    await Bun.sleep(0)
+
+    sut.retain(workspace, "beta")
+    await Bun.sleep(0)
+    sut.retain(workspace, "beta")
+
+    expect(saved).toEqual({ alpha: "edited" })
+    expect(sut.snapshot().alpha).toEqual({ count: 1, unseen: false })
+})
+
 test("createRepositoryChanges with a check answered after the columns read keeps the columns' count", async () => {
     let inspection = createStore<InspectionSnapshot>(inspected("alpha", {}))
     let answer: (result: ChangedWorktreesResult) => void = () => {}
     let sut = createRepositoryChanges({
-        api: { readChangedWorktrees: () => new Promise(resolve => answer = resolve) },
+        api: fakeApi(() => new Promise(resolve => answer = resolve)),
         inspection,
         environment: fakeEnvironment().environment,
     })
 
-    sut.retain(["alpha"], "alpha")
+    sut.retain(repositories("alpha"), "alpha")
     inspection.publish(inspected("alpha", { main: worktreeColumn("D:\\alpha", []) }))
     answer(changes(1))
     await Bun.sleep(0)
@@ -84,11 +119,11 @@ test("createRepositoryChanges checks every repository in turn on focus and while
     let { environment, advance, focus, setFocused } = fakeEnvironment()
     let answers: Array<{ repositoryId: string; resolve(result: ChangedWorktreesResult): void }> = []
     let sut = createRepositoryChanges({
-        api: { readChangedWorktrees: repositoryId => new Promise(resolve => answers.push({ repositoryId, resolve })) },
+        api: fakeApi(repositoryId => new Promise(resolve => answers.push({ repositoryId, resolve }))),
         inspection: createStore<InspectionSnapshot>(inspected(undefined, {})),
         environment,
     })
-    sut.retain(["alpha", "beta"])
+    sut.retain(repositories("alpha", "beta"))
     await answerAll(answers, 0)
 
     await focus()
@@ -114,18 +149,32 @@ test("createRepositoryChanges checks every repository in turn on focus and while
 test("createRepositoryChanges with a failed check keeps the last count, and drops repositories no longer retained", async () => {
     let results: ChangedWorktreesResult[] = [changes(1), changes(0), { ok: false, error: { code: "git.command-failed", message: "Locked." } }]
     let sut = createRepositoryChanges({
-        api: { readChangedWorktrees: async () => results.shift()! },
+        api: fakeApi(async () => results.shift()!),
         inspection: createStore<InspectionSnapshot>(inspected(undefined, {})),
         environment: fakeEnvironment().environment,
     })
-    sut.retain(["alpha", "beta"])
+    sut.retain(repositories("alpha", "beta"))
     await Bun.sleep(0)
 
     await sut.check("alpha")
-    sut.retain(["alpha"])
+    sut.retain(repositories("alpha"))
 
     expect(sut.snapshot()).toEqual({ alpha: { count: 1, unseen: true } })
 })
+
+/** Answers each check with `read`, keeping each repository's version when it was left in `saved`. */
+function fakeApi(read: (repositoryId: string) => Promise<ChangedWorktreesResult>, saved: Record<string, string> = {}) {
+    return {
+        readChangedWorktrees: read,
+        async markChangesSeen(repositoryId: string, version: string) {
+            saved[repositoryId] = version
+        },
+    }
+}
+
+function repositories(...ids: string[]) {
+    return ids.map(id => ({ id }))
+}
 
 function changes(count: number, version = `${count} changed`): ChangedWorktreesResult {
     return { ok: true, changes: { count, version } }

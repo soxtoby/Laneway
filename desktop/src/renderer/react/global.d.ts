@@ -100,6 +100,8 @@ declare global {
             closeRepository(id: string): Promise<Workspace>
             locateRepository(id: string, useAnyway?: boolean): Promise<Workspace>
             updateWorkspace(workspace: Workspace): Promise<Workspace>
+            /** Keeps the version of a repository's Working Changes when it was left, for the next start to show as seen. */
+            markChangesSeen(repositoryId: string, version: string): Promise<void>
             resetWorkspace(): Promise<Workspace>
             /** The bytes of a favicon or chosen icon image, or nothing when it cannot be read as an icon. */
             readIconImage(path: string): Promise<{ bytes: Uint8Array; mime: string } | undefined>

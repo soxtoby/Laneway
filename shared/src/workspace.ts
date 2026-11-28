@@ -72,6 +72,8 @@ export interface AvailableOpenRepository extends RepositoryIdentity, RepositoryS
     columns: WorkspaceColumn[]
     focusedColumnId?: string
     layoutInitialized: boolean
+    /** The version of its Working Changes when it was last left, which show as seen until it changes. */
+    seenChangesVersion?: string
 }
 
 export interface MissingOpenRepository extends RepositoryIdentity, RepositoryScripts {
@@ -82,6 +84,7 @@ export interface MissingOpenRepository extends RepositoryIdentity, RepositoryScr
     columns: WorkspaceColumn[]
     focusedColumnId?: string
     layoutInitialized: boolean
+    seenChangesVersion?: string
     error: EntryError
 }
 

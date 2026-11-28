@@ -33,7 +33,7 @@ A resizable view of an Active Stack ending at one branch, or a Branch Comparison
 _Avoid_: Worktree column
 
 **Workspace State**:
-The persisted presentation of repositories and Workspace Columns, including their order, size, collapse state, focus, and each column's unified or side-by-side diff preference. Laneway restores it after restart but does not restore broken-out diffs, focused inspection, selected files, selected changes, or scroll positions; Git facts are always recomputed.
+The persisted presentation of repositories and Workspace Columns, including their order, size, collapse state, focus, each column's unified or side-by-side diff preference, and the version of each repository's Working Changes when it was last left, so changes already seen stay seen. Laneway restores it after restart but does not restore broken-out diffs, focused inspection, selected files, selected changes, or scroll positions; Git facts are always recomputed.
 _Avoid_: Repository cache, persisted Git state
 
 **Open Repository**:

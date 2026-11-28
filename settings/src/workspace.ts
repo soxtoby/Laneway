@@ -20,6 +20,11 @@ export interface StoredRepository {
     columns: WorkspaceColumn[]
     focusedColumnId?: string
     layoutInitialized: boolean
+    /**
+     * The version of its Working Changes when it was last left. Only the main process sets it, so a presentation the
+     * renderer saves from an older snapshot can't take it back.
+     */
+    seenChangesVersion?: string
 }
 
 export interface StoredWorkspace {
@@ -170,6 +175,7 @@ function parseRepository(value: unknown): StoredRepository | undefined {
         ...(objectFormat ? { objectFormat } : {}),
         anchors: [...new Set(record.anchors as string[])],
         open: record.open,
+        ...(nonEmptyString(record.seenChangesVersion) ? { seenChangesVersion: record.seenChangesVersion } : {}),
     }
 }
 

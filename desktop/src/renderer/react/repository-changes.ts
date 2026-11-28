@@ -7,7 +7,7 @@ type Api = Window["laneway"]
 export interface RepositoryChangesState {
     /** How many of its worktrees have Working Changes. */
     count: number
-    /** They changed since the repository was last left, or it hasn't shown since Laneway started. */
+    /** They changed since the repository was last left, in this session or an earlier one, or it has never been left. */
     unseen: boolean
 }
 
@@ -17,9 +17,10 @@ export type RepositoryChangesSnapshot = Record<string, RepositoryChangesState>
 export interface RepositoryChanges extends Store<RepositoryChangesSnapshot> {
     /**
      * Keeps these available repositories' Working Changes only, checking any not yet checked. The active repository's
-     * are seen, and a repository left behind's are seen as they were when it was left.
+     * are seen, and a repository left behind's are seen as they were when it was left, which Workspace State keeps
+     * across restarts.
      */
-    retain(repositoryIds: string[], activeRepositoryId?: string): void
+    retain(repositories: Array<{ id: string; seenChangesVersion?: string }>, activeRepositoryId?: string): void
     /** Checks a repository again, unless its columns already show its Working Changes. */
     check(repositoryId: string): Promise<void>
     dispose(): void
@@ -33,7 +34,7 @@ export interface RepositoryChangesEnvironment {
 }
 
 interface RepositoryChangesOptions {
-    api: Pick<Api, "readChangedWorktrees">
+    api: Pick<Api, "readChangedWorktrees" | "markChangesSeen">
     inspection: Pick<Inspection, "subscribe" | "snapshot">
     environment?: RepositoryChangesEnvironment
 }
@@ -89,8 +90,11 @@ export function createRepositoryChanges({ api, inspection, environment = windowE
 
     function take(repositoryId: string, count: number, version: string) {
         versions.set(repositoryId, version)
-        if (leaving.delete(repositoryId))
+        if (leaving.delete(repositoryId) && seenVersions.get(repositoryId) != version) {
             seenVersions.set(repositoryId, version)
+            // Failing to keep it only shows these changes as unseen after a restart.
+            void api.markChangesSeen(repositoryId, version).catch(() => undefined)
+        }
         // The columns may have read the repository's Working Changes meanwhile, which are newer.
         if (shown()?.repositoryId != repositoryId)
             counts.set(repositoryId, count)
@@ -133,11 +137,17 @@ export function createRepositoryChanges({ api, inspection, environment = windowE
         subscribe: store.subscribe,
         snapshot: store.snapshot,
 
-        retain(repositoryIds, activeRepositoryId) {
+        retain(repositories, activeRepositoryId) {
+            let repositoryIds = repositories.map(repository => repository.id)
             let left = activeId && activeId != activeRepositoryId && repositoryIds.includes(activeId) ? [activeId] : []
             retained = repositoryIds
             activeId = activeRepositoryId
             forgetClosed()
+            // A version seen this session is newer than the workspace's, which may predate leaving the repository.
+            for (let { id, seenChangesVersion } of repositories) {
+                if (seenChangesVersion && !seenVersions.has(id))
+                    seenVersions.set(id, seenChangesVersion)
+            }
             for (let repositoryId of left)
                 leaving.add(repositoryId)
             publish()
