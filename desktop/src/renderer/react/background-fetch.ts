@@ -42,10 +42,10 @@ let interval = 5 * 60_000
 let fresh = 60_000
 
 /**
- * Keeps remote branches current without Pull latest. Each fetch fast-forwards the open columns' Bases, branches outside
- * their stacks, and the branch at the top of a stack a worktree holds, but a branch a worktree holds only while that
- * worktree has no Working Changes, bringing its files along. Branches between a Base and the top of a stack, and an
- * open column's branch no worktree holds, change only when Pull latest runs.
+ * Keeps remote branches current without Pull latest. Each fetch fast-forwards the open columns' Bases, their own
+ * branches, and branches outside their stacks, but a branch a worktree holds only while that worktree has no Working
+ * Changes, bringing its files along. Branches between a Base and the top of an open stack change only when Pull latest
+ * runs.
  */
 export function createBackgroundFetch({ api, active, environment = windowEnvironment() }: BackgroundFetchOptions): BackgroundFetch {
     let store = createStore<BackgroundFetchSnapshot>({ running: {}, fetched: {}, failures: {} })

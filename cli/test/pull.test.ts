@@ -309,7 +309,7 @@ test("incorporates upstream commits another tool's fetch brought, and leaves a b
     expect(git(local, "rev-parse", "one")).toBe(reworded)
 }, 120_000)
 
-test("fetching fast-forwards open and checked-out stacks' Bases and branches outside those stacks, and leaves the rest for Pull latest", async () => {
+test("fetching fast-forwards Bases, open columns' branches, and branches outside open stacks, but not a diverged branch", async () => {
     let { other, local } = await fixture()
     git(other, "switch", "-qc", "side", "main")
     await commit(other, "side.txt", "side\n", "side")
@@ -341,14 +341,14 @@ test("fetching fast-forwards open and checked-out stacks' Bases and branches out
     expect(git(local, "rev-parse", "main")).toBe(newMain)
     expect(git(local, "rev-parse", "two")).toBe(two)
     expect((await history(local)).total).toBe(total)
-    // An open column's stack is left alone too.
 
+    // An open column's branch no worktree holds moves too.
     git(other, "switch", "-q", "side")
-    await commit(other, "side.txt", "side again\n", "side again")
+    let sideAgain = await commit(other, "side.txt", "side again\n", "side again")
     git(other, "push", "-q", "origin", "side")
 
-    expect((await fetchLatest(local, ["refs/heads/side"])).fastForwarded).toEqual([])
-    expect(git(local, "rev-parse", "side")).toBe(side)
+    expect((await fetchLatest(local, ["refs/heads/side"])).fastForwarded).toEqual(["refs/heads/side"])
+    expect(git(local, "rev-parse", "side")).toBe(sideAgain)
 
     let pulled = await pull(local, ["refs/heads/one"])
 
