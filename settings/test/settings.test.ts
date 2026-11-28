@@ -100,6 +100,29 @@ describe("Workspace State", () => {
         expect("lastScriptId" in workspace.repositories[1]).toBe(false)
     })
 
+    test("round-trips the scripts saved for every repository, which a repository's last script may name", async () => {
+        let path = (await temporarySettingsPath()).replace("settings.json", "workspace.json")
+        let repository = { id: "repository-1", path: "D:\\Source\\project", name: "project", anchors: [], open: true, layoutInitialized: false, columns: [] }
+        let editor = { id: "editor", name: "Editor", command: "code .", icon: { kind: "emoji" as const, emoji: "📝" } }
+        let build = { id: "build", name: "Build", command: "bun run build" }
+        await writeWorkspace({
+            version: 1,
+            scripts: [editor, { id: "broken", name: "", command: "x" }],
+            repositories: [{ ...repository, scripts: [build, { ...build, id: "editor" }], lastScriptId: "editor" }, {
+                ...repository,
+                id: "repository-2",
+                lastScriptId: "broken",
+            }],
+        }, path)
+
+        let { workspace } = await readWorkspace(path)
+
+        expect(workspace.scripts).toEqual([editor])
+        // An id names one script, and the one saved for every repository keeps it.
+        expect(workspace.repositories[0]).toMatchObject({ scripts: [build], lastScriptId: "editor" })
+        expect("lastScriptId" in workspace.repositories[1]).toBe(false)
+    })
+
     test("skips malformed repository records", async () => {
         let path = (await temporarySettingsPath()).replace("settings.json", "workspace.json")
         await mkdir(resolve(path, ".."), { recursive: true })

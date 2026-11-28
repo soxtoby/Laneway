@@ -9,6 +9,7 @@
 - Hover a branch's ↑↓ badge in the Branch Graph to see what it counts: commits not yet published to its upstream, and commits on its upstream not yet pulled.
 - Discard all of a worktree's Working Changes, staged or not, untracked files included, with **Discard Working Changes** at the end of the menu beside **Commit…**. Undo or Ctrl+Z brings them all back while the notice shows.
 - A dot on a repository's icon in the sidebar shows that one of its worktrees has Working Changes. It's amber until you open the repository, then grey, and turns amber again if they change after you switch away. It stays grey when Laneway restarts, unless they changed while it was closed. Hover the repository to see how many of its worktrees have them.
+- Save a script for every repository, such as one that opens your editor or a terminal: tick **Available in every repository** when you create or configure it. The script menu lists these above the repository's own scripts.
 
 ### Changed
 

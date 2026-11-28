@@ -13,22 +13,42 @@ import { useSnapshotValue } from "./use-snapshot"
 
 /**
  * A worktree column's script button, a split button: its icon runs the repository's last script in the worktree, or
- * opens the worktree's folder before any has run, and its chevron lists opening the folder, then each script with a
- * gear beside it that configures or deletes it, then creating one.
+ * opens the worktree's folder before any has run, and its chevron lists opening the folder, then the scripts saved for
+ * every repository, then the repository's own, each with a gear beside it that configures or deletes it, then
+ * creating one.
  */
 export function ScriptButton({ controller, repositoryId, path }: { controller: AppController; repositoryId: string; path: string }) {
     let repository = useSnapshotValue(
         controller,
         snapshot => snapshot.status == "ready" ? snapshot.workspace.repositories.find(item => item.id == repositoryId) : undefined,
     )
+    let global = useSnapshotValue(controller, snapshot => snapshot.status == "ready" ? snapshot.workspace.scripts : undefined)
     let platform = useSnapshotValue(controller, snapshot => snapshot.status == "ready" ? snapshot.platform : "")
     let { scripts } = controller
     if (!repository)
         return null
     let folder = openFolderLabel(platform)
-    let last = lastScript(repository)
+    let last = lastScript(global, repository)
     let label = last ? `Run ${last.name}` : folder
     let run = (scriptId: string) => void scripts.run(repositoryId, path, scriptId)
+    // React Aria's menu items can't hold buttons, so the gear is the next item, sharing the row.
+    let items = (listed: RepositoryScript[] = []) =>
+        listed.map(script => (
+            <Fragment key={script.id}>
+                <MenuItem className="react-aria-MenuItem split-action" textValue={script.name} onAction={() => run(script.id)}>
+                    <ScriptTile script={script} api={scripts.images} />
+                    <Text slot="label">{script.name}</Text>
+                </MenuItem>
+                <MenuItem
+                    className="react-aria-MenuItem split-more script-configure"
+                    aria-label={`Configure ${script.name}`}
+                    textValue={`Configure ${script.name}`}
+                    onAction={() => scripts.edit(repositoryId, script.id)}
+                >
+                    <ConfigureIcon />
+                </MenuItem>
+            </Fragment>
+        ))
     return (
         <div className="script-split">
             <TooltipTrigger>
@@ -49,23 +69,10 @@ export function ScriptButton({ controller, repositoryId, path }: { controller: A
                         <OpenFolderIcon />
                         <Text slot="label">{folder}</Text>
                     </MenuItem>
-                    {/* React Aria's menu items can't hold buttons, so the gear is the next item, sharing the row. */}
-                    {repository.scripts?.map(script => (
-                        <Fragment key={script.id}>
-                            <MenuItem className="react-aria-MenuItem split-action" textValue={script.name} onAction={() => run(script.id)}>
-                                <ScriptTile script={script} api={scripts.images} />
-                                <Text slot="label">{script.name}</Text>
-                            </MenuItem>
-                            <MenuItem
-                                className="react-aria-MenuItem split-more script-configure"
-                                aria-label={`Configure ${script.name}`}
-                                textValue={`Configure ${script.name}`}
-                                onAction={() => scripts.edit(repositoryId, script.id)}
-                            >
-                                <ConfigureIcon />
-                            </MenuItem>
-                        </Fragment>
-                    ))}
+                    {items(global)}
+                    {/* The line parts the scripts every repository has, as it has opening the folder, from its own. */}
+                    {global?.length && repository.scripts?.length ? <Separator /> : null}
+                    {items(repository.scripts)}
                     <Separator />
                     <MenuItem textValue="New script" onAction={() => scripts.create(repositoryId)}>
                         <AddIcon />

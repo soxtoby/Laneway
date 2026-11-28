@@ -1,11 +1,11 @@
-import type { OpenRepository, Workspace } from "@laneway/shared"
+import type { OpenRepository, RepositoryScript, Workspace } from "@laneway/shared"
 import { repositoryInitials } from "@laneway/shared"
 import { useState } from "react"
 import { DialogHeader } from "./dialog-header"
 import { chosenIcon } from "./icon-choice"
 import { IconFields } from "./icon-pickers"
 import { repositoryName } from "./repositories"
-import type { RepositoryScriptsController, ScriptEditorSnapshot } from "./repository-scripts"
+import { availableScripts, type RepositoryScriptsController, type ScriptEditorSnapshot } from "./repository-scripts"
 import { ScriptTile } from "./script-button"
 import { Button } from "./ui/Button"
 import { Checkbox } from "./ui/Checkbox"
@@ -15,7 +15,10 @@ import { Modal } from "./ui/Modal"
 import { TextField } from "./ui/TextField"
 import { useSnapshot } from "./use-snapshot"
 
-/** Creating or configuring a Repository Script, which saves on Save; a saved one also deletes from here, with Undo. */
+/**
+ * Creating or configuring a Repository Script, for the repository whose script menu opened it or for every repository,
+ * which saves on Save; a saved one also deletes from here, with Undo.
+ */
 export function ScriptDialog({ scripts, workspace }: { scripts: RepositoryScriptsController; workspace: Workspace }) {
     let state = useSnapshot(scripts)
     // The closing dialog keeps its content while it animates away.
@@ -27,14 +30,21 @@ export function ScriptDialog({ scripts, workspace }: { scripts: RepositoryScript
     return (
         <Modal isOpen={state.repositoryId != undefined && repository != undefined} onOpenChange={isOpen => isOpen || scripts.close()}>
             <Dialog className="react-aria-Dialog identity-dialog script-dialog">
-                {repository && <ScriptFields scripts={scripts} state={shown} repository={repository} />}
+                {repository && <ScriptFields scripts={scripts} state={shown} repository={repository} global={workspace.scripts} />}
             </Dialog>
         </Modal>
     )
 }
 
-function ScriptFields({ scripts, state, repository }: { scripts: RepositoryScriptsController; state: ScriptEditorSnapshot; repository: OpenRepository }) {
-    let saved = repository.scripts?.find(script => script.id == state.scriptId)
+function ScriptFields({ scripts, state, repository, global }: {
+    scripts: RepositoryScriptsController
+    state: ScriptEditorSnapshot
+    repository: OpenRepository
+    /** The scripts saved for every repository. */
+    global?: RepositoryScript[]
+}) {
+    let saved = availableScripts(global, repository).find(script => script.id == state.scriptId)
+    let name = repositoryName(repository)
     let initials = state.name.trim() ? repositoryInitials(state.name) : ""
     return (
         <Form
@@ -46,8 +56,9 @@ function ScriptFields({ scripts, state, repository }: { scripts: RepositoryScrip
         >
             <DialogHeader>
                 <ScriptTile className="tile dialog-title-icon" script={{ name: state.name, icon: chosenIcon(state, saved?.icon) }} api={scripts.images} />
-                <Heading slot="title">{saved ? `Configure ${saved.name}` : "New script"}</Heading>
-                <span className="dialog-title-detail">{repositoryName(repository)}</span>
+                {/* A script saved or deleted from here keeps its title while the dialog closes, though it may be found no longer. */}
+                <Heading slot="title">{state.scriptId ? `Configure ${saved?.name ?? state.name.trim()}` : "New script"}</Heading>
+                <span className="dialog-title-detail">{state.global ? "Every repository" : name}</span>
             </DialogHeader>
             <TextField label="Name" value={state.name} onChange={scripts.setName} maxLength={80} autoComplete="off" autoFocus />
             <TextField
@@ -67,6 +78,13 @@ function ScriptFields({ scripts, state, repository }: { scripts: RepositoryScrip
             >
                 Open in a terminal
             </Checkbox>
+            <Checkbox
+                isSelected={state.global}
+                onChange={scripts.setGlobal}
+                description={`Every repository's script menu lists it. Otherwise only ${name}'s does.`}
+            >
+                Available in every repository
+            </Checkbox>
             <IconFields
                 chooser={scripts}
                 choice={state}
@@ -80,7 +98,7 @@ function ScriptFields({ scripts, state, repository }: { scripts: RepositoryScrip
                 api={scripts.images}
             />
             <div className="dialog-actions">
-                {saved && <Button variant="quiet" className="dialog-delete" onPress={scripts.delete}>Delete</Button>}
+                {state.scriptId && <Button variant="quiet" className="dialog-delete" onPress={scripts.delete}>Delete</Button>}
                 <Button variant="secondary" onPress={scripts.close}>Cancel</Button>
                 <Button type="submit" variant="accent" isDisabled={!state.name.trim() || !state.command.trim()}>Save</Button>
             </div>

@@ -203,6 +203,51 @@ describe("Workspace manager", () => {
         expect(manager.snapshot().repositories[0].lastScriptId).toBeUndefined()
     })
 
+    test("saves the scripts for every repository, where running finds them from each repository, and rejects one sharing an id", async () => {
+        let firstPath = await temporaryDirectory("laneway-workspace-every-first-")
+        let secondPath = await temporaryDirectory("laneway-workspace-every-second-")
+        expect(runGit(firstPath, "init", "--quiet").exitCode).toBe(0)
+        expect(runGit(secondPath, "init", "--quiet").exitCode).toBe(0)
+        let statePath = resolve(await temporaryDirectory("laneway-workspace-state-"), "workspace.json")
+        let settingsPath = resolve(await temporaryDirectory("laneway-workspace-settings-"), "settings.json")
+        let manager = new WorkspaceManager(new OpenRepositories(settingsPath), statePath)
+        await manager.load()
+        await manager.open(firstPath)
+        let opened = await manager.open(secondPath)
+        let [first, second] = opened.repositories
+        let editor = { id: "editor", name: "Editor", command: "code ." }
+        let build = { id: "build", name: "Build", command: "bun run build" }
+        let saved = {
+            ...opened,
+            scripts: [editor],
+            repositories: [{ ...first, scripts: [build], lastScriptId: "editor" }, { ...second, lastScriptId: "editor" }],
+        }
+
+        await manager.update(saved)
+
+        expect(manager.snapshot()).toMatchObject({
+            scripts: [editor],
+            repositories: [{ scripts: [build], lastScriptId: "editor" }, { lastScriptId: "editor" }],
+        })
+        expect(manager.script(first.id, "editor")).toEqual(editor)
+        expect(manager.script(second.id, "editor")).toEqual(editor)
+        expect(manager.script(second.id, "build")).toBeUndefined()
+        let restored = await new WorkspaceManager(new OpenRepositories(settingsPath), statePath).load()
+        expect(restored).toMatchObject({ scripts: [editor], repositories: [{ scripts: [build], lastScriptId: "editor" }, { lastScriptId: "editor" }] })
+
+        // An id names one script, so a repository's own can't take the id of one every repository has.
+        let clashing = { ...saved, repositories: [{ ...first, scripts: [{ ...build, id: "editor" }] }, second] }
+        await expect(manager.update(clashing)).rejects.toThrow()
+        expect(manager.script(first.id, "build")).toEqual(build)
+
+        // Leaving out the scripts for every repository clears them, and the buttons that repeated one open the folder again.
+        await manager.update({ ...saved, scripts: undefined })
+        expect(manager.script(second.id, "editor")).toBeUndefined()
+        expect(manager.snapshot().scripts).toBeUndefined()
+        expect(manager.snapshot().repositories.map(repository => repository.lastScriptId)).toEqual([undefined, undefined])
+        expect(manager.script(first.id, "build")).toEqual(build)
+    })
+
     test("keeps the version of a repository's Working Changes last seen across restarts, whatever presentation is saved", async () => {
         let repositoryPath = await temporaryDirectory("laneway-workspace-seen-")
         expect(runGit(repositoryPath, "init", "--quiet").exitCode).toBe(0)

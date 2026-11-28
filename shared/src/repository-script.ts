@@ -1,7 +1,7 @@
 import { z } from "zod"
 import { type RepositoryIcon, RepositoryIconSchema } from "./repository-icon"
 
-/** A Repository Script: a command the user saves for a repository, run in a worktree's directory. */
+/** A Repository Script: a command the user saves for one repository or for every repository, run in a worktree's directory. */
 export interface RepositoryScript {
     id: string
     name: string
@@ -16,10 +16,10 @@ export interface RepositoryScript {
 /** The script every repository has, which can't be changed or removed: opening the worktree in the file manager. */
 export const openFolderScriptId = "open-folder"
 
-/** A repository's scripts and the one its worktree columns' script buttons repeat. */
+/** A repository's own scripts and the one its worktree columns' script buttons repeat. */
 export interface RepositoryScripts {
     scripts?: RepositoryScript[]
-    /** The last script run, which may be `openFolderScriptId`; opening the folder before any. */
+    /** The last script run, which may be `openFolderScriptId` or one saved for every repository; opening the folder before any. */
     lastScriptId?: string
 }
 

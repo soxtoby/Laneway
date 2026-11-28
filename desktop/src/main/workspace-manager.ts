@@ -71,13 +71,18 @@ export class WorkspaceManager {
         return {
             repositories,
             ...(activeRepositoryId ? { activeRepositoryId } : {}),
+            ...(this.stored.scripts?.length ? { scripts: structuredClone(this.stored.scripts) } : {}),
             ...(this.persistenceError ? { persistenceError: this.persistenceError } : {}),
         }
     }
 
-    /** A saved Repository Script, as the main process runs only what Workspace State holds. */
+    /**
+     * A saved Repository Script a repository has, one saved for every repository or its own, as the main process runs
+     * only what Workspace State holds.
+     */
     script(repositoryId: string, scriptId: string) {
-        return this.stored.repositories.find(repository => repository.id == repositoryId)?.scripts?.find(script => script.id == scriptId)
+        let repository = this.stored.repositories.find(repository => repository.id == repositoryId)
+        return repository && [...this.stored.scripts ?? [], ...repository.scripts ?? []].find(script => script.id == scriptId)
     }
 
     repositoryOpenDefaultPath() {
@@ -201,6 +206,8 @@ export class WorkspaceManager {
             ordered.push({ ...stored, open: false })
 
         this.stored.repositories = ordered
+        // As a repository's are, the scripts for every repository are part of each snapshot.
+        this.stored.scripts = workspace.scripts
         this.stored.activeRepositoryId = workspace.activeRepositoryId
         if (JSON.stringify(this.stored) != previous)
             await this.save()

@@ -1,4 +1,4 @@
-import type { Appearance, BranchHistoryCommit, FileListView, OpenRepository, RepositoryIdentity, RepositoryScripts, Workspace, WorkspaceColumn } from "@laneway/shared"
+import type { Appearance, BranchHistoryCommit, FileListView, OpenRepository, RepositoryIdentity, Workspace, WorkspaceColumn } from "@laneway/shared"
 import { defaultFileListView } from "@laneway/shared"
 import { type BackgroundFetch, createBackgroundFetch } from "./background-fetch"
 import { type BranchRebase, createBranchRebase } from "./branch-rebase"
@@ -57,7 +57,7 @@ export interface AppController extends Store<AppSnapshot> {
     readonly entry: RepositoryEntry
     readonly gitSettings: GitSettings
     readonly identity: RepositoryIdentityEditor
-    /** Each repository's scripts, run from its worktree columns. */
+    /** Each repository's scripts and those saved for every repository, run from worktree columns. */
     readonly scripts: RepositoryScriptsController
     /** The active repository's Workspace Columns. */
     readonly columns: BranchWorkspace
@@ -110,8 +110,6 @@ export interface AppController extends Store<AppSnapshot> {
     locateRepository(id: string): Promise<void>
     /** Shows a repository's new name and icon at once, and saves them once changes pause. */
     customizeRepository(id: string, identity: RepositoryIdentity): void
-    /** Shows a repository's scripts and the one its script buttons repeat at once, and saves them. */
-    setScripts(id: string, scripts: RepositoryScripts): Promise<void>
     /** Takes every open repository's id in the new order. */
     reorderRepositories(ids: string[]): Promise<void>
     /** Replaces a Workspace State that can't be read with an empty one. */
@@ -195,7 +193,7 @@ export function createAppController(api: Api): AppController {
         notify,
         workspace: () => ready()?.workspace,
         platform: () => ready()?.platform ?? "",
-        change: (id, chosen) => void controller.setScripts(id, chosen),
+        change: workspace => void changeWorkspace(workspace),
     })
 
     let inspection = createInspection({
@@ -448,6 +446,14 @@ export function createAppController(api: Api): AppController {
         }
     }
 
+    // Shows a changed workspace at once, such as its scripts or the order of its repositories, and saves it.
+    async function changeWorkspace(workspace: Workspace) {
+        if (!ready())
+            return
+        update({ workspace })
+        await saveWorkspace()
+    }
+
     let controller: AppController = {
         subscribe: store.subscribe,
         snapshot: store.snapshot,
@@ -640,44 +646,15 @@ export function createAppController(api: Api): AppController {
             identitySave = setTimeout(() => void saveWorkspace(), 200)
         },
 
-        async setScripts(id, chosen) {
-            let current = ready()
-            if (!current)
-                return
-            let repositories = current.workspace.repositories.map(repository => {
-                if (repository.id != id)
-                    return repository
-                let changed = { ...repository, ...chosen }
-                if (!chosen.scripts?.length)
-                    delete changed.scripts
-                if (!chosen.lastScriptId)
-                    delete changed.lastScriptId
-                return changed
-            })
-            let workspace = { ...current.workspace, repositories }
-            update({ workspace })
-            try {
-                update({ workspace: await api.updateWorkspace(workspace) })
-            } catch (error) {
-                notify({ code: "workspace.save.failed", message: errorMessage(error) })
-            }
-        },
-
         // The new order shows at once; a dropped repository already appears in its slot while the workspace saves.
         async reorderRepositories(ids) {
             let current = ready()
             if (!current)
                 return
-            let workspace = {
+            await changeWorkspace({
                 ...current.workspace,
                 repositories: [...current.workspace.repositories].sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id)),
-            }
-            update({ workspace })
-            try {
-                update({ workspace: await api.updateWorkspace(workspace) })
-            } catch (error) {
-                notify({ code: "workspace.save.failed", message: errorMessage(error) })
-            }
+            })
         },
 
         async resetWorkspace() {

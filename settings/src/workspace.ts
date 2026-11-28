@@ -30,6 +30,8 @@ export interface StoredRepository {
 export interface StoredWorkspace {
     version: 1
     repositories: StoredRepository[]
+    /** The Repository Scripts saved for every repository. */
+    scripts?: RepositoryScript[]
     activeRepositoryId?: string
     lastRepositoryParentPath?: string
 }
@@ -64,7 +66,12 @@ export function parseWorkspacePresentation(value: unknown) {
     if (!Array.isArray(record.repositories))
         throw new Error("Workspace State is invalid.")
 
-    let repositories = Array.from(record.repositories, repository => parsePresentation(repository)).filter(repository => repository != undefined)
+    let scripts = parseScripts(record.scripts, false)
+    if (scripts === null)
+        throw new Error("Workspace State is invalid.")
+
+    let global = scriptIds(scripts)
+    let repositories = Array.from(record.repositories, repository => parsePresentation(repository, false, global)).filter(repository => repository != undefined)
     let ids = new Set(repositories.map(repository => repository.id))
     if (
         repositories.length != record.repositories.length || ids.size != repositories.length
@@ -73,7 +80,7 @@ export function parseWorkspacePresentation(value: unknown) {
         throw new Error("Workspace State is invalid.")
     }
 
-    return { repositories, activeRepositoryId: record.activeRepositoryId }
+    return { repositories, activeRepositoryId: record.activeRepositoryId, ...(scripts?.length ? { scripts } : {}) }
 }
 
 export async function readWorkspace(path = defaultWorkspacePath()): Promise<{ workspace: StoredWorkspace; skipped: number }> {
@@ -104,10 +111,13 @@ export async function readWorkspace(path = defaultWorkspacePath()): Promise<{ wo
     if (!Array.isArray(record.repositories))
         throw new WorkspaceStateError("workspace.corrupt", `Workspace State at ${path} has no repository list.`, path)
 
+    // Restoring drops what doesn't parse, so it never refuses the list.
+    let scripts = parseScripts(record.scripts, true) ?? undefined
+    let global = scriptIds(scripts)
     let seen = new Set<string>()
     let repositories: StoredRepository[] = []
     for (let value of record.repositories) {
-        let repository = parseRepository(value)
+        let repository = parseRepository(value, global)
         if (repository && !seen.has(repository.id)) {
             seen.add(repository.id)
             repositories.push(repository)
@@ -121,6 +131,7 @@ export async function readWorkspace(path = defaultWorkspacePath()): Promise<{ wo
         workspace: {
             version: 1,
             repositories,
+            ...(scripts?.length ? { scripts } : {}),
             ...(activeRepositoryId ? { activeRepositoryId } : {}),
             ...(lastRepositoryParentPath ? { lastRepositoryParentPath } : {}),
         },
@@ -151,7 +162,7 @@ function emptyWorkspace(): StoredWorkspace {
     return { version: 1, repositories: [] }
 }
 
-function parseRepository(value: unknown): StoredRepository | undefined {
+function parseRepository(value: unknown, global: ReadonlySet<string>): StoredRepository | undefined {
     if (!value || typeof value != "object" || Array.isArray(value))
         return undefined
 
@@ -163,7 +174,7 @@ function parseRepository(value: unknown): StoredRepository | undefined {
         return undefined
     }
 
-    let presentation = parsePresentation(record, true)
+    let presentation = parsePresentation(record, true, global)
     if (!presentation)
         return undefined
 
@@ -179,7 +190,8 @@ function parseRepository(value: unknown): StoredRepository | undefined {
     }
 }
 
-function parsePresentation(value: unknown, restoring = false) {
+/** A repository's presentation; `global` holds the ids of the scripts saved for every repository. */
+function parsePresentation(value: unknown, restoring: boolean, global: ReadonlySet<string>) {
     if (!value || typeof value != "object" || Array.isArray(value))
         return undefined
 
@@ -204,12 +216,12 @@ function parsePresentation(value: unknown, restoring = false) {
     let icon = record.icon === undefined ? undefined : RepositoryIconSchema.safeParse(record.icon)
     if (!restoring && ((label && !label.success) || (icon && !icon.success)))
         return undefined
-    let scripts = parseScripts(record.scripts, restoring)
+    let scripts = parseScripts(record.scripts, restoring, global)
     if (scripts === null)
         return undefined
     // The script repeated may have been removed since; the button then opens the folder.
     let lastScriptId = typeof record.lastScriptId == "string"
-            && (record.lastScriptId == openFolderScriptId || scripts?.some(script => script.id == record.lastScriptId))
+            && (record.lastScriptId == openFolderScriptId || global.has(record.lastScriptId) || scripts?.some(script => script.id == record.lastScriptId))
         ? record.lastScriptId
         : undefined
 
@@ -225,15 +237,22 @@ function parsePresentation(value: unknown, restoring = false) {
     }
 }
 
-/** A repository's scripts, without those that no longer parse on restore; `null` rejects a renderer's invalid list. */
-function parseScripts(value: unknown, restoring: boolean): RepositoryScript[] | undefined | null {
+/**
+ * A list of scripts, without those that no longer parse on restore; `null` rejects a renderer's invalid list. A
+ * repository's script whose id one saved for every repository has, in `taken`, counts as invalid, so an id names one script.
+ */
+function parseScripts(value: unknown, restoring: boolean, taken?: ReadonlySet<string>): RepositoryScript[] | undefined | null {
     if (value === undefined)
         return undefined
     if (!Array.isArray(value))
         return restoring ? undefined : null
     let scripts = value.map(script => RepositoryScriptSchema.safeParse(script)).filter(script => script.success).map(script => script.data)
-    let unique = scripts.filter((script, index) => scripts.findIndex(other => other.id == script.id) == index)
+    let unique = scripts.filter((script, index) => !taken?.has(script.id) && scripts.findIndex(other => other.id == script.id) == index)
     return !restoring && unique.length != value.length ? null : unique
+}
+
+function scriptIds(scripts: RepositoryScript[] | undefined): ReadonlySet<string> {
+    return new Set(scripts?.map(script => script.id))
 }
 
 function parseColumn(value: unknown, restoring = false): WorkspaceColumn | undefined {

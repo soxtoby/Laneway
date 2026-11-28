@@ -1,6 +1,6 @@
 import { type ComparisonRef, type DiffLayout } from "./changes"
 import type { RepositoryIdentity } from "./repository-icon"
-import type { RepositoryScripts } from "./repository-script"
+import type { RepositoryScript, RepositoryScripts } from "./repository-script"
 
 export type ObjectFormat = "sha1" | "sha256"
 
@@ -93,6 +93,8 @@ export type OpenRepository = AvailableOpenRepository | MissingOpenRepository
 export interface Workspace {
     repositories: OpenRepository[]
     activeRepositoryId?: string
+    /** The Repository Scripts saved for every repository, which each lists before its own. */
+    scripts?: RepositoryScript[]
     persistenceError?: EntryError
 }
 

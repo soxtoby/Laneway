@@ -101,13 +101,77 @@ describe("React repository scripts", () => {
         expect(scenario.saved().repositories[0]!.lastScriptId).toBe("serve")
         expect(button(header(), "Run Serve") != null).toBe(true)
     })
+
+    test("a script made available in every repository saves for them all, lists before the repository's own, and repeats once run", async () => {
+        let scenario = await withScripts([{ id: "test", name: "Test", command: "bun test" }], "test")
+        let runs: string[][] = []
+        let app = await startReactApp({
+            ...scenario.api,
+            runScript: async (...run) => {
+                runs.push(run)
+                return { ok: true }
+            },
+        })
+
+        await app.act(() => press(button(header(), "Scripts")))
+        await app.act(() => press(menuItem("New script…")))
+        await app.act(() => type(field(dialog(), "Name"), "Editor"))
+        await app.act(() => type(field(dialog(), "Command"), "code ."))
+        await app.act(() => press(checkbox("Available in every repository")))
+        await app.act(() => submit(dialog().querySelector("form")!))
+
+        let [editor] = scenario.saved().scripts!
+        expect(editor).toEqual({ id: editor!.id, name: "Editor", command: "code ." })
+        expect(scenario.saved().repositories[0]!.scripts).toEqual([{ id: "test", name: "Test", command: "bun test" }])
+        await app.act(() => press(button(header(), "Scripts")))
+        expect(menuNames()).toEqual(["Open in File Explorer", "Editor", "Configure Editor", "Test", "Configure Test", "New script…"])
+        // A line parts the scripts every repository has from the repository's own, and another parts those from creating one.
+        expect(menuSeparators()).toBe(2)
+        await app.act(() => press(menuItem("Editor")))
+        expect(runs).toEqual([[scenario.graph.repositoryId, worktreePath, editor!.id]])
+        expect(scenario.saved().repositories[0]!.lastScriptId).toBe(editor!.id)
+        expect(button(header(), "Run Editor") != null).toBe(true)
+    })
+
+    test("a script every repository has shows that in its dialog, where it returns to the one repository or deletes with Undo", async () => {
+        let editor = { id: "editor", name: "Editor", command: "code ." }
+        let scenario = await withScripts([{ id: "test", name: "Test", command: "bun test" }], "editor", [editor])
+        let app = await startReactApp(scenario.api)
+
+        await app.act(() => press(button(header(), "Scripts")))
+        await app.act(() => press(menuItem("Configure Editor")))
+        expect(checkbox("Available in every repository").checked).toBe(true)
+        await app.act(() => press(checkbox("Available in every repository")))
+        await app.act(() => submit(dialog().querySelector("form")!))
+
+        expect(scenario.saved().scripts).toBeUndefined()
+        expect(scenario.saved().repositories[0]!.scripts).toMatchObject([{ id: "test" }, { name: "Editor", command: "code ." }])
+        expect(button(header(), "Run Editor") != null).toBe(true)
+
+        await app.act(() => press(button(header(), "Scripts")))
+        expect(menuNames()).toEqual(["Open in File Explorer", "Test", "Configure Test", "Editor", "Configure Editor", "New script…"])
+        expect(menuSeparators()).toBe(1)
+        await app.act(() => press(menuItem("Configure Editor")))
+        expect(checkbox("Available in every repository").checked).toBe(false)
+        await app.act(() => press(checkbox("Available in every repository")))
+        await app.act(() => submit(dialog().querySelector("form")!))
+        await app.act(() => press(button(header(), "Scripts")))
+        await app.act(() => press(menuItem("Configure Editor")))
+        await app.act(() => press(button(dialog(), "Delete")))
+
+        expect(scenario.saved().scripts).toBeUndefined()
+        expect(button(header(), "Open in File Explorer") != null).toBe(true)
+        await app.act(() => press(button(document.querySelector<HTMLElement>("[role=alertdialog]")!, "Undo")))
+        expect(scenario.saved().scripts).toMatchObject([{ name: "Editor", command: "code ." }])
+        expect(button(header(), "Run Editor") != null).toBe(true)
+    })
 })
 
-async function withScripts(scripts: RepositoryScript[], lastScriptId: string) {
+async function withScripts(scripts: RepositoryScript[], lastScriptId: string, everyRepository?: RepositoryScript[]) {
     let scenario = inspectionScenario()
     let saved = scenario.saved()
     saved.repositories[0] = { ...saved.repositories[0]!, scripts, lastScriptId }
-    await scenario.api.updateWorkspace(saved)
+    await scenario.api.updateWorkspace({ ...saved, ...everyRepository ? { scripts: everyRepository } : {} })
     return scenario
 }
 
@@ -127,6 +191,10 @@ function dialog() {
 /** Each menu item's name: its accessible label, or its visible one, which leaves out the script's tile. */
 function menuNames() {
     return [...document.querySelectorAll("[role=menu] [role=menuitem]")].map(itemName)
+}
+
+function menuSeparators() {
+    return document.querySelectorAll("[role=menu] [role=separator]").length
 }
 
 function itemName(item: Element) {
