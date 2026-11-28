@@ -10,6 +10,7 @@ import { type Composition, createComposition } from "./composition"
 import { type Conflicts, createConflicts } from "./conflicts"
 import { undoWindowMs } from "./discard"
 import { orderedFiles } from "./file-list-view"
+import { copyText } from "./file-paths"
 import { createGitSettings, type GitSettings } from "./git-settings"
 import { createHistoricalEdits, type HistoricalEdits } from "./historical-edit"
 import { createInspection, type Inspection } from "./inspection"
@@ -194,6 +195,7 @@ export function createAppController(api: Api): AppController {
         workspace: () => ready()?.workspace,
         platform: () => ready()?.platform ?? "",
         change: workspace => void changeWorkspace(workspace),
+        copy: copyText,
     })
 
     let inspection = createInspection({

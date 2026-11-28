@@ -1179,6 +1179,44 @@
     }
 }
 
+/* On a diff's toolbar the button repeats the last File Script, whose icon shows at the size of the toolbar's others. */
+.file-script {
+    > svg.script-tile {
+        width: var(--spacing-4);
+        height: var(--spacing-4);
+    }
+
+    &[data-copied] {
+        color: var(--status-added);
+    }
+}
+
+/* There it is a split button, as a worktree column's script button is: the narrow chevron beside it lists the File
+   Scripts. It stays while a key has focus in it or its menu is open. */
+.file-script-split {
+    display: flex;
+
+    &:has([data-focus-visible], [aria-expanded="true"]) {
+        opacity: 1;
+    }
+
+    > .script-run {
+        border-start-end-radius: 0;
+        border-end-end-radius: 0;
+    }
+
+    > .script-more {
+        width: var(--spacing-4);
+        border-start-start-radius: 0;
+        border-end-start-radius: 0;
+
+        > svg {
+            width: var(--spacing-3);
+            height: var(--spacing-3);
+        }
+    }
+}
+
 .folder-chevron {
     flex: 0 0 auto;
     width: var(--spacing-4);
@@ -2979,7 +3017,8 @@
     display: none;
 }
 
-.script-menu .react-aria-MenuItem > svg.script-tile {
+/* In any menu that lists scripts, a diff line's among them. */
+.react-aria-Menu .react-aria-MenuItem > svg.script-tile {
     width: 20px;
     height: 20px;
 }

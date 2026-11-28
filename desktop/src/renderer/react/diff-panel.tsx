@@ -1,8 +1,10 @@
 import type { ChangedFile, DiffLayout, DiffView } from "@laneway/shared"
 import { createContext, type ReactNode, useContext, useRef } from "react"
 import { ToggleButton } from "react-aria-components"
+import { useContextMenu } from "./context-menu"
 import { DiffLines } from "./diff-lines"
 import { holdLine } from "./diff-renderer"
+import { FileLineItems, type FileScriptRunner } from "./file-scripts"
 import { EntireFileIcon, ImageModeIcon, RenderedMarkdownIcon, SplitDiffIcon, UnifiedDiffIcon, WhitespaceIcon, WrapLinesIcon } from "./icons"
 import { ImageDiff, imageKey } from "./image-diff"
 import { type ImageDiffMode, imageModes, isComparableImage, isImagePath, preferredImageMode, visibleSummary } from "./image-files"
@@ -196,12 +198,29 @@ export function ImageModeToggle({ mode, onChange }: { mode: ImageDiffMode; onCha
     )
 }
 
+interface DiffPanelProps extends DiffProps {
+    eligible: boolean
+    /** Has a right-click on a line open the line's menu, which runs these File Scripts on the file at that line. */
+    lineMenu?: { scripts?: FileScriptRunner }
+}
+
 /**
  * A file's diff under its row: its lines, choosable in every list but a comparison's, with the chosen lines'
  * grip and discard; a Working Changes diff also switches between its staged and unstaged sides.
  */
-export function DiffPanel({ columnId, id, diff, inspection, eligible }: DiffProps & { eligible: boolean }) {
+export function DiffPanel({ columnId, id, diff, inspection, eligible, lineMenu }: DiffPanelProps) {
     let { layout } = useContext(DiffScopeContext)
+    let panel = useRef<HTMLElement>(null)
+    let openMenu = useContextMenu()
+    let path = diff.path
+    let openLineMenu = (line: number, point: { x: number; y: number }) =>
+        openMenu({
+            target: panel,
+            point: new DOMRect(point.x, point.y, 0, 0),
+            keyboard: false,
+            label: `Line ${line} of ${path}`,
+            items: () => <FileLineItems path={path} line={line} scripts={lineMenu?.scripts} />,
+        })
     let wrapLines = useSnapshotValue(inspection, snapshot => snapshot.wrapLines)
     let scope = useTransferScope()
     let page = diff.page && !eligible ? { ...diff.page, selectable: false } : diff.page
@@ -213,7 +232,7 @@ export function DiffPanel({ columnId, id, diff, inspection, eligible }: DiffProp
     let source = page && transferSource(page.source, scope?.branch)
     let discardable = page?.source.kind == "working" && (diff.view == "unstaged" || diff.view == "combined" && !page.file.staged)
     return (
-        <section className="diff-panel" aria-label={`Diff for ${diff.path}`}>
+        <section ref={panel} className="diff-panel" aria-label={`Diff for ${diff.path}`}>
             {views.length > 1 && (
                 <div className="diff-views">
                     <SegmentedControl
@@ -256,6 +275,7 @@ export function DiffPanel({ columnId, id, diff, inspection, eligible }: DiffProp
                                 showWhitespace={diff.showWhitespace}
                                 selected={selection?.lineIds ?? []}
                                 readContext={inspection.readContext}
+                                lineMenu={lineMenu && openLineMenu}
                                 select={lineIds => {
                                     if (eligible)
                                         inspection.selectLines(columnId, id, lineIds)

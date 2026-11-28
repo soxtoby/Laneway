@@ -76,7 +76,8 @@ describe("React diff column", () => {
         expect(diffRoot(file(column, "other.txt")).querySelectorAll(".diff-line.selected")).toHaveLength(1)
         await app.act(() => press(button(column, "Collapse all")))
         expect(column.querySelectorAll(".diff-panel")).toHaveLength(0)
-        expect(column.querySelectorAll(".diff-toolbar [aria-expanded='false']")).toHaveLength(2)
+        // Each toolbar's file script menu is closed too, so only the toggles that fold the files count.
+        expect(column.querySelectorAll(".diff-toolbar .diff-file-toggle[aria-expanded='false']")).toHaveLength(2)
         await app.act(() => press(button(column, "Expand all")))
         expect(column.querySelectorAll(".diff-panel")).toHaveLength(2)
         await app.act(() => press(button(column, "Collapse all")))

@@ -1,5 +1,5 @@
 import type { DiffLayout, ObjectFormat, RepositoryIcon, RepositoryScript, Workspace, WorkspaceColumn } from "@laneway/shared"
-import { ComparisonRefSchema, openFolderScriptId, RepositoryIconSchema, RepositoryLabelSchema, RepositoryScriptSchema } from "@laneway/shared"
+import { ComparisonRefSchema, copyPathScriptId, openFolderScriptId, RepositoryIconSchema, RepositoryLabelSchema, RepositoryScriptSchema } from "@laneway/shared"
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, resolve } from "node:path"
@@ -15,6 +15,8 @@ export interface StoredRepository {
     scripts?: RepositoryScript[]
     /** The script the repository's worktree columns repeat; see `RepositoryScripts`. */
     lastScriptId?: string
+    /** The File Script the repository's file buttons repeat. */
+    lastFileScriptId?: string
     anchors: string[]
     open: boolean
     columns: WorkspaceColumn[]
@@ -70,8 +72,9 @@ export function parseWorkspacePresentation(value: unknown) {
     if (scripts === null)
         throw new Error("Workspace State is invalid.")
 
-    let global = scriptIds(scripts)
-    let repositories = Array.from(record.repositories, repository => parsePresentation(repository, false, global)).filter(repository => repository != undefined)
+    let repositories = Array.from(record.repositories, repository => parsePresentation(repository, false, scripts ?? [])).filter(repository =>
+        repository != undefined
+    )
     let ids = new Set(repositories.map(repository => repository.id))
     if (
         repositories.length != record.repositories.length || ids.size != repositories.length
@@ -113,11 +116,10 @@ export async function readWorkspace(path = defaultWorkspacePath()): Promise<{ wo
 
     // Restoring drops what doesn't parse, so it never refuses the list.
     let scripts = parseScripts(record.scripts, true) ?? undefined
-    let global = scriptIds(scripts)
     let seen = new Set<string>()
     let repositories: StoredRepository[] = []
     for (let value of record.repositories) {
-        let repository = parseRepository(value, global)
+        let repository = parseRepository(value, scripts ?? [])
         if (repository && !seen.has(repository.id)) {
             seen.add(repository.id)
             repositories.push(repository)
@@ -162,7 +164,7 @@ function emptyWorkspace(): StoredWorkspace {
     return { version: 1, repositories: [] }
 }
 
-function parseRepository(value: unknown, global: ReadonlySet<string>): StoredRepository | undefined {
+function parseRepository(value: unknown, global: RepositoryScript[]): StoredRepository | undefined {
     if (!value || typeof value != "object" || Array.isArray(value))
         return undefined
 
@@ -190,8 +192,8 @@ function parseRepository(value: unknown, global: ReadonlySet<string>): StoredRep
     }
 }
 
-/** A repository's presentation; `global` holds the ids of the scripts saved for every repository. */
-function parsePresentation(value: unknown, restoring: boolean, global: ReadonlySet<string>) {
+/** A repository's presentation; `global` holds the scripts saved for every repository. */
+function parsePresentation(value: unknown, restoring: boolean, global: RepositoryScript[]) {
     if (!value || typeof value != "object" || Array.isArray(value))
         return undefined
 
@@ -216,14 +218,14 @@ function parsePresentation(value: unknown, restoring: boolean, global: ReadonlyS
     let icon = record.icon === undefined ? undefined : RepositoryIconSchema.safeParse(record.icon)
     if (!restoring && ((label && !label.success) || (icon && !icon.success)))
         return undefined
-    let scripts = parseScripts(record.scripts, restoring, global)
+    let scripts = parseScripts(record.scripts, restoring, new Set(global.map(script => script.id)))
     if (scripts === null)
         return undefined
-    // The script repeated may have been removed since; the button then opens the folder.
-    let lastScriptId = typeof record.lastScriptId == "string"
-            && (record.lastScriptId == openFolderScriptId || global.has(record.lastScriptId) || scripts?.some(script => script.id == record.lastScriptId))
-        ? record.lastScriptId
-        : undefined
+    // The script repeated may have been removed since; the button then opens the folder, or copies the file's path.
+    let repeated = (id: unknown, builtIn: string, target?: "file") =>
+        typeof id == "string" && (id == builtIn || [...global, ...scripts ?? []].some(script => script.id == id && script.target == target)) ? id : undefined
+    let lastScriptId = repeated(record.lastScriptId, openFolderScriptId)
+    let lastFileScriptId = repeated(record.lastFileScriptId, copyPathScriptId, "file")
 
     return {
         id: record.id,
@@ -234,6 +236,7 @@ function parsePresentation(value: unknown, restoring: boolean, global: ReadonlyS
         ...(icon?.success ? { icon: icon.data } : {}),
         ...(scripts?.length ? { scripts } : {}),
         ...(lastScriptId ? { lastScriptId } : {}),
+        ...(lastFileScriptId ? { lastFileScriptId } : {}),
     }
 }
 
@@ -249,10 +252,6 @@ function parseScripts(value: unknown, restoring: boolean, taken?: ReadonlySet<st
     let scripts = value.map(script => RepositoryScriptSchema.safeParse(script)).filter(script => script.success).map(script => script.data)
     let unique = scripts.filter((script, index) => !taken?.has(script.id) && scripts.findIndex(other => other.id == script.id) == index)
     return !restoring && unique.length != value.length ? null : unique
-}
-
-function scriptIds(scripts: RepositoryScript[] | undefined): ReadonlySet<string> {
-    return new Set(scripts?.map(script => script.id))
 }
 
 function parseColumn(value: unknown, restoring = false): WorkspaceColumn | undefined {

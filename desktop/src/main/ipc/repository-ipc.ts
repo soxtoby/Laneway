@@ -223,12 +223,18 @@ export function registerRepositoryHandlers(repositories: OpenRepositories, works
     }
 
     function registerScriptHandlers() {
-        ipcMain.handle("script:run", async (_event, request: { repositoryId?: unknown; path?: unknown; scriptId?: unknown }): Promise<ScriptRunResult> => {
+        type Request = { repositoryId?: unknown; path?: unknown; scriptId?: unknown; file?: { path?: unknown; line?: unknown } }
+        ipcMain.handle("script:run", async (_event, request: Request): Promise<ScriptRunResult> => {
             if (typeof request?.repositoryId != "string" || typeof request.path != "string" || typeof request.scriptId != "string")
                 return { ok: false, message: "The script request is invalid." }
             if (request.scriptId != openFolderScriptId) {
                 let script = workspace.script(request.repositoryId, request.scriptId)
-                return script ? runScript(script, request.path) : { ok: false, message: "The script is no longer saved." }
+                let { path, line } = request.file ?? {}
+                if (line !== undefined && typeof line != "number")
+                    return { ok: false, message: "The script request is invalid." }
+                // A File Script's file is checked against the worktree where it runs.
+                let file = typeof path == "string" ? { path, ...(typeof line == "number" ? { line } : {}) } : undefined
+                return script ? runScript(script, request.path, file) : { ok: false, message: "The script is no longer saved." }
             }
             // Opening a file would run it, so only a directory opens.
             if (!await isDirectory(request.path))

@@ -19,7 +19,7 @@ let worktreePath = "D:\\Source\\inspection"
 describe("React repository scripts", () => {
     test("a worktree column's script button opens the folder until a script runs, then repeats that script", async () => {
         let scenario = inspectionScenario()
-        let runs: string[][] = []
+        let runs: unknown[][] = []
         let app = await startReactApp({
             ...scenario.api,
             runScript: async (...run) => {
@@ -104,7 +104,7 @@ describe("React repository scripts", () => {
 
     test("a script made available in every repository saves for them all, lists before the repository's own, and repeats once run", async () => {
         let scenario = await withScripts([{ id: "test", name: "Test", command: "bun test" }], "test")
-        let runs: string[][] = []
+        let runs: unknown[][] = []
         let app = await startReactApp({
             ...scenario.api,
             runScript: async (...run) => {

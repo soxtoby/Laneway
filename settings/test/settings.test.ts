@@ -123,6 +123,33 @@ describe("Workspace State", () => {
         expect("lastScriptId" in workspace.repositories[1]).toBe(false)
     })
 
+    test("round-trips File Scripts, which only a repository's last File Script may name", async () => {
+        let path = (await temporarySettingsPath()).replace("settings.json", "workspace.json")
+        let repository = { id: "repository-1", path: "D:\\Source\\project", name: "project", anchors: [], open: true, layoutInitialized: false, columns: [] }
+        let code = { id: "code", name: "Code", command: "code --goto {file}[:{line}]", target: "file" as const }
+        let lint = { id: "lint", name: "Lint", command: "eslint {file}", target: "file" as const }
+        let build = { id: "build", name: "Build", command: "bun run build" }
+        await writeWorkspace({
+            version: 1,
+            scripts: [code],
+            repositories: [{ ...repository, scripts: [build, lint], lastScriptId: "build", lastFileScriptId: "lint" }, {
+                ...repository,
+                id: "repository-2",
+                lastScriptId: "code",
+                lastFileScriptId: "copy-path",
+            }, { ...repository, id: "repository-3", scripts: [build], lastScriptId: "open-folder", lastFileScriptId: "build" }],
+        }, path)
+
+        let { workspace } = await readWorkspace(path)
+
+        expect(workspace.scripts).toEqual([code])
+        expect(workspace.repositories[0]).toMatchObject({ scripts: [build, lint], lastScriptId: "build", lastFileScriptId: "lint" })
+        expect(workspace.repositories[1]).toMatchObject({ lastFileScriptId: "copy-path" })
+        expect("lastScriptId" in workspace.repositories[1]).toBe(false)
+        expect(workspace.repositories[2]).toMatchObject({ lastScriptId: "open-folder" })
+        expect("lastFileScriptId" in workspace.repositories[2]).toBe(false)
+    })
+
     test("skips malformed repository records", async () => {
         let path = (await temporarySettingsPath()).replace("settings.json", "workspace.json")
         await mkdir(resolve(path, ".."), { recursive: true })

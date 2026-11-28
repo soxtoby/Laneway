@@ -5,7 +5,8 @@ import { Hint, IconButton } from "./controls"
 import { useRowMenu } from "./dense-row"
 import { DiffControls, DiffPanel } from "./diff-panel"
 import { orderedFiles } from "./file-list-view"
-import { CopyPathButton, FileLabel, FileMenuItems, FilePath } from "./file-tree"
+import { FileScriptButton, type FileScriptRunner, scriptsOn, useFileScripts } from "./file-scripts"
+import { FileLabel, FileMenuItems, FilePath } from "./file-tree"
 import { ChevronDownIcon, CloseIcon, CollapseAllIcon, ExpandAllIcon, FileStatusIcon, MaximizeIcon, RestoreIcon } from "./icons"
 import { type ColumnInspection, type DiffColumnView, diffKey, type FileDiffState, type Inspection, matchesFilter } from "./inspection"
 import { ChevronRight } from "./ui/icons"
@@ -24,7 +25,7 @@ interface DiffColumnProps {
     /** How the source column lists its files, whose order and groups this column follows. */
     listView: FileListView
     inspection: Inspection
-    /** The worktree the files live in, enabling "Copy full path". */
+    /** The worktree the files live in, enabling "Copy full path" and the repository's File Scripts. */
     root?: string
     /** Whether its source column is maximized, which it shares the row's view with. */
     maximized: boolean
@@ -71,6 +72,7 @@ export function DiffColumn({ view, sourceName, stacked, inspected, eligible, lis
     let foldFile = useCallback((path: string, folded: boolean) => fold([path], folded), [fold])
     let collapsed = new Set(view.collapsed)
     let nearby = useNearby(scroller)
+    let scripts = useFileScripts(root)
     // Like a column header, a double-click maximizes; the header's own controls keep theirs.
     let toggleMaximized = (event: MouseEvent) => {
         if (!(event.target instanceof Element && event.target.closest("button")))
@@ -144,6 +146,7 @@ export function DiffColumn({ view, sourceName, stacked, inspected, eligible, lis
                                         diff={diff}
                                         inspection={inspection}
                                         root={root}
+                                        scripts={scriptsOn(file, scripts)}
                                         onFold={foldFile}
                                         eager={index < eagerFiles}
                                     />
@@ -291,6 +294,8 @@ interface DiffColumnFileProps {
     diff: FileDiffState
     inspection: Inspection
     root?: string
+    /** The File Scripts its file runs, from its toolbar and from a line of its diff. */
+    scripts?: FileScriptRunner
     onFold(path: string, folded: boolean): void
 }
 
@@ -300,7 +305,7 @@ interface DiffColumnFileProps {
  * view; before then the file shows as they would leave it.
  */
 const DiffColumnFile = memo(function DiffColumnFile(props: DiffColumnFileProps & { eager: boolean }) {
-    let { ownerId, eligible, collapsed, file, id, diff, inspection, eager } = props
+    let { ownerId, eligible, collapsed, file, id, diff, inspection, scripts, eager } = props
     let section = useRef<HTMLDivElement>(null)
     let near = useNear(section, eager)
     return (
@@ -316,12 +321,12 @@ const DiffColumnFile = memo(function DiffColumnFile(props: DiffColumnFileProps &
                         </span>
                     </header>
                 )}
-            {!collapsed && <DiffPanel columnId={ownerId} id={id} diff={diff} inspection={inspection} eligible={eligible} />}
+            {!collapsed && <DiffPanel columnId={ownerId} id={id} diff={diff} inspection={inspection} eligible={eligible} lineMenu={{ scripts }} />}
         </div>
     )
 })
 
-function DiffToolbar({ columnId, ownerId, entireFiles, collapsed, file, id, diff, inspection, root, onFold }: DiffColumnFileProps) {
+function DiffToolbar({ columnId, ownerId, entireFiles, collapsed, file, id, diff, inspection, root, scripts, onFold }: DiffColumnFileProps) {
     // The file's history reads from where the list was read: its worktree or its commit.
     let source = diff.page?.source
     let history = source?.kind == "working"
@@ -335,6 +340,7 @@ function DiffToolbar({ columnId, ownerId, entireFiles, collapsed, file, id, diff
             <FileMenuItems
                 file={file}
                 root={root}
+                scripts={scripts}
                 items={history && (() => <MenuItem onAction={() => inspection.openHistory(columnId, history, file.path)}>File history</MenuItem>)}
             />
         ),
@@ -352,7 +358,7 @@ function DiffToolbar({ columnId, ownerId, entireFiles, collapsed, file, id, diff
                 <FileStatusIcon status={file.conflicted ? "conflicted" : file.status} />
                 <FileLabel file={file} showFolder />
             </AriaButton>
-            <CopyPathButton path={file.path} />
+            <FileScriptButton path={file.path} scripts={scripts} />
             <DiffControls
                 columnId={ownerId}
                 id={id}

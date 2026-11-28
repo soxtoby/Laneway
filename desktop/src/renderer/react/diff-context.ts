@@ -1,4 +1,4 @@
-import type { DiffLayout, FileDiffPage, FileDiffRequest } from "@laneway/shared"
+import type { DiffLayout, DiffLine, FileDiffPage, FileDiffRequest } from "@laneway/shared"
 import { type FileDiffLoadedChangedFiles, type FileDiffMetadata, type HunkExpansionRegion, hydratePartialDiff } from "@pierre/diffs"
 import { pierrePatch } from "./diff-patch"
 
@@ -48,6 +48,43 @@ export async function readDiffContext(
 
         return result.page
     }
+}
+
+/**
+ * The line of a file as it is now that stands where a line of its old side stood: the same line where it wasn't
+ * changed. A deleted line stands at the added line a split diff draws beside it, which is as far into the lines that
+ * replaced its block as it is into the block, or at the last of them where fewer were added, and at the line that
+ * followed where none was. A line outside the page's hunks, shown from the whole file, has moved by as much as the
+ * changes above it added or took away.
+ */
+export function currentLine(lines: DiffLine[], oldLine: number) {
+    let above = { old: 0, new: 0 }
+    // A notice, such as a missing final newline's, can part a block's deleted lines from the added ones.
+    let numbered = lines.filter(line => line.kind != "notice")
+    for (let [index, line] of numbered.entries()) {
+        if (line.oldLine == oldLine) {
+            if (line.newLine != undefined)
+                return line.newLine
+            let inBlock = (at: number, kind: DiffLine["kind"]) => numbered[at]?.hunk == line.hunk && numbered[at]?.kind == kind
+            let depth = 0
+            while (inBlock(index - depth - 1, "deletion"))
+                depth++
+            let after = index + 1
+            while (inBlock(after, "deletion"))
+                after++
+            let added = 0
+            while (inBlock(after + added, "addition"))
+                added++
+            let beside = added
+                ? numbered[after + Math.min(depth, added - 1)]
+                : numbered.slice(after).find(candidate => candidate.hunk == line.hunk && candidate.newLine != undefined)
+            return beside?.newLine ?? above.new + 1
+        }
+        if (line.oldLine != undefined && line.oldLine > oldLine)
+            break
+        above = { old: line.oldLine ?? above.old, new: line.newLine ?? above.new }
+    }
+    return Math.max(oldLine + above.new - above.old, 1)
 }
 
 export function contextDiff(page: FileDiffPage, files?: FileDiffLoadedChangedFiles) {

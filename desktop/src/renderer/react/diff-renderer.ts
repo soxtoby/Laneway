@@ -1,6 +1,6 @@
 import type { DiffLayout, DiffLine, FileDiffPage } from "@laneway/shared"
 import { canUseWASM, DEFAULT_THEMES, DiffHunksRenderer, type FileDiffLoadedChangedFiles, getFiletypeFromFileName, getHighlighterIfLoaded, getHighlighterOptions, type HighlighterTypes, preloadHighlighter, wrapCoreCSS, wrapThemeCSS } from "@pierre/diffs"
-import { contextDiff, drawnRow, visibleDiffLines } from "./diff-context"
+import { contextDiff, currentLine, drawnRow, visibleDiffLines } from "./diff-context"
 import type { pierrePatch } from "./diff-patch"
 import { expandAllNode } from "./icon-nodes"
 
@@ -15,6 +15,8 @@ export interface DiffLinesProps {
     select(ids: number[]): void
     /** Reads the whole file around the page, so hidden lines between hunks can be shown. */
     readContext?(page: FileDiffPage, signal: AbortSignal): Promise<FileDiffLoadedChangedFiles>
+    /** Opens a line's menu where it was right-clicked, given the line's number in the file as it is now. */
+    lineMenu?(line: number, point: { x: number; y: number }): void
 }
 
 /** Lookups built once per page, so decorating rendered lines never scans the whole page. */
@@ -157,6 +159,21 @@ export function createDiffRenderer(host: HTMLElement, scrollbar: HTMLElement, in
         if (pane instanceof HTMLElement && pane.hasAttribute("data-code"))
             syncHorizontal(pane)
     }, { capture: true, passive: true })
+    // A right-click on a line or its number opens the line's menu. Pierre redraws its lines, so the root listens for
+    // them all, and keeps the click from the menu of a row the diff sits in.
+    shadow.addEventListener("contextmenu", event => {
+        let element = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-line], [data-column-number]") : null
+        let number = Number(element?.dataset.line ?? element?.dataset.columnNumber)
+        if (!element || !props.lineMenu || !(event instanceof MouseEvent) || !(number > 0))
+            return
+        event.preventDefault()
+        event.stopPropagation()
+        // A deleted line, and any line on the old side, has an old line's number, which is all a deleted file's lines have.
+        let kind = element.dataset.lineType ?? ""
+        let old = kind.includes("deletion") || (!kind.includes("addition") && element.closest("[data-deletions]") != null)
+        let moved = old && props.page.file.status != "deleted"
+        props.lineMenu(moved ? currentLine(props.page.lines, number) : number, { x: event.clientX, y: event.clientY })
+    })
     scrollbar.hidden = true
     scrollbar.addEventListener("scroll", () => {
         if (scrollbar.scrollLeft == horizontalOffset)

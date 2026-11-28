@@ -1,4 +1,4 @@
-import type { Appearance, AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryDefaults, EntryProgress, EntryResult, GitSettingsState, RepositoryGraphSettings, RepositoryImageFile, ScriptRunResult, Workspace } from "@laneway/shared"
+import type { Appearance, AuthorIdentitySettings, BranchGraphResult, BranchHistoryRequest, BranchHistoryResult, EntryDefaults, EntryProgress, EntryResult, GitSettingsState, RepositoryGraphSettings, RepositoryImageFile, ScriptFile, ScriptRunResult, Workspace } from "@laneway/shared"
 import type { ChangedWorktreesResult, ChangesRequest, ChangesResult, CommitDetails, ComparisonCommitResult, ComparisonRefsResult, FileDiffRequest, FileDiffResult, FileImageRequest, FileImageResult, FileListView, FileVersionRequest, FileVersionResult, RemoteImageResult } from "@laneway/shared"
 import type { WorktreeActionResult, WorktreePreviewResult, WorktreeRequest } from "@laneway/shared"
 import type { CommitDraft, LocalActionResult, LocalRequest } from "@laneway/shared"
@@ -108,10 +108,10 @@ declare global {
             /** The image files in an open repository's Main Worktree, likely icons first; empty for a missing repository. */
             listRepositoryImages(repositoryId: string): Promise<RepositoryImageFile[]>
             /**
-             * Runs a saved Repository Script, or opens the folder, in a worktree's directory. A script without a
-             * terminal settles once it exits, and one in a terminal once its window opens.
+             * Runs a saved Repository Script, or opens the folder, in a worktree's directory, a File Script on `file`
+             * there. A script without a terminal settles once it exits, and one in a terminal once its window opens.
              */
-            runScript(repositoryId: string, path: string, scriptId: string): Promise<ScriptRunResult>
+            runScript(repositoryId: string, path: string, scriptId: string, file?: ScriptFile): Promise<ScriptRunResult>
             chooseGit(): Promise<GitSettingsState>
             useGitFromPath(): Promise<GitSettingsState>
             resetSettings(): Promise<GitSettingsState>

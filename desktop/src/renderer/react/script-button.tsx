@@ -5,7 +5,7 @@ import { Button as AriaButton } from "react-aria-components"
 import type { AppController } from "./app-controller"
 import { AddIcon, ChevronDownIcon, ConfigureIcon, OpenFolderIcon } from "./icons"
 import type { IconImageApi } from "./repository-icon-images"
-import { lastScript, openFolderLabel } from "./repository-scripts"
+import { lastScript, openFolderLabel, worktreeScripts } from "./repository-scripts"
 import { RepositoryTile } from "./repository-tile"
 import { Menu, MenuItem, MenuTrigger, Separator, Text } from "./ui/Menu"
 import { Tooltip, TooltipTrigger } from "./ui/Tooltip"
@@ -31,24 +31,10 @@ export function ScriptButton({ controller, repositoryId, path }: { controller: A
     let last = lastScript(global, repository)
     let label = last ? `Run ${last.name}` : folder
     let run = (scriptId: string) => void scripts.run(repositoryId, path, scriptId)
-    // React Aria's menu items can't hold buttons, so the gear is the next item, sharing the row.
-    let items = (listed: RepositoryScript[] = []) =>
-        listed.map(script => (
-            <Fragment key={script.id}>
-                <MenuItem className="react-aria-MenuItem split-action" textValue={script.name} onAction={() => run(script.id)}>
-                    <ScriptTile script={script} api={scripts.images} />
-                    <Text slot="label">{script.name}</Text>
-                </MenuItem>
-                <MenuItem
-                    className="react-aria-MenuItem split-more script-configure"
-                    aria-label={`Configure ${script.name}`}
-                    textValue={`Configure ${script.name}`}
-                    onAction={() => scripts.edit(repositoryId, script.id)}
-                >
-                    <ConfigureIcon />
-                </MenuItem>
-            </Fragment>
-        ))
+    let actions = { run, edit: (scriptId: string) => scripts.edit(repositoryId, scriptId), images: scripts.images }
+    // File Scripts share the lists, and show on files instead.
+    let shared = worktreeScripts(global)
+    let own = worktreeScripts(repository.scripts)
     return (
         <div className="script-split">
             <TooltipTrigger>
@@ -69,10 +55,10 @@ export function ScriptButton({ controller, repositoryId, path }: { controller: A
                         <OpenFolderIcon />
                         <Text slot="label">{folder}</Text>
                     </MenuItem>
-                    {items(global)}
+                    {scriptMenuItems(shared, actions)}
                     {/* The line parts the scripts every repository has, as it has opening the folder, from its own. */}
-                    {global?.length && repository.scripts?.length ? <Separator /> : null}
-                    {items(repository.scripts)}
+                    {shared.length && own.length ? <Separator /> : null}
+                    {scriptMenuItems(own, actions)}
                     <Separator />
                     <MenuItem textValue="New script" onAction={() => scripts.create(repositoryId)}>
                         <AddIcon />
@@ -82,6 +68,32 @@ export function ScriptButton({ controller, repositoryId, path }: { controller: A
             </MenuTrigger>
         </div>
     )
+}
+
+/**
+ * A script menu's rows for some scripts: each runs its script, and the gear beside it configures or deletes it. React
+ * Aria's menu items can't hold buttons, so the gear is the next item, sharing the row.
+ */
+export function scriptMenuItems(
+    listed: RepositoryScript[],
+    { run, edit, images }: { run(scriptId: string): void; edit(scriptId: string): void; images: IconImageApi },
+) {
+    return listed.map(script => (
+        <Fragment key={script.id}>
+            <MenuItem className="react-aria-MenuItem split-action" textValue={script.name} onAction={() => run(script.id)}>
+                <ScriptTile script={script} api={images} />
+                <Text slot="label">{script.name}</Text>
+            </MenuItem>
+            <MenuItem
+                className="react-aria-MenuItem split-more script-configure"
+                aria-label={`Configure ${script.name}`}
+                textValue={`Configure ${script.name}`}
+                onAction={() => edit(script.id)}
+            >
+                <ConfigureIcon />
+            </MenuItem>
+        </Fragment>
+    ))
 }
 
 // Initials have nothing to draw before a script has a name.

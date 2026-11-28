@@ -10,6 +10,7 @@
 - Discard all of a worktree's Working Changes, staged or not, untracked files included, with **Discard Working Changes** at the end of the menu beside **Commit…**. Undo or Ctrl+Z brings them all back while the notice shows.
 - A dot on a repository's icon in the sidebar shows that one of its worktrees has Working Changes. It's amber until you open the repository, then grey, and turns amber again if they change after you switch away. It stays grey when Laneway restarts, unless they changed while it was closed. Hover the repository to see how many of its worktrees have them.
 - Save a script for every repository, such as one that opens your editor or a terminal: tick **Available in every repository** when you create or configure it. The script menu lists these above the repository's own scripts.
+- Open a file in your editor from its diff. In a diff column, the chevron beside a file's copy button saves a **file script**, such as `code --goto {file}[:{line}]`, for every repository unless you untick that. The button then runs your last file script, and a file's menu lists them all, in file lists too. Right-click a line in a diff column to run one at that line, or to copy the path with the line.
 
 ### Changed
 

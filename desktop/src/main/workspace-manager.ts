@@ -52,6 +52,7 @@ export class WorkspaceManager {
                 ...(repository.icon ? { icon: structuredClone(repository.icon) } : {}),
                 ...(repository.scripts ? { scripts: structuredClone(repository.scripts) } : {}),
                 ...(repository.lastScriptId ? { lastScriptId: repository.lastScriptId } : {}),
+                ...(repository.lastFileScriptId ? { lastFileScriptId: repository.lastFileScriptId } : {}),
                 ...(repository.seenChangesVersion ? { seenChangesVersion: repository.seenChangesVersion } : {}),
             }
             return info
@@ -199,6 +200,7 @@ export class WorkspaceManager {
             icon: repository.icon,
             scripts: repository.scripts,
             lastScriptId: repository.lastScriptId,
+            lastFileScriptId: repository.lastFileScriptId,
             open: true,
             anchors: [...new Set(repository.columns.flatMap(column => column.kind == "comparison" ? [] : [column.lastSeenObjectId]))],
         }))

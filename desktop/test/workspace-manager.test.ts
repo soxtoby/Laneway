@@ -248,6 +248,38 @@ describe("Workspace manager", () => {
         expect(manager.script(first.id, "build")).toEqual(build)
     })
 
+    test("saves File Scripts and the one a repository's files repeat, which is never a script for worktrees", async () => {
+        let repositoryPath = await temporaryDirectory("laneway-workspace-file-scripts-")
+        expect(runGit(repositoryPath, "init", "--quiet").exitCode).toBe(0)
+        let statePath = resolve(await temporaryDirectory("laneway-workspace-state-"), "workspace.json")
+        let settingsPath = resolve(await temporaryDirectory("laneway-workspace-settings-"), "settings.json")
+        let manager = new WorkspaceManager(new OpenRepositories(settingsPath), statePath)
+        await manager.load()
+        let opened = await manager.open(repositoryPath)
+        let repository = opened.repositories[0]
+        let code = { id: "code", name: "Code", command: "code --goto {file}[:{line}]", target: "file" as const }
+        let build = { id: "build", name: "Build", command: "bun run build" }
+
+        await manager.update({
+            ...opened,
+            scripts: [code],
+            repositories: [{ ...repository, scripts: [build], lastScriptId: "build", lastFileScriptId: "code" }],
+        })
+
+        let saved = { scripts: [code], repositories: [{ scripts: [build], lastScriptId: "build", lastFileScriptId: "code" }] }
+        expect(manager.snapshot()).toMatchObject(saved)
+        expect(manager.script(repository.id, "code")).toEqual(code)
+        expect(await new WorkspaceManager(new OpenRepositories(settingsPath), statePath).load()).toMatchObject(saved)
+
+        await manager.update({
+            ...opened,
+            scripts: [code],
+            repositories: [{ ...repository, scripts: [build], lastScriptId: "code", lastFileScriptId: "build" }],
+        })
+        expect(manager.snapshot().repositories[0].lastScriptId).toBeUndefined()
+        expect(manager.snapshot().repositories[0].lastFileScriptId).toBeUndefined()
+    })
+
     test("keeps the version of a repository's Working Changes last seen across restarts, whatever presentation is saved", async () => {
         let repositoryPath = await temporaryDirectory("laneway-workspace-seen-")
         expect(runGit(repositoryPath, "init", "--quiet").exitCode).toBe(0)

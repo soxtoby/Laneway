@@ -7,7 +7,8 @@ import { DenseTreeItem } from "./dense-row"
 import { DiffRegion, HeldRowContext } from "./diff-panel"
 import { type FileTreeNode, fileTreeNodes } from "./file-list-view"
 import { copyText, fileName, fullPath } from "./file-paths"
-import { CheckIcon, CopyIcon, DiffIcon, FileStatusIcon, FolderIcon } from "./icons"
+import { CopyPathButton, FileScriptItems, type FileScriptRunner, scriptsOn, useFileScripts } from "./file-scripts"
+import { DiffIcon, FileStatusIcon, FolderIcon } from "./icons"
 import type { FileChoice } from "./inspection"
 import { ChevronRight } from "./ui/icons"
 import { MenuItem, Separator } from "./ui/Menu"
@@ -23,9 +24,9 @@ interface FileTreeProps {
     selected: string[]
     /** Chooses files as `how` says, toggling them by default; without it rows can't be chosen. */
     onSelect?(files: ChangedFile[], how?: FileChoice): void
-    /** The worktree the files live in, enabling "Copy full path". */
+    /** The worktree the files live in, enabling "Copy full path" and the repository's File Scripts. */
     root?: string
-    /** A file's own menu items, shown above the copy actions. */
+    /** A file's own menu items, shown above its File Scripts and the copy actions. */
     menuItems?(file: ChangedFile): ReactNode
     /** Working Changes lists say staged by where they sit, so their rows leave the badge out. */
     hideStagedBadge?: boolean
@@ -111,6 +112,7 @@ export function FileTree(
 ) {
     let nodes = fileTreeNodes(files, view)
     let folders = foldingNodes(nodes)
+    let scripts = useFileScripts(root)
     // Folders start open; a folded one remembers that by its key while the list stays.
     let [folded, setFolded] = useState<Set<string>>(new Set())
     let expandedKeys = new Set([...folders.keys()].filter(key => !folded.has(key)))
@@ -248,7 +250,7 @@ export function FileTree(
                             node={node}
                             flat={view.layout == "flat"}
                             nested={folders.size > 0}
-                            props={{ isChosen, isFolderChosen, root, menuItems, hideStagedBadge, leading, inspect, highlight }}
+                            props={{ isChosen, isFolderChosen, root, scripts, menuItems, hideStagedBadge, leading, inspect, highlight }}
                         />
                     ))}
                 </Tree>
@@ -295,12 +297,15 @@ function FileTreeRow(
         props: Pick<FileTreeProps, "root" | "menuItems" | "hideStagedBadge" | "leading" | "inspect" | "highlight"> & {
             isChosen(file: ChangedFile): boolean
             isFolderChosen(key: string): boolean
+            /** The File Scripts its files run. */
+            scripts?: FileScriptRunner
         }
     },
 ) {
     if (node.kind == "file") {
         let file = node.file
         let open = props.inspect?.inline?.isOpen(file) == true
+        let scripts = scriptsOn(file, props.scripts)
         return (
             <DenseTreeItem
                 id={node.key}
@@ -308,7 +313,10 @@ function FileTreeRow(
                 className={clsx("compact file-row", open && "inspected")}
                 data-row-key={node.key}
                 data-chosen={props.isChosen(file) || undefined}
-                menu={{ label: `Actions for ${file.path}`, items: () => <FileMenuItems file={file} root={props.root} items={props.menuItems} /> }}
+                menu={{
+                    label: `Actions for ${file.path}`,
+                    items: () => <FileMenuItems file={file} root={props.root} scripts={scripts} items={props.menuItems} />,
+                }}
                 content={({ actions }) => (
                     <>
                         <div className="row-content file-content">
@@ -320,9 +328,7 @@ function FileTreeRow(
                             {file.staged && !props.hideStagedBadge && <span className="file-badge">staged</span>}
                             {file.submodule && <span className="file-badge">submodule</span>}
                             {open && props.inspect?.inline?.controls(file)}
-                            {props.inspect?.open && (
-                                <OpenDiffButton path={file.path} onPress={() => props.inspect?.open?.(file, true)} />
-                            )}
+                            {props.inspect?.open && <OpenDiffButton path={file.path} onPress={() => props.inspect?.open?.(file, true)} />}
                             {actions}
                         </div>
                         {open && <DiffRegion>{props.inspect?.inline?.diff(file)}</DiffRegion>}
@@ -358,13 +364,19 @@ function FileTreeRow(
     )
 }
 
-/** A file's own actions, then copying where it lives. */
-export function FileMenuItems({ file, root, items }: { file: ChangedFile; root?: string; items?(file: ChangedFile): ReactNode }) {
+/** A file's own actions, then the File Scripts that run on it, then copying where it lives. */
+export function FileMenuItems({ file, root, scripts, items }: {
+    file: ChangedFile
+    root?: string
+    scripts?: FileScriptRunner
+    items?(file: ChangedFile): ReactNode
+}) {
     let own = items?.(file)
     return (
         <>
             {own}
             {own && <Separator />}
+            <FileScriptItems path={file.path} scripts={scripts} />
             {root && <MenuItem onAction={() => void copyText(fullPath(root, file.path))}>Copy full path</MenuItem>}
             <MenuItem onAction={() => void copyText(file.path)}>Copy relative path</MenuItem>
             <MenuItem onAction={() => void copyText(fileName(file.path))}>Copy file name</MenuItem>
@@ -431,30 +443,6 @@ function marked(text: string, offset: number, found: [number, number][]) {
     }
     parts.push(text.slice(at))
     return parts
-}
-
-/** Copies the file's repository-relative path; it shows while the row is hovered or focused, and confirms the copy. */
-export function CopyPathButton({ path }: { path: string }) {
-    let [copied, setCopied] = useState(false)
-    useEffect(() => {
-        if (!copied)
-            return
-        let timer = setTimeout(() => setCopied(false), 1500)
-        return () => clearTimeout(timer)
-    }, [copied])
-    return (
-        <TooltipTrigger>
-            <AriaButton
-                className="copy-path icon-button small"
-                aria-label={`Copy relative path of ${path}`}
-                data-copied={copied || undefined}
-                onPress={() => void copyText(path).then(() => setCopied(true))}
-            >
-                {copied ? <CheckIcon /> : <CopyIcon />}
-            </AriaButton>
-            <Tooltip>{copied ? "Copied" : "Copy relative path"}</Tooltip>
-        </TooltipTrigger>
-    )
 }
 
 /** Opens the file in its column's diff column; it shows while the row is hovered or focused. */

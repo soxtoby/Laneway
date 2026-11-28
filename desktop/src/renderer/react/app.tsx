@@ -7,6 +7,7 @@ import { CommandLensDialog } from "./command-lens-dialog"
 import { CommitAgesShown } from "./commit-age"
 import { ComparisonPickerDialog } from "./comparison-picker-dialog"
 import { ContextMenuHost } from "./context-menu"
+import { FileScriptsScope } from "./file-scripts"
 import { GitSettingsDialog } from "./git-settings-dialog"
 import { ReturnDialog } from "./historical-edit-banner"
 import { ArchiveIcon, BrandMark, GraphIcon, MoonIcon, RedoIcon, SearchIcon, SettingsIcon, SunIcon, UndoIcon, UpdateIcon } from "./icons"
@@ -40,9 +41,11 @@ export function App({ api, controller }: { api: IconImageApi; controller: AppCon
     if (snapshot.status == "failed")
         return <StartupFailed error={snapshot.error} onRetry={() => void controller.start()} />
     return (
-        <ContextMenuHost>
-            <Shell api={api} controller={controller} snapshot={snapshot} />
-        </ContextMenuHost>
+        <FileScriptsScope value={controller}>
+            <ContextMenuHost>
+                <Shell api={api} controller={controller} snapshot={snapshot} />
+            </ContextMenuHost>
+        </FileScriptsScope>
     )
 }
 
